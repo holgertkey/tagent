@@ -19,17 +19,17 @@ impl Translator {
 
     /// Основная функция перевода текста из буфера обмена
     pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error>> {
-        // Получаем текст из буфера обмена
-        let original_text = match self.clipboard.get_text() {
+        // Автоматически копируем выделенный текст и получаем его из буфера обмена
+        let original_text = match self.clipboard.get_text_with_copy() {
             Ok(text) => {
                 if text.trim().is_empty() {
-                    println!("Буфер обмена пуст или содержит только пробелы");
+                    println!("Нет выделенного текста или буфер обмена пуст");
                     return Ok(());
                 }
                 text.trim().to_string()
             }
             Err(e) => {
-                println!("Ошибка чтения буфера обмена: {}", e);
+                println!("Ошибка копирования или чтения буфера обмена: {}", e);
                 return Err(e);
             }
         };
