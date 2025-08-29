@@ -105,9 +105,17 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
 
                         match *last_time {
                             Some(last) => {
-                                if now.duration_since(last) < Duration::from_millis(500) {
+                                let time_since_last = now.duration_since(last);
+                                
+                                // Check if time is within valid range (50ms to 500ms)
+                                // Below 50ms: likely contact bounce or accidental rapid pressing
+                                // Above 500ms: too slow, treat as separate key press
+                                if time_since_last >= Duration::from_millis(50) && 
+                                   time_since_last < Duration::from_millis(500) {
                                     *processing = true;
                                     *last_time = None;
+                                    
+                                    // println!("Double Ctrl detected ({}ms apart)", time_since_last.as_millis());
                                     
                                     let translator_clone = translator.clone();
                                     let processing_clone = is_processing.clone();
@@ -123,7 +131,11 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                             }
                                         });
                                     });
+                                } else if time_since_last < Duration::from_millis(50) {
+                                    // Too fast - likely contact bounce, ignore and keep the original time
+                                    println!("Ctrl press too fast ({}ms) - ignoring contact bounce", time_since_last.as_millis());
                                 } else {
+                                    // Too slow - treat as new first press
                                     *last_time = Some(now);
                                 }
                             }
