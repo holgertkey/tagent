@@ -4,6 +4,7 @@ use windows::{
     Win32::UI::Input::KeyboardAndMouse::*,
 };
 
+#[derive(Clone)]
 pub struct ClipboardManager;
 
 impl ClipboardManager {
@@ -35,10 +36,10 @@ impl ClipboardManager {
             keybd_event(VK_CONTROL.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
             
             // Нажимаем C
-            keybd_event('C' as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
+            keybd_event(b'C', 0, KEYBD_EVENT_FLAGS(0), 0);
             
             // Отпускаем C (KEYEVENTF_KEYUP = 2)
-            keybd_event('C' as u8, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(b'C', 0, KEYEVENTF_KEYUP, 0);
             
             // Отпускаем Ctrl
             keybd_event(VK_CONTROL.0 as u8, 0, KEYEVENTF_KEYUP, 0);

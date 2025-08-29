@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::error::Error;
 use url::form_urlencoded;
 
+#[derive(Clone)]
 pub struct Translator {
     client: Client,
     clipboard: ClipboardManager,
@@ -35,7 +36,7 @@ impl Translator {
         };
 
         println!("\n--- Переводим текст ---");
-        println!("Исходный текст: {}", original_text);
+        println!("A: {}", original_text);
 
         // Определяем, является ли текст английским
         if !self.is_english_text(&original_text) {
@@ -46,13 +47,13 @@ impl Translator {
         // Переводим текст
         match self.translate_text(&original_text, "en", "ru").await {
             Ok(translated_text) => {
-                println!("Перевод: {}", translated_text);
+                println!("B: {}", translated_text);
                 
                 // Копируем перевод в буфер обмена
                 if let Err(e) = self.clipboard.set_text(&translated_text) {
                     println!("Ошибка записи перевода в буфер обмена: {}", e);
                 } else {
-                    println!("Перевод скопирован в буфер обмена");
+                    // println!("Перевод скопирован в буфер обмена");
                 }
             }
             Err(e) => {
