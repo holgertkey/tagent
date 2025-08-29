@@ -8,49 +8,37 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Переводчик текста ===");
-    println!("Инструкции по использованию:");
-    println!("1. Выделите английский текст в любом приложении");
-    println!("2. Дважды быстро нажмите Ctrl (Ctrl + Ctrl)");
-    println!("3. Текст автоматически скопируется, переведется и сохранится в буфер обмена");
-    println!("4. Вставьте перевод в нужное место с помощью Ctrl+V");
+    println!("=== Text Translator ===");
+    println!("Usage instructions:");
+    println!("1. Select English text in any application");
+    println!("2. Quickly double-press Ctrl (Ctrl + Ctrl)");
+    println!("3. Text will automatically copy, translate, and save to clipboard");
+    println!("4. Paste translation where needed with Ctrl+V");
     println!();
-    println!("Программа работает в фоновом режиме. Нажмите Ctrl+C для выхода.");
+    println!("Program runs in background. Press Ctrl+C to exit.");
     println!("=====================================");
     
-    // Устанавливаем обработчик Ctrl+C для корректного завершения
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let should_exit = Arc::new(AtomicBool::new(false));
+    let should_exit_clone = should_exit.clone();
     
     ctrlc::set_handler(move || {
-        println!("\nПолучен сигнал завершения. Закрываем программу...");
-        r.store(false, Ordering::SeqCst);
+        println!("\nShutdown signal received. Closing program...");
+        should_exit_clone.store(true, Ordering::SeqCst);
         
-        // Отправляем WM_QUIT в очередь сообщений для корректного завершения цикла
+        // Also post WM_QUIT to break out of the message loop
         unsafe {
-            use windows::Win32::UI::WindowsAndMessaging::{PostQuitMessage};
+            use windows::Win32::UI::WindowsAndMessaging::PostQuitMessage;
             PostQuitMessage(0);
         }
     })?;
     
     let translator = Translator::new();
-    let mut keyboard_hook = KeyboardHook::new(translator)?;
+    let mut keyboard_hook = KeyboardHook::new(translator, should_exit)?;
     
-    // Создаем runtime для async операций
     let rt = tokio::runtime::Runtime::new()?;
     
-    match rt.block_on(keyboard_hook.start()) {
-        Ok(_) => {
-            println!("Программа завершена успешно.");
-            Ok(())
-        }
-        Err(e) => {
-            if e.to_string().contains("WM_QUIT") {
-                println!("Программа завершена пользователем.");
-                Ok(())
-            } else {
-                Err(e)
-            }
-        }
-    }
+    rt.block_on(keyboard_hook.start())?;
+    println!("Program terminated successfully.");
+    
+    Ok(())
 }

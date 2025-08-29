@@ -1,6 +1,7 @@
 use crate::translator::Translator;
 use std::error::Error;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use windows::{
     Win32::Foundation::*,
@@ -9,16 +10,15 @@ use windows::{
     Win32::UI::WindowsAndMessaging::*,
 };
 
-// Используем OnceLock вместо мutable static для безопасности
 static TRANSLATOR: OnceLock<Arc<Translator>> = OnceLock::new();
 static LAST_CTRL_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static IS_PROCESSING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 pub struct KeyboardHook;
 
 impl KeyboardHook {
-    pub fn new(translator: Translator) -> Result<Self, Box<dyn Error>> {
-        // Инициализируем глобальные переменные один раз
+    pub fn new(translator: Translator, should_exit: Arc<AtomicBool>) -> Result<Self, Box<dyn Error>> {
         TRANSLATOR.set(Arc::new(translator))
             .map_err(|_| "Translator already initialized")?;
         
@@ -29,6 +29,8 @@ impl KeyboardHook {
             .map_err(|_| "LastCtrlTime already initialized")?;
         IS_PROCESSING.set(is_processing)
             .map_err(|_| "IsProcessing already initialized")?;
+        SHOULD_EXIT.set(should_exit)
+            .map_err(|_| "ShouldExit already initialized")?;
         
         Ok(Self)
     }
@@ -39,29 +41,43 @@ impl KeyboardHook {
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), h_instance, 0)?;
 
             if hook.0 == 0 {
-                return Err("Не удалось установить хук клавиатуры".into());
+                return Err("Failed to set keyboard hook".into());
             }
 
-            println!("Хук клавиатуры установлен успешно");
+            println!("Keyboard hook set successfully");
 
-            // Главный цикл обработки сообщений (синхронный)
             loop {
-                let mut msg = MSG::default();
-                let bret = GetMessageW(&mut msg, HWND::default(), 0, 0);
-                
-                match bret.0 {
-                    0 => break, // WM_QUIT
-                    -1 => {
-                        println!("Ошибка в GetMessageW");
+                // Check if we should exit
+                if let Some(should_exit) = SHOULD_EXIT.get() {
+                    if should_exit.load(Ordering::Relaxed) {
+                        println!("Exit signal detected, breaking message loop");
                         break;
                     }
-                    _ => {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
+                }
+
+                let mut msg = MSG::default();
+                
+                // Use PeekMessage instead of GetMessage to avoid blocking
+                let has_message = PeekMessageW(&mut msg, HWND::default(), 0, 0, PEEK_MESSAGE_REMOVE_TYPE(1u32));
+                
+                if has_message.as_bool() {
+                    match msg.message {
+                        WM_QUIT => {
+                            println!("WM_QUIT received, exiting");
+                            break;
+                        }
+                        _ => {
+                            TranslateMessage(&msg);
+                            DispatchMessageW(&msg);
+                        }
                     }
+                } else {
+                    // No message available, sleep briefly to avoid busy waiting
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
 
+            println!("Unhooking keyboard hook");
             UnhookWindowsHookEx(hook)?;
         }
 
@@ -69,37 +85,30 @@ impl KeyboardHook {
     }
 }
 
-// Процедура хука клавиатуры
 unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if n_code >= 0 {
-        // Проверяем, что это событие нажатия клавиши
         if w_param.0 as u32 == WM_KEYDOWN {
             let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
             
-            // Проверяем, что нажат Ctrl (VK_LCONTROL или VK_RCONTROL)
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
                 let now = Instant::now();
                 
-                // Безопасный доступ к глобальным переменным через OnceLock
                 if let (Some(translator), Some(last_ctrl_time), Some(is_processing)) = 
                     (TRANSLATOR.get(), LAST_CTRL_TIME.get(), IS_PROCESSING.get()) {
                     
                     if let (Ok(mut last_time), Ok(mut processing)) = 
                         (last_ctrl_time.lock(), is_processing.lock()) {
                         
-                        // Если уже обрабатываем предыдущий запрос, игнорируем
                         if *processing {
                             return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
                         }
 
                         match *last_time {
                             Some(last) => {
-                                // Проверяем, прошло ли менее 500 мс с последнего нажатия Ctrl
                                 if now.duration_since(last) < Duration::from_millis(500) {
                                     *processing = true;
                                     *last_time = None;
                                     
-                                    // Запускаем перевод в отдельной задаче
                                     let translator_clone = translator.clone();
                                     let processing_clone = is_processing.clone();
                                     
@@ -107,7 +116,7 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                         let rt = tokio::runtime::Runtime::new().unwrap();
                                         rt.block_on(async {
                                             if let Err(e) = translator_clone.translate_clipboard().await {
-                                                println!("Ошибка при переводе: {}", e);
+                                                println!("Translation error: {}", e);
                                             }
                                             if let Ok(mut proc) = processing_clone.lock() {
                                                 *proc = false;

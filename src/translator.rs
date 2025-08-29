@@ -18,53 +18,47 @@ impl Translator {
         }
     }
 
-    /// Основная функция перевода текста из буфера обмена
+    /// Main function for translating text from clipboard
     pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error>> {
-        // Автоматически копируем выделенный текст и получаем его из буфера обмена
         let original_text = match self.clipboard.get_text_with_copy() {
             Ok(text) => {
                 if text.trim().is_empty() {
-                    println!("Нет выделенного текста или буфер обмена пуст");
+                    println!("No selected text or clipboard is empty");
                     return Ok(());
                 }
                 text.trim().to_string()
             }
             Err(e) => {
-                println!("Ошибка копирования или чтения буфера обмена: {}", e);
+                println!("Copy or clipboard read error: {}", e);
                 return Err(e);
             }
         };
 
-        println!("\n--- Переводим текст ---");
-        println!("A: {}", original_text);
+        println!("\n--- Translating text ---");
+        println!("EN: {}", original_text);
 
-        // Определяем, является ли текст английским
         if !self.is_english_text(&original_text) {
-            println!("Текст не является английским или содержит недопустимые символы");
+            println!("Text is not English or contains invalid characters");
             return Ok(());
         }
 
-        // Переводим текст
         match self.translate_text(&original_text, "en", "ru").await {
             Ok(translated_text) => {
-                println!("B: {}", translated_text);
+                println!("RU: {}", translated_text);
                 
-                // Копируем перевод в буфер обмена
                 if let Err(e) = self.clipboard.set_text(&translated_text) {
-                    println!("Ошибка записи перевода в буфер обмена: {}", e);
-                } else {
-                    // println!("Перевод скопирован в буфер обмена");
+                    println!("Translation clipboard write error: {}", e);
                 }
             }
             Err(e) => {
-                println!("Ошибка перевода: {}", e);
+                println!("Translation error: {}", e);
             }
         }
 
         Ok(())
     }
 
-    /// Проверяет, содержит ли текст английские символы
+    /// Check if text contains English characters
     fn is_english_text(&self, text: &str) -> bool {
         let english_chars = text
             .chars()
@@ -77,15 +71,13 @@ impl Translator {
             return false;
         }
 
-        // Если более 70% символов - латинские, считаем текст английским
         let english_ratio = english_chars as f64 / total_chars as f64;
         
         english_ratio > 0.7 && text.chars().any(|c| c.is_ascii_alphabetic())
     }
 
-    /// Переводит текст с использованием Google Translate API
+    /// Translate text using Google Translate API
     async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
-        // Используем бесплатный API Google Translate
         let url = "https://translate.googleapis.com/translate_a/single";
         
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
@@ -104,12 +96,11 @@ impl Translator {
             .await?;
 
         if !response.status().is_success() {
-            return Err(format!("HTTP ошибка: {}", response.status()).into());
+            return Err(format!("HTTP error: {}", response.status()).into());
         }
 
         let body = response.text().await?;
         
-        // Парсим ответ JSON
         let json: Value = serde_json::from_str(&body)?;
         
         if let Some(translations) = json.get(0).and_then(|v| v.as_array()) {
@@ -122,12 +113,12 @@ impl Translator {
             }
             
             if result.is_empty() {
-                return Err("Не удалось извлечь перевод из ответа".into());
+                return Err("Failed to extract translation from response".into());
             }
             
             Ok(result)
         } else {
-            Err("Неверный формат ответа от Google Translate".into())
+            Err("Invalid response format from Google Translate".into())
         }
     }
 }
