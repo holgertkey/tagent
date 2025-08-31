@@ -1,6 +1,7 @@
 mod translator;
 mod clipboard;
 mod keyboard;
+mod config;
 
 use translator::Translator;
 use keyboard::KeyboardHook;
@@ -16,17 +17,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("=== Text Translator ===");
     println!("Usage instructions:");
-    println!("1. Select English text in any application");
+    println!("1. Select text in any application");
     println!("2. Quickly double-press Ctrl (Ctrl + Ctrl)");
     println!("3. Text will automatically copy, translate, and save to clipboard");
     println!("4. Paste translation where needed with Ctrl+V");
+    println!();
+    println!("Configuration:");
+    println!("- Edit 'translator.conf' to change translation languages");
+    println!("- Changes take effect immediately (no restart required)");
     println!();
     println!("Program runs in background. Press Ctrl+Q to exit.");
     println!("=====================================");
     
     let should_exit = Arc::new(AtomicBool::new(false));
     
-    let translator = Translator::new();
+    let translator = match Translator::new() {
+        Ok(t) => t,
+        Err(e) => {
+            println!("Failed to initialize translator: {}", e);
+            return Err(e);
+        }
+    };
+    
     let mut keyboard_hook = KeyboardHook::new(translator, should_exit)?;
     
     let rt = tokio::runtime::Runtime::new()?;
