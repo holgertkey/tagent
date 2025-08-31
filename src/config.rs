@@ -9,6 +9,7 @@ use std::time::SystemTime;
 pub struct Config {
     pub source_language: String,
     pub target_language: String,
+    pub show_terminal_on_translate: bool,
 }
 
 impl Default for Config {
@@ -16,6 +17,7 @@ impl Default for Config {
         Self {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
+            show_terminal_on_translate: false,
         }
     }
 }
@@ -87,8 +89,16 @@ SourceLanguage = {}
 ; Target language for translation  
 ; Supported values: Russian, English, Spanish, French, German, etc.
 TargetLanguage = {}
+
+[Interface]
+; Show terminal window on top when translating
+; Set to true to show terminal window during translation
+; Set to false to keep terminal in background
+ShowTerminalOnTranslate = {}
 "#,
-            config.source_language, config.target_language
+            config.source_language, 
+            config.target_language,
+            config.show_terminal_on_translate
         )
     }
 
@@ -109,9 +119,16 @@ TargetLanguage = {}
             .cloned()
             .unwrap_or_else(|| "Russian".to_string());
 
+        let show_terminal = parsed_config
+            .get("Interface")
+            .and_then(|section| section.get("ShowTerminalOnTranslate"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
+            show_terminal_on_translate: show_terminal,
         };
 
         if let Ok(mut config) = self.config.lock() {

@@ -2,6 +2,7 @@ mod translator;
 mod clipboard;
 mod keyboard;
 mod config;
+mod window;
 
 use translator::Translator;
 use keyboard::KeyboardHook;
@@ -24,6 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("Configuration:");
     println!("- Edit 'translator.conf' to change translation languages");
+    println!("- Set 'ShowTerminalOnTranslate = true' to show terminal window during translation");
     println!("- Changes take effect immediately (no restart required)");
     println!();
     println!("Program runs in background. Press Ctrl+Q to exit.");

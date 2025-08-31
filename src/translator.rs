@@ -1,5 +1,6 @@
 use crate::clipboard::ClipboardManager;
 use crate::config::ConfigManager;
+use crate::window::WindowManager;
 use reqwest::Client;
 use serde_json::Value;
 use std::error::Error;
@@ -11,16 +12,21 @@ pub struct Translator {
     client: Client,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
+    window_manager: Arc<WindowManager>,
+    stored_foreground_window: Arc<std::sync::Mutex<Option<windows::Win32::Foundation::HWND>>>,
 }
 
 impl Translator {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let config_manager = Arc::new(ConfigManager::new("translator.conf")?);
+        let window_manager = Arc::new(WindowManager::new()?);
         
         Ok(Self {
             client: Client::new(),
             clipboard: ClipboardManager::new(),
             config_manager,
+            window_manager,
+            stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
@@ -29,6 +35,17 @@ impl Translator {
         // Check if config file was modified and reload if necessary
         if let Err(e) = self.config_manager.check_and_reload() {
             println!("Config reload error: {}", e);
+        }
+
+        let config = self.config_manager.get_config();
+        
+        // Store the current foreground window before any operations
+        if config.show_terminal_on_translate {
+            if let Some(fg_window) = self.window_manager.get_foreground_window() {
+                if let Ok(mut stored) = self.stored_foreground_window.lock() {
+                    *stored = Some(fg_window);
+                }
+            }
         }
 
         let original_text = match self.clipboard.get_text_with_copy() {
@@ -45,8 +62,14 @@ impl Translator {
             }
         };
 
+        // Show terminal window if configured
+        if config.show_terminal_on_translate {
+            if let Err(e) = self.window_manager.show_terminal() {
+                println!("Failed to show terminal: {}", e);
+            }
+        }
+
         println!("\n--- Translating text ---");
-        let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
         
         // Show source language info
@@ -61,6 +84,12 @@ impl Translator {
         // If source language is not Auto, check if text matches expected language
         if source_code != "auto" && !self.is_expected_language(&original_text, &source_code) {
             println!("Text does not appear to be in {} language", config.source_language);
+            
+            // Hide terminal and restore previous window if needed
+            if config.show_terminal_on_translate {
+                self.hide_terminal_and_restore().await;
+            }
+            
             return Ok(());
         }
 
@@ -71,7 +100,7 @@ impl Translator {
                 if let Err(e) = self.clipboard.set_text(&translated_text) {
                     println!("Translation clipboard write error: {}", e);
                 } else {
-                    // println!("Translation copied to clipboard successfully!");
+                    println!("Translation copied to clipboard successfully!");
                 }
             }
             Err(e) => {
@@ -79,7 +108,32 @@ impl Translator {
             }
         }
 
+        // Hide terminal and restore previous window after a short delay if configured
+        if config.show_terminal_on_translate {
+            self.hide_terminal_and_restore().await;
+        }
+
         Ok(())
+    }
+
+    /// Hide terminal window and restore previously active window
+    async fn hide_terminal_and_restore(&self) {
+        // Wait a bit to let user see the result
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        
+        // Restore the previously active window
+        if let Ok(stored) = self.stored_foreground_window.lock() {
+            if let Some(prev_window) = *stored {
+                if let Err(e) = self.window_manager.set_foreground_window(prev_window) {
+                    println!("Failed to restore previous window: {}", e);
+                }
+            }
+        }
+        
+        // Hide the terminal
+        if let Err(e) = self.window_manager.hide_terminal() {
+            println!("Failed to hide terminal: {}", e);
+        }
     }
 
     /// Check if text appears to be in expected language
