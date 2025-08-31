@@ -4,10 +4,16 @@ mod keyboard;
 
 use translator::Translator;
 use keyboard::KeyboardHook;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use windows::Win32::System::Console::{SetConsoleCtrlHandler};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Отключаем стандартную обработку Ctrl+C в консоли Windows
+    unsafe {
+        SetConsoleCtrlHandler(None, true)?;
+    }
+    
     println!("=== Text Translator ===");
     println!("Usage instructions:");
     println!("1. Select English text in any application");
@@ -15,22 +21,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("3. Text will automatically copy, translate, and save to clipboard");
     println!("4. Paste translation where needed with Ctrl+V");
     println!();
-    println!("Program runs in background. Press Ctrl+C to exit.");
+    println!("Program runs in background. Press Ctrl+Q to exit.");
     println!("=====================================");
     
     let should_exit = Arc::new(AtomicBool::new(false));
-    let should_exit_clone = should_exit.clone();
-    
-    ctrlc::set_handler(move || {
-        println!("\nShutdown signal received. Closing program...");
-        should_exit_clone.store(true, Ordering::SeqCst);
-        
-        // Also post WM_QUIT to break out of the message loop
-        unsafe {
-            use windows::Win32::UI::WindowsAndMessaging::PostQuitMessage;
-            PostQuitMessage(0);
-        }
-    })?;
     
     let translator = Translator::new();
     let mut keyboard_hook = KeyboardHook::new(translator, should_exit)?;

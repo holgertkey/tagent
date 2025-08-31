@@ -14,6 +14,7 @@ static TRANSLATOR: OnceLock<Arc<Translator>> = OnceLock::new();
 static LAST_CTRL_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static IS_PROCESSING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static CTRL_IS_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
 pub struct KeyboardHook;
 
@@ -24,6 +25,7 @@ impl KeyboardHook {
         
         let last_ctrl_time = Arc::new(Mutex::new(None));
         let is_processing = Arc::new(Mutex::new(false));
+        let ctrl_is_pressed = Arc::new(Mutex::new(false));
         
         LAST_CTRL_TIME.set(last_ctrl_time)
             .map_err(|_| "LastCtrlTime already initialized")?;
@@ -31,6 +33,8 @@ impl KeyboardHook {
             .map_err(|_| "IsProcessing already initialized")?;
         SHOULD_EXIT.set(should_exit)
             .map_err(|_| "ShouldExit already initialized")?;
+        CTRL_IS_PRESSED.set(ctrl_is_pressed)
+            .map_err(|_| "CtrlIsPressed already initialized")?;
         
         Ok(Self)
     }
@@ -87,31 +91,57 @@ impl KeyboardHook {
 
 unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if n_code >= 0 {
+        let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
+        
         if w_param.0 as u32 == WM_KEYDOWN {
-            let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
-            
-            if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
-                let now = Instant::now();
+            // Check for Ctrl+Q combination
+            if kbd_struct.vkCode == 'Q' as u32 {
+                // Check if Ctrl is pressed
+                let ctrl_pressed = GetAsyncKeyState(VK_LCONTROL.0 as i32) as u16 & 0x8000 != 0 ||
+                                 GetAsyncKeyState(VK_RCONTROL.0 as i32) as u16 & 0x8000 != 0;
                 
-                if let (Some(translator), Some(last_ctrl_time), Some(is_processing)) = 
-                    (TRANSLATOR.get(), LAST_CTRL_TIME.get(), IS_PROCESSING.get()) {
+                if ctrl_pressed {
+                    if let Some(should_exit) = SHOULD_EXIT.get() {
+                        println!("Ctrl+Q pressed - exiting program...");
+                        should_exit.store(true, Ordering::SeqCst);
+                        PostQuitMessage(0);
+                    }
+                    // Return 1 to suppress further processing of this key press
+                    return LRESULT(1);
+                }
+            }
+            
+            // Handle Ctrl key for double-press detection
+            if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
+                if let (Some(translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) = 
+                    (TRANSLATOR.get(), LAST_CTRL_TIME.get(), IS_PROCESSING.get(), CTRL_IS_PRESSED.get()) {
                     
-                    if let (Ok(mut last_time), Ok(mut processing)) = 
-                        (last_ctrl_time.lock(), is_processing.lock()) {
+                    if let (Ok(mut last_time), Ok(mut processing), Ok(mut is_pressed)) = 
+                        (last_ctrl_time.lock(), is_processing.lock(), ctrl_is_pressed.lock()) {
                         
+                        // If Ctrl is already pressed, this is a key repeat event - ignore it
+                        if *is_pressed {
+                            return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
+                        }
+                        
+                        // Mark Ctrl as pressed
+                        *is_pressed = true;
+                        
+                        // If already processing a translation, ignore
                         if *processing {
                             return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
                         }
 
+                        let now = Instant::now();
+                        
                         match *last_time {
                             Some(last) => {
                                 let time_since_last = now.duration_since(last);
                                 
-                                // Check if time is within valid range (50ms to 500ms)
-                                // Below 50ms: likely contact bounce or accidental rapid pressing
-                                // Above 500ms: too slow, treat as separate key press
                                 if time_since_last >= Duration::from_millis(50) && 
                                    time_since_last < Duration::from_millis(500) {
+                                    
+                                    // Double Ctrl - trigger translation
                                     *processing = true;
                                     *last_time = None;
                                     
@@ -132,7 +162,6 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                         });
                                     });
                                 } else if time_since_last < Duration::from_millis(50) {
-                                    // Too fast - likely contact bounce, ignore and keep the original time
                                     println!("Ctrl press too fast ({}ms) - ignoring contact bounce", time_since_last.as_millis());
                                 } else {
                                     // Too slow - treat as new first press
@@ -143,6 +172,15 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                 *last_time = Some(now);
                             }
                         }
+                    }
+                }
+            }
+        } else if w_param.0 as u32 == WM_KEYUP {
+            // Handle Ctrl key up - mark as not pressed
+            if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
+                if let Some(ctrl_is_pressed) = CTRL_IS_PRESSED.get() {
+                    if let Ok(mut is_pressed) = ctrl_is_pressed.lock() {
+                        *is_pressed = false;
                     }
                 }
             }
