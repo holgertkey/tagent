@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configuration:");
     println!("- Edit 'translator.conf' to change translation languages");
     println!("- Set 'ShowTerminalOnTranslate = true' to show terminal window during translation");
+    println!("- Set 'AutoHideTerminalSeconds = N' to auto-hide terminal after N seconds (0 = no auto-hide)");
     println!("- Changes take effect immediately (no restart required)");
     println!();
     println!("Program runs in background. Press Ctrl+Q to exit.");

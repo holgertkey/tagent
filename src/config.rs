@@ -10,6 +10,7 @@ pub struct Config {
     pub source_language: String,
     pub target_language: String,
     pub show_terminal_on_translate: bool,
+    pub auto_hide_terminal_seconds: u64,
 }
 
 impl Default for Config {
@@ -18,6 +19,7 @@ impl Default for Config {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
             show_terminal_on_translate: false,
+            auto_hide_terminal_seconds: 0, // 0 means don't auto-hide
         }
     }
 }
@@ -95,10 +97,17 @@ TargetLanguage = {}
 ; Set to true to show terminal window during translation
 ; Set to false to keep terminal in background
 ShowTerminalOnTranslate = {}
+
+; Auto-hide terminal after translation (in seconds)
+; Set to 0 to keep terminal visible (no auto-hide)
+; Set to any number > 0 to auto-hide after that many seconds
+; Example: 3 = hide terminal after 3 seconds
+AutoHideTerminalSeconds = {}
 "#,
             config.source_language, 
             config.target_language,
-            config.show_terminal_on_translate
+            config.show_terminal_on_translate,
+            config.auto_hide_terminal_seconds
         )
     }
 
@@ -125,10 +134,17 @@ ShowTerminalOnTranslate = {}
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(false);
 
+        let auto_hide_seconds = parsed_config
+            .get("Interface")
+            .and_then(|section| section.get("AutoHideTerminalSeconds"))
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
             show_terminal_on_translate: show_terminal,
+            auto_hide_terminal_seconds: auto_hide_seconds,
         };
 
         if let Ok(mut config) = self.config.lock() {

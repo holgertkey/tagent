@@ -50,6 +50,7 @@ impl WindowManager {
     }
 
     /// Check if terminal window is visible
+    #[allow(dead_code)]
     pub fn is_terminal_visible(&self) -> bool {
         unsafe {
             IsWindowVisible(self.console_window).as_bool()
@@ -83,6 +84,7 @@ impl WindowManager {
     }
 
     /// Get the title of the currently active window
+    #[allow(dead_code)]
     pub fn get_active_window_title(&self) -> Result<String, Box<dyn Error>> {
         unsafe {
             let active_window = GetForegroundWindow();
@@ -103,11 +105,13 @@ impl WindowManager {
     }
 
     /// Get console window handle (for external use)
+    #[allow(dead_code)]
     pub fn get_console_handle(&self) -> HWND {
         self.console_window
     }
 
     /// Set window position and size
+    #[allow(dead_code)]
     pub fn set_window_position(&self, x: i32, y: i32, width: i32, height: i32) -> Result<(), Box<dyn Error>> {
         unsafe {
             SetWindowPos(
@@ -124,6 +128,7 @@ impl WindowManager {
     }
 
     /// Flash the window to get user attention without bringing it to front
+    #[allow(dead_code)]
     pub fn flash_window(&self) -> Result<(), Box<dyn Error>> {
         unsafe {
             let mut flash_info = FLASHWINFO {

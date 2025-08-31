@@ -86,8 +86,8 @@ impl Translator {
             println!("Text does not appear to be in {} language", config.source_language);
             
             // Hide terminal and restore previous window if needed
-            if config.show_terminal_on_translate {
-                self.hide_terminal_and_restore().await;
+            if config.show_terminal_on_translate && config.auto_hide_terminal_seconds > 0 {
+                self.hide_terminal_and_restore(config.auto_hide_terminal_seconds).await;
             }
             
             return Ok(());
@@ -100,7 +100,7 @@ impl Translator {
                 if let Err(e) = self.clipboard.set_text(&translated_text) {
                     println!("Translation clipboard write error: {}", e);
                 } else {
-                    println!("Translation copied to clipboard successfully!");
+                    // println!("Translation copied to clipboard successfully!");
                 }
             }
             Err(e) => {
@@ -108,18 +108,18 @@ impl Translator {
             }
         }
 
-        // Hide terminal and restore previous window after a short delay if configured
-        if config.show_terminal_on_translate {
-            self.hide_terminal_and_restore().await;
+        // Hide terminal and restore previous window after delay if configured
+        if config.show_terminal_on_translate && config.auto_hide_terminal_seconds > 0 {
+            self.hide_terminal_and_restore(config.auto_hide_terminal_seconds).await;
         }
 
         Ok(())
     }
 
     /// Hide terminal window and restore previously active window
-    async fn hide_terminal_and_restore(&self) {
-        // Wait a bit to let user see the result
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+    async fn hide_terminal_and_restore(&self, delay_seconds: u64) {
+        // Wait specified time to let user see the result
+        tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
         
         // Restore the previously active window
         if let Ok(stored) = self.stored_foreground_window.lock() {
