@@ -985,6 +985,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tagent"
+version = "0.4.0"
+dependencies = [
+ "clipboard-win",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+ "windows",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1084,19 +1097,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
-]
-
-[[package]]
-name = "translator"
-version = "0.3.0"
-dependencies = [
- "clipboard-win",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "url",
- "windows",
 ]
 
 [[package]]
