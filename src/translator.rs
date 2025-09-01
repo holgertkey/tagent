@@ -74,12 +74,12 @@ impl Translator {
         
         // Show source language info
         let source_display = if source_code == "auto" {
-            "Auto-detect".to_string()
+            "Auto".to_string()
         } else {
             config.source_language.clone()
         };
         
-        println!("Source ({}): {}", source_display, original_text);
+        println!("[{}]: {}", source_display, original_text);
 
         // If source language is not Auto, check if text matches expected language
         if source_code != "auto" && !self.is_expected_language(&original_text, &source_code) {
@@ -95,7 +95,7 @@ impl Translator {
 
         match self.translate_text(&original_text, &source_code, &target_code).await {
             Ok(translated_text) => {
-                println!("Target ({}): {}", config.target_language, translated_text);
+                println!("[{}]: {}", config.target_language, translated_text);
                 
                 if let Err(e) = self.clipboard.set_text(&translated_text) {
                     println!("Translation clipboard write error: {}", e);

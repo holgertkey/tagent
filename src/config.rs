@@ -84,7 +84,8 @@ r#"; Text Translator Configuration File
 
 [Translation]
 ; Source language for translation
-; Supported values: Auto, English, Russian, Spanish, French, German, etc.
+; Supported values: Auto, English, Russian, Spanish, French, German, Chinese,
+; Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
 ; Use "Auto" for automatic language detection
 SourceLanguage = {}
 
@@ -215,7 +216,7 @@ AutoHideTerminalSeconds = {}
 
         if should_reload {
             self.load_config()?;
-            println!("Configuration reloaded from file");
+            // println!("Configuration reloaded from file");
             return Ok(true);
         }
 
