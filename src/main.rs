@@ -16,18 +16,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         SetConsoleCtrlHandler(None, true)?;
     }
     
-    println!("=== Text Translator ===");
+    println!("=== Text Translator v0.5.0 ===");
     println!("Usage instructions:");
     println!("1. Select text in any application");
     println!("2. Quickly double-press Ctrl (Ctrl + Ctrl)");
-    println!("3. Text will automatically copy, translate, and save to clipboard");
-    println!("4. Paste translation where needed with Ctrl+V");
+    println!("3. For single words: dictionary entry will be shown and copied to clipboard");
+    println!("4. For phrases: translation will be copied to clipboard");
+    println!("5. Paste result where needed with Ctrl+V");
     println!();
     println!("Configuration:");
     println!("- Edit 'translator.conf' to change translation languages");
+    println!("- Set 'ShowDictionary = false' to disable dictionary lookup for single words");
     println!("- Set 'ShowTerminalOnTranslate = true' to show terminal window during translation");
     println!("- Set 'AutoHideTerminalSeconds = N' to auto-hide terminal after N seconds (0 = no auto-hide)");
     println!("- Changes take effect immediately (no restart required)");
+    println!();
+    println!("New in v0.5.0:");
+    println!("- Dictionary lookup for single words (definitions, part of speech, examples)");
+    println!("- Compact format for easy reading");
+    println!("- Automatic fallback to translation if dictionary lookup fails");
     println!();
     println!("Program runs in background. Press Ctrl+Q to exit.");
     println!("=====================================");

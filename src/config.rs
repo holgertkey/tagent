@@ -11,6 +11,7 @@ pub struct Config {
     pub target_language: String,
     pub show_terminal_on_translate: bool,
     pub auto_hide_terminal_seconds: u64,
+    pub show_dictionary: bool,
 }
 
 impl Default for Config {
@@ -20,6 +21,7 @@ impl Default for Config {
             target_language: "Russian".to_string(),
             show_terminal_on_translate: false,
             auto_hide_terminal_seconds: 0, // 0 means don't auto-hide
+            show_dictionary: true, // Dictionary feature enabled by default
         }
     }
 }
@@ -93,6 +95,13 @@ SourceLanguage = {}
 ; Supported values: Russian, English, Spanish, French, German, etc.
 TargetLanguage = {}
 
+[Dictionary]
+; Show dictionary entry for single words instead of simple translation
+; Set to true to show detailed word information (definitions, part of speech, examples)
+; Set to false to always use simple translation
+; This feature works best with English words
+ShowDictionary = {}
+
 [Interface]
 ; Show terminal window on top when translating
 ; Set to true to show terminal window during translation
@@ -107,6 +116,7 @@ AutoHideTerminalSeconds = {}
 "#,
             config.source_language, 
             config.target_language,
+            config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds
         )
@@ -129,6 +139,12 @@ AutoHideTerminalSeconds = {}
             .cloned()
             .unwrap_or_else(|| "Russian".to_string());
 
+        let show_dictionary = parsed_config
+            .get("Dictionary")
+            .and_then(|section| section.get("ShowDictionary"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true); // Default to true if not specified
+
         let show_terminal = parsed_config
             .get("Interface")
             .and_then(|section| section.get("ShowTerminalOnTranslate"))
@@ -144,6 +160,7 @@ AutoHideTerminalSeconds = {}
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
+            show_dictionary,
             show_terminal_on_translate: show_terminal,
             auto_hide_terminal_seconds: auto_hide_seconds,
         };
