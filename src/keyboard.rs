@@ -102,6 +102,7 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                 
                 if ctrl_pressed {
                     if let Some(should_exit) = SHOULD_EXIT.get() {
+                        println!();
                         println!("Ctrl+Q pressed - exiting program...");
                         should_exit.store(true, Ordering::SeqCst);
                         PostQuitMessage(0);
