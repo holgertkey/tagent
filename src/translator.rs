@@ -178,42 +178,48 @@ impl Translator {
     /// Format dictionary response into compact format
     fn format_dictionary_response(&self, _word: &str, json: &Value) -> Result<String, Box<dyn Error>> {
         let mut result = Vec::new();
-        
-        // Main translation
-        if let Some(translations) = json.get(0).and_then(|v| v.as_array()) {
-            let mut main_translation = String::new();
-            for translation in translations {
-                if let Some(text) = translation.get(0).and_then(|v| v.as_str()) {
-                    main_translation.push_str(text);
-                }
-            }
-            if !main_translation.is_empty() {
-                result.push(format!("→ {}", main_translation));
-            }
-        }
 
-        // Dictionary definitions (part of speech + definitions)
+        // Dictionary definitions (at index 1)
         if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
             for entry in dict_data {
                 if let Some(entry_array) = entry.as_array() {
-                    if entry_array.len() >= 2 {
-                        // Part of speech
+                    if entry_array.len() >= 3 {
+                        // Part of speech (first element)
                         if let Some(pos) = entry_array.get(0).and_then(|v| v.as_str()) {
-                            let pos_short = self.shorten_part_of_speech(pos);
+                            let pos_full = self.get_full_part_of_speech(pos);
                             
-                            // Definitions
-                            if let Some(definitions) = entry_array.get(1).and_then(|v| v.as_array()) {
-                                let mut def_list = Vec::new();
-                                for (i, def) in definitions.iter().take(3).enumerate() { // Limit to 3 definitions per part of speech
+                            // Detailed definitions with synonyms (third element)
+                            if let Some(detailed_defs) = entry_array.get(2).and_then(|v| v.as_array()) {
+                                let mut def_lines = Vec::new();
+                                
+                                for def in detailed_defs.iter().take(5) { // Limit to 5 definitions per part of speech
                                     if let Some(def_array) = def.as_array() {
-                                        if let Some(definition) = def_array.get(0).and_then(|v| v.as_str()) {
-                                            def_list.push(format!("{}. {}", i + 1, definition));
+                                        if def_array.len() >= 2 {
+                                            if let Some(definition) = def_array.get(0).and_then(|v| v.as_str()) {
+                                                // Get synonyms if available
+                                                if let Some(synonyms) = def_array.get(1).and_then(|v| v.as_array()) {
+                                                    let syn_list: Vec<String> = synonyms
+                                                        .iter()
+                                                        .filter_map(|s| s.as_str())
+                                                        .map(|s| s.to_string())
+                                                        .collect();
+                                                    
+                                                    if !syn_list.is_empty() {
+                                                        def_lines.push(format!("  {} [{}]", definition, syn_list.join(", ")));
+                                                    } else {
+                                                        def_lines.push(format!("  {}", definition));
+                                                    }
+                                                } else {
+                                                    def_lines.push(format!("  {}", definition));
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 
-                                if !def_list.is_empty() {
-                                    result.push(format!("[{}] {}", pos_short, def_list.join("; ")));
+                                if !def_lines.is_empty() {
+                                    result.push(pos_full.to_string());
+                                    result.extend(def_lines);
                                 }
                             }
                         }
@@ -222,43 +228,28 @@ impl Translator {
             }
         }
 
-        // Examples (if available)
-        if let Some(examples) = json.get(2).and_then(|v| v.as_array()) {
-            let mut example_list = Vec::new();
-            for example in examples.iter().take(2) { // Limit to 2 examples
-                if let Some(example_array) = example.as_array() {
-                    if let Some(example_text) = example_array.get(0).and_then(|v| v.as_str()) {
-                        example_list.push(example_text);
-                    }
-                }
-            }
-            
-            if !example_list.is_empty() {
-                result.push(format!("Ex: {}", example_list.join("; ")));
-            }
-        }
-
         if result.is_empty() {
-            return Err("No dictionary information found".into());
+            return Err("Limited dictionary information available".into());
         }
 
         Ok(result.join("\n"))
     }
 
-    /// Shorten part of speech labels for compact display
-    fn shorten_part_of_speech(&self, pos: &str) -> &'static str {
+    /// Get full part of speech name in Russian
+    fn get_full_part_of_speech(&self, pos: &str) -> &'static str {
         match pos.to_lowercase().as_str() {
-            "noun" => "n",
-            "verb" => "v", 
-            "adjective" => "adj",
-            "adverb" => "adv",
-            "preposition" => "prep",
-            "conjunction" => "conj",
-            "pronoun" => "pron",
-            "interjection" => "interj",
-            "article" => "art",
-            "determiner" => "det",
-            _ => "misc"
+            "noun" | "существительное" => "Существительное",
+            "verb" | "глагол" => "Глагол", 
+            "adjective" | "прилагательное" => "Прилагательное",
+            "adverb" | "наречие" => "Наречие",
+            "preposition" | "предлог" => "Предлог",
+            "conjunction" | "союз" => "Союз",
+            "pronoun" | "местоимение" => "Местоимение",
+            "interjection" | "междометие" => "Междометие",
+            "article" | "артикль" => "Артикль",
+            "determiner" | "определитель" => "Определитель",
+            "participle" | "причастие" => "Причастие",
+            _ => "Прочее"
         }
     }
 
