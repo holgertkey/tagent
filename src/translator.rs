@@ -172,11 +172,11 @@ impl Translator {
         let body = response.text().await?;
         let json: Value = serde_json::from_str(&body)?;
         
-        self.format_dictionary_response(word, &json)
+        self.format_dictionary_response(word, &json, to)
     }
 
     /// Format dictionary response into compact format
-    fn format_dictionary_response(&self, _word: &str, json: &Value) -> Result<String, Box<dyn Error>> {
+    fn format_dictionary_response(&self, _word: &str, json: &Value, target_lang: &str) -> Result<String, Box<dyn Error>> {
         let mut result = Vec::new();
 
         // Dictionary definitions (at index 1)
@@ -186,7 +186,7 @@ impl Translator {
                     if entry_array.len() >= 3 {
                         // Part of speech (first element)
                         if let Some(pos) = entry_array.get(0).and_then(|v| v.as_str()) {
-                            let pos_full = self.get_full_part_of_speech(pos);
+                            let pos_full = self.get_full_part_of_speech(pos, target_lang);
                             
                             // Detailed definitions with synonyms (third element)
                             if let Some(detailed_defs) = entry_array.get(2).and_then(|v| v.as_array()) {
@@ -235,21 +235,124 @@ impl Translator {
         Ok(result.join("\n"))
     }
 
-    /// Get full part of speech name in Russian
-    fn get_full_part_of_speech(&self, pos: &str) -> &'static str {
-        match pos.to_lowercase().as_str() {
-            "noun" | "существительное" => "Существительное",
-            "verb" | "глагол" => "Глагол", 
-            "adjective" | "прилагательное" => "Прилагательное",
-            "adverb" | "наречие" => "Наречие",
-            "preposition" | "предлог" => "Предлог",
-            "conjunction" | "союз" => "Союз",
-            "pronoun" | "местоимение" => "Местоимение",
-            "interjection" | "междометие" => "Междометие",
-            "article" | "артикль" => "Артикль",
-            "determiner" | "определитель" => "Определитель",
-            "participle" | "причастие" => "Причастие",
-            _ => "Прочее"
+    /// Get full part of speech name in target language
+    fn get_full_part_of_speech(&self, pos: &str, target_lang: &str) -> &'static str {
+        let pos_lower = pos.to_lowercase();
+        
+        match target_lang {
+            "ru" => match pos_lower.as_str() {
+                "noun" | "существительное" => "Существительное",
+                "verb" | "глагол" => "Глагол",
+                "adjective" | "прилагательное" => "Прилагательное", 
+                "adverb" | "наречие" => "Наречие",
+                "preposition" | "предлог" => "Предлог",
+                "conjunction" | "союз" => "Союз",
+                "pronoun" | "местоимение" => "Местоимение",
+                "interjection" | "междометие" => "Междометие",
+                "article" | "артикль" => "Артикль",
+                "determiner" | "определитель" => "Определитель",
+                "participle" | "причастие" => "Причастие",
+                _ => "Прочее"
+            },
+            "es" => match pos_lower.as_str() {
+                "noun" => "Sustantivo",
+                "verb" => "Verbo", 
+                "adjective" => "Adjetivo",
+                "adverb" => "Adverbio",
+                "preposition" => "Preposición",
+                "conjunction" => "Conjunción",
+                "pronoun" => "Pronombre",
+                "interjection" => "Interjección",
+                "article" => "Artículo",
+                "determiner" => "Determinante",
+                "participle" => "Participio",
+                _ => "Otro"
+            },
+            "fr" => match pos_lower.as_str() {
+                "noun" => "Nom",
+                "verb" => "Verbe",
+                "adjective" => "Adjectif", 
+                "adverb" => "Adverbe",
+                "preposition" => "Préposition",
+                "conjunction" => "Conjonction",
+                "pronoun" => "Pronom",
+                "interjection" => "Interjection",
+                "article" => "Article",
+                "determiner" => "Déterminant",
+                "participle" => "Participe",
+                _ => "Autre"
+            },
+            "de" => match pos_lower.as_str() {
+                "noun" => "Substantiv",
+                "verb" => "Verb",
+                "adjective" => "Adjektiv",
+                "adverb" => "Adverb", 
+                "preposition" => "Präposition",
+                "conjunction" => "Konjunktion",
+                "pronoun" => "Pronomen",
+                "interjection" => "Interjektion",
+                "article" => "Artikel",
+                "determiner" => "Bestimmungswort",
+                "participle" => "Partizip",
+                _ => "Andere"
+            },
+            "it" => match pos_lower.as_str() {
+                "noun" => "Sostantivo",
+                "verb" => "Verbo",
+                "adjective" => "Aggettivo",
+                "adverb" => "Avverbio",
+                "preposition" => "Preposizione", 
+                "conjunction" => "Congiunzione",
+                "pronoun" => "Pronome",
+                "interjection" => "Interiezione",
+                "article" => "Articolo",
+                "determiner" => "Determinante",
+                "participle" => "Participio",
+                _ => "Altro"
+            },
+            "pt" => match pos_lower.as_str() {
+                "noun" => "Substantivo",
+                "verb" => "Verbo",
+                "adjective" => "Adjetivo",
+                "adverb" => "Advérbio",
+                "preposition" => "Preposição",
+                "conjunction" => "Conjunção", 
+                "pronoun" => "Pronome",
+                "interjection" => "Interjeição",
+                "article" => "Artigo",
+                "determiner" => "Determinante",
+                "participle" => "Particípio",
+                _ => "Outro"
+            },
+            "zh" => match pos_lower.as_str() {
+                "noun" => "名词",
+                "verb" => "动词",
+                "adjective" => "形容词",
+                "adverb" => "副词",
+                "preposition" => "介词",
+                "conjunction" => "连词",
+                "pronoun" => "代词",
+                "interjection" => "感叹词",
+                "article" => "冠词", 
+                "determiner" => "限定词",
+                "participle" => "分词",
+                _ => "其他"
+            },
+            // English fallback (default)
+            _ => match pos_lower.as_str() {
+                "noun" | "существительное" => "Noun",
+                "verb" | "глагол" => "Verb",
+                "adjective" | "прилагательное" => "Adjective",
+                "adverb" | "наречие" => "Adverb",
+                "preposition" | "предлог" => "Preposition",
+                "conjunction" | "союз" => "Conjunction", 
+                "pronoun" | "местоимение" => "Pronoun",
+                "interjection" | "междометие" => "Interjection",
+                "article" | "артикль" => "Article",
+                "determiner" | "определитель" => "Determiner",
+                "participle" | "причастие" => "Participle",
+                _ => "Other"
+            }
         }
     }
 
