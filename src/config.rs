@@ -12,6 +12,7 @@ pub struct Config {
     pub show_terminal_on_translate: bool,
     pub auto_hide_terminal_seconds: u64,
     pub show_dictionary: bool,
+    pub copy_to_clipboard: bool, // New field
 }
 
 impl Default for Config {
@@ -22,6 +23,7 @@ impl Default for Config {
             show_terminal_on_translate: true,  // Show terminal by default
             auto_hide_terminal_seconds: 5,    // Auto-hide after 5 seconds by default
             show_dictionary: true, // Dictionary feature enabled by default
+            copy_to_clipboard: true, // Copy to clipboard enabled by default
         }
     }
 }
@@ -95,6 +97,12 @@ SourceLanguage = {}
 ; Supported values: Russian, English, Spanish, French, German, etc.
 TargetLanguage = {}
 
+; Automatically copy translation result to clipboard
+; Set to true to automatically copy result to clipboard after translation
+; Set to false to display result only (without copying to clipboard)
+; When enabled, you can paste the result anywhere with Ctrl+V
+CopyToClipboard = {}
+
 [Dictionary]
 ; Show dictionary entry for single words instead of simple translation
 ; Set to true to show detailed word information (definitions, part of speech, examples)
@@ -116,6 +124,7 @@ AutoHideTerminalSeconds = {}
 "#,
             config.source_language, 
             config.target_language,
+            config.copy_to_clipboard,
             config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds
@@ -139,6 +148,12 @@ AutoHideTerminalSeconds = {}
             .cloned()
             .unwrap_or_else(|| "Russian".to_string());
 
+        let copy_to_clipboard = parsed_config
+            .get("Translation")
+            .and_then(|section| section.get("CopyToClipboard"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true); // Default to true if not specified
+
         let show_dictionary = parsed_config
             .get("Dictionary")
             .and_then(|section| section.get("ShowDictionary"))
@@ -160,6 +175,7 @@ AutoHideTerminalSeconds = {}
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
+            copy_to_clipboard,
             show_dictionary,
             show_terminal_on_translate: show_terminal,
             auto_hide_terminal_seconds: auto_hide_seconds,

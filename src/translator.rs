@@ -36,6 +36,15 @@ impl Translator {
         !cleaned.is_empty() && !cleaned.contains(' ') && cleaned.chars().all(|c| c.is_alphabetic() || c == '-' || c == '\'')
     }
 
+    /// Copy text to clipboard if enabled in config
+    fn copy_to_clipboard_if_enabled(&self, text: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+        if config.copy_to_clipboard {
+            self.clipboard.set_text(text)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Main function for translating text from clipboard
     pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error>> {
         // Check if config file was modified and reload if necessary
@@ -86,8 +95,10 @@ impl Translator {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
                     
-                    if let Err(e) = self.clipboard.set_text(&dictionary_info) {
+                    if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
+                    } else if config.copy_to_clipboard {
+                        println!("Dictionary entry copied to clipboard");
                     }
                 }
                 Err(e) => {
@@ -132,8 +143,10 @@ impl Translator {
             Ok(translated_text) => {
                 println!("[{}]: {}", config.target_language, translated_text);
                 
-                if let Err(e) = self.clipboard.set_text(&translated_text) {
+                if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
+                } else if config.copy_to_clipboard {
+                    println!("Translation copied to clipboard");
                 }
             }
             Err(e) => {
