@@ -89,7 +89,6 @@ impl Translator {
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(&original_text) {
             println!("\n--- Dictionary lookup ---");
-            println!("[Word]: {}", original_text);
             
             match self.get_dictionary_entry(&original_text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
