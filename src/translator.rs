@@ -97,7 +97,7 @@ impl Translator {
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
                     } else if config.copy_to_clipboard {
-                        println!("Dictionary entry copied to clipboard");
+                        // println!("Dictionary entry copied to clipboard");
                     }
                 }
                 Err(e) => {
@@ -145,7 +145,7 @@ impl Translator {
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
                 } else if config.copy_to_clipboard {
-                    println!("Translation copied to clipboard");
+                    // println!("Translation copied to clipboard");
                 }
             }
             Err(e) => {
