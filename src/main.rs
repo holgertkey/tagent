@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("- Compact format for easy reading");
     println!("- Automatic fallback to translation if dictionary lookup fails");
     println!();
-    println!("Program runs in background. Press Ctrl+Q to exit.");
+    println!("Program runs in background. Press F12 to exit.");
     println!("=====================================");
     
     let should_exit = Arc::new(AtomicBool::new(false));
