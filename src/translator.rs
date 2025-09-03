@@ -18,7 +18,7 @@ pub struct Translator {
 
 impl Translator {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let config_manager = Arc::new(ConfigManager::new("translator.conf")?);
+        let config_manager = Arc::new(ConfigManager::new("tagent.conf")?);
         let window_manager = Arc::new(WindowManager::new()?);
         
         Ok(Self {

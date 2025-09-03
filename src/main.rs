@@ -25,8 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("5. Paste result where needed with Ctrl+V");
     println!();
     println!("Configuration:");
-    println!("- Edit 'translator.conf' to change translation languages");
+    println!("- Edit 'tagent.conf' to change translation languages");
     println!("- Set 'ShowDictionary = false' to disable dictionary lookup for single words");
+    println!("- Set 'CopyToClipboard = false' to display results only (without copying to clipboard)");
     println!("- Set 'ShowTerminalOnTranslate = true' to show terminal window during translation");
     println!("- Set 'AutoHideTerminalSeconds = N' to auto-hide terminal after N seconds (0 = no auto-hide)");
     println!("- Changes take effect immediately (no restart required)");
@@ -35,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("- Dictionary lookup for single words (definitions, part of speech, examples)");
     println!("- Compact format for easy reading");
     println!("- Automatic fallback to translation if dictionary lookup fails");
+    println!("- Optional clipboard copying (can be disabled in config)");
     println!();
     println!("Program runs in background. Press F12 to exit.");
     println!("=====================================");
