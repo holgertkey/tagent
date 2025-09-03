@@ -19,8 +19,8 @@ impl Default for Config {
         Self {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
-            show_terminal_on_translate: false,
-            auto_hide_terminal_seconds: 0, // 0 means don't auto-hide
+            show_terminal_on_translate: true,  // Show terminal by default
+            auto_hide_terminal_seconds: 5,    // Auto-hide after 5 seconds by default
             show_dictionary: true, // Dictionary feature enabled by default
         }
     }
@@ -80,7 +80,7 @@ r#"; Text Translator Configuration File
 ; 1. Select text in any application
 ; 2. Double-press Ctrl key quickly (Ctrl + Ctrl)
 ; 3. Translation will be copied to clipboard
-; 4. Press Ctrl+Q to exit the program
+; 4. Press F12 to exit the program
 ;
 ; Configuration changes take effect immediately (no restart required)
 
@@ -149,13 +149,13 @@ AutoHideTerminalSeconds = {}
             .get("Interface")
             .and_then(|section| section.get("ShowTerminalOnTranslate"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+            .unwrap_or(true); // Changed default to true
 
         let auto_hide_seconds = parsed_config
             .get("Interface")
             .and_then(|section| section.get("AutoHideTerminalSeconds"))
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
+            .unwrap_or(5); // Changed default to 5 seconds
 
         let new_config = Config {
             source_language: source_lang,
