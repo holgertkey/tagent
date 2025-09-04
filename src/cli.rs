@@ -21,7 +21,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("=== Text Translator v0.6.0 - CLI Mode ===");
+        println!("Text Translator v0.6.0 - CLI Mode");
         println!();
         println!("USAGE:");
         println!("  tagent [OPTIONS] <text>");
@@ -122,8 +122,8 @@ impl CliHandler {
     /// Main translation function for CLI
     pub async fn translate_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
         if text.trim().is_empty() {
-            println!("Error: Empty text provided");
-            println!("Usage: tagent <text to translate>");
+            eprintln!("Error: Empty text provided");
+            eprintln!("Usage: tagent <text to translate>");
             return Ok(());
         }
 
@@ -132,11 +132,11 @@ impl CliHandler {
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
 
-        println!("=== Text Translator v0.6.0 - CLI Mode ===");
+        // println!("=== Text Translator v0.6.0 - CLI Mode ===");
         
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(text) {
-            println!("\n--- Dictionary lookup ---");
+            // println!("\n--- Dictionary lookup ---");
             
             match self.translator.get_dictionary_entry_public(text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
@@ -146,7 +146,7 @@ impl CliHandler {
                         if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
                             println!("Clipboard error: {}", e);
                         } else {
-                            println!("\nDictionary entry copied to clipboard");
+                            // println!("\nDictionary entry copied to clipboard");
                         }
                     }
                     return Ok(());
@@ -164,38 +164,17 @@ impl CliHandler {
 
     /// Perform translation and display results
     async fn perform_translation(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
-        println!("\n--- Translation ---");
-        
-        // Show source language info
-        let source_display = if source_code == "auto" {
-            "Auto".to_string()
-        } else {
-            config.source_language.clone()
-        };
-        
-        println!("From [{}]: {}", source_display, text);
-
-        // Language validation warning for non-auto languages
-        if source_code != "auto" && !self.is_expected_language(text, source_code) {
-            println!("⚠️  Warning: Text may not be in {} language", config.source_language);
-            println!("   Consider setting SourceLanguage = Auto in tagent.conf");
-        }
-
         // Perform translation
         match self.translator.translate_text_public(text, source_code, target_code).await {
             Ok(translated_text) => {
-                println!("To   [{}]: {}", config.target_language, translated_text);
+                println!("{}", translated_text);
                 
                 if config.copy_to_clipboard {
-                    if let Err(e) = self.copy_to_clipboard(&translated_text) {
-                        println!("Clipboard error: {}", e);
-                    } else {
-                        println!("\nTranslation copied to clipboard");
-                    }
+                    self.copy_to_clipboard(&translated_text).ok(); // Ignore clipboard errors
                 }
             }
             Err(e) => {
-                println!("Translation failed: {}", e);
+                eprintln!("Translation failed: {}", e);
                 return Err(e);
             }
         }
@@ -215,44 +194,5 @@ impl CliHandler {
         use crate::clipboard::ClipboardManager;
         let clipboard = ClipboardManager::new();
         clipboard.set_text(text)
-    }
-
-    /// Check if text appears to be in expected language
-    fn is_expected_language(&self, text: &str, language_code: &str) -> bool {
-        match language_code {
-            "en" => self.is_english_text(text),
-            "ru" => self.is_russian_text(text),
-            _ => true, // For other languages, assume it's correct
-        }
-    }
-
-    /// Check if text contains English characters
-    fn is_english_text(&self, text: &str) -> bool {
-        let english_chars = text.chars().filter(|c| c.is_alphabetic()).count();
-        let total_chars = text.chars().filter(|c| !c.is_whitespace()).count();
-        
-        if total_chars == 0 {
-            return false;
-        }
-
-        let english_ratio = english_chars as f64 / total_chars as f64;
-        english_ratio > 0.7 && text.chars().any(|c| c.is_ascii_alphabetic())
-    }
-
-    /// Check if text contains Russian characters
-    fn is_russian_text(&self, text: &str) -> bool {
-        let russian_chars = text
-            .chars()
-            .filter(|c| c.is_alphabetic() && (*c as u32) >= 0x0400 && (*c as u32) <= 0x04FF)
-            .count();
-        
-        let total_chars = text.chars().filter(|c| !c.is_whitespace()).count();
-        
-        if total_chars == 0 {
-            return false;
-        }
-
-        let russian_ratio = russian_chars as f64 / total_chars as f64;
-        russian_ratio > 0.3
     }
 }

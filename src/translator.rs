@@ -156,9 +156,9 @@ impl Translator {
         Ok(())
     }
 
-    /// Public method for CLI to get dictionary entry
+    /// Public method for CLI to get dictionary entry (without headers)
     pub async fn get_dictionary_entry_public(&self, word: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
-        self.get_dictionary_entry(word, from, to).await
+        self.get_dictionary_entry_cli(word, from, to).await
     }
 
     /// Public method for CLI to translate text
@@ -166,7 +166,38 @@ impl Translator {
         self.translate_text_internal(text, from, to).await
     }
 
-    /// Get dictionary entry for a single word
+    /// Get dictionary entry for CLI (clean output)
+    async fn get_dictionary_entry_cli(&self, word: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
+        let url = "https://translate.googleapis.com/translate_a/single";
+        
+        let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
+        let from_param = if from == "auto" { "auto" } else { from };
+        
+        // Request additional data types for dictionary information
+        let params = format!(
+            "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
+            from_param, to, encoded_word
+        );
+
+        let full_url = format!("{}{}", url, params);
+
+        let response = self.client
+            .get(&full_url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        let body = response.text().await?;
+        let json: Value = serde_json::from_str(&body)?;
+        
+        self.format_dictionary_response_cli(word, &json, to)
+    }
+
+    /// Get dictionary entry for a single word (GUI mode)
     async fn get_dictionary_entry(&self, word: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
         let url = "https://translate.googleapis.com/translate_a/single";
         
@@ -197,11 +228,73 @@ impl Translator {
         self.format_dictionary_response(word, &json, to)
     }
 
-    /// Format dictionary response into compact format
+    /// Format dictionary response for CLI (clean output without headers)
+    fn format_dictionary_response_cli(&self, _word: &str, json: &Value, target_lang: &str) -> Result<String, Box<dyn Error>> {
+        let mut result = Vec::new();
+        
+        // Don't add [Word]: header for CLI
+
+        // Dictionary definitions (at index 1)
+        if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
+            for entry in dict_data {
+                if let Some(entry_array) = entry.as_array() {
+                    if entry_array.len() >= 3 {
+                        // Part of speech (first element)
+                        if let Some(pos) = entry_array.get(0).and_then(|v| v.as_str()) {
+                            let pos_full = self.get_full_part_of_speech(pos, target_lang);
+                            
+                            // Detailed definitions with synonyms (third element)
+                            if let Some(detailed_defs) = entry_array.get(2).and_then(|v| v.as_array()) {
+                                let mut def_lines = Vec::new();
+                                
+                                for def in detailed_defs.iter().take(5) { // Limit to 5 definitions per part of speech
+                                    if let Some(def_array) = def.as_array() {
+                                        if def_array.len() >= 2 {
+                                            if let Some(definition) = def_array.get(0).and_then(|v| v.as_str()) {
+                                                // Get synonyms if available
+                                                if let Some(synonyms) = def_array.get(1).and_then(|v| v.as_array()) {
+                                                    let syn_list: Vec<String> = synonyms
+                                                        .iter()
+                                                        .filter_map(|s| s.as_str())
+                                                        .map(|s| s.to_string())
+                                                        .collect();
+                                                    
+                                                    if !syn_list.is_empty() {
+                                                        def_lines.push(format!("  {} [{}]", definition, syn_list.join(", ")));
+                                                    } else {
+                                                        def_lines.push(format!("  {}", definition));
+                                                    }
+                                                } else {
+                                                    def_lines.push(format!("  {}", definition));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if !def_lines.is_empty() {
+                                    result.push(pos_full.to_string());
+                                    result.extend(def_lines);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if result.is_empty() {
+            return Err("Limited dictionary information available".into());
+        }
+
+        Ok(result.join("\n"))
+    }
+
+    /// Format dictionary response into compact format (GUI mode)
     fn format_dictionary_response(&self, word: &str, json: &Value, target_lang: &str) -> Result<String, Box<dyn Error>> {
         let mut result = Vec::new();
         
-        // Add the original word at the beginning
+        // Add the original word at the beginning for GUI mode
         result.push(format!("[Word]: {}", word));
 
         // Dictionary definitions (at index 1)
