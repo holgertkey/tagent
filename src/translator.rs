@@ -138,7 +138,7 @@ impl Translator {
             return Ok(());
         }
 
-        match self.translate_text(text, source_code, target_code).await {
+        match self.translate_text_internal(text, source_code, target_code).await {
             Ok(translated_text) => {
                 println!("[{}]: {}", config.target_language, translated_text);
                 
@@ -154,6 +154,16 @@ impl Translator {
         }
         
         Ok(())
+    }
+
+    /// Public method for CLI to get dictionary entry
+    pub async fn get_dictionary_entry_public(&self, word: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
+        self.get_dictionary_entry(word, from, to).await
+    }
+
+    /// Public method for CLI to translate text
+    pub async fn translate_text_public(&self, text: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
+        self.translate_text_internal(text, from, to).await
     }
 
     /// Get dictionary entry for a single word
@@ -436,7 +446,7 @@ impl Translator {
     }
 
     /// Translate text using Google Translate API
-    async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
+    async fn translate_text_internal(&self, text: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
         let url = "https://translate.googleapis.com/translate_a/single";
         
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();

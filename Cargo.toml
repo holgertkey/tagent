@@ -1,7 +1,9 @@
 [package]
 name = "tagent"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
+description = "Text translator with GUI hotkeys and CLI interface"
+authors = ["Your Name"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
