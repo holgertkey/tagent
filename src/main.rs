@@ -106,9 +106,10 @@ fn show_unified_mode_info() {
     println!();
     println!("2. Interactive Mode (Current Terminal):");
     println!("   - Type text directly below and press Enter");
-    println!("   - Commands: help, config, clear, exit");
+    println!("   - Commands: -h (help), -c (config), -v (version), -q (quit)");
     println!("   - Single words show dictionary entries");
     println!("   - Phrases show translations");
+    println!("   - Any text not recognized as command will be translated");
     println!();
     println!("CLI Mode:");
     println!("Run: tagent <text to translate>");
@@ -128,10 +129,10 @@ fn show_unified_mode_info() {
     println!("New in v0.7.0:");
     println!("- Unified interface: Both hotkeys AND interactive prompt work simultaneously");
     println!("- Type text below for translation or use Ctrl+Ctrl hotkeys");
-    println!("- Interactive commands available in terminal");
-    println!("- Prompt persistence: Interactive mode continues after hotkey usage");
+    println!("- Interactive commands: -h, -c, -v, -q and full names");
+    println!("- Smart command recognition: commands vs translation text");
     println!();
-    println!("Exit: Press F12 or type 'exit' below");
+    println!("Exit: Type 'exit', 'quit', 'q', or '-q' below");
     println!("=====================================");
     println!();
 }

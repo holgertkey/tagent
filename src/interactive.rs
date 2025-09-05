@@ -1,6 +1,7 @@
 // interactive.rs
 use crate::translator::Translator;
 use crate::config::ConfigManager;
+use crate::cli::CliHandler;
 use std::error::Error;
 use std::sync::Arc;
 use std::io::{self, Write};
@@ -35,7 +36,7 @@ impl InteractiveMode {
         println!();
         
         loop {
-            // Check if we should exit (F12 was pressed)
+            // Check if we should exit
             if self.should_exit.load(Ordering::Relaxed) {
                 println!("\nExiting program...");
                 break;
@@ -50,45 +51,21 @@ impl InteractiveMode {
             print!("[{}]: ", config.source_language);
             io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
             
-            // Read user input - this will block until user enters something
+            // Read user input
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(_) => {
                     let text = input.trim();
                     
-                    // Handle special commands
-                    match text {
-                        "" => continue, // Skip empty lines
-                        "exit" | "quit" | "q" => {
-                            println!("Goodbye!");
-                            self.should_exit.store(true, Ordering::SeqCst);
-                            break;
-                        }
-                        "help" | "?" => {
-                            self.show_unified_help();
-                            continue;
-                        }
-                        "config" => {
-                            if let Err(e) = self.show_current_config() {
-                                println!("Config error: {}", e);
-                            }
-                            continue;
-                        }
-                        "clear" | "cls" => {
-                            // Clear screen (Windows)
-                            print!("\x1B[2J\x1B[1;1H");
-                            io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
-                            println!("=== Text Translator v0.7.0 ===");
-                            println!("Interactive and Hotkey modes active");
-                            println!("Type 'help' for commands or just type text to translate");
-                            println!();
-                            continue;
-                        }
-                        _ => {
-                            // Translate the text
-                            if let Err(e) = self.translate_interactive_text(text, &source_code, &target_code, &config).await {
-                                println!("Translation error: {}", e);
-                            }
+                    // Handle commands first
+                    if self.handle_command(text).await? {
+                        continue; // Command was handled, continue to next iteration
+                    }
+                    
+                    // If not a command, try to translate the text
+                    if !text.is_empty() {
+                        if let Err(e) = self.translate_interactive_text(text, &source_code, &target_code, &config).await {
+                            println!("Translation error: {}", e);
                         }
                     }
                 }
@@ -100,6 +77,53 @@ impl InteractiveMode {
         }
         
         Ok(())
+    }
+
+    /// Handle interactive commands, returns true if command was processed
+    async fn handle_command(&self, text: &str) -> Result<bool, String> {
+        match text {
+            "" => return Ok(true), // Skip empty lines
+            
+            // Exit commands
+            "exit" | "quit" | "q" | "-q" => {
+                println!("Goodbye!");
+                self.should_exit.store(true, Ordering::SeqCst);
+                return Ok(true);
+            }
+            
+            // Help commands
+            "help" | "?" | "-h" | "--help" => {
+                self.show_unified_help();
+                return Ok(true);
+            }
+            
+            // Config commands
+            "config" | "-c" | "--config" => {
+                if let Err(e) = self.show_current_config() {
+                    println!("Config error: {}", e);
+                }
+                return Ok(true);
+            }
+            
+            // Version commands
+            "version" | "-v" | "--version" => {
+                CliHandler::show_version();
+                return Ok(true);
+            }
+            
+            // Clear screen commands
+            "clear" | "cls" => {
+                print!("\x1B[2J\x1B[1;1H");
+                io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
+                println!("=== Text Translator v0.7.0 ===");
+                println!("Interactive and Hotkey modes active");
+                println!("Type 'help' for commands or just type text to translate");
+                println!();
+                return Ok(true);
+            }
+            
+            _ => return Ok(false), // Not a command, should be translated
+        }
     }
 
     /// Show unified mode help
@@ -122,20 +146,21 @@ impl InteractiveMode {
         println!("   - Prompt returns automatically after hotkey translation");
         println!();
         println!("Interactive Commands:");
-        println!("  help, ?       - Show this help");
-        println!("  config        - Show current translation settings");
-        println!("  clear, cls    - Clear screen");
-        println!("  exit, quit, q - Exit program");
+        println!("  help, ?, -h, --help     - Show this help");
+        println!("  config, -c, --config    - Show current translation settings");
+        println!("  version, -v, --version  - Show version information");
+        println!("  clear, cls              - Clear screen");
+        println!("  exit, quit, q, -q       - Exit program");
         println!();
-        println!("Features:");
-        println!("- Same translation engine for both methods");
+        println!("Translation:");
+        println!("- Any text not recognized as a command will be translated");
+        println!("- Same translation engine for both interactive and hotkey methods");
         println!("- Uses current configuration from tagent.conf");
         println!("- Configuration changes take effect immediately");
         println!("- Results copied to clipboard (if enabled in config)");
         println!();
         println!("Exit Program:");
-        println!("- Type 'exit' in this terminal, OR");
-        println!("- Press F12 anywhere in Windows");
+        println!("- Type 'exit', 'quit', 'q', or '-q' in this terminal");
         println!("===============================================");
         println!();
     }

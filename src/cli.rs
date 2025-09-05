@@ -31,8 +31,9 @@ impl CliHandler {
         println!();
         println!("OPTIONS:");
         println!("  -h, --help     Show this help message");
-        println!("  --version      Show version information");
-        println!("  --config       Show current configuration");
+        println!("  -c, --config   Show current configuration");
+        println!("  -v, --version  Show version information");
+        println!("  -q             Exit (for interactive mode compatibility)");
         println!();
         println!("EXAMPLES:");
         println!("  tagent hello");
@@ -43,6 +44,7 @@ impl CliHandler {
         println!("  Unified Mode (default): Run without arguments");
         println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl)");
         println!("    - Both methods work simultaneously");
+        println!("    - Interactive commands: -h, -c, -v, -q, help, config, etc.");
         println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
         println!();
         println!("CONFIGURATION:");
@@ -63,6 +65,7 @@ impl CliHandler {
         println!("Features:");
         println!("- Unified mode: Interactive prompt + GUI hotkeys work simultaneously");
         println!("- CLI mode: Direct text translation from command line");
+        println!("- Interactive commands: -h, -c, -v, -q and full names");
         println!("- Dictionary lookup for single words");
         println!("- Multi-language support");
         println!("- Configurable settings");
@@ -110,12 +113,17 @@ impl CliHandler {
                 Self::show_help();
                 Ok(())
             },
-            "--version" => {
+            "-c" | "--config" => {
+                self.show_config()
+            },
+            "-v" | "--version" => {
                 Self::show_version();
                 Ok(())
             },
-            "--config" => {
-                self.show_config()
+            "-q" => {
+                // Exit command for CLI mode (though it doesn't make much sense here)
+                println!("Exiting...");
+                Ok(())
             },
             _ => {
                 // Treat as text to translate

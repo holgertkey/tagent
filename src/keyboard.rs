@@ -94,18 +94,6 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
         
         if w_param.0 as u32 == WM_KEYDOWN {
-            // Check for F12 key to exit
-            if kbd_struct.vkCode == VK_F12.0 as u32 {
-                if let Some(should_exit) = SHOULD_EXIT.get() {
-                    println!();
-                    println!("F12 pressed - exiting program...");
-                    should_exit.store(true, Ordering::SeqCst);
-                    PostQuitMessage(0);
-                }
-                // Return 1 to suppress further processing of this key press
-                return LRESULT(1);
-            }
-            
             // Handle Ctrl key for double-press detection
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
                 if let (Some(translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) = 
