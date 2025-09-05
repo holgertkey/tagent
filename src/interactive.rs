@@ -21,9 +21,10 @@ impl InteractiveMode {
         })
     }
 
-    /// Start interactive translation mode
+    /// Start interactive translation mode (unified with GUI)
     pub async fn start(&self) -> Result<(), Box<dyn Error>> {
-        self.show_interactive_banner();
+        println!("Ready for interactive translation and hotkey commands...");
+        println!();
         
         loop {
             // Check if config file was modified and reload if necessary
@@ -49,7 +50,7 @@ impl InteractiveMode {
                             break;
                         }
                         "help" | "?" => {
-                            self.show_interactive_help();
+                            self.show_unified_help();
                             continue;
                         }
                         "config" => {
@@ -60,7 +61,10 @@ impl InteractiveMode {
                             // Clear screen (Windows)
                             print!("\x1B[2J\x1B[1;1H");
                             io::stdout().flush()?;
-                            self.show_interactive_banner();
+                            println!("=== Text Translator v0.7.0 ===");
+                            println!("Interactive and Hotkey modes active");
+                            println!("Type 'help' for commands or just type text to translate");
+                            println!();
                             continue;
                         }
                         _ => {
@@ -79,53 +83,44 @@ impl InteractiveMode {
         Ok(())
     }
 
-    /// Show interactive mode banner
-    fn show_interactive_banner(&self) {
-        println!("=== Text Translator v0.7.0 - Interactive Mode ===");
+    /// Show unified mode help
+    fn show_unified_help(&self) {
         println!();
-        println!("Type text to translate, or use these commands:");
-        println!("  help    - Show help");
-        println!("  config  - Show current configuration");
-        println!("  clear   - Clear screen");
-        println!("  exit    - Exit interactive mode");
+        println!("=== Text Translator v0.7.0 - Unified Mode Help ===");
         println!();
-        println!("Note: GUI hotkeys (Ctrl+Ctrl) still work in background");
-        println!("Press F12 to exit program completely");
-        println!("=================================================");
+        println!("Translation Methods:");
         println!();
-    }
-
-    /// Show interactive help
-    fn show_interactive_help(&self) {
+        println!("1. Interactive (This Terminal):");
+        println!("   - Type text and press Enter to translate");
+        println!("   - Single words show dictionary entries (if enabled)");
+        println!("   - Phrases show translations");
+        println!("   - Empty line = skip/continue");
         println!();
-        println!("=== Interactive Mode Help ===");
+        println!("2. Hotkeys (Any Application):");
+        println!("   - Select text anywhere in Windows");
+        println!("   - Double-press Ctrl quickly (Ctrl + Ctrl)");
+        println!("   - Result copied to clipboard automatically");
         println!();
-        println!("Commands:");
-        println!("  help, ?     - Show this help");
-        println!("  config      - Show current translation settings");
-        println!("  clear, cls  - Clear screen");
-        println!("  exit, quit, q - Exit interactive mode");
-        println!();
-        println!("Translation:");
-        println!("- Type any text and press Enter to translate");
-        println!("- Single words will show dictionary entries (if enabled)");
-        println!("- Phrases will be translated normally");
-        println!("- Empty line - skip (continue)");
+        println!("Interactive Commands:");
+        println!("  help, ?       - Show this help");
+        println!("  config        - Show current translation settings");
+        println!("  clear, cls    - Clear screen");
+        println!("  exit, quit, q - Exit program");
         println!();
         println!("Features:");
-        println!("- Same translation engine as GUI mode");
+        println!("- Same translation engine for both methods");
         println!("- Uses current configuration from tagent.conf");
         println!("- Configuration changes take effect immediately");
-        println!("- Results are copied to clipboard (if enabled in config)");
+        println!("- Results copied to clipboard (if enabled in config)");
         println!();
-        println!("Background:");
-        println!("- GUI hotkeys (Ctrl+Ctrl) still work while in interactive mode");
-        println!("- Press F12 anywhere to exit program completely");
-        println!("===============================");
+        println!("Exit Program:");
+        println!("- Type 'exit' in this terminal, OR");
+        println!("- Press F12 anywhere in Windows");
+        println!("===============================================");
         println!();
     }
 
-    /// Show current configuration in interactive mode
+    /// Show current configuration in unified mode
     fn show_current_config(&self) -> Result<(), Box<dyn Error>> {
         self.config_manager.check_and_reload()?;
         let config = self.config_manager.get_config();
@@ -137,6 +132,15 @@ impl InteractiveMode {
         println!("Target Language: {} ({})", config.target_language, target_code);
         println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
         println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
+        println!("Show Terminal on Hotkey: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
+        println!("Auto-hide Terminal: {} seconds", 
+            if config.auto_hide_terminal_seconds == 0 { 
+                "Disabled".to_string() 
+            } else { 
+                config.auto_hide_terminal_seconds.to_string() 
+            }
+        );
+        println!("Config file: tagent.conf");
         println!("============================");
         println!();
         

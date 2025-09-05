@@ -30,21 +30,20 @@ impl CliHandler {
         println!("  <text>    Text to translate (use quotes for phrases with spaces)");
         println!();
         println!("OPTIONS:");
-        println!("  -h, --help         Show this help message");
-        println!("  -i, --interactive  Start interactive translation mode");
-        println!("  --version          Show version information");
-        println!("  --config           Show current configuration");
+        println!("  -h, --help     Show this help message");
+        println!("  --version      Show version information");
+        println!("  --config       Show current configuration");
         println!();
         println!("EXAMPLES:");
         println!("  tagent hello");
         println!("  tagent \"Hello world\"");
         println!("  tagent \"This is a longer phrase to translate\"");
-        println!("  tagent -i          (start interactive mode)");
         println!();
         println!("MODES:");
-        println!("  GUI Mode (default): Run without arguments to start with hotkeys");
-        println!("  Interactive Mode:   Run 'tagent -i' for prompt-based translation");
-        println!("  CLI Mode:           Run 'tagent <text>' for one-time translation");
+        println!("  Unified Mode (default): Run without arguments");
+        println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl)");
+        println!("    - Both methods work simultaneously");
+        println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
         println!();
         println!("CONFIGURATION:");
         println!("  Edit 'tagent.conf' to change translation settings:");
@@ -53,17 +52,16 @@ impl CliHandler {
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!();
-        println!("Run without arguments to start GUI mode with hotkeys.");
+        println!("Run without arguments to start unified mode with interactive prompt and hotkeys.");
     }
 
     /// Show version information
     pub fn show_version() {
         println!("Text Translator v0.7.0");
-        println!("Translation tool with GUI hotkeys, CLI interface, and interactive mode");
+        println!("Translation tool with unified GUI/Interactive interface and CLI mode");
         println!();
         println!("Features:");
-        println!("- GUI mode: Double-press Ctrl to translate selected text");
-        println!("- Interactive mode: Type text directly in terminal (tagent -i)");
+        println!("- Unified mode: Interactive prompt + GUI hotkeys work simultaneously");
         println!("- CLI mode: Direct text translation from command line");
         println!("- Dictionary lookup for single words");
         println!("- Multi-language support");
@@ -112,12 +110,6 @@ impl CliHandler {
                 Self::show_help();
                 Ok(())
             },
-            "-i" | "--interactive" => {
-                // This should be handled in main.rs, but just in case
-                println!("Interactive mode should be started from main program");
-                println!("Use: tagent -i");
-                Ok(())
-            },
             "--version" => {
                 Self::show_version();
                 Ok(())
@@ -146,12 +138,8 @@ impl CliHandler {
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
 
-        // println!("=== Text Translator v0.7.0 - CLI Mode ===");
-        
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(text) {
-            // println!("\n--- Dictionary lookup ---");
-            
             match self.translator.get_dictionary_entry_public(text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
@@ -159,8 +147,6 @@ impl CliHandler {
                     if config.copy_to_clipboard {
                         if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
                             println!("Clipboard error: {}", e);
-                        } else {
-                            // println!("\nDictionary entry copied to clipboard");
                         }
                     }
                     return Ok(());

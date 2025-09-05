@@ -2,7 +2,7 @@
 name = "tagent"
 version = "0.7.0"
 edition = "2021"
-description = "Text translator with GUI hotkeys, CLI interface, and interactive mode"
+description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Your Name"]
 
 [dependencies]

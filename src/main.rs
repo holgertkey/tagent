@@ -27,19 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Если есть аргументы, работаем в режиме CLI
     if args.len() > 1 {
-        // Check for interactive mode flag
-        if args.len() == 2 && (args[1] == "-i" || args[1] == "--interactive") {
-            let interactive_mode = match InteractiveMode::new() {
-                Ok(mode) => mode,
-                Err(e) => {
-                    println!("Failed to initialize interactive mode: {}", e);
-                    return Err(e);
-                }
-            };
-            
-            return interactive_mode.start().await;
-        }
-        
         let cli_handler = match CliHandler::new() {
             Ok(handler) => handler,
             Err(e) => {
@@ -51,8 +38,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return cli_handler.process_args(args).await;
     }
     
-    // Если аргументов нет, работаем в обычном режиме с горячими клавишами
-    show_gui_mode_info();
+    // Если аргументов нет, запускаем объединенный GUI+Interactive режим
+    show_unified_mode_info();
     
     let should_exit = Arc::new(AtomicBool::new(false));
     
@@ -64,33 +51,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     
-    let mut keyboard_hook = KeyboardHook::new(translator, should_exit)?;
+    // Создаем интерактивный режим
+    let interactive_mode = match InteractiveMode::new() {
+        Ok(mode) => mode,
+        Err(e) => {
+            println!("Failed to initialize interactive mode: {}", e);
+            return Err(e);
+        }
+    };
     
-    keyboard_hook.start().await?;
+    // Запускаем горячие клавиши в отдельном потоке
+    let should_exit_clone = should_exit.clone();
+    let mut keyboard_hook = KeyboardHook::new(translator, should_exit_clone)?;
+    
+    let keyboard_task = tokio::spawn(async move {
+        if let Err(e) = keyboard_hook.start().await {
+            println!("Keyboard hook error: {}", e);
+        }
+    });
+    
+    // Запускаем интерактивный режим в основном потоке
+    let interactive_task = tokio::spawn(async move {
+        if let Err(e) = interactive_mode.start().await {
+            println!("Interactive mode error: {}", e);
+        }
+    });
+    
+    // Ждем завершения любой из задач
+    tokio::select! {
+        _ = keyboard_task => {
+            println!("Keyboard hook terminated");
+        }
+        _ = interactive_task => {
+            println!("Interactive mode terminated");
+        }
+    }
+    
+    // Устанавливаем флаг выхода для завершения всех потоков
+    should_exit.store(true, std::sync::atomic::Ordering::SeqCst);
+    
     println!("Program terminated successfully.");
-    
     Ok(())
 }
 
-/// Display GUI mode information
-fn show_gui_mode_info() {
+/// Display unified mode information
+fn show_unified_mode_info() {
     println!("=== Text Translator v0.7.0 ===");
     println!();
-    println!("Usage instructions:");
+    println!("Translation Methods:");
     println!();
-    println!("GUI Mode (Current):");
-    println!("1. Select text in any application");
-    println!("2. Quickly double-press Ctrl (Ctrl + Ctrl)");
-    println!("3. For single words: dictionary entry will be shown and copied to clipboard");
-    println!("4. For phrases: translation will be copied to clipboard");
-    println!("5. Paste result where needed with Ctrl+V");
+    println!("1. Hotkeys (GUI Mode):");
+    println!("   - Select text in any application");
+    println!("   - Quickly double-press Ctrl (Ctrl + Ctrl)");
+    println!("   - Translation will be copied to clipboard");
     println!();
-    println!("Interactive Mode:");
-    println!("Run: tagent -i  or  tagent --interactive");
-    println!("- Type text directly in terminal for translation");
-    println!("- Same features as GUI mode, but with prompt interface");
-    println!("- GUI hotkeys still work in background");
-    println!("- Type 'help' for interactive commands");
+    println!("2. Interactive Mode (Current Terminal):");
+    println!("   - Type text directly below and press Enter");
+    println!("   - Commands: help, config, clear, exit");
+    println!("   - Single words show dictionary entries");
+    println!("   - Phrases show translations");
     println!();
     println!("CLI Mode:");
     println!("Run: tagent <text to translate>");
@@ -103,28 +122,16 @@ fn show_gui_mode_info() {
     println!();
     println!("Configuration:");
     println!("- Edit 'tagent.conf' to change translation languages");
-    println!("- Set 'ShowDictionary = false' to disable dictionary lookup for single words");
-    println!("- Set 'CopyToClipboard = false' to display results only (without copying to clipboard)");
-    println!("- Set 'ShowTerminalOnTranslate = true' to show terminal window during translation");
-    println!("- Set 'AutoHideTerminalSeconds = N' to auto-hide terminal after N seconds (0 = no auto-hide)");
+    println!("- Set 'ShowDictionary = false' to disable dictionary lookup");
+    println!("- Set 'CopyToClipboard = false' to display results only");
     println!("- Changes take effect immediately (no restart required)");
     println!();
     println!("New in v0.7.0:");
-    println!("- Interactive mode: Type text directly in terminal for translation");
-    println!("- Run 'tagent -i' to start interactive prompt mode");
-    println!("- Interactive commands: help, config, clear, exit");
-    println!("- GUI hotkeys remain active in interactive mode");
+    println!("- Unified interface: Both hotkeys AND interactive prompt work simultaneously");
+    println!("- Type text below for translation or use Ctrl+Ctrl hotkeys");
+    println!("- Interactive commands available in terminal");
     println!();
-    println!("Features from v0.6.0:");
-    println!("- Command-line interface for direct text translation");
-    println!("- Enhanced help system with --help, --config, --version options");
-    println!();
-    println!("Features from v0.5.0:");
-    println!("- Dictionary lookup for single words (definitions, part of speech, examples)");
-    println!("- Compact format for easy reading");
-    println!("- Automatic fallback to translation if dictionary lookup fails");
-    println!("- Optional clipboard copying (can be disabled in config)");
-    println!();
-    println!("Program runs in background. Press F12 to exit.");
+    println!("Exit: Press F12 or type 'exit' below");
     println!("=====================================");
+    println!();
 }
