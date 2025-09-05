@@ -1,8 +1,8 @@
 [package]
 name = "tagent"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
-description = "Text translator with GUI hotkeys and CLI interface"
+description = "Text translator with GUI hotkeys, CLI interface, and interactive mode"
 authors = ["Your Name"]
 
 [dependencies]

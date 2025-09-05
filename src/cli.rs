@@ -21,7 +21,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("Text Translator v0.6.0 - CLI Mode");
+        println!("Text Translator v0.7.0 - CLI Mode");
         println!();
         println!("USAGE:");
         println!("  tagent [OPTIONS] <text>");
@@ -30,14 +30,21 @@ impl CliHandler {
         println!("  <text>    Text to translate (use quotes for phrases with spaces)");
         println!();
         println!("OPTIONS:");
-        println!("  -h, --help     Show this help message");
-        println!("  --version      Show version information");
-        println!("  --config       Show current configuration");
+        println!("  -h, --help         Show this help message");
+        println!("  -i, --interactive  Start interactive translation mode");
+        println!("  --version          Show version information");
+        println!("  --config           Show current configuration");
         println!();
         println!("EXAMPLES:");
         println!("  tagent hello");
         println!("  tagent \"Hello world\"");
         println!("  tagent \"This is a longer phrase to translate\"");
+        println!("  tagent -i          (start interactive mode)");
+        println!();
+        println!("MODES:");
+        println!("  GUI Mode (default): Run without arguments to start with hotkeys");
+        println!("  Interactive Mode:   Run 'tagent -i' for prompt-based translation");
+        println!("  CLI Mode:           Run 'tagent <text>' for one-time translation");
         println!();
         println!("CONFIGURATION:");
         println!("  Edit 'tagent.conf' to change translation settings:");
@@ -51,11 +58,12 @@ impl CliHandler {
 
     /// Show version information
     pub fn show_version() {
-        println!("Text Translator v0.6.0");
-        println!("Translation tool with GUI hotkeys and CLI interface");
+        println!("Text Translator v0.7.0");
+        println!("Translation tool with GUI hotkeys, CLI interface, and interactive mode");
         println!();
         println!("Features:");
         println!("- GUI mode: Double-press Ctrl to translate selected text");
+        println!("- Interactive mode: Type text directly in terminal (tagent -i)");
         println!("- CLI mode: Direct text translation from command line");
         println!("- Dictionary lookup for single words");
         println!("- Multi-language support");
@@ -104,6 +112,12 @@ impl CliHandler {
                 Self::show_help();
                 Ok(())
             },
+            "-i" | "--interactive" => {
+                // This should be handled in main.rs, but just in case
+                println!("Interactive mode should be started from main program");
+                println!("Use: tagent -i");
+                Ok(())
+            },
             "--version" => {
                 Self::show_version();
                 Ok(())
@@ -132,7 +146,7 @@ impl CliHandler {
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
 
-        // println!("=== Text Translator v0.6.0 - CLI Mode ===");
+        // println!("=== Text Translator v0.7.0 - CLI Mode ===");
         
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(text) {

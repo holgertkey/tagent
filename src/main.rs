@@ -4,10 +4,12 @@ mod keyboard;
 mod config;
 mod window;
 mod cli;
+mod interactive;
 
 use translator::Translator;
 use keyboard::KeyboardHook;
 use cli::CliHandler;
+use interactive::InteractiveMode;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::env;
@@ -25,6 +27,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Если есть аргументы, работаем в режиме CLI
     if args.len() > 1 {
+        // Check for interactive mode flag
+        if args.len() == 2 && (args[1] == "-i" || args[1] == "--interactive") {
+            let interactive_mode = match InteractiveMode::new() {
+                Ok(mode) => mode,
+                Err(e) => {
+                    println!("Failed to initialize interactive mode: {}", e);
+                    return Err(e);
+                }
+            };
+            
+            return interactive_mode.start().await;
+        }
+        
         let cli_handler = match CliHandler::new() {
             Ok(handler) => handler,
             Err(e) => {
@@ -59,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Display GUI mode information
 fn show_gui_mode_info() {
-    println!("=== Text Translator v0.6.0 ===");
+    println!("=== Text Translator v0.7.0 ===");
     println!();
     println!("Usage instructions:");
     println!();
@@ -69,6 +84,13 @@ fn show_gui_mode_info() {
     println!("3. For single words: dictionary entry will be shown and copied to clipboard");
     println!("4. For phrases: translation will be copied to clipboard");
     println!("5. Paste result where needed with Ctrl+V");
+    println!();
+    println!("Interactive Mode:");
+    println!("Run: tagent -i  or  tagent --interactive");
+    println!("- Type text directly in terminal for translation");
+    println!("- Same features as GUI mode, but with prompt interface");
+    println!("- GUI hotkeys still work in background");
+    println!("- Type 'help' for interactive commands");
     println!();
     println!("CLI Mode:");
     println!("Run: tagent <text to translate>");
@@ -87,10 +109,14 @@ fn show_gui_mode_info() {
     println!("- Set 'AutoHideTerminalSeconds = N' to auto-hide terminal after N seconds (0 = no auto-hide)");
     println!("- Changes take effect immediately (no restart required)");
     println!();
-    println!("New in v0.6.0:");
+    println!("New in v0.7.0:");
+    println!("- Interactive mode: Type text directly in terminal for translation");
+    println!("- Run 'tagent -i' to start interactive prompt mode");
+    println!("- Interactive commands: help, config, clear, exit");
+    println!("- GUI hotkeys remain active in interactive mode");
+    println!();
+    println!("Features from v0.6.0:");
     println!("- Command-line interface for direct text translation");
-    println!("- Run 'tagent <text>' to translate text from command line");
-    println!("- Same features available in both GUI and CLI modes");
     println!("- Enhanced help system with --help, --config, --version options");
     println!();
     println!("Features from v0.5.0:");
