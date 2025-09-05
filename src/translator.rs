@@ -134,6 +134,7 @@ impl Translator {
         match self.translate_text_internal(text, source_code, target_code).await {
             Ok(translated_text) => {
                 println!("[{}]: {}", config.target_language, translated_text);
+                println!(); // Add empty line after translation result
                 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
