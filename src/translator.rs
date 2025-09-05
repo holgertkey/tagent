@@ -88,20 +88,15 @@ impl Translator {
         
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(&original_text) {
-            println!("\n--- Dictionary lookup ---");
-            
             match self.get_dictionary_entry(&original_text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
                     
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
-                    } else if config.copy_to_clipboard {
-                        // println!("Dictionary entry copied to clipboard");
                     }
                 }
-                Err(e) => {
-                    println!("Dictionary lookup error: {}", e);
+                Err(_) => {
                     // Fall back to regular translation
                     self.perform_translation(&original_text, &source_code, &target_code, &config).await?;
                 }
@@ -121,8 +116,6 @@ impl Translator {
 
     /// Perform regular translation
     async fn perform_translation(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
-        println!("\n--- Translating text ---");
-        
         // Show source language info
         let source_display = if source_code == "auto" {
             "Auto".to_string()
@@ -144,8 +137,6 @@ impl Translator {
                 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
-                } else if config.copy_to_clipboard {
-                    // println!("Translation copied to clipboard");
                 }
             }
             Err(e) => {
