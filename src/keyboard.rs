@@ -49,6 +49,7 @@ impl KeyboardHook {
             }
 
             println!("Keyboard hook set successfully");
+            println!();
 
             loop {
                 // Check if we should exit

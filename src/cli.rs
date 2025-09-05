@@ -69,6 +69,7 @@ impl CliHandler {
         println!("- Dictionary lookup for single words");
         println!("- Multi-language support");
         println!("- Configurable settings");
+        println!();
     }
 
     /// Show current configuration
