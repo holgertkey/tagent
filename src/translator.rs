@@ -91,6 +91,7 @@ impl Translator {
             match self.get_dictionary_entry(&original_text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
+                    println!(); // Add empty line after dictionary entry in GUI mode
                     
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
