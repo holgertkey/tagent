@@ -4,29 +4,43 @@ use crate::config::ConfigManager;
 use std::error::Error;
 use std::sync::Arc;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct InteractiveMode {
     translator: Translator,
     config_manager: Arc<ConfigManager>,
+    should_exit: Arc<AtomicBool>,
 }
 
 impl InteractiveMode {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let translator = Translator::new()?;
         let config_manager = Arc::new(ConfigManager::new("tagent.conf")?);
+        let should_exit = Arc::new(AtomicBool::new(false));
         
         Ok(Self {
             translator,
             config_manager,
+            should_exit,
         })
     }
 
+    pub fn get_exit_flag(&self) -> Arc<AtomicBool> {
+        self.should_exit.clone()
+    }
+
     /// Start interactive translation mode (unified with GUI)
-    pub async fn start(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn start(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         println!("Ready for interactive translation and hotkey commands...");
         println!();
         
         loop {
+            // Check if we should exit (F12 was pressed)
+            if self.should_exit.load(Ordering::Relaxed) {
+                println!("\nExiting program...");
+                break;
+            }
+
             // Check if config file was modified and reload if necessary
             self.config_manager.check_and_reload().ok();
             let config = self.config_manager.get_config();
@@ -34,9 +48,9 @@ impl InteractiveMode {
             
             // Show prompt
             print!("[{}]: ", config.source_language);
-            io::stdout().flush()?;
+            io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
             
-            // Read user input
+            // Read user input - this will block until user enters something
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(_) => {
@@ -47,6 +61,7 @@ impl InteractiveMode {
                         "" => continue, // Skip empty lines
                         "exit" | "quit" | "q" => {
                             println!("Goodbye!");
+                            self.should_exit.store(true, Ordering::SeqCst);
                             break;
                         }
                         "help" | "?" => {
@@ -54,13 +69,15 @@ impl InteractiveMode {
                             continue;
                         }
                         "config" => {
-                            self.show_current_config()?;
+                            if let Err(e) = self.show_current_config() {
+                                println!("Config error: {}", e);
+                            }
                             continue;
                         }
                         "clear" | "cls" => {
                             // Clear screen (Windows)
                             print!("\x1B[2J\x1B[1;1H");
-                            io::stdout().flush()?;
+                            io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
                             println!("=== Text Translator v0.7.0 ===");
                             println!("Interactive and Hotkey modes active");
                             println!("Type 'help' for commands or just type text to translate");
@@ -69,7 +86,9 @@ impl InteractiveMode {
                         }
                         _ => {
                             // Translate the text
-                            self.translate_interactive_text(text, &source_code, &target_code, &config).await?;
+                            if let Err(e) = self.translate_interactive_text(text, &source_code, &target_code, &config).await {
+                                println!("Translation error: {}", e);
+                            }
                         }
                     }
                 }
@@ -100,6 +119,7 @@ impl InteractiveMode {
         println!("   - Select text anywhere in Windows");
         println!("   - Double-press Ctrl quickly (Ctrl + Ctrl)");
         println!("   - Result copied to clipboard automatically");
+        println!("   - Prompt returns automatically after hotkey translation");
         println!();
         println!("Interactive Commands:");
         println!("  help, ?       - Show this help");
@@ -121,8 +141,8 @@ impl InteractiveMode {
     }
 
     /// Show current configuration in unified mode
-    fn show_current_config(&self) -> Result<(), Box<dyn Error>> {
-        self.config_manager.check_and_reload()?;
+    fn show_current_config(&self) -> Result<(), String> {
+        self.config_manager.check_and_reload().map_err(|e| format!("Config reload error: {}", e))?;
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
         
@@ -148,7 +168,7 @@ impl InteractiveMode {
     }
 
     /// Translate text in interactive mode
-    async fn translate_interactive_text(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+    async fn translate_interactive_text(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), String> {
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(text) {
             match self.translator.get_dictionary_entry_public(text, source_code, target_code).await {
@@ -180,7 +200,7 @@ impl InteractiveMode {
                 }
             }
             Err(e) => {
-                println!("Translation error: {}", e);
+                return Err(format!("Translation failed: {}", e));
             }
         }
         
@@ -196,9 +216,9 @@ impl InteractiveMode {
     }
 
     /// Copy text to clipboard
-    fn copy_to_clipboard(&self, text: &str) -> Result<(), Box<dyn Error>> {
+    fn copy_to_clipboard(&self, text: &str) -> Result<(), String> {
         use crate::clipboard::ClipboardManager;
         let clipboard = ClipboardManager::new();
-        clipboard.set_text(text)
+        clipboard.set_text(text).map_err(|e| format!("Clipboard error: {}", e))
     }
 }

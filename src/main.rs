@@ -10,8 +10,6 @@ use translator::Translator;
 use keyboard::KeyboardHook;
 use cli::CliHandler;
 use interactive::InteractiveMode;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::env;
 use windows::Win32::System::Console::{SetConsoleCtrlHandler};
 
@@ -41,8 +39,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Если аргументов нет, запускаем объединенный GUI+Interactive режим
     show_unified_mode_info();
     
-    let should_exit = Arc::new(AtomicBool::new(false));
-    
     let translator = match Translator::new() {
         Ok(t) => t,
         Err(e) => {
@@ -60,35 +56,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     
+    // Получаем общий флаг выхода
+    let should_exit = interactive_mode.get_exit_flag();
+    
     // Запускаем горячие клавиши в отдельном потоке
     let should_exit_clone = should_exit.clone();
-    let mut keyboard_hook = KeyboardHook::new(translator, should_exit_clone)?;
-    
     let keyboard_task = tokio::spawn(async move {
+        let mut keyboard_hook = match KeyboardHook::new(translator, should_exit_clone) {
+            Ok(hook) => hook,
+            Err(e) => {
+                println!("Failed to create keyboard hook: {}", e);
+                return;
+            }
+        };
+        
         if let Err(e) = keyboard_hook.start().await {
             println!("Keyboard hook error: {}", e);
         }
     });
     
     // Запускаем интерактивный режим в основном потоке
-    let interactive_task = tokio::spawn(async move {
-        if let Err(e) = interactive_mode.start().await {
-            println!("Interactive mode error: {}", e);
-        }
-    });
+    let interactive_result = interactive_mode.start().await;
     
-    // Ждем завершения любой из задач
-    tokio::select! {
-        _ = keyboard_task => {
-            println!("Keyboard hook terminated");
-        }
-        _ = interactive_task => {
-            println!("Interactive mode terminated");
-        }
-    }
-    
-    // Устанавливаем флаг выхода для завершения всех потоков
+    // Устанавливаем флаг выхода для завершения keyboard hook
     should_exit.store(true, std::sync::atomic::Ordering::SeqCst);
+    
+    // Ждем завершения keyboard task
+    let _ = keyboard_task.await;
+    
+    if let Err(e) = interactive_result {
+        println!("Interactive mode error: {}", e);
+    }
     
     println!("Program terminated successfully.");
     Ok(())
@@ -104,6 +102,7 @@ fn show_unified_mode_info() {
     println!("   - Select text in any application");
     println!("   - Quickly double-press Ctrl (Ctrl + Ctrl)");
     println!("   - Translation will be copied to clipboard");
+    println!("   - Prompt will automatically return after translation");
     println!();
     println!("2. Interactive Mode (Current Terminal):");
     println!("   - Type text directly below and press Enter");
@@ -130,6 +129,7 @@ fn show_unified_mode_info() {
     println!("- Unified interface: Both hotkeys AND interactive prompt work simultaneously");
     println!("- Type text below for translation or use Ctrl+Ctrl hotkeys");
     println!("- Interactive commands available in terminal");
+    println!("- Prompt persistence: Interactive mode continues after hotkey usage");
     println!();
     println!("Exit: Press F12 or type 'exit' below");
     println!("=====================================");
