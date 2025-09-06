@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::sync::Arc;
 use url::form_urlencoded;
+use std::io::{self, Write};
 
 #[derive(Clone)]
 pub struct Translator {
@@ -90,6 +91,9 @@ impl Translator {
         if config.show_dictionary && self.is_single_word(&original_text) {
             match self.get_dictionary_entry(&original_text, &source_code, &target_code).await {
                 Ok(dictionary_info) => {
+                    // Clear any existing prompt and print on new line
+                    print!("\r");
+                    io::stdout().flush().ok();
                     println!("{}", dictionary_info);
                     println!(); // Add empty line after dictionary entry in GUI mode
                     
@@ -117,6 +121,10 @@ impl Translator {
 
     /// Perform regular translation
     async fn perform_translation(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+        // Clear any existing prompt and move to new line
+        print!("\r");
+        io::stdout().flush().ok();
+        
         // Show source language info
         let source_display = if source_code == "auto" {
             "Auto".to_string()
