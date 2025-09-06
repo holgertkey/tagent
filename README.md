@@ -1,4 +1,4 @@
-# Text Translator v0.8.0
+# Tagent Text Translator v0.8.0
 
 A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
 
@@ -358,4 +358,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Text Translator v0.8.0** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.8.0** - Fast, reliable, and feature-rich translation tool for Windows.
