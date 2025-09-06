@@ -142,7 +142,7 @@ impl InteractiveMode {
             "clear" | "cls" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
-                println!("=== Text Translator v0.7.0 ===");
+                println!("=== Text Translator v0.8.0 ===");
                 println!("Interactive and Hotkey modes active");
                 println!("Type 'help' for commands or just type text to translate");
                 println!();

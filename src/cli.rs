@@ -49,7 +49,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("Text Translator v0.7.0 - CLI Mode");
+        println!("Text Translator v0.8.0 - CLI Mode");
         println!();
         println!("USAGE:");
         println!("  tagent [OPTIONS] <text>");

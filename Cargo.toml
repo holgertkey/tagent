@@ -3,7 +3,12 @@ name = "tagent"
 version = "0.8.0"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
-authors = ["Your Name"]
+authors = ["Holgert K"]
+license = "MIT"
+repository = "https://github.com/holgertkey/tagent-win"
+readme = "README.md"
+keywords = ["translation", "windows", "gui", "cli", "dictionary"]
+categories = ["command-line-utilities", "internationalization"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
