@@ -2,6 +2,9 @@ use crate::translator::Translator;
 use crate::config::ConfigManager;
 use std::error::Error;
 use std::sync::Arc;
+use chrono::{DateTime, Utc};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 pub struct CliHandler {
     translator: Translator,
@@ -17,6 +20,31 @@ impl CliHandler {
             translator,
             config_manager,
         })
+    }
+
+    /// Save translation history to file (CLI version)
+    fn save_translation_history(&self, original: &str, translated: &str, source_lang: &str, target_lang: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+        if !config.save_translation_history {
+            return Ok(()); // История отключена
+        }
+
+        let timestamp: DateTime<Utc> = Utc::now();
+        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
+        
+        let entry = format!(
+            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
+            formatted_time, source_lang, target_lang, original, translated
+        );
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&config.history_file)?;
+
+        file.write_all(entry.as_bytes())?;
+        file.flush()?; // Принудительно записываем на диск
+        
+        Ok(())
     }
 
     /// Display CLI help information
@@ -53,6 +81,8 @@ impl CliHandler {
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
         println!("  - CopyToClipboard: Copy results to clipboard");
+        println!("  - SaveTranslationHistory: Save all translations to file");
+        println!("  - HistoryFile: File path for translation history");
         println!();
         println!("Run without arguments to start unified mode with interactive prompt and hotkeys.");
     }
@@ -67,6 +97,7 @@ impl CliHandler {
         println!("- CLI mode: Direct text translation from command line");
         println!("- Interactive commands: -h, -c, -v, -q and full names");
         println!("- Dictionary lookup for single words");
+        println!("- Translation history logging");
         println!("- Multi-language support");
         println!("- Configurable settings");
         println!();
@@ -92,6 +123,8 @@ impl CliHandler {
                 config.auto_hide_terminal_seconds.to_string() 
             }
         );
+        println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
+        println!("History File: {}", config.history_file);
         println!();
         println!("Config file: tagent.conf");
         println!("Edit this file to change settings (changes take effect immediately)");
@@ -158,6 +191,12 @@ impl CliHandler {
                             println!("Clipboard error: {}", e);
                         }
                     }
+
+                    // Сохраняем словарную статью в историю
+                    if let Err(e) = self.save_translation_history(text, &dictionary_info, &source_code, &target_code, &config) {
+                        println!("History save error: {}", e);
+                    }
+
                     return Ok(());
                 }
                 Err(e) => {
@@ -180,6 +219,11 @@ impl CliHandler {
                 
                 if config.copy_to_clipboard {
                     self.copy_to_clipboard(&translated_text).ok(); // Ignore clipboard errors
+                }
+
+                // Сохраняем перевод в историю
+                if let Err(e) = self.save_translation_history(text, &translated_text, source_code, target_code, config) {
+                    println!("History save error: {}", e);
                 }
             }
             Err(e) => {

@@ -6,6 +6,8 @@ use std::error::Error;
 use std::sync::Arc;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use chrono::{DateTime, Utc};
+use std::fs::OpenOptions;
 
 pub struct InteractiveMode {
     translator: Translator,
@@ -28,6 +30,31 @@ impl InteractiveMode {
 
     pub fn get_exit_flag(&self) -> Arc<AtomicBool> {
         self.should_exit.clone()
+    }
+
+    /// Save translation history to file (Interactive version)
+    fn save_translation_history(&self, original: &str, translated: &str, source_lang: &str, target_lang: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+        if !config.save_translation_history {
+            return Ok(()); // История отключена
+        }
+
+        let timestamp: DateTime<Utc> = Utc::now();
+        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
+        
+        let entry = format!(
+            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
+            formatted_time, source_lang, target_lang, original, translated
+        );
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&config.history_file)?;
+
+        file.write_all(entry.as_bytes())?;
+        file.flush()?; // Принудительно записываем на диск
+        
+        Ok(())
     }
 
     /// Start interactive translation mode (unified with GUI)
@@ -158,6 +185,7 @@ impl InteractiveMode {
         println!("- Uses current configuration from tagent.conf");
         println!("- Configuration changes take effect immediately");
         println!("- Results copied to clipboard (if enabled in config)");
+        println!("- Translation history saved automatically (if enabled in config)");
         println!();
         println!("Exit Program:");
         println!("- Type 'exit', 'quit', 'q', or '-q' in this terminal");
@@ -185,6 +213,8 @@ impl InteractiveMode {
                 config.auto_hide_terminal_seconds.to_string() 
             }
         );
+        println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
+        println!("History File: {}", config.history_file);
         println!("Config file: tagent.conf");
         println!("============================");
         println!();
@@ -205,6 +235,11 @@ impl InteractiveMode {
                             println!("Clipboard error: {}", e);
                         }
                     }
+
+                    // Сохраняем словарную статью в историю
+                    if let Err(e) = self.save_translation_history(text, &dictionary_info, source_code, target_code, config) {
+                        println!("History save error: {}", e);
+                    }
                     
                     println!(); // Add spacing
                     return Ok(());
@@ -222,6 +257,11 @@ impl InteractiveMode {
                 
                 if config.copy_to_clipboard {
                     self.copy_to_clipboard(&translated_text).ok();
+                }
+
+                // Сохраняем перевод в историю
+                if let Err(e) = self.save_translation_history(text, &translated_text, source_code, target_code, config) {
+                    println!("History save error: {}", e);
                 }
             }
             Err(e) => {

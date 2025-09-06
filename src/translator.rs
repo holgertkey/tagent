@@ -7,6 +7,8 @@ use std::error::Error;
 use std::sync::Arc;
 use url::form_urlencoded;
 use std::io::{self, Write};
+use chrono::{DateTime, Utc};
+use std::fs::OpenOptions;
 
 #[derive(Clone)]
 pub struct Translator {
@@ -29,6 +31,31 @@ impl Translator {
             window_manager,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
         })
+    }
+
+    /// Save translation history to file in multi-line format
+    fn save_translation_history(&self, original: &str, translated: &str, source_lang: &str, target_lang: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+        if !config.save_translation_history {
+            return Ok(()); // История отключена
+        }
+
+        let timestamp: DateTime<Utc> = Utc::now();
+        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
+        
+        let entry = format!(
+            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
+            formatted_time, source_lang, target_lang, original, translated
+        );
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&config.history_file)?;
+
+        file.write_all(entry.as_bytes())?;
+        file.flush()?; // Принудительно записываем на диск
+        
+        Ok(())
     }
 
     /// Check if text is a single word (no spaces, punctuation at edges allowed)
@@ -100,6 +127,11 @@ impl Translator {
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
                     }
+
+                    // Сохраняем словарную статью в историю
+                    if let Err(e) = self.save_translation_history(&original_text, &dictionary_info, &source_code, &target_code, &config) {
+                        println!("History save error: {}", e);
+                    }
                 }
                 Err(_) => {
                     // Fall back to regular translation
@@ -147,6 +179,11 @@ impl Translator {
                 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
+                }
+
+                // Сохраняем перевод в историю
+                if let Err(e) = self.save_translation_history(text, &translated_text, source_code, target_code, config) {
+                    println!("History save error: {}", e);
                 }
             }
             Err(e) => {

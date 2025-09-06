@@ -12,7 +12,9 @@ pub struct Config {
     pub show_terminal_on_translate: bool,
     pub auto_hide_terminal_seconds: u64,
     pub show_dictionary: bool,
-    pub copy_to_clipboard: bool, // New field
+    pub copy_to_clipboard: bool,
+    pub save_translation_history: bool,    // Новое поле
+    pub history_file: String,              // Новое поле
 }
 
 impl Default for Config {
@@ -20,10 +22,12 @@ impl Default for Config {
         Self {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
-            show_terminal_on_translate: true,  // Show terminal by default
-            auto_hide_terminal_seconds: 5,    // Auto-hide after 5 seconds by default
-            show_dictionary: true, // Dictionary feature enabled by default
-            copy_to_clipboard: true, // Copy to clipboard enabled by default
+            show_terminal_on_translate: true,
+            auto_hide_terminal_seconds: 5,
+            show_dictionary: true,
+            copy_to_clipboard: true,
+            save_translation_history: false,        // По умолчанию отключено
+            history_file: "translation_history.txt".to_string(),  // Имя файла по умолчанию
         }
     }
 }
@@ -121,13 +125,28 @@ ShowTerminalOnTranslate = {}
 ; Set to any number > 0 to auto-hide after that many seconds
 ; Example: 3 = hide terminal after 3 seconds
 AutoHideTerminalSeconds = {}
+
+[History]
+; Save translation history to file
+; Set to true to save all translations with timestamps to a text file
+; Set to false to disable history logging
+; History includes original text, translation, language direction, and timestamp
+SaveTranslationHistory = {}
+
+; History file path
+; File where translation history will be saved
+; Path can be absolute or relative to the program directory
+; File will be created automatically if it doesn't exist
+HistoryFile = {}
 "#,
             config.source_language, 
             config.target_language,
             config.copy_to_clipboard,
             config.show_dictionary,
             config.show_terminal_on_translate,
-            config.auto_hide_terminal_seconds
+            config.auto_hide_terminal_seconds,
+            config.save_translation_history,
+            config.history_file
         )
     }
 
@@ -152,25 +171,38 @@ AutoHideTerminalSeconds = {}
             .get("Translation")
             .and_then(|section| section.get("CopyToClipboard"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true); // Default to true if not specified
+            .unwrap_or(true);
 
         let show_dictionary = parsed_config
             .get("Dictionary")
             .and_then(|section| section.get("ShowDictionary"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true); // Default to true if not specified
+            .unwrap_or(true);
 
         let show_terminal = parsed_config
             .get("Interface")
             .and_then(|section| section.get("ShowTerminalOnTranslate"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true); // Changed default to true
+            .unwrap_or(true);
 
         let auto_hide_seconds = parsed_config
             .get("Interface")
             .and_then(|section| section.get("AutoHideTerminalSeconds"))
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(5); // Changed default to 5 seconds
+            .unwrap_or(5);
+
+        // Новые поля для истории
+        let save_translation_history = parsed_config
+            .get("History")
+            .and_then(|section| section.get("SaveTranslationHistory"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false); // По умолчанию false
+
+        let history_file = parsed_config
+            .get("History")
+            .and_then(|section| section.get("HistoryFile"))
+            .cloned()
+            .unwrap_or_else(|| "translation_history.txt".to_string());
 
         let new_config = Config {
             source_language: source_lang,
@@ -179,6 +211,8 @@ AutoHideTerminalSeconds = {}
             show_dictionary,
             show_terminal_on_translate: show_terminal,
             auto_hide_terminal_seconds: auto_hide_seconds,
+            save_translation_history,
+            history_file,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -249,7 +283,6 @@ AutoHideTerminalSeconds = {}
 
         if should_reload {
             self.load_config()?;
-            // println!("Configuration reloaded from file");
             return Ok(true);
         }
 
