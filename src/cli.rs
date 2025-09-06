@@ -89,7 +89,7 @@ impl CliHandler {
 
     /// Show version information
     pub fn show_version() {
-        println!("Text Translator v0.7.0");
+        println!("Text Translator v0.8.0");
         println!("Translation tool with unified GUI/Interactive interface and CLI mode");
         println!();
         println!("Features:");

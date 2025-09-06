@@ -156,7 +156,7 @@ impl InteractiveMode {
     /// Show unified mode help
     fn show_unified_help(&self) {
         println!();
-        println!("=== Text Translator v0.7.0 - Unified Mode Help ===");
+        println!("=== Text Translator v0.8.0 - Unified Mode Help ===");
         println!();
         println!("Translation Methods:");
         println!();

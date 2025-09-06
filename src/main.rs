@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Display unified mode information
 fn show_unified_mode_info() {
-    println!("=== Text Translator v0.7.0 ===");
+    println!("=== Text Translator v0.8.0 ===");
     println!();
     println!("Translation Methods:");
     println!();
@@ -124,9 +124,16 @@ fn show_unified_mode_info() {
     println!("- Edit 'tagent.conf' to change translation languages");
     println!("- Set 'ShowDictionary = false' to disable dictionary lookup");
     println!("- Set 'CopyToClipboard = false' to display results only");
+    println!("- Set 'SaveTranslationHistory = true' to log all translations");
     println!("- Changes take effect immediately (no restart required)");
     println!();
-    println!("New in v0.7.0:");
+    println!("New in v0.8.0:");
+    println!("- Translation history logging with timestamps");
+    println!("- Configurable history file path");
+    println!("- Multi-line format for better readability");
+    println!("- History works in all modes (GUI, CLI, Interactive)");
+    println!();
+    println!("Previous Features:");
     println!("- Unified interface: Both hotkeys AND interactive prompt work simultaneously");
     println!("- Type text below for translation or use Ctrl+Ctrl hotkeys");
     println!("- Interactive commands: -h, -c, -v, -q and full names");
