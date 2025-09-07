@@ -34,8 +34,14 @@ A fast, lightweight text translation tool for Windows with unified GUI hotkeys, 
 - Windows 10/11
 - Internet connection for translations
 
+## Download
+
+**Latest Release**: [Download tagent.exe](https://github.com/holgertkey/tagent-win/releases/latest)
+
+All releases: https://github.com/holgertkey/tagent-win/releases
+
 ### Download & Setup
-1. Download the latest release from [Releases](releases)
+1. Download the latest release
 2. Extract to your preferred directory
 3. Run `tagent.exe` to start unified mode
 4. Configuration file `tagent.conf` will be created automatically
