@@ -65,7 +65,7 @@ impl InteractiveMode {
         loop {
             // Check if we should exit
             if self.should_exit.load(Ordering::Relaxed) {
-                println!("\nExiting program...");
+                // println!("\nExiting program...");
                 break;
             }
 
@@ -113,6 +113,7 @@ impl InteractiveMode {
             
             // Exit commands
             "exit" | "quit" | "q" | "-q" => {
+                println!();
                 println!("Goodbye!");
                 self.should_exit.store(true, Ordering::SeqCst);
                 return Ok(true);

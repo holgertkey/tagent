@@ -55,7 +55,7 @@ impl KeyboardHook {
                 // Check if we should exit
                 if let Some(should_exit) = SHOULD_EXIT.get() {
                     if should_exit.load(Ordering::Relaxed) {
-                        println!("Exit signal detected, breaking message loop");
+                        // println!("Exit signal detected, breaking message loop");
                         break;
                     }
                 }
@@ -82,7 +82,7 @@ impl KeyboardHook {
                 }
             }
 
-            println!("Unhooking keyboard hook");
+            // println!("Unhooking keyboard hook");
             UnhookWindowsHookEx(hook)?;
         }
 

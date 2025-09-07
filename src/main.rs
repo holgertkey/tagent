@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Interactive mode error: {}", e);
     }
     
-    println!("Program terminated successfully.");
+    // println!("Program terminated successfully.");
     Ok(())
 }
 
@@ -126,18 +126,6 @@ fn show_unified_mode_info() {
     println!("- Set 'CopyToClipboard = false' to display results only");
     println!("- Set 'SaveTranslationHistory = true' to log all translations");
     println!("- Changes take effect immediately (no restart required)");
-    println!();
-    println!("New in v0.8.0:");
-    println!("- Translation history logging with timestamps");
-    println!("- Configurable history file path");
-    println!("- Multi-line format for better readability");
-    println!("- History works in all modes (GUI, CLI, Interactive)");
-    println!();
-    println!("Previous Features:");
-    println!("- Unified interface: Both hotkeys AND interactive prompt work simultaneously");
-    println!("- Type text below for translation or use Ctrl+Ctrl hotkeys");
-    println!("- Interactive commands: -h, -c, -v, -q and full names");
-    println!("- Smart command recognition: commands vs translation text");
     println!();
     println!("Exit: Type 'exit', 'quit', 'q', or '-q' below");
     println!("=====================================");
