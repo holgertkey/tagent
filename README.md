@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.8.0
+# Tagent Text Translator v0.8.0+001
 
 A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
 
@@ -44,7 +44,7 @@ All releases: https://github.com/holgertkey/tagent-win/releases
 1. Download the latest release
 2. Extract to your preferred directory
 3. Run `tagent.exe` to start unified mode
-4. Configuration file `tagent.conf` will be created automatically
+4. Configuration file will be created automatically in `%APPDATA%\Tagent\tagent.conf`
 
 ## Quick Start
 
@@ -104,7 +104,7 @@ Goodbye!
 
 ## Configuration
 
-Configuration is stored in `tagent.conf` and reloads automatically:
+Configuration is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Users\<YourName>\AppData\Roaming\Tagent\tagent.conf`) and reloads automatically:
 
 ```ini
 [Translation]
@@ -132,8 +132,8 @@ AutoHideTerminalSeconds = 5
 ; Save all translations to file with timestamps
 SaveTranslationHistory = false
 
-; History file path (relative or absolute)
-HistoryFile = translation_history.txt
+; History file path (defaults to AppData\Tagent folder)
+HistoryFile = C:\Users\<YourName>\AppData\Roaming\Tagent\translation_history.txt
 ```
 
 ### Supported Languages
@@ -207,7 +207,7 @@ tagent --config
 ## Advanced Usage
 
 ### Custom Language Pairs
-Edit `tagent.conf`:
+Edit `%APPDATA%\Tagent\tagent.conf`:
 ```ini
 [Translation]
 SourceLanguage = English
@@ -248,9 +248,9 @@ ShowTerminalOnTranslate = false
 - Google Translate service may be temporarily unavailable
 
 **"Config reload error"**
-- Check `tagent.conf` file syntax
+- Check config file syntax at `%APPDATA%\Tagent\tagent.conf`
 - Ensure file is not locked by another application
-- Delete config file to regenerate default settings
+- Delete config file from AppData folder to regenerate default settings
 
 **Hotkeys not working**
 - Run as administrator if needed
@@ -314,19 +314,26 @@ clipboard-win = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 windows = { version = "0.52", features = [
     "Win32_Foundation",
-    "Win32_UI_Input_KeyboardAndMouse", 
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_LibraryLoader",
     "Win32_System_Console"
 ] }
 url = "2.4"
+dirs = "5.0"
 ```
 
 ## Version History
 
-### v0.8.0 (Current)
+### v0.8.0+001 (Current)
+- ✅ Configuration moved to AppData folder (`%APPDATA%\Tagent\`)
+- ✅ Automatic directory creation for config and history files
+- ✅ Better compliance with Windows application standards
+- ✅ Cleaner project structure (no config files in program directory)
+
+### v0.8.0
 - ✅ Translation history logging with timestamps
-- ✅ Configurable history file path  
+- ✅ Configurable history file path
 - ✅ Multi-line format for better readability
 - ✅ History works in all modes (GUI, CLI, Interactive)
 
@@ -364,4 +371,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.8.0** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.8.0+001** - Fast, reliable, and feature-rich translation tool for Windows.

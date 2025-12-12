@@ -36,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.8.0) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.8.0+001) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide Ctrl+Ctrl double-press to translate selected text
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
@@ -74,7 +74,7 @@ The application is structured into 7 main modules in `src/`:
 
 - **main.rs**: Entry point, orchestrates unified mode (GUI + Interactive) or CLI mode
 - **translator.rs**: Translation engine, Google Translate API integration, dictionary lookups
-- **config.rs**: Configuration management with live-reload (tagent.conf INI format)
+- **config.rs**: Configuration management with live-reload (INI format, stored in AppData)
 - **keyboard.rs**: Windows low-level keyboard hook for Ctrl+Ctrl detection
 - **interactive.rs**: Interactive terminal mode with command handling
 - **cli.rs**: Command-line argument processing and single-shot translations
@@ -133,13 +133,25 @@ This is implemented identically in translator.rs, interactive.rs, and cli.rs.
 
 ## Configuration System
 
-Configuration file `tagent.conf` uses INI format with sections:
+Configuration file is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Users\<Username>\AppData\Roaming\Tagent\tagent.conf`) and uses INI format with sections:
 - `[Translation]`: SourceLanguage, TargetLanguage, CopyToClipboard
 - `[Dictionary]`: ShowDictionary
 - `[Interface]`: ShowTerminalOnTranslate, AutoHideTerminalSeconds
 - `[History]`: SaveTranslationHistory, HistoryFile
 
 Language names (e.g., "Russian", "English") are mapped to Google Translate codes (ru, en) in `ConfigManager::language_to_code()`.
+
+### Configuration File Location
+
+The configuration and history files are stored in the Windows AppData folder:
+- **Config path**: `%APPDATA%\Tagent\tagent.conf`
+- **History path**: `%APPDATA%\Tagent\translation_history.txt` (by default)
+
+The `ConfigManager::get_default_config_path()` function uses the `dirs` crate to obtain the system's config directory and automatically creates the `Tagent` subfolder if it doesn't exist. This approach:
+- Follows Windows application standards
+- Keeps user data separate from the program installation
+- Survives program reinstallation
+- Allows per-user configuration in multi-user environments
 
 ## Development Notes
 
