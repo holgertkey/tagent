@@ -18,9 +18,10 @@ pub struct InteractiveMode {
 impl InteractiveMode {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let translator = Translator::new()?;
-        let config_manager = Arc::new(ConfigManager::new("tagent.conf")?);
+        let config_path = ConfigManager::get_default_config_path()?;
+        let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
         let should_exit = Arc::new(AtomicBool::new(false));
-        
+
         Ok(Self {
             translator,
             config_manager,
@@ -143,7 +144,7 @@ impl InteractiveMode {
             "clear" | "cls" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
-                println!("=== Text Translator v0.8.0 ===");
+                println!("=== Text Translator v0.8.0+001 ===");
                 println!("Interactive and Hotkey modes active");
                 println!("Type 'help' for commands or just type text to translate");
                 println!();
@@ -157,7 +158,7 @@ impl InteractiveMode {
     /// Show unified mode help
     fn show_unified_help(&self) {
         println!();
-        println!("=== Text Translator v0.8.0 - Unified Mode Help ===");
+        println!("=== Text Translator v0.8.0+001 - Unified Mode Help ===");
         println!();
         println!("Translation Methods:");
         println!();

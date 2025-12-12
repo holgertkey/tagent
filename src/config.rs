@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -19,6 +19,14 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        // Try to get AppData path for history file, fallback to current directory
+        let default_history = if let Some(config_dir) = dirs::config_dir() {
+            let history_path = config_dir.join("Tagent").join("translation_history.txt");
+            history_path.to_string_lossy().to_string()
+        } else {
+            "translation_history.txt".to_string()
+        };
+
         Self {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
@@ -27,7 +35,7 @@ impl Default for Config {
             show_dictionary: true,
             copy_to_clipboard: true,
             save_translation_history: false,        // По умолчанию отключено
-            history_file: "translation_history.txt".to_string(),  // Имя файла по умолчанию
+            history_file: default_history,
         }
     }
 }
@@ -39,6 +47,20 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
+    /// Get default configuration file path in AppData\Roaming\Tagent
+    pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error>> {
+        let config_dir = dirs::config_dir()
+            .ok_or("Failed to get config directory")?
+            .join("Tagent");
+
+        // Create directory if it doesn't exist
+        if !config_dir.exists() {
+            fs::create_dir_all(&config_dir)?;
+        }
+
+        Ok(config_dir.join("tagent.conf"))
+    }
+
     pub fn new(config_path: &str) -> Result<Self, Box<dyn Error>> {
         let manager = Self {
             config_path: config_path.to_string(),

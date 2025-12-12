@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Display unified mode information
 fn show_unified_mode_info() {
-    println!("=== Text Translator v0.8.0 ===");
+    println!("=== Text Translator v0.8.0+001 ===");
     println!();
     println!("Translation Methods:");
     println!();

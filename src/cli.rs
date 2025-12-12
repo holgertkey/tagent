@@ -14,8 +14,9 @@ pub struct CliHandler {
 impl CliHandler {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let translator = Translator::new()?;
-        let config_manager = Arc::new(ConfigManager::new("tagent.conf")?);
-        
+        let config_path = ConfigManager::get_default_config_path()?;
+        let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+
         Ok(Self {
             translator,
             config_manager,
@@ -49,7 +50,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("Text Translator v0.8.0 - CLI Mode");
+        println!("Text Translator v0.8.0+001 - CLI Mode");
         println!();
         println!("USAGE:");
         println!("  tagent [OPTIONS] <text>");
@@ -89,7 +90,7 @@ impl CliHandler {
 
     /// Show version information
     pub fn show_version() {
-        println!("Text Translator v0.8.0");
+        println!("Text Translator v0.8.0+001");
         println!("Translation tool with unified GUI/Interactive interface and CLI mode");
         println!();
         println!("Features:");

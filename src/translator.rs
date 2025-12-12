@@ -21,9 +21,10 @@ pub struct Translator {
 
 impl Translator {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let config_manager = Arc::new(ConfigManager::new("tagent.conf")?);
+        let config_path = ConfigManager::get_default_config_path()?;
+        let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
         let window_manager = Arc::new(WindowManager::new()?);
-        
+
         Ok(Self {
             client: Client::new(),
             clipboard: ClipboardManager::new(),

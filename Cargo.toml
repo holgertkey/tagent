@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.8.0"
+version = "0.8.0+001"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
@@ -19,12 +19,13 @@ clipboard-win = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 windows = { version = "0.52", features = [
     "Win32_Foundation",
-    "Win32_UI_Input_KeyboardAndMouse", 
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_LibraryLoader",
     "Win32_System_Console"
 ] }
 url = "2.4"
+dirs = "5.0"
 
 [build-dependencies]
 winres = "0.1"
