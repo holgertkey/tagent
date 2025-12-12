@@ -50,7 +50,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("Text Translator v0.8.0+001 - CLI Mode");
+        println!("Text Translator v{} - CLI Mode", env!("CARGO_PKG_VERSION"));
         println!();
         println!("USAGE:");
         println!("  tagent [OPTIONS] <text>");
@@ -90,7 +90,7 @@ impl CliHandler {
 
     /// Show version information
     pub fn show_version() {
-        println!("Text Translator v0.8.0+001");
+        println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
         println!("Translation tool with unified GUI/Interactive interface and CLI mode");
         println!();
         println!("Features:");

@@ -33,6 +33,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ❌ Do NOT increment for documentation-only changes
 - ❌ Do NOT increment if code wasn't modified
 
+**Automatic Version Synchronization**:
+Version is defined **ONLY** in `Cargo.toml`. All other locations automatically sync from it:
+- **Source code (.rs)**: Uses `env!("CARGO_PKG_VERSION")` macro
+- **Windows resources (build.rs)**: Reads from `env!("CARGO_PKG_VERSION")` and converts to Windows format (x.x.x.x)
+- **Documentation**: Should reference the conceptual version, but exact strings are in code
+
+To change version: edit only `Cargo.toml`, then rebuild. All files will automatically use the new version.
+
 
 ## Project Overview
 

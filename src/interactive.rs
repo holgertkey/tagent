@@ -144,7 +144,7 @@ impl InteractiveMode {
             "clear" | "cls" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
-                println!("=== Text Translator v0.8.0+001 ===");
+                println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
                 println!("Interactive and Hotkey modes active");
                 println!("Type 'help' for commands or just type text to translate");
                 println!();
@@ -158,7 +158,7 @@ impl InteractiveMode {
     /// Show unified mode help
     fn show_unified_help(&self) {
         println!();
-        println!("=== Text Translator v0.8.0+001 - Unified Mode Help ===");
+        println!("=== Text Translator v{} - Unified Mode Help ===", env!("CARGO_PKG_VERSION"));
         println!();
         println!("Translation Methods:");
         println!();
