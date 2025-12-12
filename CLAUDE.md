@@ -2,6 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## User notes
+
+- Ensure that all comments and another text are written in English.
+
+- Avoid writing lines like this in the comments:
+  "Generated with [Claude Code](https://claude.com/claude-code)
+  Co-Authored-By: Claude <noreply@anthropic.com>"
+
+- **Use `.debug/` folder for temporary files**: Write all temporary files, reports, test logs, debug output, and any other temporary artifacts to the `.debug/` folder. This keeps the repository root clean and organized. The `.debug/` folder is already added to `.gitignore`.
+
+- The `.TEST` folder contains files and folders for testing the project.
+
+- **IMPORTANT: When fixing bugs or errors in the code, ALWAYS write proper tests immediately to prevent regression.**
+
+
+### Version Management
+
+**Build Number Convention**: After each compilation with code changes, increment the build number in `Cargo.toml`:
+- Format: `version = "MAJOR.MINOR.PATCH+BUILD"`
+- Example: `1.0.0+000` → `1.0.0+001` → `1.0.0+002`
+- The build number (`+NNN`) is a 3-digit zero-padded counter
+- Reset build number to `+000` when MAJOR, MINOR, or PATCH version changes
+- This helps track development iterations between releases
+
+**When to increment**:
+- ✅ After fixing bugs and recompiling
+- ✅ After adding features and recompiling
+- ✅ After refactoring and recompiling
+- ❌ Do NOT increment for documentation-only changes
+- ❌ Do NOT increment if code wasn't modified
+
+
 ## Project Overview
 
 **Tagent** is a Windows text translation tool (v0.8.0) built in Rust that provides three translation modes:
