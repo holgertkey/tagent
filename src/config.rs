@@ -155,6 +155,13 @@ ShowTerminalOnTranslate = {}
 AutoHideTerminalSeconds = {}
 
 [Colors]
+; Color for Auto language prompt (e.g., "[Auto]: ")
+; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
+; Use "None" to disable color
+; Default: None (no color)
+AutoPromptColor = {}
+
 ; Color for translation prompt (e.g., "[Russian]: ")
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 ; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
@@ -168,13 +175,6 @@ TranslationPromptColor = {}
 ; Use "None" to disable color
 ; Default: BrightYellow
 DictionaryPromptColor = {}
-
-; Color for Auto language prompt (e.g., "[Auto]: ")
-; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
-; Use "None" to disable color
-; Default: None (no color)
-AutoPromptColor = {}
 
 [History]
 ; Save translation history to file
@@ -195,9 +195,9 @@ HistoryFile = {}
             config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
+            config.auto_prompt_color,
             config.translation_prompt_color,
             config.dictionary_prompt_color,
-            config.auto_prompt_color,
             config.save_translation_history,
             config.history_file
         )
