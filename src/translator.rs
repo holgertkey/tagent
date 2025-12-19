@@ -9,6 +9,7 @@ use url::form_urlencoded;
 use std::io::{self, Write};
 use chrono::{DateTime, Utc};
 use std::fs::OpenOptions;
+use colored::Colorize;
 
 #[derive(Clone)]
 pub struct Translator {
@@ -122,9 +123,17 @@ impl Translator {
                     // Clear any existing prompt and print on new line
                     print!("\r");
                     io::stdout().flush().ok();
+
+                    // Print colored dictionary label
+                    let dict_label = "[Word]: ";
+                    if let Some(color) = ConfigManager::parse_color(&config.dictionary_prompt_color) {
+                        print!("{}", dict_label.color(color));
+                    } else {
+                        print!("{}", dict_label);
+                    }
                     println!("{}", dictionary_info);
                     println!(); // Add empty line after dictionary entry in GUI mode
-                    
+
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
                     }
@@ -157,15 +166,29 @@ impl Translator {
         // Clear any existing prompt and move to new line
         print!("\r");
         io::stdout().flush().ok();
-        
-        // Show source language info
+
+        // Show source language info with colored prompt
         let source_display = if source_code == "auto" {
             "Auto".to_string()
         } else {
             config.source_language.clone()
         };
-        
-        println!("[{}]: {}", source_display, text);
+
+        let source_label = format!("[{}]: ", source_display);
+
+        // Choose color based on whether it's Auto or a specific language
+        let source_color = if source_code == "auto" {
+            &config.auto_prompt_color
+        } else {
+            &config.translation_prompt_color
+        };
+
+        if let Some(color) = ConfigManager::parse_color(source_color) {
+            print!("{}", source_label.color(color));
+        } else {
+            print!("{}", source_label);
+        }
+        println!("{}", text);
 
         // If source language is not Auto, check if text matches expected language
         if source_code != "auto" && !self.is_expected_language(text, source_code) {
@@ -175,9 +198,16 @@ impl Translator {
 
         match self.translate_text_internal(text, source_code, target_code).await {
             Ok(translated_text) => {
-                println!("[{}]: {}", config.target_language, translated_text);
+                // Print colored translation label
+                let trans_label = format!("[{}]: ", config.target_language);
+                if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+                    print!("{}", trans_label.color(color));
+                } else {
+                    print!("{}", trans_label);
+                }
+                println!("{}", translated_text);
                 println!(); // Add empty line after translation result
-                
+
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
                 }
