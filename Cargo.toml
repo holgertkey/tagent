@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.8.0+001"
+version = "0.8.0+004"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
@@ -29,3 +29,8 @@ dirs = "5.0"
 
 [build-dependencies]
 winres = "0.1"
+
+# Debug and test binaries
+[[bin]]
+name = "test_mouse_focus"
+path = ".debug/test_mouse_focus.rs"

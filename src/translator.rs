@@ -514,10 +514,31 @@ impl Translator {
     }
 
     /// Hide terminal window and restore previously active window
+    /// Delays hiding if mouse cursor is over the terminal
     async fn hide_terminal_and_restore(&self, delay_seconds: u64) {
         // Wait specified time to let user see the result
         tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
-        
+
+        // Check if mouse is over terminal, and wait until it moves away
+        loop {
+            let is_mouse_over = self.window_manager.is_mouse_over_terminal();
+
+            #[cfg(debug_assertions)]
+            {
+                if is_mouse_over {
+                    println!("[DEBUG] Mouse is over terminal, delaying auto-hide...");
+                }
+            }
+
+            if !is_mouse_over {
+                // Mouse is not over terminal, proceed with hiding
+                break;
+            }
+
+            // Wait 1 second before checking again
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
         // Restore the previously active window
         if let Ok(stored) = self.stored_foreground_window.lock() {
             if let Some(prev_window) = *stored {
@@ -526,7 +547,7 @@ impl Translator {
                 }
             }
         }
-        
+
         // Hide the terminal
         if let Err(e) = self.window_manager.hide_terminal() {
             println!("Failed to hide terminal: {}", e);

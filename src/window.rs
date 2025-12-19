@@ -7,6 +7,9 @@ use windows::{
     Win32::UI::WindowsAndMessaging::*,
 };
 
+#[cfg(debug_assertions)]
+use std::io::Write;
+
 pub struct WindowManager {
     console_window: HWND,
 }
@@ -138,9 +141,210 @@ impl WindowManager {
                 uCount: 3,
                 dwTimeout: 0,
             };
-            
+
             FlashWindowEx(&mut flash_info);
         }
         Ok(())
+    }
+
+    /// Check if mouse cursor is currently over the terminal window
+    ///
+    /// Returns true if the cursor is over the console window or any of its child windows.
+    /// Includes debug output when compiled in debug mode.
+    #[allow(dead_code)]
+    pub fn is_mouse_over_terminal(&self) -> bool {
+        unsafe {
+            // Get current cursor position
+            let mut cursor_pos = POINT { x: 0, y: 0 };
+            if !GetCursorPos(&mut cursor_pos).is_ok() {
+                #[cfg(debug_assertions)]
+                {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "[DEBUG] is_mouse_over_terminal: Failed to get cursor position"
+                    );
+                }
+                return false;
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Cursor position = ({}, {})",
+                    cursor_pos.x, cursor_pos.y
+                );
+            }
+
+            // Get window at cursor position
+            let window_at_cursor = WindowFromPoint(cursor_pos);
+
+            #[cfg(debug_assertions)]
+            {
+                // Get window titles for debugging
+                let mut buffer = [0u16; 256];
+
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Window at cursor = {:?}",
+                    window_at_cursor
+                );
+
+                GetWindowTextW(window_at_cursor, &mut buffer);
+                let cursor_title = OsString::from_wide(
+                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)]
+                ).to_string_lossy().into_owned();
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Window at cursor title = '{}'",
+                    cursor_title
+                );
+
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Console window = {:?}",
+                    self.console_window
+                );
+
+                GetWindowTextW(self.console_window, &mut buffer);
+                let console_title = OsString::from_wide(
+                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)]
+                ).to_string_lossy().into_owned();
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Console window title = '{}'",
+                    console_title
+                );
+            }
+
+            // Direct match
+            if window_at_cursor == self.console_window {
+                #[cfg(debug_assertions)]
+                {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "[DEBUG] is_mouse_over_terminal: Direct match - cursor is over terminal"
+                    );
+                }
+                return true;
+            }
+
+            // Check multiple ancestor/parent relationships
+            let root_window = GetAncestor(window_at_cursor, GA_ROOT);
+            let root_owner = GetAncestor(window_at_cursor, GA_ROOTOWNER);
+            let parent_window = GetParent(window_at_cursor);
+
+            // Also check if console is a child of the window at cursor
+            let console_root = GetAncestor(self.console_window, GA_ROOT);
+            let console_parent = GetParent(self.console_window);
+
+            #[cfg(debug_assertions)]
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Root window = {:?}",
+                    root_window
+                );
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Root owner = {:?}",
+                    root_owner
+                );
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Parent window = {:?}",
+                    parent_window
+                );
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Console root = {:?}",
+                    console_root
+                );
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Console parent = {:?}",
+                    console_parent
+                );
+            }
+
+            // Check various relationships
+            let is_over = root_window == self.console_window
+                || root_owner == self.console_window
+                || parent_window == self.console_window
+                || window_at_cursor == console_root
+                || window_at_cursor == console_parent
+                || root_window == console_root;
+
+            #[cfg(debug_assertions)]
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[DEBUG] is_mouse_over_terminal: Result = {}",
+                    is_over
+                );
+            }
+
+            is_over
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_window_manager_creation() {
+        // Test that WindowManager::new() doesn't panic
+        // Note: This may fail in some test environments without a console window
+        let result = WindowManager::new();
+        match result {
+            Ok(_) => {
+                // Success - we have a console window
+                assert!(true);
+            }
+            Err(e) => {
+                // In some test environments, there might not be a console window
+                // This is acceptable - just ensure we got a meaningful error
+                assert!(e.to_string().contains("console"),
+                    "Error should mention console: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_mouse_over_terminal_does_not_panic() {
+        // Test that the function doesn't panic when called
+        let wm = WindowManager::new();
+        if let Ok(window_manager) = wm {
+            // Just call the function to ensure it doesn't panic
+            // We can't test the actual return value without manual mouse positioning
+            let _ = window_manager.is_mouse_over_terminal();
+            // If we got here without panicking, the test passes
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_console_handle_is_valid() {
+        // Test that we get a valid console handle
+        let wm = WindowManager::new();
+        if let Ok(window_manager) = wm {
+            let handle = window_manager.get_console_handle();
+            // HWND(0) is invalid, any other value should be valid
+            assert_ne!(handle.0, 0, "Console handle should be non-zero");
+        }
+    }
+
+    #[test]
+    fn test_is_terminal_visible() {
+        // Test that we can check terminal visibility without panicking
+        let wm = WindowManager::new();
+        if let Ok(window_manager) = wm {
+            // The terminal should be visible when we're running tests
+            let is_visible = window_manager.is_terminal_visible();
+            // We expect the terminal to be visible during test execution
+            assert!(is_visible, "Terminal should be visible during test execution");
+        }
     }
 }
