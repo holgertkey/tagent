@@ -15,6 +15,9 @@ pub struct Config {
     pub copy_to_clipboard: bool,
     pub save_translation_history: bool,    // Новое поле
     pub history_file: String,              // Новое поле
+    pub translation_prompt_color: String,  // Color for translation prompt
+    pub dictionary_prompt_color: String,   // Color for dictionary prompt
+    pub auto_prompt_color: String,         // Color for Auto prompt
 }
 
 impl Default for Config {
@@ -36,6 +39,9 @@ impl Default for Config {
             copy_to_clipboard: true,
             save_translation_history: false,        // По умолчанию отключено
             history_file: default_history,
+            translation_prompt_color: "Blue".to_string(),  // Default blue for translation
+            dictionary_prompt_color: "Blue".to_string(),   // Default blue for dictionary
+            auto_prompt_color: "None".to_string(),         // Default no color for Auto
         }
     }
 }
@@ -103,7 +109,7 @@ impl ConfigManager {
         format!(
 r#"; Text Translator Configuration File
 ; This program translates selected text using keyboard shortcuts
-; 
+;
 ; Usage:
 ; 1. Select text in any application
 ; 2. Double-press Ctrl key quickly (Ctrl + Ctrl)
@@ -119,7 +125,7 @@ r#"; Text Translator Configuration File
 ; Use "Auto" for automatic language detection
 SourceLanguage = {}
 
-; Target language for translation  
+; Target language for translation
 ; Supported values: Russian, English, Spanish, French, German, etc.
 TargetLanguage = {}
 
@@ -148,6 +154,28 @@ ShowTerminalOnTranslate = {}
 ; Example: 3 = hide terminal after 3 seconds
 AutoHideTerminalSeconds = {}
 
+[Colors]
+; Color for translation prompt (e.g., "[Russian]: ")
+; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
+; Use "None" to disable color
+; Default: Blue
+TranslationPromptColor = {}
+
+; Color for dictionary prompt (e.g., "[Word]: ")
+; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
+; Use "None" to disable color
+; Default: Blue
+DictionaryPromptColor = {}
+
+; Color for Auto language prompt (e.g., "[Auto]: ")
+; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
+; Use "None" to disable color
+; Default: None (no color)
+AutoPromptColor = {}
+
 [History]
 ; Save translation history to file
 ; Set to true to save all translations with timestamps to a text file
@@ -161,12 +189,15 @@ SaveTranslationHistory = {}
 ; File will be created automatically if it doesn't exist
 HistoryFile = {}
 "#,
-            config.source_language, 
+            config.source_language,
             config.target_language,
             config.copy_to_clipboard,
             config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
+            config.translation_prompt_color,
+            config.dictionary_prompt_color,
+            config.auto_prompt_color,
             config.save_translation_history,
             config.history_file
         )
@@ -226,6 +257,25 @@ HistoryFile = {}
             .cloned()
             .unwrap_or_else(|| "translation_history.txt".to_string());
 
+        // Color settings
+        let translation_prompt_color = parsed_config
+            .get("Colors")
+            .and_then(|section| section.get("TranslationPromptColor"))
+            .cloned()
+            .unwrap_or_else(|| "Blue".to_string());
+
+        let dictionary_prompt_color = parsed_config
+            .get("Colors")
+            .and_then(|section| section.get("DictionaryPromptColor"))
+            .cloned()
+            .unwrap_or_else(|| "Blue".to_string());
+
+        let auto_prompt_color = parsed_config
+            .get("Colors")
+            .and_then(|section| section.get("AutoPromptColor"))
+            .cloned()
+            .unwrap_or_else(|| "None".to_string());
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -235,6 +285,9 @@ HistoryFile = {}
             auto_hide_terminal_seconds: auto_hide_seconds,
             save_translation_history,
             history_file,
+            translation_prompt_color,
+            dictionary_prompt_color,
+            auto_prompt_color,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -352,7 +405,38 @@ HistoryFile = {}
         let config = self.get_config();
         let source_code = Self::language_to_code(&config.source_language);
         let target_code = Self::language_to_code(&config.target_language);
-        
+
         (source_code.to_string(), target_code.to_string())
+    }
+
+    /// Parse color name to colored::Color enum
+    /// Returns None for "None" or empty string (no color)
+    pub fn parse_color(color_name: &str) -> Option<colored::Color> {
+        let color_lower = color_name.trim().to_lowercase();
+
+        // Handle "None" or empty string as no color
+        if color_lower.is_empty() || color_lower == "none" {
+            return None;
+        }
+
+        match color_lower.as_str() {
+            "black" => Some(colored::Color::Black),
+            "red" => Some(colored::Color::Red),
+            "green" => Some(colored::Color::Green),
+            "yellow" => Some(colored::Color::Yellow),
+            "blue" => Some(colored::Color::Blue),
+            "magenta" => Some(colored::Color::Magenta),
+            "cyan" => Some(colored::Color::Cyan),
+            "white" => Some(colored::Color::White),
+            "brightblack" | "bright_black" => Some(colored::Color::BrightBlack),
+            "brightred" | "bright_red" => Some(colored::Color::BrightRed),
+            "brightgreen" | "bright_green" => Some(colored::Color::BrightGreen),
+            "brightyellow" | "bright_yellow" => Some(colored::Color::BrightYellow),
+            "brightblue" | "bright_blue" => Some(colored::Color::BrightBlue),
+            "brightmagenta" | "bright_magenta" => Some(colored::Color::BrightMagenta),
+            "brightcyan" | "bright_cyan" => Some(colored::Color::BrightCyan),
+            "brightwhite" | "bright_white" => Some(colored::Color::BrightWhite),
+            _ => None, // Return None for unknown colors
+        }
     }
 }

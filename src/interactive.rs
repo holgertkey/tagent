@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::{DateTime, Utc};
 use std::fs::OpenOptions;
+use colored::Colorize;
 
 pub struct InteractiveMode {
     translator: Translator,
@@ -74,9 +75,22 @@ impl InteractiveMode {
             self.config_manager.check_and_reload().ok();
             let config = self.config_manager.get_config();
             let (source_code, target_code) = self.config_manager.get_language_codes();
-            
-            // Show prompt
-            print!("[{}]: ", config.source_language);
+
+            // Show colored prompt
+            let prompt = format!("[{}]: ", config.source_language);
+
+            // Choose color based on whether it's Auto or a specific language
+            let prompt_color = if config.source_language.to_lowercase() == "auto" {
+                &config.auto_prompt_color
+            } else {
+                &config.translation_prompt_color
+            };
+
+            if let Some(color) = ConfigManager::parse_color(prompt_color) {
+                print!("{}", prompt.color(color));
+            } else {
+                print!("{}", prompt); // No color if None or parsing fails
+            }
             io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
             
             // Read user input
@@ -230,8 +244,15 @@ impl InteractiveMode {
         if config.show_dictionary && self.is_single_word(text) {
             match self.translator.get_dictionary_entry_public(text, source_code, target_code).await {
                 Ok(dictionary_info) => {
+                    // Print colored dictionary label
+                    let dict_label = "[Word]: ";
+                    if let Some(color) = ConfigManager::parse_color(&config.dictionary_prompt_color) {
+                        print!("{}", dict_label.color(color));
+                    } else {
+                        print!("{}", dict_label);
+                    }
                     println!("{}", dictionary_info);
-                    
+
                     if config.copy_to_clipboard {
                         if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
                             println!("Clipboard error: {}", e);
@@ -242,7 +263,7 @@ impl InteractiveMode {
                     if let Err(e) = self.save_translation_history(text, &dictionary_info, source_code, target_code, config) {
                         println!("History save error: {}", e);
                     }
-                    
+
                     println!(); // Add spacing
                     return Ok(());
                 }
@@ -255,8 +276,15 @@ impl InteractiveMode {
         // Regular translation
         match self.translator.translate_text_public(text, source_code, target_code).await {
             Ok(translated_text) => {
+                // Print colored translation label
+                let trans_label = format!("[{}]: ", config.target_language);
+                if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+                    print!("{}", trans_label.color(color));
+                } else {
+                    print!("{}", trans_label);
+                }
                 println!("{}", translated_text);
-                
+
                 if config.copy_to_clipboard {
                     self.copy_to_clipboard(&translated_text).ok();
                 }
@@ -270,7 +298,7 @@ impl InteractiveMode {
                 return Err(format!("Translation failed: {}", e));
             }
         }
-        
+
         println!(); // Add spacing
         Ok(())
     }

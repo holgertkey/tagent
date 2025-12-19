@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.8.0+004"
+version = "0.8.0+006"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
@@ -26,6 +26,7 @@ windows = { version = "0.52", features = [
 ] }
 url = "2.4"
 dirs = "5.0"
+colored = "2.1"
 
 [build-dependencies]
 winres = "0.1"
