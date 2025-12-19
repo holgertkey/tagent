@@ -39,9 +39,9 @@ impl Default for Config {
             copy_to_clipboard: true,
             save_translation_history: false,        // По умолчанию отключено
             history_file: default_history,
-            translation_prompt_color: "Blue".to_string(),  // Default blue for translation
-            dictionary_prompt_color: "Blue".to_string(),   // Default blue for dictionary
-            auto_prompt_color: "None".to_string(),         // Default no color for Auto
+            translation_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for translation
+            dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
+            auto_prompt_color: "None".to_string(),                 // Default no color for Auto
         }
     }
 }
@@ -159,14 +159,14 @@ AutoHideTerminalSeconds = {}
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 ; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
 ; Use "None" to disable color
-; Default: Blue
+; Default: BrightYellow
 TranslationPromptColor = {}
 
 ; Color for dictionary prompt (e.g., "[Word]: ")
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 ; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
 ; Use "None" to disable color
-; Default: Blue
+; Default: BrightYellow
 DictionaryPromptColor = {}
 
 ; Color for Auto language prompt (e.g., "[Auto]: ")
@@ -262,13 +262,13 @@ HistoryFile = {}
             .get("Colors")
             .and_then(|section| section.get("TranslationPromptColor"))
             .cloned()
-            .unwrap_or_else(|| "Blue".to_string());
+            .unwrap_or_else(|| "BrightYellow".to_string());
 
         let dictionary_prompt_color = parsed_config
             .get("Colors")
             .and_then(|section| section.get("DictionaryPromptColor"))
             .cloned()
-            .unwrap_or_else(|| "Blue".to_string());
+            .unwrap_or_else(|| "BrightYellow".to_string());
 
         let auto_prompt_color = parsed_config
             .get("Colors")

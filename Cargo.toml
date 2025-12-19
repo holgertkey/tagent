@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.8.0+006"
+version = "0.8.0+007"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
