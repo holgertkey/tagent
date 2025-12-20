@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -18,6 +19,8 @@ pub struct Config {
     pub translation_prompt_color: String,  // Color for translation prompt
     pub dictionary_prompt_color: String,   // Color for dictionary prompt
     pub auto_prompt_color: String,         // Color for Auto prompt
+    pub alternative_hotkey: String,        // Alternative hotkey (e.g., "F9", "Alt+Space")
+    pub enable_alternative_hotkey: bool,   // Enable/disable alternative hotkey
 }
 
 impl Default for Config {
@@ -42,6 +45,8 @@ impl Default for Config {
             translation_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for translation
             dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
             auto_prompt_color: "None".to_string(),                 // Default no color for Auto
+            alternative_hotkey: "F9".to_string(),                  // Default alternative hotkey
+            enable_alternative_hotkey: true,                       // Enable by default
         }
     }
 }
@@ -188,6 +193,25 @@ SaveTranslationHistory = {}
 ; Path can be absolute or relative to the program directory
 ; File will be created automatically if it doesn't exist
 HistoryFile = {}
+
+[Hotkeys]
+; Alternative hotkey for translation
+; Supported formats:
+;   - Single keys: F1-F12, Space, etc.
+;   - Modifier combinations: Alt+Space, Ctrl+Shift+T, Win+T
+;   - Double-press: Ctrl+Ctrl (default), F8+F8
+; Examples:
+;   AlternativeHotkey = F9
+;   AlternativeHotkey = Alt+Space
+;   AlternativeHotkey = Ctrl+Shift+C
+; Note: Ctrl+Ctrl double-press is always active regardless of this setting
+AlternativeHotkey = {}
+
+; Enable or disable the alternative hotkey
+; Set to true to enable the alternative hotkey in addition to Ctrl+Ctrl
+; Set to false to use only Ctrl+Ctrl double-press
+; Note: Hotkey changes require application restart to take effect
+EnableAlternativeHotkey = {}
 "#,
             config.source_language,
             config.target_language,
@@ -199,7 +223,9 @@ HistoryFile = {}
             config.translation_prompt_color,
             config.dictionary_prompt_color,
             config.save_translation_history,
-            config.history_file
+            config.history_file,
+            config.alternative_hotkey,
+            config.enable_alternative_hotkey
         )
     }
 
@@ -276,6 +302,19 @@ HistoryFile = {}
             .cloned()
             .unwrap_or_else(|| "None".to_string());
 
+        // Hotkey settings
+        let alternative_hotkey = parsed_config
+            .get("Hotkeys")
+            .and_then(|section| section.get("AlternativeHotkey"))
+            .cloned()
+            .unwrap_or_else(|| "F9".to_string());
+
+        let enable_alternative_hotkey = parsed_config
+            .get("Hotkeys")
+            .and_then(|section| section.get("EnableAlternativeHotkey"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true);
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -288,6 +327,8 @@ HistoryFile = {}
             translation_prompt_color,
             dictionary_prompt_color,
             auto_prompt_color,
+            alternative_hotkey,
+            enable_alternative_hotkey,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -438,5 +479,212 @@ HistoryFile = {}
             "brightwhite" | "bright_white" => Some(colored::Color::BrightWhite),
             _ => None, // Return None for unknown colors
         }
+    }
+}
+
+// Hotkey configuration types and parser
+#[derive(Debug, Clone, PartialEq)]
+pub enum HotkeyType {
+    SingleKey { vk_code: u32 },
+    ModifierCombo { modifiers: Vec<u32>, key: u32 },
+    DoublePress { vk_code: u32, min_interval_ms: u64, max_interval_ms: u64 },
+}
+
+pub struct HotkeyParser;
+
+impl HotkeyParser {
+    /// Parse hotkey string into HotkeyType
+    pub fn parse(hotkey_str: &str) -> Result<HotkeyType, String> {
+        let trimmed = hotkey_str.trim();
+
+        if trimmed.is_empty() {
+            return Err("Empty hotkey string".to_string());
+        }
+
+        // Check for double-press pattern (e.g., "Ctrl+Ctrl")
+        if trimmed.contains('+') {
+            let parts: Vec<&str> = trimmed.split('+').map(|s| s.trim()).collect();
+
+            // Check if it's a double-press (same key twice)
+            if parts.len() == 2 && parts[0].eq_ignore_ascii_case(parts[1]) {
+                let vk_code = Self::key_name_to_vk(parts[0])?;
+                return Ok(HotkeyType::DoublePress {
+                    vk_code,
+                    min_interval_ms: 50,
+                    max_interval_ms: 500,
+                });
+            }
+
+            // Otherwise it's a modifier combination
+            // Last part is the key, everything else is modifiers
+            if parts.len() < 2 {
+                return Err("Invalid modifier combination".to_string());
+            }
+
+            let key = Self::key_name_to_vk(parts.last().unwrap())?;
+            let modifiers: Result<Vec<u32>, String> = parts[..parts.len()-1]
+                .iter()
+                .map(|m| Self::key_name_to_vk(m))
+                .collect();
+
+            return Ok(HotkeyType::ModifierCombo {
+                modifiers: modifiers?,
+                key,
+            });
+        }
+
+        // Single key
+        let vk_code = Self::key_name_to_vk(trimmed)?;
+        Ok(HotkeyType::SingleKey { vk_code })
+    }
+
+    /// Convert key name to Windows virtual key code
+    fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
+        let key_lower = key_name.to_lowercase();
+
+        match key_lower.as_str() {
+            // Modifiers
+            "ctrl" | "control" => Ok(VK_CONTROL.0 as u32),
+            "lctrl" | "lcontrol" => Ok(VK_LCONTROL.0 as u32),
+            "rctrl" | "rcontrol" => Ok(VK_RCONTROL.0 as u32),
+            "alt" => Ok(VK_MENU.0 as u32),
+            "lalt" => Ok(VK_LMENU.0 as u32),
+            "ralt" => Ok(VK_RMENU.0 as u32),
+            "shift" => Ok(VK_SHIFT.0 as u32),
+            "lshift" => Ok(VK_LSHIFT.0 as u32),
+            "rshift" => Ok(VK_RSHIFT.0 as u32),
+            "win" | "windows" => Ok(VK_LWIN.0 as u32),
+            "lwin" => Ok(VK_LWIN.0 as u32),
+            "rwin" => Ok(VK_RWIN.0 as u32),
+
+            // Function keys
+            "f1" => Ok(VK_F1.0 as u32),
+            "f2" => Ok(VK_F2.0 as u32),
+            "f3" => Ok(VK_F3.0 as u32),
+            "f4" => Ok(VK_F4.0 as u32),
+            "f5" => Ok(VK_F5.0 as u32),
+            "f6" => Ok(VK_F6.0 as u32),
+            "f7" => Ok(VK_F7.0 as u32),
+            "f8" => Ok(VK_F8.0 as u32),
+            "f9" => Ok(VK_F9.0 as u32),
+            "f10" => Ok(VK_F10.0 as u32),
+            "f11" => Ok(VK_F11.0 as u32),
+            "f12" => Ok(VK_F12.0 as u32),
+
+            // Special keys
+            "space" => Ok(VK_SPACE.0 as u32),
+            "tab" => Ok(VK_TAB.0 as u32),
+            "enter" | "return" => Ok(VK_RETURN.0 as u32),
+            "esc" | "escape" => Ok(VK_ESCAPE.0 as u32),
+            "backspace" => Ok(VK_BACK.0 as u32),
+            "delete" | "del" => Ok(VK_DELETE.0 as u32),
+            "insert" | "ins" => Ok(VK_INSERT.0 as u32),
+            "home" => Ok(VK_HOME.0 as u32),
+            "end" => Ok(VK_END.0 as u32),
+            "pageup" | "pgup" => Ok(VK_PRIOR.0 as u32),
+            "pagedown" | "pgdn" => Ok(VK_NEXT.0 as u32),
+
+            // Arrow keys
+            "left" => Ok(VK_LEFT.0 as u32),
+            "right" => Ok(VK_RIGHT.0 as u32),
+            "up" => Ok(VK_UP.0 as u32),
+            "down" => Ok(VK_DOWN.0 as u32),
+
+            // Letters (A-Z)
+            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_alphabetic() => {
+                let ch = s.chars().next().unwrap().to_ascii_uppercase();
+                Ok(ch as u32)
+            }
+
+            // Numbers (0-9)
+            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_digit() => {
+                let ch = s.chars().next().unwrap();
+                Ok(ch as u32)
+            }
+
+            _ => Err(format!("Unknown key name: {}", key_name)),
+        }
+    }
+
+    /// Validate that the hotkey doesn't conflict with critical system shortcuts
+    pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
+        match hotkey {
+            HotkeyType::ModifierCombo { modifiers, key } => {
+                // Warn about common system shortcuts
+                let has_ctrl = modifiers.iter().any(|&m| m == VK_CONTROL.0 as u32 || m == VK_LCONTROL.0 as u32 || m == VK_RCONTROL.0 as u32);
+                let has_alt = modifiers.iter().any(|&m| m == VK_MENU.0 as u32 || m == VK_LMENU.0 as u32 || m == VK_RMENU.0 as u32);
+                let has_win = modifiers.iter().any(|&m| m == VK_LWIN.0 as u32 || m == VK_RWIN.0 as u32);
+
+                // Block dangerous combinations
+                if has_ctrl && has_alt && *key == VK_DELETE.0 as u32 {
+                    return Err("Ctrl+Alt+Delete is reserved by the system".to_string());
+                }
+
+                if has_win && *key == 'L' as u32 {
+                    return Err("Win+L (lock screen) is reserved by the system".to_string());
+                }
+
+                // Warnings for common shortcuts (don't block, just warn in logs)
+                if has_alt && *key == VK_F4.0 as u32 {
+                    eprintln!("Warning: Alt+F4 may close windows");
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_single_key() {
+        let result = HotkeyParser::parse("F9").unwrap();
+        assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+
+        let result = HotkeyParser::parse("f9").unwrap();
+        assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+
+        let result = HotkeyParser::parse("Space").unwrap();
+        assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+    }
+
+    #[test]
+    fn test_parse_modifier_combo() {
+        let result = HotkeyParser::parse("Alt+Space").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+
+        let result = HotkeyParser::parse("Ctrl+Shift+C").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+
+        let result = HotkeyParser::parse("Win+T").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+    }
+
+    #[test]
+    fn test_parse_double_press() {
+        let result = HotkeyParser::parse("Ctrl+Ctrl").unwrap();
+        assert!(matches!(result, HotkeyType::DoublePress { .. }));
+
+        let result = HotkeyParser::parse("F8+F8").unwrap();
+        assert!(matches!(result, HotkeyType::DoublePress { .. }));
+    }
+
+    #[test]
+    fn test_invalid_inputs() {
+        assert!(HotkeyParser::parse("InvalidKey").is_err());
+        assert!(HotkeyParser::parse("").is_err());
+    }
+
+    #[test]
+    fn test_system_shortcut_validation() {
+        let hotkey = HotkeyParser::parse("Ctrl+Alt+Delete").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Win+L").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
     }
 }

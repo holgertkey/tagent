@@ -1,4 +1,6 @@
 use crate::translator::Translator;
+use crate::config::{ConfigManager, HotkeyType, HotkeyParser};
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +17,10 @@ static LAST_CTRL_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static IS_PROCESSING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static CTRL_IS_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static ALT_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
+static ALT_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
+static LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 
 pub struct KeyboardHook;
 
@@ -35,7 +41,47 @@ impl KeyboardHook {
             .map_err(|_| "ShouldExit already initialized")?;
         CTRL_IS_PRESSED.set(ctrl_is_pressed)
             .map_err(|_| "CtrlIsPressed already initialized")?;
-        
+
+        // Initialize alternative hotkey configuration
+        let config_manager = ConfigManager::new(
+            &ConfigManager::get_default_config_path()?.to_string_lossy()
+        )?;
+        let config = config_manager.get_config();
+
+        let alt_hotkey = if config.enable_alternative_hotkey {
+            match HotkeyParser::parse(&config.alternative_hotkey) {
+                Ok(hotkey) => {
+                    match HotkeyParser::validate_hotkey(&hotkey) {
+                        Ok(_) => Some(hotkey),
+                        Err(e) => {
+                            eprintln!("Warning: Hotkey validation failed for '{}': {}", config.alternative_hotkey, e);
+                            eprintln!("Alternative hotkey disabled. Using Ctrl+Ctrl only.");
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse hotkey '{}': {}", config.alternative_hotkey, e);
+                    eprintln!("Alternative hotkey disabled. Using Ctrl+Ctrl only.");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        ALT_HOTKEY_CONFIG.set(Arc::new(Mutex::new(alt_hotkey)))
+            .map_err(|_| "AltHotkeyConfig already initialized")?;
+
+        ALT_HOTKEY_ENABLED.set(Arc::new(AtomicBool::new(config.enable_alternative_hotkey)))
+            .map_err(|_| "AltHotkeyEnabled already initialized")?;
+
+        MODIFIER_STATE.set(Arc::new(Mutex::new(HashMap::new())))
+            .map_err(|_| "ModifierState already initialized")?;
+
+        LAST_KEY_TIME.set(Arc::new(Mutex::new(None)))
+            .map_err(|_| "LastKeyTime already initialized")?;
+
         Ok(Self)
     }
 
@@ -90,6 +136,108 @@ impl KeyboardHook {
     }
 }
 
+/// Trigger translation in a separate thread
+unsafe fn trigger_translation() {
+    if let Some(is_processing) = IS_PROCESSING.get() {
+        if let Ok(mut processing) = is_processing.lock() {
+            if *processing {
+                return; // Already processing
+            }
+            *processing = true;
+        }
+    }
+
+    if let Some(translator) = TRANSLATOR.get() {
+        let translator_clone = translator.clone();
+        let processing_clone = IS_PROCESSING.get().unwrap().clone();
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                if let Err(e) = translator_clone.translate_clipboard().await {
+                    println!("Translation error: {}", e);
+                }
+                if let Ok(mut proc) = processing_clone.lock() {
+                    *proc = false;
+                }
+            });
+        });
+    }
+}
+
+/// Handle alternative hotkey detection
+unsafe fn handle_alternative_hotkey(vk_code: u32, is_key_down: bool) -> bool {
+    if let Some(hotkey_config) = ALT_HOTKEY_CONFIG.get() {
+        if let Ok(hotkey_opt) = hotkey_config.lock() {
+            if let Some(hotkey) = hotkey_opt.as_ref() {
+                match hotkey {
+                    HotkeyType::SingleKey { vk_code: target_vk } => {
+                        if is_key_down && vk_code == *target_vk {
+                            trigger_translation();
+                            return true;
+                        }
+                    }
+
+                    HotkeyType::ModifierCombo { modifiers, key } => {
+                        if let Some(modifier_state) = MODIFIER_STATE.get() {
+                            if let Ok(mut state) = modifier_state.lock() {
+                                // Update modifier state
+                                if modifiers.contains(&vk_code) {
+                                    state.insert(vk_code, is_key_down);
+                                }
+
+                                // Check if all modifiers are pressed and the key is pressed
+                                if is_key_down && vk_code == *key {
+                                    let all_modifiers_pressed = modifiers.iter()
+                                        .all(|m| state.get(m).copied().unwrap_or(false));
+
+                                    if all_modifiers_pressed {
+                                        trigger_translation();
+                                        return true;
+                                    }
+                                }
+
+                                // Clean up state on key up
+                                if !is_key_down {
+                                    state.insert(vk_code, false);
+                                }
+                            }
+                        }
+                    }
+
+                    HotkeyType::DoublePress { vk_code: target_vk, min_interval_ms, max_interval_ms } => {
+                        if is_key_down && vk_code == *target_vk {
+                            if let Some(last_key_time) = LAST_KEY_TIME.get() {
+                                if let Ok(mut last_time) = last_key_time.lock() {
+                                    let now = Instant::now();
+
+                                    match *last_time {
+                                        Some(last) => {
+                                            let elapsed = now.duration_since(last);
+                                            if elapsed >= Duration::from_millis(*min_interval_ms) &&
+                                               elapsed < Duration::from_millis(*max_interval_ms) {
+                                                trigger_translation();
+                                                *last_time = None;
+                                                return true;
+                                            } else if elapsed >= Duration::from_millis(*max_interval_ms) {
+                                                *last_time = Some(now);
+                                            }
+                                        }
+                                        None => {
+                                            *last_time = Some(now);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if n_code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
@@ -97,10 +245,10 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
         if w_param.0 as u32 == WM_KEYDOWN {
             // Handle Ctrl key for double-press detection
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
-                if let (Some(translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) = 
+                if let (Some(_translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) =
                     (TRANSLATOR.get(), LAST_CTRL_TIME.get(), IS_PROCESSING.get(), CTRL_IS_PRESSED.get()) {
-                    
-                    if let (Ok(mut last_time), Ok(mut processing), Ok(mut is_pressed)) = 
+
+                    if let (Ok(mut last_time), Ok(processing), Ok(mut is_pressed)) =
                         (last_ctrl_time.lock(), is_processing.lock(), ctrl_is_pressed.lock()) {
                         
                         // If Ctrl is already pressed, this is a key repeat event - ignore it
@@ -122,29 +270,18 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                             Some(last) => {
                                 let time_since_last = now.duration_since(last);
                                 
-                                if time_since_last >= Duration::from_millis(50) && 
+                                if time_since_last >= Duration::from_millis(50) &&
                                    time_since_last < Duration::from_millis(500) {
-                                    
+
                                     // Double Ctrl - trigger translation
-                                    *processing = true;
                                     *last_time = None;
-                                    
+                                    drop(last_time); // Release lock before trigger_translation
+                                    drop(processing);
+                                    drop(is_pressed);
+
                                     // println!("Double Ctrl detected ({}ms apart)", time_since_last.as_millis());
-                                    
-                                    let translator_clone = translator.clone();
-                                    let processing_clone = is_processing.clone();
-                                    
-                                    std::thread::spawn(move || {
-                                        let rt = tokio::runtime::Runtime::new().unwrap();
-                                        rt.block_on(async {
-                                            if let Err(e) = translator_clone.translate_clipboard().await {
-                                                println!("Translation error: {}", e);
-                                            }
-                                            if let Ok(mut proc) = processing_clone.lock() {
-                                                *proc = false;
-                                            }
-                                        });
-                                    });
+                                    trigger_translation();
+                                    return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
                                 } else if time_since_last < Duration::from_millis(50) {
                                     println!("Ctrl press too fast ({}ms) - ignoring contact bounce", time_since_last.as_millis());
                                 } else {
@@ -159,6 +296,15 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                     }
                 }
             }
+
+            // Handle alternative hotkey if enabled
+            if let Some(alt_enabled) = ALT_HOTKEY_ENABLED.get() {
+                if alt_enabled.load(Ordering::Relaxed) {
+                    if handle_alternative_hotkey(kbd_struct.vkCode, true) {
+                        return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
+                    }
+                }
+            }
         } else if w_param.0 as u32 == WM_KEYUP {
             // Handle Ctrl key up - mark as not pressed
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
@@ -166,6 +312,13 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                     if let Ok(mut is_pressed) = ctrl_is_pressed.lock() {
                         *is_pressed = false;
                     }
+                }
+            }
+
+            // Handle alternative hotkey key up (for modifier state tracking)
+            if let Some(alt_enabled) = ALT_HOTKEY_ENABLED.get() {
+                if alt_enabled.load(Ordering::Relaxed) {
+                    handle_alternative_hotkey(kbd_struct.vkCode, false);
                 }
             }
         }

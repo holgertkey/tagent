@@ -71,8 +71,9 @@ impl CliHandler {
         println!();
         println!("MODES:");
         println!("  Unified Mode (default): Run without arguments");
-        println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl)");
+        println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl or F9)");
         println!("    - Both methods work simultaneously");
+        println!("    - Configure alternative hotkeys in tagent.conf [Hotkeys] section");
         println!("    - Interactive commands: -h, -c, -v, -q, help, config, etc.");
         println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
         println!();
@@ -84,6 +85,8 @@ impl CliHandler {
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - SaveTranslationHistory: Save all translations to file");
         println!("  - HistoryFile: File path for translation history");
+        println!("  - AlternativeHotkey: Custom hotkey (F9, Alt+Space, etc.)");
+        println!("  - EnableAlternativeHotkey: Enable/disable alternative hotkey");
         println!();
         println!("Run without arguments to start unified mode with interactive prompt and hotkeys.");
     }
@@ -95,6 +98,7 @@ impl CliHandler {
         println!();
         println!("Features:");
         println!("- Unified mode: Interactive prompt + GUI hotkeys work simultaneously");
+        println!("- Customizable hotkeys: Ctrl+Ctrl (default) + configurable alternatives (F9, Alt+Space, etc.)");
         println!("- CLI mode: Direct text translation from command line");
         println!("- Interactive commands: -h, -c, -v, -q and full names");
         println!("- Dictionary lookup for single words");

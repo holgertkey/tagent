@@ -100,7 +100,9 @@ fn show_unified_mode_info() {
     println!();
     println!("1. Hotkeys (GUI Mode):");
     println!("   - Select text in any application");
-    println!("   - Quickly double-press Ctrl (Ctrl + Ctrl)");
+    println!("   - Quickly double-press Ctrl (Ctrl + Ctrl) or press configured hotkey");
+    println!("   - Default alternative hotkey: F9");
+    println!("   - Configure custom hotkeys in tagent.conf [Hotkeys] section");
     println!("   - Translation will be copied to clipboard");
     println!("   - Prompt will automatically return after translation");
     println!();

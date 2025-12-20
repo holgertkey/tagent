@@ -127,6 +127,78 @@ The keyboard hook in `keyboard.rs` implements debounced double-press detection:
 4. Spawn translation task on successful double-press
 5. Prevent concurrent translations with `is_processing` mutex
 
+### Alternative Hotkey Support
+
+The application supports customizable hotkeys in addition to the default Ctrl+Ctrl double-press. This feature allows users to configure alternative key combinations through the configuration file.
+
+**Configuration** (`[Hotkeys]` section in tagent.conf):
+- `AlternativeHotkey`: Hotkey string specifying the key combination (default: "F9")
+- `EnableAlternativeHotkey`: Boolean flag to enable/disable alternative hotkey (default: true)
+
+**Supported Hotkey Formats**:
+1. **Single keys**: `F1-F12`, `Space`, `Tab`, `Enter`, etc.
+   - Example: `AlternativeHotkey = F9`
+2. **Modifier combinations**: `Alt+Space`, `Ctrl+Shift+T`, `Win+T`
+   - Example: `AlternativeHotkey = Alt+Space`
+3. **Double-press patterns**: `F8+F8`, `Ctrl+Ctrl`
+   - Example: `AlternativeHotkey = F8+F8`
+
+**Implementation Architecture**:
+
+*Hotkey Parsing* (`src/config.rs`):
+- `HotkeyType` enum: Represents three types of hotkeys (SingleKey, ModifierCombo, DoublePress)
+- `HotkeyParser::parse()`: Converts configuration strings to HotkeyType enum
+- `HotkeyParser::key_name_to_vk()`: Maps key names (e.g., "F9", "Alt", "Space") to Windows VK codes
+- `HotkeyParser::validate_hotkey()`: Validates hotkeys against dangerous system shortcuts (Ctrl+Alt+Delete, Win+L)
+
+*Detection Logic* (`src/keyboard.rs`):
+- **Single key**: Direct vk_code comparison on WM_KEYDOWN event
+- **Modifier combo**:
+  - Track modifier key states in `MODIFIER_STATE` HashMap
+  - On target key press, verify all required modifiers are currently pressed
+  - Clear state on WM_KEYUP to handle key releases
+- **Double-press**:
+  - Track timestamp of key presses in `LAST_KEY_TIME`
+  - Trigger translation if second press occurs within configured time window (50-500ms)
+  - Similar to Ctrl+Ctrl logic but configurable for any key
+
+*Static Variables*:
+- `ALT_HOTKEY_CONFIG`: Stores parsed HotkeyType configuration
+- `ALT_HOTKEY_ENABLED`: Atomic flag for quick enabled/disabled check
+- `MODIFIER_STATE`: HashMap tracking modifier key states (for combo detection)
+- `LAST_KEY_TIME`: Timestamp for double-press detection
+
+**Backward Compatibility**:
+- Ctrl+Ctrl double-press **always works** regardless of alternative hotkey settings
+- Missing `[Hotkeys]` section in config uses defaults (F9 enabled)
+- Invalid hotkey strings disable alternative hotkey with warning message, Ctrl+Ctrl continues to work
+- No breaking changes to existing functionality
+
+**Initialization Flow**:
+1. `KeyboardHook::new()` loads configuration via `ConfigManager`
+2. Parse `alternative_hotkey` string using `HotkeyParser::parse()`
+3. Validate parsed hotkey with `HotkeyParser::validate_hotkey()`
+4. Initialize static variables with parsed configuration
+5. On parse/validation errors: log warning, disable alternative hotkey, continue with Ctrl+Ctrl only
+
+**Detection Flow** (in `keyboard_hook_proc()`):
+1. WM_KEYDOWN event received
+2. First, attempt Ctrl+Ctrl detection (existing logic)
+3. If not Ctrl+Ctrl, attempt alternative hotkey detection via `handle_alternative_hotkey()`
+4. WM_KEYUP event received
+5. Update Ctrl state for Ctrl+Ctrl logic
+6. Update modifier states for alternative hotkey combos
+
+**System Shortcut Protection**:
+- Blocks configuration of dangerous combinations: Ctrl+Alt+Delete, Win+L
+- Warns about potentially disruptive shortcuts: Alt+F4
+- Returns validation errors before initialization
+
+**Limitations**:
+- Hotkey changes require application restart to take effect
+- Some system-reserved shortcuts may be intercepted by Windows before reaching the application
+- No runtime hot-reload of hotkey configuration (restart required)
+
 ### History Logging
 
 When enabled in config (`SaveTranslationHistory = true`), all translations are appended to a file with format:
@@ -146,6 +218,7 @@ Configuration file is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Us
 - `[Dictionary]`: ShowDictionary
 - `[Interface]`: ShowTerminalOnTranslate, AutoHideTerminalSeconds
 - `[History]`: SaveTranslationHistory, HistoryFile
+- `[Hotkeys]`: AlternativeHotkey, EnableAlternativeHotkey
 
 Language names (e.g., "Russian", "English") are mapped to Google Translate codes (ru, en) in `ConfigManager::language_to_code()`.
 
