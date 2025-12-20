@@ -199,6 +199,8 @@ HistoryFile = {}
 ; Supported formats:
 ;   - Single keys: F1-F12 ONLY (other keys must use modifiers)
 ;   - Modifier combinations: Alt+Space, Ctrl+Shift+T, Win+T, etc.
+;     NOTE: Shift+Key is NOT allowed (interferes with text input)
+;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
 ;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, etc.
 ; Examples:
 ;   AlternativeHotkey = F9
@@ -621,6 +623,15 @@ impl HotkeyParser {
                 }
             }
             HotkeyType::ModifierCombo { modifiers, key } => {
+                // Forbid Shift-only combinations (Shift+Key interferes with text input)
+                // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
+                let has_shift = modifiers.iter().any(|&m| m == VK_SHIFT.0 as u32);
+                let only_shift = modifiers.len() == 1 && has_shift;
+
+                if only_shift {
+                    return Err("Shift+Key combinations are not allowed (interferes with text input). Use multi-modifier combinations like Ctrl+Shift+T or Alt+Shift+Space instead.".to_string());
+                }
+
                 // Warn about common system shortcuts
                 let has_ctrl = modifiers.iter().any(|&m| m == VK_CONTROL.0 as u32 || m == VK_LCONTROL.0 as u32 || m == VK_RCONTROL.0 as u32);
                 let has_alt = modifiers.iter().any(|&m| m == VK_MENU.0 as u32 || m == VK_LMENU.0 as u32 || m == VK_RMENU.0 as u32);
@@ -698,6 +709,23 @@ mod tests {
 
         let result = HotkeyParser::parse("Win+T").unwrap();
         assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+    }
+
+    #[test]
+    fn test_shift_only_validation() {
+        // Shift+Key should fail validation
+        let hotkey = HotkeyParser::parse("Shift+T").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Shift+Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        // Multi-modifier with Shift should pass validation
+        let hotkey = HotkeyParser::parse("Ctrl+Shift+T").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Alt+Shift+Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
     }
 
     #[test]
