@@ -31,14 +31,24 @@ impl ClipboardManager {
     /// Automatically copy selected text (simulate Ctrl+C)
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error>> {
         unsafe {
+            // Release any pressed modifiers first (Alt, Shift, Win)
+            // This ensures Ctrl+C is recognized correctly when triggered by hotkeys like Alt+Space
+            keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Alt up
+            keybd_event(VK_SHIFT.0 as u8, 0, KEYEVENTF_KEYUP, 0);     // Shift up
+            keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up
+            keybd_event(VK_RWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up (right)
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            // Simulate Ctrl+C
             keybd_event(VK_CONTROL.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
             keybd_event(b'C', 0, KEYBD_EVENT_FLAGS(0), 0);
             keybd_event(b'C', 0, KEYEVENTF_KEYUP, 0);
             keybd_event(VK_CONTROL.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-            
+
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        
+
         Ok(())
     }
 
