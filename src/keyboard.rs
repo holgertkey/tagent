@@ -155,13 +155,23 @@ unsafe fn trigger_translation() {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 if let Err(e) = translator_clone.translate_clipboard().await {
-                    println!("Translation error: {}", e);
+                    eprintln!("Translation error: {}", e);
                 }
                 if let Ok(mut proc) = processing_clone.lock() {
                     *proc = false;
                 }
             });
         });
+    }
+}
+
+/// Normalize virtual key code (convert specific L/R codes to generic codes)
+fn normalize_vk_code(vk_code: u32) -> u32 {
+    match vk_code {
+        162 | 163 => 17,  // VK_LCONTROL/VK_RCONTROL -> VK_CONTROL
+        164 | 165 => 18,  // VK_LMENU/VK_RMENU -> VK_MENU
+        160 | 161 => 16,  // VK_LSHIFT/VK_RSHIFT -> VK_SHIFT
+        _ => vk_code,
     }
 }
 
@@ -181,9 +191,11 @@ unsafe fn handle_alternative_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                     HotkeyType::ModifierCombo { modifiers, key } => {
                         if let Some(modifier_state) = MODIFIER_STATE.get() {
                             if let Ok(mut state) = modifier_state.lock() {
+                                let normalized_vk = normalize_vk_code(vk_code);
+
                                 // Update modifier state
-                                if modifiers.contains(&vk_code) {
-                                    state.insert(vk_code, is_key_down);
+                                if modifiers.contains(&normalized_vk) {
+                                    state.insert(normalized_vk, is_key_down);
                                 }
 
                                 // Check if all modifiers are pressed and the key is pressed
@@ -199,14 +211,15 @@ unsafe fn handle_alternative_hotkey(vk_code: u32, is_key_down: bool) -> bool {
 
                                 // Clean up state on key up
                                 if !is_key_down {
-                                    state.insert(vk_code, false);
+                                    state.insert(normalized_vk, false);
                                 }
                             }
                         }
                     }
 
                     HotkeyType::DoublePress { vk_code: target_vk, min_interval_ms, max_interval_ms } => {
-                        if is_key_down && vk_code == *target_vk {
+                        let normalized_vk = normalize_vk_code(vk_code);
+                        if is_key_down && normalized_vk == *target_vk {
                             if let Some(last_key_time) = LAST_KEY_TIME.get() {
                                 if let Ok(mut last_time) = last_key_time.lock() {
                                     let now = Instant::now();
@@ -241,8 +254,15 @@ unsafe fn handle_alternative_hotkey(vk_code: u32, is_key_down: bool) -> bool {
 unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if n_code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
-        
-        if w_param.0 as u32 == WM_KEYDOWN {
+
+        // Ignore injected events (simulated by keybd_event, SendInput, etc.)
+        // This allows our copy_selected_text() Ctrl+C simulation to work
+        const LLKHF_INJECTED: u32 = 0x10;
+        if (kbd_struct.flags.0 & LLKHF_INJECTED) != 0 {
+            return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
+        }
+
+        if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
             // Handle Ctrl key for double-press detection
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
                 if let (Some(_translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) =
@@ -281,7 +301,8 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
 
                                     // println!("Double Ctrl detected ({}ms apart)", time_since_last.as_millis());
                                     trigger_translation();
-                                    return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
+                                    // Block the event - don't pass it to other applications
+                                    return LRESULT(1);
                                 } else if time_since_last < Duration::from_millis(50) {
                                     println!("Ctrl press too fast ({}ms) - ignoring contact bounce", time_since_last.as_millis());
                                 } else {
@@ -301,11 +322,12 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
             if let Some(alt_enabled) = ALT_HOTKEY_ENABLED.get() {
                 if alt_enabled.load(Ordering::Relaxed) {
                     if handle_alternative_hotkey(kbd_struct.vkCode, true) {
-                        return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
+                        // Block the event - don't pass it to other applications
+                        return LRESULT(1);
                     }
                 }
             }
-        } else if w_param.0 as u32 == WM_KEYUP {
+        } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
             // Handle Ctrl key up - mark as not pressed
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
                 if let Some(ctrl_is_pressed) = CTRL_IS_PRESSED.get() {

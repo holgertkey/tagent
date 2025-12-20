@@ -197,13 +197,14 @@ HistoryFile = {}
 [Hotkeys]
 ; Alternative hotkey for translation
 ; Supported formats:
-;   - Single keys: F1-F12, Space, etc.
-;   - Modifier combinations: Alt+Space, Ctrl+Shift+T, Win+T
-;   - Double-press: Ctrl+Ctrl (default), F8+F8
+;   - Single keys: F1-F12 ONLY (other keys must use modifiers)
+;   - Modifier combinations: Alt+Space, Ctrl+Shift+T, Win+T, etc.
+;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, etc.
 ; Examples:
 ;   AlternativeHotkey = F9
 ;   AlternativeHotkey = Alt+Space
 ;   AlternativeHotkey = Ctrl+Shift+C
+;   AlternativeHotkey = F8+F8
 ; Note: Ctrl+Ctrl double-press is always active regardless of this setting
 AlternativeHotkey = {}
 
@@ -609,6 +610,16 @@ impl HotkeyParser {
     /// Validate that the hotkey doesn't conflict with critical system shortcuts
     pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
         match hotkey {
+            HotkeyType::SingleKey { vk_code } => {
+                // Only allow F1-F12 as single keys
+                const VK_F1: u32 = 112;
+                const VK_F12: u32 = 123;
+                if *vk_code < VK_F1 || *vk_code > VK_F12 {
+                    return Err(format!(
+                        "Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)"
+                    ));
+                }
+            }
             HotkeyType::ModifierCombo { modifiers, key } => {
                 // Warn about common system shortcuts
                 let has_ctrl = modifiers.iter().any(|&m| m == VK_CONTROL.0 as u32 || m == VK_LCONTROL.0 as u32 || m == VK_RCONTROL.0 as u32);
@@ -642,14 +653,39 @@ mod tests {
 
     #[test]
     fn test_parse_single_key() {
+        // F9 should parse correctly
         let result = HotkeyParser::parse("F9").unwrap();
         assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
 
         let result = HotkeyParser::parse("f9").unwrap();
         assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
 
+        // Space should parse but fail validation (tested separately)
         let result = HotkeyParser::parse("Space").unwrap();
         assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+    }
+
+    #[test]
+    fn test_single_key_validation() {
+        // F1-F12 should pass validation
+        let hotkey = HotkeyParser::parse("F9").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("F1").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("F12").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        // Other single keys should fail validation
+        let hotkey = HotkeyParser::parse("Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Tab").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Enter").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
     }
 
     #[test]
