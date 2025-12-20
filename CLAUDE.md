@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Use `.debug/` folder for temporary files**: Write all temporary files, reports, test logs, debug output, and any other temporary artifacts to the `.debug/` folder. This keeps the repository root clean and organized. The `.debug/` folder is already added to `.gitignore`.
 
-- The `.TEST` folder contains files and folders for testing the project.
+- The `.debug/.TESTS` folder contains temporary files and folders for testing the project.
 
 - **IMPORTANT: When fixing bugs or errors in the code, ALWAYS write proper tests immediately to prevent regression.**
 
