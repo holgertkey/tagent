@@ -129,7 +129,7 @@ fn show_unified_mode_info() {
     println!("- Set 'SaveTranslationHistory = true' to log all translations");
     println!("- Changes take effect immediately (no restart required)");
     println!();
-    println!("Exit: Type 'exit', 'quit', 'q', or '-q' below");
+    println!("Exit: Type '--exit', '--quit', or '-q' below");
     println!("=====================================");
     println!();
 }
