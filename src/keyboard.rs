@@ -191,9 +191,12 @@ unsafe fn handle_alternative_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                             if let Ok(mut state) = modifier_state.lock() {
                                 let normalized_vk = normalize_vk_code(vk_code);
 
-                                // Update modifier state
+                                // Update modifier state and block modifier events to prevent system sounds
                                 if modifiers.contains(&normalized_vk) {
                                     state.insert(normalized_vk, is_key_down);
+                                    // Block modifier key events (especially Alt) to prevent menu activation
+                                    // and system sounds
+                                    return true;
                                 }
 
                                 // Check if all modifiers are pressed and the key is pressed
@@ -338,7 +341,10 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
             // Handle alternative hotkey key up (for modifier state tracking)
             if let Some(alt_enabled) = ALT_HOTKEY_ENABLED.get() {
                 if alt_enabled.load(Ordering::Relaxed) {
-                    handle_alternative_hotkey(kbd_struct.vkCode, false);
+                    if handle_alternative_hotkey(kbd_struct.vkCode, false) {
+                        // Block the key up event to match the blocked key down event
+                        return LRESULT(1);
+                    }
                 }
             }
         }

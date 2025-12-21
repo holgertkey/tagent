@@ -31,46 +31,70 @@ impl ClipboardManager {
     /// Automatically copy selected text (simulate Ctrl+C)
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error>> {
         unsafe {
+            // Wait a bit to allow user to release modifier keys
+            // This is important for Alt+ combinations which are blocked in the hook
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Create input array for SendInput
+            let mut inputs: Vec<INPUT> = Vec::new();
+
             // Release any pressed modifiers first (Alt, Shift, Win)
             // This ensures Ctrl+C is recognized correctly when triggered by hotkeys like Alt+Space
-            keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Alt up
-            keybd_event(VK_SHIFT.0 as u8, 0, KEYEVENTF_KEYUP, 0);     // Shift up
-            keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up
-            keybd_event(VK_RWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up (right)
 
-            // Wait for modifier keys to be physically released (up to 500ms)
-            let start = std::time::Instant::now();
-            loop {
-                let alt_pressed = (GetAsyncKeyState(VK_MENU.0 as i32) & 0x8000u16 as i16) != 0;
-                let shift_pressed = (GetAsyncKeyState(VK_SHIFT.0 as i32) & 0x8000u16 as i16) != 0;
-                let lwin_pressed = (GetAsyncKeyState(VK_LWIN.0 as i32) & 0x8000u16 as i16) != 0;
-                let rwin_pressed = (GetAsyncKeyState(VK_RWIN.0 as i32) & 0x8000u16 as i16) != 0;
+            // Release Alt (both left and right)
+            inputs.push(Self::create_key_input(VK_MENU.0 as u16, true));
+            inputs.push(Self::create_key_input(VK_LMENU.0 as u16, true));
+            inputs.push(Self::create_key_input(VK_RMENU.0 as u16, true));
 
-                if !alt_pressed && !shift_pressed && !lwin_pressed && !rwin_pressed {
-                    break; // All modifiers released
-                }
+            // Release Shift (both left and right)
+            inputs.push(Self::create_key_input(VK_SHIFT.0 as u16, true));
+            inputs.push(Self::create_key_input(VK_LSHIFT.0 as u16, true));
+            inputs.push(Self::create_key_input(VK_RSHIFT.0 as u16, true));
 
-                if start.elapsed() > std::time::Duration::from_millis(500) {
-                    // Timeout - proceed anyway
-                    break;
-                }
+            // Release Win (both left and right)
+            inputs.push(Self::create_key_input(VK_LWIN.0 as u16, true));
+            inputs.push(Self::create_key_input(VK_RWIN.0 as u16, true));
 
-                std::thread::sleep(std::time::Duration::from_millis(10));
+            // Send all key releases at once
+            if !inputs.is_empty() {
+                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
             }
 
-            // Additional small delay to ensure system processes the key releases
-            std::thread::sleep(std::time::Duration::from_millis(20));
+            // Delay to ensure modifiers are processed
+            std::thread::sleep(std::time::Duration::from_millis(100));
 
-            // Simulate Ctrl+C
-            keybd_event(VK_CONTROL.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
-            keybd_event(b'C', 0, KEYBD_EVENT_FLAGS(0), 0);
-            keybd_event(b'C', 0, KEYEVENTF_KEYUP, 0);
-            keybd_event(VK_CONTROL.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+            // Simulate Ctrl+C using SendInput
+            let mut ctrl_c_inputs: Vec<INPUT> = Vec::new();
 
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            // Ctrl down
+            ctrl_c_inputs.push(Self::create_key_input(VK_CONTROL.0 as u16, false));
+            // C down
+            ctrl_c_inputs.push(Self::create_key_input(b'C' as u16, false));
+            // C up
+            ctrl_c_inputs.push(Self::create_key_input(b'C' as u16, true));
+            // Ctrl up
+            ctrl_c_inputs.push(Self::create_key_input(VK_CONTROL.0 as u16, true));
+
+            SendInput(&ctrl_c_inputs, std::mem::size_of::<INPUT>() as i32);
+
+            // Wait for clipboard to update
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
         Ok(())
+    }
+
+    /// Helper function to create keyboard input structure for SendInput
+    unsafe fn create_key_input(vk_code: u16, is_keyup: bool) -> INPUT {
+        let mut input = INPUT::default();
+        input.r#type = INPUT_KEYBOARD;
+
+        let mut ki = KEYBDINPUT::default();
+        ki.wVk = VIRTUAL_KEY(vk_code);
+        ki.dwFlags = if is_keyup { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) };
+
+        input.Anonymous.ki = ki;
+        input
     }
 
     /// Get text from clipboard with automatic copying
