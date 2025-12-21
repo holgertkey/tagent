@@ -123,46 +123,46 @@ impl InteractiveMode {
     async fn handle_command(&self, text: &str) -> Result<bool, String> {
         match text {
             "" => return Ok(true), // Skip empty lines
-            
-            // Exit commands
-            "exit" | "quit" | "q" | "-q" => {
+
+            // Exit commands (only with dash)
+            "-q" | "--quit" | "--exit" => {
                 println!();
                 println!("Goodbye!");
                 self.should_exit.store(true, Ordering::SeqCst);
                 return Ok(true);
             }
-            
-            // Help commands
-            "help" | "?" | "-h" | "--help" => {
+
+            // Help commands (only with dash)
+            "-h" | "--help" | "-?" => {
                 self.show_unified_help();
                 return Ok(true);
             }
-            
-            // Config commands
-            "config" | "-c" | "--config" => {
+
+            // Config commands (only with dash)
+            "-c" | "--config" => {
                 if let Err(e) = self.show_current_config() {
                     println!("Config error: {}", e);
                 }
                 return Ok(true);
             }
-            
-            // Version commands
-            "version" | "-v" | "--version" => {
+
+            // Version commands (only with dash)
+            "-v" | "--version" => {
                 CliHandler::show_version();
                 return Ok(true);
             }
-            
-            // Clear screen commands
-            "clear" | "cls" => {
+
+            // Clear screen commands (only with dash)
+            "--clear" | "--cls" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
                 println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
                 println!("Interactive and Hotkey modes active");
-                println!("Type 'help' for commands or just type text to translate");
+                println!("Type '-h' or '--help' for commands or just type text to translate");
                 println!();
                 return Ok(true);
             }
-            
+
             _ => return Ok(false), // Not a command, should be translated
         }
     }
@@ -175,7 +175,7 @@ impl InteractiveMode {
         println!("Translation Methods:");
         println!();
         println!("1. Interactive (This Terminal):");
-        println!("   - Type text and press Enter to translate");
+        println!("   - Type any text and press Enter to translate");
         println!("   - Single words show dictionary entries (if enabled)");
         println!("   - Phrases show translations");
         println!("   - Empty line = skip/continue");
@@ -186,23 +186,27 @@ impl InteractiveMode {
         println!("   - Result copied to clipboard automatically");
         println!("   - Prompt returns automatically after hotkey translation");
         println!();
-        println!("Interactive Commands:");
-        println!("  help, ?, -h, --help     - Show this help");
-        println!("  config, -c, --config    - Show current translation settings");
-        println!("  version, -v, --version  - Show version information");
-        println!("  clear, cls              - Clear screen");
-        println!("  exit, quit, q, -q       - Exit program");
+        println!("Commands (must start with dash):");
+        println!("  -h, --help, -?          - Show this help");
+        println!("  -c, --config            - Show current translation settings");
+        println!("  -v, --version           - Show version information");
+        println!("  --clear, --cls          - Clear screen");
+        println!("  -q, --quit, --exit      - Exit program");
+        println!();
+        println!("Important:");
+        println!("- Commands MUST start with dash (-) or double-dash (--)");
+        println!("- Text without dash prefix will be translated");
+        println!("- Examples: 'help' → translates word 'help'");
+        println!("            '-h'   → shows this help");
+        println!("            'exit' → translates word 'exit'");
+        println!("            '-q'   → exits the program");
         println!();
         println!("Translation:");
-        println!("- Any text not recognized as a command will be translated");
         println!("- Same translation engine for both interactive and hotkey methods");
         println!("- Uses current configuration from tagent.conf");
         println!("- Configuration changes take effect immediately");
         println!("- Results copied to clipboard (if enabled in config)");
         println!("- Translation history saved automatically (if enabled in config)");
-        println!();
-        println!("Exit Program:");
-        println!("- Type 'exit', 'quit', 'q', or '-q' in this terminal");
         println!("===============================================");
         println!();
     }
