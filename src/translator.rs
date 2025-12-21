@@ -362,9 +362,9 @@ impl Translator {
     /// Format dictionary response into compact format (GUI mode)
     fn format_dictionary_response(&self, word: &str, json: &Value, target_lang: &str) -> Result<String, Box<dyn Error>> {
         let mut result = Vec::new();
-        
-        // Add the original word at the beginning for GUI mode
-        result.push(format!("[Word]: {}", word));
+
+        // Add the original word at the beginning (without [Word]: prefix, it's added by caller)
+        result.push(word.to_string());
 
         // Dictionary definitions (at index 1)
         if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
