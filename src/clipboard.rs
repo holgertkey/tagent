@@ -38,7 +38,28 @@ impl ClipboardManager {
             keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up
             keybd_event(VK_RWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);      // Win up (right)
 
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            // Wait for modifier keys to be physically released (up to 500ms)
+            let start = std::time::Instant::now();
+            loop {
+                let alt_pressed = (GetAsyncKeyState(VK_MENU.0 as i32) & 0x8000u16 as i16) != 0;
+                let shift_pressed = (GetAsyncKeyState(VK_SHIFT.0 as i32) & 0x8000u16 as i16) != 0;
+                let lwin_pressed = (GetAsyncKeyState(VK_LWIN.0 as i32) & 0x8000u16 as i16) != 0;
+                let rwin_pressed = (GetAsyncKeyState(VK_RWIN.0 as i32) & 0x8000u16 as i16) != 0;
+
+                if !alt_pressed && !shift_pressed && !lwin_pressed && !rwin_pressed {
+                    break; // All modifiers released
+                }
+
+                if start.elapsed() > std::time::Duration::from_millis(500) {
+                    // Timeout - proceed anyway
+                    break;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+
+            // Additional small delay to ensure system processes the key releases
+            std::thread::sleep(std::time::Duration::from_millis(20));
 
             // Simulate Ctrl+C
             keybd_event(VK_CONTROL.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
