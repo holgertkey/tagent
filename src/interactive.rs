@@ -223,12 +223,21 @@ impl InteractiveMode {
         println!("Target Language: {} ({})", config.target_language, target_code);
         println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
         println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
+        println!();
+        println!("Hotkeys:");
+        println!("  Default: Ctrl+Ctrl (always active)");
+        if config.enable_alternative_hotkey {
+            println!("  Alternative: {} (enabled)", config.alternative_hotkey);
+        } else {
+            println!("  Alternative: {} (disabled)", config.alternative_hotkey);
+        }
+        println!();
         println!("Show Terminal on Hotkey: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
-        println!("Auto-hide Terminal: {} seconds", 
-            if config.auto_hide_terminal_seconds == 0 { 
-                "Disabled".to_string() 
-            } else { 
-                config.auto_hide_terminal_seconds.to_string() 
+        println!("Auto-hide Terminal: {} seconds",
+            if config.auto_hide_terminal_seconds == 0 {
+                "Disabled".to_string()
+            } else {
+                config.auto_hide_terminal_seconds.to_string()
             }
         );
         println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
