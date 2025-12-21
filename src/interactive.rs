@@ -61,8 +61,6 @@ impl InteractiveMode {
 
     /// Start interactive translation mode (unified with GUI)
     pub async fn start(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        println!("Ready for interactive translation and hotkey commands...");
-        println!();
         
         loop {
             // Check if we should exit
