@@ -96,11 +96,11 @@ Goodbye!
 ```
 
 ### Interactive Commands
-- `help`, `?`, `-h`, `--help` - Show help
-- `config`, `-c`, `--config` - Show current configuration  
-- `version`, `-v`, `--version` - Show version information
-- `clear`, `cls` - Clear screen
-- `exit`, `quit`, `q`, `-q` - Exit program
+- `-?`, `-h`, `--help` - Show help
+- `-c`, `--config` - Show current configuration  
+- `-v`, `--version` - Show version information
+- `--clear`, `--cls` - Clear screen
+- `--exit`, `--quit`, `-q` - Exit program
 
 ## Configuration
 
