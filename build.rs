@@ -33,18 +33,21 @@ fn main() {
     }
 }
 
-/// Synchronize version in documentation files (README.md and CLAUDE.md)
+/// Synchronize version in documentation files (README.md, CLAUDE.md, CHANGELOG.md)
 /// This ensures version is defined only in Cargo.toml and auto-syncs everywhere
 fn sync_version_in_docs(version: &str) {
     // Files to update with version patterns
     let files = vec![
         ("README.md", vec![
             ("# Tagent Text Translator v", "\n"),
-            ("### v", " (Current)"),
+            ("**Current Version**: v", "\n"),
             ("**Tagent Text Translator v", "** - Fast, reliable"),
         ]),
         ("CLAUDE.md", vec![
             ("(v", ") built in Rust"),
+        ]),
+        ("CHANGELOG.md", vec![
+            ("## [", "] - "),  // Changelog section header: ## [VERSION] - DATE
         ]),
     ];
 

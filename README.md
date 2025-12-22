@@ -325,30 +325,15 @@ dirs = "5.0"
 
 ## Version History
 
-### v0.8.0+022 (Current)
-- ✅ Configuration moved to AppData folder (`%APPDATA%\Tagent\`)
-- ✅ Automatic directory creation for config and history files
-- ✅ Better compliance with Windows application standards
-- ✅ Cleaner project structure (no config files in program directory)
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-### v0.8.0
-- ✅ Translation history logging with timestamps
-- ✅ Configurable history file path
-- ✅ Multi-line format for better readability
-- ✅ History works in all modes (GUI, CLI, Interactive)
+**Current Version**: v0.8.0+022
 
-### v0.7.0
-- ✅ Unified interface: GUI hotkeys + Interactive terminal
-- ✅ Interactive commands with smart recognition
-- ✅ Simultaneous operation of all translation modes
-- ✅ Enhanced command-line interface
-
-### Earlier Versions
-- Basic GUI hotkey functionality
-- CLI translation support
-- Dictionary lookup feature
-- Configuration management
-- Multi-language support
+**Recent Changes**:
+- Automatic version synchronization system
+- Configuration moved to AppData folder
+- Translation history logging with timestamps
+- Unified GUI + Interactive interface
 
 ## Contributing
 

@@ -37,14 +37,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Version is defined **ONLY** in `Cargo.toml`. All other locations automatically sync from it:
 - **Source code (.rs)**: Uses `env!("CARGO_PKG_VERSION")` macro at compile time
 - **Windows resources (build.rs)**: Reads from `env!("CARGO_PKG_VERSION")` and converts to Windows format (x.x.x.x)
-- **Documentation files (README.md, CLAUDE.md)**: Automatically updated by `build.rs` during compilation
+- **Documentation files (README.md, CLAUDE.md, CHANGELOG.md)**: Automatically updated by `build.rs` during compilation
   - `sync_version_in_docs()` function scans and updates version patterns
   - Updates only when version changes to avoid unnecessary writes
   - Runs on every `cargo build` or `cargo check`
+  - CHANGELOG.md: Updates current version header `## [VERSION] - DATE`
+  - README.md: Updates title, current version, and footer
+  - CLAUDE.md: Updates project overview
 
 To change version: edit only `Cargo.toml`, then rebuild. All files will automatically use the new version.
 
-**Note**: Version history sections (e.g., `### v0.7.0`) are intentionally NOT synchronized as they contain historical data.
+**Changelog Management**:
+- **CHANGELOG.md** follows [Keep a Changelog](https://keepachangelog.com/) format
+- When incrementing version in `Cargo.toml`:
+  1. Version number auto-syncs to CHANGELOG.md header
+  2. Manually add entry describing changes under appropriate sections:
+     - **Added**: New features
+     - **Changed**: Changes to existing functionality
+     - **Deprecated**: Soon-to-be removed features
+     - **Removed**: Removed features
+     - **Fixed**: Bug fixes
+     - **Security**: Security improvements
+  3. Update the date in the version header if releasing
+- Keep `## [Unreleased]` section at top for ongoing work
+- README.md links to CHANGELOG.md for full version history
+
+**Note**: Old version sections in CHANGELOG.md (e.g., `## [0.7.0]`) are intentionally NOT synchronized as they contain historical data.
 
 
 ## Project Overview
