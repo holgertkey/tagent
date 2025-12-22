@@ -35,16 +35,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Automatic Version Synchronization**:
 Version is defined **ONLY** in `Cargo.toml`. All other locations automatically sync from it:
-- **Source code (.rs)**: Uses `env!("CARGO_PKG_VERSION")` macro
+- **Source code (.rs)**: Uses `env!("CARGO_PKG_VERSION")` macro at compile time
 - **Windows resources (build.rs)**: Reads from `env!("CARGO_PKG_VERSION")` and converts to Windows format (x.x.x.x)
-- **Documentation**: Should reference the conceptual version, but exact strings are in code
+- **Documentation files (README.md, CLAUDE.md)**: Automatically updated by `build.rs` during compilation
+  - `sync_version_in_docs()` function scans and updates version patterns
+  - Updates only when version changes to avoid unnecessary writes
+  - Runs on every `cargo build` or `cargo check`
 
 To change version: edit only `Cargo.toml`, then rebuild. All files will automatically use the new version.
+
+**Note**: Version history sections (e.g., `### v0.7.0`) are intentionally NOT synchronized as they contain historical data.
 
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.8.0+001) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.8.0+022) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide Ctrl+Ctrl double-press to translate selected text
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
