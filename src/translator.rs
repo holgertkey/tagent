@@ -142,6 +142,15 @@ impl Translator {
                     if let Err(e) = self.save_translation_history(&original_text, &dictionary_info, &source_code, &target_code, &config) {
                         println!("History save error: {}", e);
                     }
+
+                    // Show [Auto]: prompt after hotkey translation
+                    let auto_prompt = "[Auto]: ";
+                    if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+                        print!("{}", auto_prompt.color(color));
+                    } else {
+                        print!("{}", auto_prompt);
+                    }
+                    io::stdout().flush().ok();
                 }
                 Err(_) => {
                     // Fall back to regular translation
@@ -216,12 +225,21 @@ impl Translator {
                 if let Err(e) = self.save_translation_history(text, &translated_text, source_code, target_code, config) {
                     println!("History save error: {}", e);
                 }
+
+                // Show [Auto]: prompt after hotkey translation
+                let auto_prompt = "[Auto]: ";
+                if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+                    print!("{}", auto_prompt.color(color));
+                } else {
+                    print!("{}", auto_prompt);
+                }
+                io::stdout().flush().ok();
             }
             Err(e) => {
                 println!("Translation error: {}", e);
             }
         }
-        
+
         Ok(())
     }
 
