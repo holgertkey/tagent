@@ -5,7 +5,7 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.8.0+023] - 2025-12-22
+## [0.8.0+024] - 2025-12-24
 
 ### Added
 - Automatic version synchronization system in build.rs
@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detailed version sync reporting in `.debug/` folder
 
 ### Changed
+- Interactive mode commands now use slash prefix (/) instead of dash (-/--) for better consistency
+  - Commands: /h, /help, /?, /c, /config, /v, /version, /clear, /cls, /q, /quit, /exit
 - Configuration moved to AppData folder (`%APPDATA%\Tagent\`)
 - Automatic directory creation for config and history files
 - Better compliance with Windows application standards

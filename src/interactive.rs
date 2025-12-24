@@ -124,41 +124,41 @@ impl InteractiveMode {
         match text {
             "" => return Ok(true), // Skip empty lines
 
-            // Exit commands (only with dash)
-            "-q" | "--quit" | "--exit" => {
+            // Exit commands (only with slash)
+            "/q" | "/quit" | "/exit" => {
                 println!();
                 println!("Goodbye!");
                 self.should_exit.store(true, Ordering::SeqCst);
                 return Ok(true);
             }
 
-            // Help commands (only with dash)
-            "-h" | "--help" | "-?" => {
+            // Help commands (only with slash)
+            "/h" | "/help" | "/?" => {
                 self.show_unified_help();
                 return Ok(true);
             }
 
-            // Config commands (only with dash)
-            "-c" | "--config" => {
+            // Config commands (only with slash)
+            "/c" | "/config" => {
                 if let Err(e) = self.show_current_config() {
                     println!("Config error: {}", e);
                 }
                 return Ok(true);
             }
 
-            // Version commands (only with dash)
-            "-v" | "--version" => {
+            // Version commands (only with slash)
+            "/v" | "/version" => {
                 CliHandler::show_version();
                 return Ok(true);
             }
 
-            // Clear screen commands (only with dash)
-            "--clear" | "--cls" => {
+            // Clear screen commands (only with slash)
+            "/clear" | "/cls" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
                 println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
                 println!("Interactive and Hotkey modes active");
-                println!("Type '-h' or '--help' for commands or just type text to translate");
+                println!("Type '/h' or '/help' for commands or just type text to translate");
                 println!();
                 return Ok(true);
             }
@@ -186,20 +186,20 @@ impl InteractiveMode {
         println!("   - Result copied to clipboard automatically");
         println!("   - Prompt returns automatically after hotkey translation");
         println!();
-        println!("Commands (must start with dash):");
-        println!("  -h, --help, -?          - Show this help");
-        println!("  -c, --config            - Show current translation settings");
-        println!("  -v, --version           - Show version information");
-        println!("  --clear, --cls          - Clear screen");
-        println!("  -q, --quit, --exit      - Exit program");
+        println!("Commands (must start with slash):");
+        println!("  /h, /help, /?           - Show this help");
+        println!("  /c, /config             - Show current translation settings");
+        println!("  /v, /version            - Show version information");
+        println!("  /clear, /cls            - Clear screen");
+        println!("  /q, /quit, /exit        - Exit program");
         println!();
         println!("Important:");
-        println!("- Commands MUST start with dash (-) or double-dash (--)");
-        println!("- Text without dash prefix will be translated");
+        println!("- Commands MUST start with slash (/)");
+        println!("- Text without slash prefix will be translated");
         println!("- Examples: 'help' → translates word 'help'");
-        println!("            '-h'   → shows this help");
+        println!("            '/h'   → shows this help");
         println!("            'exit' → translates word 'exit'");
-        println!("            '-q'   → exits the program");
+        println!("            '/q'   → exits the program");
         println!();
         println!("Translation:");
         println!("- Same translation engine for both interactive and hotkey methods");
