@@ -67,7 +67,7 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.8.0+024) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.8.0+025) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide Ctrl+Ctrl double-press to translate selected text
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
@@ -155,12 +155,12 @@ The keyboard hook in `keyboard.rs` implements debounced double-press detection:
 The application supports customizable hotkeys in addition to the default Ctrl+Ctrl double-press. This feature allows users to configure alternative key combinations through the configuration file.
 
 **Configuration** (`[Hotkeys]` section in tagent.conf):
-- `AlternativeHotkey`: Hotkey string specifying the key combination (default: "F9")
+- `AlternativeHotkey`: Hotkey string specifying the key combination (default: "Alt+Q")
 - `EnableAlternativeHotkey`: Boolean flag to enable/disable alternative hotkey (default: true)
 
 **Supported Hotkey Formats**:
 1. **Single keys**: `F1-F12`, `Space`, `Tab`, `Enter`, etc.
-   - Example: `AlternativeHotkey = F9`
+   - Example: `AlternativeHotkey = F9` (or single modifier combo like `Alt+Q`)
 2. **Modifier combinations**: `Alt+Space`, `Ctrl+Shift+T`, `Win+T`
    - Example: `AlternativeHotkey = Alt+Space`
 3. **Double-press patterns**: `F8+F8`, `Ctrl+Ctrl`
@@ -193,7 +193,7 @@ The application supports customizable hotkeys in addition to the default Ctrl+Ct
 
 **Backward Compatibility**:
 - Ctrl+Ctrl double-press **always works** regardless of alternative hotkey settings
-- Missing `[Hotkeys]` section in config uses defaults (F9 enabled)
+- Missing `[Hotkeys]` section in config uses defaults (Alt+Q enabled)
 - Invalid hotkey strings disable alternative hotkey with warning message, Ctrl+Ctrl continues to work
 - No breaking changes to existing functionality
 

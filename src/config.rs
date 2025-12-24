@@ -45,7 +45,7 @@ impl Default for Config {
             translation_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for translation
             dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
             auto_prompt_color: "None".to_string(),                 // Default no color for Auto
-            alternative_hotkey: "F9".to_string(),                  // Default alternative hotkey
+            alternative_hotkey: "Alt+Q".to_string(),               // Default alternative hotkey
             enable_alternative_hotkey: true,                       // Enable by default
         }
     }
@@ -203,6 +203,7 @@ HistoryFile = {}
 ;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
 ;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, etc.
 ; Examples:
+;   AlternativeHotkey = Alt+Q
 ;   AlternativeHotkey = F9
 ;   AlternativeHotkey = Alt+Space
 ;   AlternativeHotkey = Ctrl+Shift+C

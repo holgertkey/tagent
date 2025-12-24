@@ -85,7 +85,7 @@ impl CliHandler {
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - SaveTranslationHistory: Save all translations to file");
         println!("  - HistoryFile: File path for translation history");
-        println!("  - AlternativeHotkey: Custom hotkey (F9, Alt+Space, etc.)");
+        println!("  - AlternativeHotkey: Custom hotkey (Alt+Q, F9, Alt+Space, etc.)");
         println!("  - EnableAlternativeHotkey: Enable/disable alternative hotkey");
         println!();
         println!("Run without arguments to start unified mode with interactive prompt and hotkeys.");
