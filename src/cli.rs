@@ -62,7 +62,7 @@ impl CliHandler {
         println!("  -h, --help     Show this help message");
         println!("  -c, --config   Show current configuration");
         println!("  -v, --version  Show version information");
-        println!("  -q             Exit (for interactive mode compatibility)");
+        println!("  -q, --quit     Exit (for interactive mode /q, /quit)");
         println!();
         println!("EXAMPLES:");
         println!("  tagent hello");
@@ -74,7 +74,7 @@ impl CliHandler {
         println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl or F9)");
         println!("    - Both methods work simultaneously");
         println!("    - Configure alternative hotkeys in tagent.conf [Hotkeys] section");
-        println!("    - Interactive commands: -h, -c, -v, -q, help, config, etc.");
+        println!("    - Interactive commands: /h, /c, /v, /q, /help, /config, etc.");
         println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
         println!();
         println!("CONFIGURATION:");
@@ -100,7 +100,7 @@ impl CliHandler {
         println!("- Unified mode: Interactive prompt + GUI hotkeys work simultaneously");
         println!("- Customizable hotkeys: Ctrl+Ctrl (default) + configurable alternatives (F9, Alt+Space, etc.)");
         println!("- CLI mode: Direct text translation from command line");
-        println!("- Interactive commands: -h, -c, -v, -q and full names");
+        println!("- Interactive commands: /h, /c, /v, /q, /cls and full names");
         println!("- Dictionary lookup for single words");
         println!("- Translation history logging");
         println!("- Multi-language support");

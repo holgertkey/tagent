@@ -108,7 +108,7 @@ fn show_unified_mode_info() {
     println!();
     println!("2. Interactive Mode (Current Terminal):");
     println!("   - Type text directly below and press Enter");
-    println!("   - Commands: -h (help), -c (config), -v (version), -q (quit)");
+    println!("   - Commands: /h (help), /c (config), /v (version), /q (quit), /cls (clear)");
     println!("   - Single words show dictionary entries");
     println!("   - Phrases show translations");
     println!("   - Any text not recognized as command will be translated");
@@ -129,7 +129,7 @@ fn show_unified_mode_info() {
     println!("- Set 'SaveTranslationHistory = true' to log all translations");
     println!("- Changes take effect immediately (no restart required)");
     println!();
-    println!("Exit: Type '--exit', '--quit', or '-q' below");
+    println!("Exit: Type '/exit', '/quit', or '/q' below");
     println!("=====================================");
     println!();
 }
