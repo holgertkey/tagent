@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-const TTS_API_URL: &str = "http://translate.google.com/translate_tts";
+const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 

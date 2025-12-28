@@ -263,6 +263,9 @@ unsafe fn trigger_speech() {
 /// Speak text from clipboard
 async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
     use crate::clipboard::ClipboardManager;
+    use crate::window::WindowManager;
+    use std::io::{self, Write};
+    use colored::Colorize;
 
     // Create clipboard manager
     let clipboard = ClipboardManager::new();
@@ -277,12 +280,26 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
         return Ok(());
     }
 
-    println!("Speaking text: {} chars", text.len());
-
     // Get language code from config
     let config_manager = ConfigManager::new(
         &ConfigManager::get_default_config_path()?.to_string_lossy()
     )?;
+
+    let config = config_manager.get_config();
+
+    // Show terminal window if configured
+    if config.show_terminal_on_translate {
+        match WindowManager::new() {
+            Ok(window_manager) => {
+                if let Err(e) = window_manager.show_terminal() {
+                    println!("Failed to show terminal: {}", e);
+                }
+            }
+            Err(e) => {
+                println!("Failed to create window manager: {}", e);
+            }
+        }
+    }
 
     // Detect or use source language
     let (source_code, _target_code) = config_manager.get_language_codes();
@@ -296,9 +313,47 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
         &source_code
     };
 
-    // Create speech manager and speak with stop flag
-    let speech_manager = SpeechManager::new();
-    speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await?;
+    // Clear any existing prompt and print speech info
+    print!("\r");
+    io::stdout().flush().ok();
+
+    // Show speech label
+    let speech_label = "[Speech]: ";
+    if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+        print!("{}", speech_label.color(color));
+    } else {
+        print!("{}", speech_label);
+    }
+    println!("{}", text);
+    println!(); // Add empty line
+
+    // Show [Auto]: prompt immediately (speech will continue in background)
+    let auto_prompt = "[Auto]: ";
+    if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+        print!("{}", auto_prompt.color(color));
+    } else {
+        print!("{}", auto_prompt);
+    }
+    io::stdout().flush().ok();
+
+    // Start speech in background (non-blocking) using separate thread
+    let text_clone = text.clone();
+    let lang_code_clone = lang_code.to_string();
+    std::thread::spawn(move || {
+        // Create a new tokio runtime for this thread
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let speech_manager = SpeechManager::new();
+            match speech_manager.speak_text_with_cancel(&text_clone, &lang_code_clone, stop_flag).await {
+                Ok(_) => {
+                    // Speech completed successfully - no output needed as user is already working
+                }
+                Err(e) => {
+                    eprintln!("Speech error: {}", e);
+                }
+            }
+        });
+    });
 
     Ok(())
 }
@@ -332,10 +387,11 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                             if let Ok(mut state) = modifier_state.lock() {
                                 let normalized_vk = normalize_vk_code(vk_code);
 
-                                // Update modifier state (DON'T block yet - let other hotkeys process too)
+                                // Update modifier state and block modifier events
                                 if modifiers.contains(&normalized_vk) {
                                     state.insert(normalized_vk, is_key_down);
-                                    // Don't return true here - let alternative hotkey also update state
+                                    // Block modifier to prevent system sounds and menu activation
+                                    return true;
                                 }
 
                                 // Check if all modifiers are pressed and the key is pressed
@@ -576,18 +632,6 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                     }
                 }
             }
-
-            // Block modifier keys (Alt, Shift, Win) if they're being tracked in MODIFIER_STATE
-            // This prevents system sounds and menu activation for hotkey combos
-            if let Some(modifier_state) = MODIFIER_STATE.get() {
-                if let Ok(state) = modifier_state.lock() {
-                    let normalized_vk = normalize_vk_code(kbd_struct.vkCode);
-                    // If this key is tracked as a modifier, block it
-                    if state.contains_key(&normalized_vk) {
-                        return LRESULT(1);
-                    }
-                }
-            }
         } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
             // Handle Ctrl key up - mark as not pressed
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
@@ -618,17 +662,6 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                 return LRESULT(1);
                             }
                         }
-                    }
-                }
-            }
-
-            // Block modifier key releases if they're being tracked
-            if let Some(modifier_state) = MODIFIER_STATE.get() {
-                if let Ok(state) = modifier_state.lock() {
-                    let normalized_vk = normalize_vk_code(kbd_struct.vkCode);
-                    // If this key is tracked as a modifier, block its release too
-                    if state.contains_key(&normalized_vk) {
-                        return LRESULT(1);
                     }
                 }
             }
