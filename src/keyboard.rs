@@ -27,7 +27,7 @@ static LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static SPEECH_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
 static SPEECH_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-static SPEECH_MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
+// Note: Speech hotkeys use shared MODIFIER_STATE (declared above with alternative hotkey vars)
 static SPEECH_LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
@@ -123,8 +123,7 @@ impl KeyboardHook {
         SPEECH_ENABLED.set(Arc::new(AtomicBool::new(config.enable_text_to_speech)))
             .map_err(|_| "SpeechEnabled already initialized")?;
 
-        SPEECH_MODIFIER_STATE.set(Arc::new(Mutex::new(HashMap::new())))
-            .map_err(|_| "SpeechModifierState already initialized")?;
+        // Note: Speech hotkeys use shared MODIFIER_STATE, no need for separate state
 
         SPEECH_LAST_KEY_TIME.set(Arc::new(Mutex::new(None)))
             .map_err(|_| "SpeechLastKeyTime already initialized")?;
@@ -318,14 +317,15 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                     }
 
                     HotkeyType::ModifierCombo { modifiers, key } => {
-                        if let Some(modifier_state) = SPEECH_MODIFIER_STATE.get() {
+                        // Use shared MODIFIER_STATE instead of separate state
+                        if let Some(modifier_state) = MODIFIER_STATE.get() {
                             if let Ok(mut state) = modifier_state.lock() {
                                 let normalized_vk = normalize_vk_code(vk_code);
 
-                                // Update modifier state and block modifier events
+                                // Update modifier state (DON'T block yet - let other hotkeys process too)
                                 if modifiers.contains(&normalized_vk) {
                                     state.insert(normalized_vk, is_key_down);
-                                    return true;
+                                    // Don't return true here - let alternative hotkey also update state
                                 }
 
                                 // Check if all modifiers are pressed and the key is pressed
@@ -550,6 +550,18 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                     }
                 }
             }
+
+            // Block modifier keys (Alt, Shift, Win) if they're being tracked in MODIFIER_STATE
+            // This prevents system sounds and menu activation for hotkey combos
+            if let Some(modifier_state) = MODIFIER_STATE.get() {
+                if let Ok(state) = modifier_state.lock() {
+                    let normalized_vk = normalize_vk_code(kbd_struct.vkCode);
+                    // If this key is tracked as a modifier, block it
+                    if state.contains_key(&normalized_vk) {
+                        return LRESULT(1);
+                    }
+                }
+            }
         } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
             // Handle Ctrl key up - mark as not pressed
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
@@ -580,6 +592,17 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
                                 return LRESULT(1);
                             }
                         }
+                    }
+                }
+            }
+
+            // Block modifier key releases if they're being tracked
+            if let Some(modifier_state) = MODIFIER_STATE.get() {
+                if let Ok(state) = modifier_state.lock() {
+                    let normalized_vk = normalize_vk_code(kbd_struct.vkCode);
+                    // If this key is tracked as a modifier, block its release too
+                    if state.contains_key(&normalized_vk) {
+                        return LRESULT(1);
                     }
                 }
             }
