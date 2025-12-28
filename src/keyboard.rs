@@ -30,6 +30,7 @@ static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 // Note: Speech hotkeys use shared MODIFIER_STATE (declared above with alternative hotkey vars)
 static SPEECH_LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 pub struct KeyboardHook;
 
@@ -130,6 +131,9 @@ impl KeyboardHook {
 
         IS_SPEAKING.set(Arc::new(Mutex::new(false)))
             .map_err(|_| "IsSpeaking already initialized")?;
+
+        SHOULD_STOP_SPEECH.set(Arc::new(AtomicBool::new(false)))
+            .map_err(|_| "ShouldStopSpeech already initialized")?;
 
         Ok(Self)
     }
@@ -232,14 +236,20 @@ unsafe fn trigger_speech() {
         }
     }
 
+    // Reset stop flag
+    if let Some(stop_flag) = SHOULD_STOP_SPEECH.get() {
+        stop_flag.store(false, Ordering::Relaxed);
+    }
+
     if let Some(translator) = TRANSLATOR.get() {
         let translator_clone = translator.clone();
         let speaking_clone = IS_SPEAKING.get().unwrap().clone();
+        let stop_flag_clone = SHOULD_STOP_SPEECH.get().unwrap().clone();
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) = speak_clipboard(&translator_clone).await {
+                if let Err(e) = speak_clipboard(&translator_clone, stop_flag_clone).await {
                     eprintln!("Speech error: {}", e);
                 }
                 if let Ok(mut speaking) = speaking_clone.lock() {
@@ -251,7 +261,7 @@ unsafe fn trigger_speech() {
 }
 
 /// Speak text from clipboard
-async fn speak_clipboard(_translator: &Translator) -> Result<(), Box<dyn Error>> {
+async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
     use crate::clipboard::ClipboardManager;
 
     // Create clipboard manager
@@ -286,9 +296,9 @@ async fn speak_clipboard(_translator: &Translator) -> Result<(), Box<dyn Error>>
         &source_code
     };
 
-    // Create speech manager and speak
+    // Create speech manager and speak with stop flag
     let speech_manager = SpeechManager::new();
-    speech_manager.speak_text(&text, lang_code).await?;
+    speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await?;
 
     Ok(())
 }
@@ -472,6 +482,22 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
         }
 
         if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
+            // Handle Esc key to stop speech
+            if kbd_struct.vkCode == VK_ESCAPE.0 as u32 {
+                if let Some(is_speaking) = IS_SPEAKING.get() {
+                    if let Ok(speaking) = is_speaking.lock() {
+                        if *speaking {
+                            // Stop speech playback
+                            if let Some(stop_flag) = SHOULD_STOP_SPEECH.get() {
+                                stop_flag.store(true, Ordering::Relaxed);
+                                println!("Speech cancelled by user (Esc)");
+                            }
+                            return LRESULT(1); // Block Esc to prevent other actions
+                        }
+                    }
+                }
+            }
+
             // Handle Ctrl key for double-press detection
             if kbd_struct.vkCode == VK_LCONTROL.0 as u32 || kbd_struct.vkCode == VK_RCONTROL.0 as u32 {
                 if let (Some(_translator), Some(last_ctrl_time), Some(is_processing), Some(ctrl_is_pressed)) =

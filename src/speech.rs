@@ -1,6 +1,8 @@
 use reqwest::Client;
 use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 const TTS_API_URL: &str = "http://translate.google.com/translate_tts";
@@ -189,6 +191,70 @@ impl SpeechManager {
 
             sink.append(source);
             sink.sleep_until_end();
+        }
+
+        println!("Speech completed.");
+        Ok(())
+    }
+
+    /// Speak text with cancellation support
+    pub async fn speak_text_with_cancel(&self, text: &str, lang_code: &str, stop_flag: Arc<AtomicBool>) -> Result<(), SpeechError> {
+        if text.trim().is_empty() {
+            return Err(SpeechError::TextTooLong("Text is empty".to_string()));
+        }
+
+        // Split text into chunks if needed
+        let chunks = if text.len() > MAX_TEXT_LENGTH {
+            self.split_text_for_tts(text)
+        } else {
+            vec![text.to_string()]
+        };
+
+        println!("Speaking {} chunks of text...", chunks.len());
+
+        // Play each chunk sequentially
+        for (i, chunk) in chunks.iter().enumerate() {
+            // Check if speech should be stopped
+            if stop_flag.load(Ordering::Relaxed) {
+                println!("Speech stopped at chunk {}/{}", i + 1, chunks.len());
+                return Ok(());
+            }
+
+            if chunk.trim().is_empty() {
+                continue;
+            }
+
+            println!("Chunk {}/{}: {} chars", i + 1, chunks.len(), chunk.len());
+
+            // Fetch audio for this chunk
+            let audio_bytes = self.fetch_tts_audio(chunk, lang_code).await?;
+
+            // Create audio output stream for each chunk
+            let builder = OutputStreamBuilder::from_default_device()
+                .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
+
+            let stream_handle = builder.open_stream()
+                .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
+
+            // Create sink for playback
+            let sink = Sink::connect_new(stream_handle.mixer());
+
+            // Decode MP3 and play
+            let cursor = Cursor::new(audio_bytes);
+            let source = Decoder::new(cursor)
+                .map_err(|e| SpeechError::AudioError(format!("Failed to decode MP3: {}", e)))?;
+
+            sink.append(source);
+
+            // Wait for playback to finish or stop flag
+            while !sink.empty() {
+                if stop_flag.load(Ordering::Relaxed) {
+                    sink.stop();
+                    println!("Speech cancelled during playback");
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         }
 
         println!("Speech completed.");
