@@ -21,6 +21,9 @@ pub struct Config {
     pub auto_prompt_color: String,         // Color for Auto prompt
     pub alternative_hotkey: String,        // Alternative hotkey (e.g., "F9", "Alt+Space")
     pub enable_alternative_hotkey: bool,   // Enable/disable alternative hotkey
+    pub enable_text_to_speech: bool,       // Enable text-to-speech functionality
+    pub speech_hotkey: String,             // Hotkey for speech (e.g., "Alt+E")
+    pub enable_speech_hotkey: bool,        // Enable/disable speech hotkey
 }
 
 impl Default for Config {
@@ -47,6 +50,9 @@ impl Default for Config {
             auto_prompt_color: "None".to_string(),                 // Default no color for Auto
             alternative_hotkey: "Alt+Q".to_string(),               // Default alternative hotkey
             enable_alternative_hotkey: true,                       // Enable by default
+            enable_text_to_speech: false,                          // TTS disabled by default
+            speech_hotkey: "Alt+E".to_string(),                    // Default speech hotkey
+            enable_speech_hotkey: true,                            // Enable speech hotkey by default
         }
     }
 }
@@ -216,6 +222,29 @@ AlternativeHotkey = {}
 ; Set to false to use only Ctrl+Ctrl double-press
 ; Note: Hotkey changes require application restart to take effect
 EnableAlternativeHotkey = {}
+
+[Speech]
+; Enable text-to-speech functionality
+; Set to true to enable TTS for selected text
+; Set to false to disable TTS completely
+EnableTextToSpeech = {}
+
+; Hotkey for text-to-speech
+; Supported formats (same as alternative hotkey):
+;   - Single keys: F1-F12 ONLY
+;   - Modifier combinations: Alt+E, Ctrl+Shift+S, etc.
+;   - Double-press: Alt+Alt, Shift+Shift, etc.
+; Examples:
+;   SpeechHotkey = Alt+E
+;   SpeechHotkey = F10
+;   SpeechHotkey = Ctrl+Shift+S
+; Note: Hotkey changes require application restart to take effect
+SpeechHotkey = {}
+
+; Enable or disable the speech hotkey
+; Set to true to enable the speech hotkey
+; Set to false to disable speech hotkey
+EnableSpeechHotkey = {}
 "#,
             config.source_language,
             config.target_language,
@@ -229,7 +258,10 @@ EnableAlternativeHotkey = {}
             config.save_translation_history,
             config.history_file,
             config.alternative_hotkey,
-            config.enable_alternative_hotkey
+            config.enable_alternative_hotkey,
+            config.enable_text_to_speech,
+            config.speech_hotkey,
+            config.enable_speech_hotkey
         )
     }
 
@@ -319,6 +351,25 @@ EnableAlternativeHotkey = {}
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(true);
 
+        // Speech settings
+        let enable_text_to_speech = parsed_config
+            .get("Speech")
+            .and_then(|section| section.get("EnableTextToSpeech"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        let speech_hotkey = parsed_config
+            .get("Speech")
+            .and_then(|section| section.get("SpeechHotkey"))
+            .cloned()
+            .unwrap_or_else(|| "Alt+E".to_string());
+
+        let enable_speech_hotkey = parsed_config
+            .get("Speech")
+            .and_then(|section| section.get("EnableSpeechHotkey"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true);
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -333,6 +384,9 @@ EnableAlternativeHotkey = {}
             auto_prompt_color,
             alternative_hotkey,
             enable_alternative_hotkey,
+            enable_text_to_speech,
+            speech_hotkey,
+            enable_speech_hotkey,
         };
 
         if let Ok(mut config) = self.config.lock() {

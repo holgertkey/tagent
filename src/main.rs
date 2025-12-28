@@ -5,6 +5,7 @@ mod config;
 mod window;
 mod cli;
 mod interactive;
+mod speech;
 
 use translator::Translator;
 use keyboard::KeyboardHook;

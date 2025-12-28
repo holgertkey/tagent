@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.8.0+025"
+version = "0.8.0+026"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
@@ -27,6 +27,8 @@ windows = { version = "0.52", features = [
 url = "2.4"
 dirs = "5.0"
 colored = "2.1"
+rodio = { version = "0.21", features = ["symphonia-mp3"] }
+urlencoding = "2.1"
 
 [build-dependencies]
 winres = "0.1"
