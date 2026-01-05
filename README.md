@@ -36,9 +36,9 @@ A fast, lightweight text translation tool for Windows with unified GUI hotkeys, 
 
 ## Download
 
-**Latest Release**: [Download tagent.exe](https://github.com/holgertkey/tagent-win/releases/latest)
+**Latest Release**: [Download tagent.exe](https://github.com/holgertkey/tagent/releases/latest)
 
-All releases: https://github.com/holgertkey/tagent-win/releases
+All releases: https://github.com/holgertkey/tagent/releases
 
 ### Download & Setup
 1. Download the latest release
@@ -96,11 +96,11 @@ Goodbye!
 ```
 
 ### Interactive Commands
-- `-?`, `-h`, `--help` - Show help
-- `-c`, `--config` - Show current configuration  
-- `-v`, `--version` - Show version information
-- `--clear`, `--cls` - Clear screen
-- `--exit`, `--quit`, `-q` - Exit program
+- `/?`, `/h`, `/help` - Show help
+- `/c`, `/config` - Show current configuration  
+- `/v`, `/version` - Show version information
+- `/clear`, `/cls` - Clear screen
+- `/exit`, `/quit`, `/q` - Exit program
 
 ## Configuration
 
@@ -297,8 +297,8 @@ rustup target add x86_64-pc-windows-msvc
 
 ### Build
 ```bash
-git clone https://github.com/holgertkey/tagent-win
-cd tagent-win
+git clone https://github.com/holgertkey/tagent
+cd tagent
 cargo build --release
 ```
 
