@@ -336,24 +336,16 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
     }
     io::stdout().flush().ok();
 
-    // Start speech in background (non-blocking) using separate thread
-    let text_clone = text.clone();
-    let lang_code_clone = lang_code.to_string();
-    std::thread::spawn(move || {
-        // Create a new tokio runtime for this thread
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            let speech_manager = SpeechManager::new();
-            match speech_manager.speak_text_with_cancel(&text_clone, &lang_code_clone, stop_flag).await {
-                Ok(_) => {
-                    // Speech completed successfully - no output needed as user is already working
-                }
-                Err(e) => {
-                    eprintln!("Speech error: {}", e);
-                }
-            }
-        });
-    });
+    // Call speech directly (will be executed in the spawned thread from trigger_speech)
+    let speech_manager = SpeechManager::new();
+    match speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await {
+        Ok(_) => {
+            // Speech completed successfully - no output needed as user is already working
+        }
+        Err(e) => {
+            eprintln!("Speech error: {}", e);
+        }
+    }
 
     Ok(())
 }
