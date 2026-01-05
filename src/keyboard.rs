@@ -276,7 +276,27 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
     // Read text from clipboard
     let text = clipboard.get_text()?;
     if text.trim().is_empty() {
+        // Get config for prompt color
+        let config_manager = ConfigManager::new(
+            &ConfigManager::get_default_config_path()?.to_string_lossy()
+        )?;
+        let config = config_manager.get_config();
+
+        // Clear current line and print error message
+        print!("\r");
+        io::stdout().flush().ok();
         println!("Clipboard is empty, nothing to speak");
+
+        // Show [Auto]: prompt on new line
+        println!();
+        let auto_prompt = "[Auto]: ";
+        if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+            print!("{}", auto_prompt.color(color));
+        } else {
+            print!("{}", auto_prompt);
+        }
+        io::stdout().flush().ok();
+
         return Ok(());
     }
 

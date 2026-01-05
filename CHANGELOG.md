@@ -5,7 +5,7 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.8.0+035] - 2025-12-24
+## [0.8.0+036] - 2025-12-24
 
 ### Added
 - Automatic version synchronization system in build.rs
@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improved
 - Documentation updated to reflect automatic version synchronization
 - CLAUDE.md now includes detailed version sync mechanism description
+
+### Fixed
+- Speech error messages now display correctly with prompt on a new line
 
 ## [0.8.0] - 2025-XX-XX
 
