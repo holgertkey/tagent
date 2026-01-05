@@ -325,9 +325,20 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
         print!("{}", speech_label);
     }
     println!("{}", text);
-    println!(); // Add empty line
 
-    // Show [Auto]: prompt immediately (speech will continue in background)
+    // Call speech directly (blocking until completion or cancellation)
+    let speech_manager = SpeechManager::new();
+    match speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await {
+        Ok(_) => {
+            // Speech completed successfully
+        }
+        Err(e) => {
+            eprintln!("Speech error: {}", e);
+        }
+    }
+
+    // Show [Auto]: prompt after speech completes
+    println!(); // Add empty line after speech
     let auto_prompt = "[Auto]: ";
     if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
         print!("{}", auto_prompt.color(color));
@@ -335,17 +346,6 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
         print!("{}", auto_prompt);
     }
     io::stdout().flush().ok();
-
-    // Call speech directly (will be executed in the spawned thread from trigger_speech)
-    let speech_manager = SpeechManager::new();
-    match speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await {
-        Ok(_) => {
-            // Speech completed successfully - no output needed as user is already working
-        }
-        Err(e) => {
-            eprintln!("Speech error: {}", e);
-        }
-    }
 
     Ok(())
 }
