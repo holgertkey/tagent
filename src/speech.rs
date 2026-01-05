@@ -161,15 +161,11 @@ impl SpeechManager {
             vec![text.to_string()]
         };
 
-        println!("Speaking {} chunks of text...", chunks.len());
-
         // Play each chunk sequentially
-        for (i, chunk) in chunks.iter().enumerate() {
+        for chunk in chunks.iter() {
             if chunk.trim().is_empty() {
                 continue;
             }
-
-            println!("Chunk {}/{}: {} chars", i + 1, chunks.len(), chunk.len());
 
             // Fetch audio for this chunk
             let audio_bytes = self.fetch_tts_audio(chunk, lang_code).await?;
@@ -193,7 +189,6 @@ impl SpeechManager {
             sink.sleep_until_end();
         }
 
-        println!("Speech completed.");
         Ok(())
     }
 
@@ -210,13 +205,21 @@ impl SpeechManager {
             vec![text.to_string()]
         };
 
-        println!("Speaking {} chunks of text...", chunks.len());
+        // Create audio output stream once for all chunks
+        let builder = OutputStreamBuilder::from_default_device()
+            .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
+
+        let stream_handle = builder.open_stream()
+            .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
+
+        // Create sink for playback
+        let sink = Sink::connect_new(stream_handle.mixer());
 
         // Play each chunk sequentially
-        for (i, chunk) in chunks.iter().enumerate() {
+        for chunk in chunks.iter() {
             // Check if speech should be stopped
             if stop_flag.load(Ordering::Relaxed) {
-                println!("Speech stopped at chunk {}/{}", i + 1, chunks.len());
+                sink.stop();
                 return Ok(());
             }
 
@@ -224,40 +227,26 @@ impl SpeechManager {
                 continue;
             }
 
-            println!("Chunk {}/{}: {} chars", i + 1, chunks.len(), chunk.len());
-
             // Fetch audio for this chunk
             let audio_bytes = self.fetch_tts_audio(chunk, lang_code).await?;
 
-            // Create audio output stream for each chunk
-            let builder = OutputStreamBuilder::from_default_device()
-                .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
-
-            let stream_handle = builder.open_stream()
-                .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
-
-            // Create sink for playback
-            let sink = Sink::connect_new(stream_handle.mixer());
-
-            // Decode MP3 and play
+            // Decode MP3 and add to sink
             let cursor = Cursor::new(audio_bytes);
             let source = Decoder::new(cursor)
                 .map_err(|e| SpeechError::AudioError(format!("Failed to decode MP3: {}", e)))?;
 
             sink.append(source);
-
-            // Wait for playback to finish or stop flag
-            while !sink.empty() {
-                if stop_flag.load(Ordering::Relaxed) {
-                    sink.stop();
-                    println!("Speech cancelled during playback");
-                    return Ok(());
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
         }
 
-        println!("Speech completed.");
+        // Wait for all playback to finish or stop flag
+        while !sink.empty() {
+            if stop_flag.load(Ordering::Relaxed) {
+                sink.stop();
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
         Ok(())
     }
 
