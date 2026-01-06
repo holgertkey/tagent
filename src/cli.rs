@@ -273,6 +273,11 @@ impl CliHandler {
 
     /// Speak text using text-to-speech
     async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
             eprintln!("Usage: tagent -s \"text to speak\"");
@@ -292,10 +297,46 @@ impl CliHandler {
 
         println!("Speaking: {}", text);
         println!("Language: {}", speech_lang);
+        println!("Press Esc to cancel...");
 
-        match self.speech_manager.speak_text(text, speech_lang).await {
+        // Create stop flag for cancellation
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+
+        // Spawn task to monitor Esc key
+        let esc_monitor = tokio::spawn(async move {
+            loop {
+                unsafe {
+                    if GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000 != 0 {
+                        stop_flag_clone.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+
+        // Start speech with cancellation support
+        let text_owned = text.to_string();
+        let speech_lang_owned = speech_lang.to_string();
+        let stop_flag_for_speech = stop_flag.clone();
+
+        let speech_result = self.speech_manager.speak_text_with_cancel(
+            &text_owned,
+            &speech_lang_owned,
+            stop_flag_for_speech
+        ).await;
+
+        // Cancel the Esc monitor task
+        esc_monitor.abort();
+
+        match speech_result {
             Ok(_) => {
-                println!("Speech completed successfully.");
+                if stop_flag.load(Ordering::Relaxed) {
+                    println!("Speech cancelled by user (Esc)");
+                } else {
+                    println!("Speech completed successfully.");
+                }
                 Ok(())
             }
             Err(e) => {

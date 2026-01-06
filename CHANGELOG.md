@@ -5,6 +5,12 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.8.0+040] - 2026-01-06
+
+### Fixed
+- Added Esc key cancellation support for CLI speech mode (`-s`/`--speech`)
+- Speech can now be interrupted by pressing Esc in both CLI and hotkey modes
+
 ## [0.8.0+039] - 2026-01-06
 
 ### Changed
