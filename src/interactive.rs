@@ -2,6 +2,7 @@
 use crate::translator::Translator;
 use crate::config::ConfigManager;
 use crate::cli::CliHandler;
+use crate::speech::SpeechManager;
 use std::error::Error;
 use std::sync::Arc;
 use std::io::{self, Write};
@@ -14,6 +15,7 @@ pub struct InteractiveMode {
     translator: Translator,
     config_manager: Arc<ConfigManager>,
     should_exit: Arc<AtomicBool>,
+    speech_manager: SpeechManager,
 }
 
 impl InteractiveMode {
@@ -22,11 +24,13 @@ impl InteractiveMode {
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
         let should_exit = Arc::new(AtomicBool::new(false));
+        let speech_manager = SpeechManager::new();
 
         Ok(Self {
             translator,
             config_manager,
             should_exit,
+            speech_manager,
         })
     }
 
@@ -121,6 +125,28 @@ impl InteractiveMode {
 
     /// Handle interactive commands, returns true if command was processed
     async fn handle_command(&self, text: &str) -> Result<bool, String> {
+        // Check for speech commands with arguments
+        if text.starts_with("/s ") || text.starts_with("/speech ") {
+            let speech_text = if text.starts_with("/s ") {
+                &text[3..]
+            } else {
+                &text[8..]
+            };
+
+            if speech_text.is_empty() {
+                println!("Error: No text provided for speech");
+                println!("Usage: /s <text to speak> or /speech <text to speak>");
+                println!();
+                return Ok(true);
+            }
+
+            if let Err(e) = self.speak_interactive_text(speech_text).await {
+                println!("Speech error: {}", e);
+            }
+            println!(); // Add spacing
+            return Ok(true);
+        }
+
         match text {
             "" => return Ok(true), // Skip empty lines
 
@@ -190,6 +216,7 @@ impl InteractiveMode {
         println!("  /h, /help, /?           - Show this help");
         println!("  /c, /config             - Show current translation settings");
         println!("  /v, /version            - Show version information");
+        println!("  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /exit        - Exit program");
         println!();
@@ -324,5 +351,78 @@ impl InteractiveMode {
         use crate::clipboard::ClipboardManager;
         let clipboard = ClipboardManager::new();
         clipboard.set_text(text).map_err(|e| format!("Clipboard error: {}", e))
+    }
+
+    /// Speak text using text-to-speech in interactive mode
+    async fn speak_interactive_text(&self, text: &str) -> Result<(), String> {
+        use std::time::Duration;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+
+        if text.trim().is_empty() {
+            return Err("Empty text provided".to_string());
+        }
+
+        // Load current configuration to get source language
+        self.config_manager.check_and_reload().ok();
+        let (source_code, _) = self.config_manager.get_language_codes();
+
+        // If source language is "auto", use English by default for TTS
+        let speech_lang = if source_code == "auto" {
+            "en"
+        } else {
+            &source_code
+        };
+
+        let config = self.config_manager.get_config();
+
+        // Show speech label with color
+        let speech_label = "[Speech]: ";
+        if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+            print!("{}", speech_label.color(color));
+        } else {
+            print!("{}", speech_label);
+        }
+        println!("{}", text);
+
+        // Create stop flag for cancellation
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+
+        // Spawn task to monitor Esc key
+        let esc_monitor = tokio::spawn(async move {
+            loop {
+                unsafe {
+                    if GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000 != 0 {
+                        stop_flag_clone.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+
+        // Start speech with cancellation support
+        let speech_result = self.speech_manager.speak_text_with_cancel(
+            text,
+            speech_lang,
+            stop_flag.clone()
+        ).await;
+
+        // Cancel the Esc monitor task
+        esc_monitor.abort();
+
+        match speech_result {
+            Ok(_) => {
+                if stop_flag.load(Ordering::Relaxed) {
+                    println!("Speech cancelled by user (Esc)");
+                } else {
+                    println!("Speech completed successfully.");
+                }
+                Ok(())
+            }
+            Err(e) => {
+                Err(format!("Speech error: {}", e))
+            }
+        }
     }
 }

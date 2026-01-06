@@ -67,7 +67,7 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.8.0+040) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.8.0+041) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide Ctrl+Ctrl double-press to translate selected text
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
