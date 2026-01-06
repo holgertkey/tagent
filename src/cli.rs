@@ -295,10 +295,6 @@ impl CliHandler {
             &source_code
         };
 
-        println!("Speaking: {}", text);
-        println!("Language: {}", speech_lang);
-        println!("Press Esc to cancel...");
-
         // Create stop flag for cancellation
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
