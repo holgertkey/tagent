@@ -5,6 +5,27 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.8.0+039] - 2026-01-06
+
+### Changed
+- Speech language now determined by `SourceLanguage` configuration setting
+- When `SourceLanguage` is set to "Auto", English is used by default for speech
+
+## [0.8.0+038] - 2026-01-06
+
+### Fixed
+- Speech language detection now based on text content (Cyrillic → Russian, Latin → English)
+
+## [0.8.0+037] - 2026-01-06
+
+### Added
+- CLI speech command: `-s, --speech` for text-to-speech functionality
+- Text-to-speech support using Google Translate TTS API
+- Automatic language detection for speech
+
+### Changed
+- Help text updated with speech command examples
+
 ## [0.8.0+036] - 2025-12-24
 
 ### Added

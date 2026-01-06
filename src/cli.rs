@@ -1,5 +1,6 @@
 use crate::translator::Translator;
 use crate::config::ConfigManager;
+use crate::speech::SpeechManager;
 use std::error::Error;
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
@@ -9,6 +10,7 @@ use std::io::Write;
 pub struct CliHandler {
     translator: Translator,
     config_manager: Arc<ConfigManager>,
+    speech_manager: SpeechManager,
 }
 
 impl CliHandler {
@@ -16,10 +18,12 @@ impl CliHandler {
         let translator = Translator::new()?;
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+        let speech_manager = SpeechManager::new();
 
         Ok(Self {
             translator,
             config_manager,
+            speech_manager,
         })
     }
 
@@ -62,12 +66,15 @@ impl CliHandler {
         println!("  -h, --help     Show this help message");
         println!("  -c, --config   Show current configuration");
         println!("  -v, --version  Show version information");
+        println!("  -s, --speech   Speak the following text using text-to-speech");
         println!("  -q, --quit     Exit (for interactive mode /q, /quit)");
         println!();
         println!("EXAMPLES:");
         println!("  tagent hello");
         println!("  tagent \"Hello world\"");
         println!("  tagent \"This is a longer phrase to translate\"");
+        println!("  tagent -s \"Hello world\"");
+        println!("  tagent --speech \"Привет, мир\"");
         println!();
         println!("MODES:");
         println!("  Unified Mode (default): Run without arguments");
@@ -146,7 +153,7 @@ impl CliHandler {
         }
 
         let command = &args[1];
-        
+
         match command.as_str() {
             "-h" | "--help" => {
                 Self::show_help();
@@ -158,6 +165,16 @@ impl CliHandler {
             "-v" | "--version" => {
                 Self::show_version();
                 Ok(())
+            },
+            "-s" | "--speech" => {
+                // Speak the following text
+                if args.len() < 3 {
+                    eprintln!("Error: No text provided for speech");
+                    eprintln!("Usage: tagent -s \"text to speak\"");
+                    return Ok(());
+                }
+                let text_to_speak = args[2..].join(" ");
+                self.speak_text(&text_to_speak).await
             },
             "-q" => {
                 // Exit command for CLI mode (though it doesn't make much sense here)
@@ -252,5 +269,39 @@ impl CliHandler {
         use crate::clipboard::ClipboardManager;
         let clipboard = ClipboardManager::new();
         clipboard.set_text(text)
+    }
+
+    /// Speak text using text-to-speech
+    async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
+        if text.trim().is_empty() {
+            eprintln!("Error: Empty text provided");
+            eprintln!("Usage: tagent -s \"text to speak\"");
+            return Ok(());
+        }
+
+        // Load current configuration to get source language
+        self.config_manager.check_and_reload().ok();
+        let (source_code, _) = self.config_manager.get_language_codes();
+
+        // If source language is "auto", use English by default for TTS
+        let speech_lang = if source_code == "auto" {
+            "en"
+        } else {
+            &source_code
+        };
+
+        println!("Speaking: {}", text);
+        println!("Language: {}", speech_lang);
+
+        match self.speech_manager.speak_text(text, speech_lang).await {
+            Ok(_) => {
+                println!("Speech completed successfully.");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Speech error: {}", e);
+                Err(Box::new(e))
+            }
+        }
     }
 }
