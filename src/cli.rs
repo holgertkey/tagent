@@ -54,54 +54,7 @@ impl CliHandler {
 
     /// Display CLI help information
     pub fn show_help() {
-        println!("Text Translator v{} - CLI Mode", env!("CARGO_PKG_VERSION"));
-        println!();
-        println!("USAGE:");
-        println!("  tagent [OPTIONS] <text>");
-        println!();
-        println!("ARGUMENTS:");
-        println!("  <text>    Text to translate (use quotes for phrases with spaces)");
-        println!();
-        println!("OPTIONS:");
-        println!("  -h, --help     Show this help message");
-        println!("  -c, --config   Show current configuration");
-        println!("  -v, --version  Show version information");
-        println!("  -s, --speech   Speak the following text using text-to-speech");
-        println!("  -q, --quit     Exit (for interactive mode /q, /quit)");
-        println!();
-        println!("EXAMPLES:");
-        println!("  tagent hello");
-        println!("  tagent \"Hello world\"");
-        println!("  tagent \"This is a longer phrase to translate\"");
-        println!("  tagent -s \"Hello world\"");
-        println!("  tagent --speech \"Привет, мир\"");
-        println!();
-        println!("MODES:");
-        println!("  Unified Mode (default): Run without arguments");
-        println!("    - Interactive prompt in terminal + GUI hotkeys (Ctrl+Ctrl or F9)");
-        println!("    - Both methods work simultaneously");
-        println!("    - Configure alternative hotkeys in tagent.conf [Hotkeys] section");
-        println!("    - Interactive commands: /h, /c, /v, /q, /help, /config, etc.");
-        println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
-        println!();
-        println!("CONFIGURATION:");
-        if let Ok(config_path) = ConfigManager::get_default_config_path() {
-            println!("  Config file location: {}", config_path.display());
-        } else {
-            println!("  Config file: tagent.conf (typically in %APPDATA%\\Tagent\\)");
-        }
-        println!();
-        println!("  Edit 'tagent.conf' to change translation settings:");
-        println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
-        println!("  - TargetLanguage: Target language (Russian, English, etc.)");
-        println!("  - ShowDictionary: Enable dictionary lookup for single words");
-        println!("  - CopyToClipboard: Copy results to clipboard");
-        println!("  - SaveTranslationHistory: Save all translations to file");
-        println!("  - HistoryFile: File path for translation history");
-        println!("  - AlternativeHotkey: Custom hotkey (Alt+Q, F9, Alt+Space, etc.)");
-        println!("  - EnableAlternativeHotkey: Enable/disable alternative hotkey");
-        println!();
-        println!("Run without arguments to start unified mode with interactive prompt and hotkeys.");
+        ConfigManager::display_help();
     }
 
     /// Show version information

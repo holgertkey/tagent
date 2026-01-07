@@ -423,6 +423,99 @@ EnableSpeechHotkey = {}
         self.config.lock().unwrap().clone()
     }
 
+    /// Display help information (unified for CLI and Interactive modes)
+    pub fn display_help() {
+        println!();
+        println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
+        println!();
+        println!("MODES:");
+        println!();
+        println!("1. Unified Mode (default): Run without arguments");
+        println!("   - Interactive prompt in terminal + GUI hotkeys");
+        println!("   - Both methods work simultaneously");
+        println!();
+        println!("2. CLI Mode: Run 'tagent <text>' for one-time translation");
+        println!();
+
+        println!("USAGE:");
+        println!("  tagent [OPTIONS] [text]");
+        println!();
+
+        println!("ARGUMENTS:");
+        println!("  <text>    Text to translate (use quotes for phrases with spaces)");
+        println!();
+
+        println!("OPTIONS:");
+        println!("  -h, --help     Show this help message");
+        println!("  -c, --config   Show current configuration");
+        println!("  -v, --version  Show version information");
+        println!("  -s, --speech   Speak the following text using text-to-speech");
+        println!();
+
+        println!("EXAMPLES:");
+        println!("  tagent                           Start unified mode (interactive + hotkeys)");
+        println!("  tagent hello                     Translate 'hello' (CLI mode)");
+        println!("  tagent \"Hello world\"             Translate phrase (CLI mode)");
+        println!("  tagent -s \"Hello world\"          Speak text using TTS");
+        println!("  tagent --config                  Show configuration");
+        println!();
+
+        println!("UNIFIED MODE - TRANSLATION METHODS:");
+        println!();
+        println!("1. Interactive Terminal:");
+        println!("   - Type any text and press Enter to translate");
+        println!("   - Single words show dictionary entries (if enabled)");
+        println!("   - Phrases show translations");
+        println!("   - Empty line = skip/continue");
+        println!();
+
+        println!("2. GUI Hotkeys (Any Application):");
+        println!("   - Select text anywhere in Windows");
+        println!("   - Press configured hotkey (default: Ctrl+Ctrl)");
+        println!("   - Result copied to clipboard automatically");
+        println!("   - Configure hotkeys in tagent.conf [Hotkeys] section");
+        println!();
+
+        println!("INTERACTIVE COMMANDS (must start with slash):");
+        println!("  /h, /help, /?           - Show this help");
+        println!("  /c, /config             - Show current configuration");
+        println!("  /v, /version            - Show version information");
+        println!("  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)");
+        println!("  /clear, /cls            - Clear screen");
+        println!("  /q, /quit, /exit        - Exit program");
+        println!();
+
+        println!("CONFIGURATION:");
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("  Config file: {}", config_path.display());
+        } else {
+            println!("  Config file: tagent.conf (typically in %APPDATA%\\Tagent\\)");
+        }
+        println!();
+        println!("  Edit 'tagent.conf' to change translation settings:");
+        println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
+        println!("  - TargetLanguage: Target language (Russian, English, etc.)");
+        println!("  - ShowDictionary: Enable dictionary lookup for single words");
+        println!("  - CopyToClipboard: Copy results to clipboard");
+        println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
+        println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+E, F10, etc.)");
+        println!("  - SaveTranslationHistory: Save all translations to file");
+        println!();
+
+        println!("FEATURES:");
+        println!("- Same translation engine for all modes");
+        println!("- Google Translate API with dictionary lookups");
+        println!("- Configuration hot-reload (changes take effect immediately)");
+        println!("- Configurable hotkeys with various combinations");
+        println!("- Text-to-speech support (Google TTS)");
+        println!("- Translation history logging");
+        println!("- Clipboard integration");
+        println!();
+        println!("Run 'tagent --config' to see current settings.");
+        println!("===============================================");
+        println!();
+    }
+
     /// Display current configuration (unified for CLI and Interactive modes)
     pub fn display_config(&self) -> Result<(), Box<dyn Error>> {
         // Reload config to get latest values

@@ -195,46 +195,7 @@ impl InteractiveMode {
 
     /// Show unified mode help
     fn show_unified_help(&self) {
-        println!();
-        println!("=== Text Translator v{} - Unified Mode Help ===", env!("CARGO_PKG_VERSION"));
-        println!();
-        println!("Translation Methods:");
-        println!();
-        println!("1. Interactive (This Terminal):");
-        println!("   - Type any text and press Enter to translate");
-        println!("   - Single words show dictionary entries (if enabled)");
-        println!("   - Phrases show translations");
-        println!("   - Empty line = skip/continue");
-        println!();
-        println!("2. Hotkeys (Any Application):");
-        println!("   - Select text anywhere in Windows");
-        println!("   - Double-press Ctrl quickly (Ctrl + Ctrl)");
-        println!("   - Result copied to clipboard automatically");
-        println!("   - Prompt returns automatically after hotkey translation");
-        println!();
-        println!("Commands (must start with slash):");
-        println!("  /h, /help, /?           - Show this help");
-        println!("  /c, /config             - Show current translation settings");
-        println!("  /v, /version            - Show version information");
-        println!("  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)");
-        println!("  /clear, /cls            - Clear screen");
-        println!("  /q, /quit, /exit        - Exit program");
-        println!();
-        println!("Translation:");
-        println!("- Same translation engine for both interactive and hotkey methods");
-
-        // Show config file location
-        if let Ok(config_path) = ConfigManager::get_default_config_path() {
-            println!("- Uses current configuration from: {}", config_path.display());
-        } else {
-            println!("- Uses current configuration from tagent.conf");
-        }
-
-        println!("- Configuration changes take effect immediately");
-        println!("- Results copied to clipboard (if enabled in config)");
-        println!("- Translation history saved automatically (if enabled in config)");
-        println!("===============================================");
-        println!();
+        ConfigManager::display_help();
     }
 
     /// Show current configuration in unified mode
