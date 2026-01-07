@@ -423,6 +423,51 @@ EnableSpeechHotkey = {}
         self.config.lock().unwrap().clone()
     }
 
+    /// Display current configuration (unified for CLI and Interactive modes)
+    pub fn display_config(&self) -> Result<(), Box<dyn Error>> {
+        // Reload config to get latest values
+        self.check_and_reload()?;
+        let config = self.get_config();
+        let (source_code, target_code) = self.get_language_codes();
+
+        println!();
+        println!("=== Current Configuration ===");
+        println!("Source Language: {} ({})", config.source_language, source_code);
+        println!("Target Language: {} ({})", config.target_language, target_code);
+        println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
+        println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
+        println!();
+        println!("Translation Hotkey: {}", config.translate_hotkey);
+        println!("Show Terminal on Translate: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
+        println!("Auto-hide Terminal: {}",
+            if config.auto_hide_terminal_seconds == 0 {
+                "Disabled".to_string()
+            } else {
+                format!("{} seconds", config.auto_hide_terminal_seconds)
+            }
+        );
+        println!();
+        println!("Text-to-Speech: {}", if config.enable_text_to_speech { "Enabled" } else { "Disabled" });
+        println!("Speech Hotkey: {}", config.speech_hotkey);
+        println!("Speech Hotkey Enabled: {}", if config.enable_speech_hotkey { "Yes" } else { "No" });
+        println!();
+        println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
+        println!("History File: {}", config.history_file);
+        println!();
+
+        // Show config file location
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("Config file: {}", config_path.display());
+        } else {
+            println!("Config file: tagent.conf");
+        }
+        println!("Edit this file to change settings (changes take effect immediately)");
+        println!("============================");
+        println!();
+
+        Ok(())
+    }
+
     /// Check if config file was modified and reload if necessary
     pub fn check_and_reload(&self) -> Result<bool, Box<dyn Error>> {
         if !Path::new(&self.config_path).exists() {

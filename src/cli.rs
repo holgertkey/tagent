@@ -113,37 +113,7 @@ impl CliHandler {
 
     /// Show current configuration
     pub fn show_config(&self) -> Result<(), Box<dyn Error>> {
-        // Reload config to get latest values
-        self.config_manager.check_and_reload()?;
-        let config = self.config_manager.get_config();
-        let (source_code, target_code) = self.config_manager.get_language_codes();
-        
-        println!("=== Current Configuration ===");
-        println!("Source Language: {} ({})", config.source_language, source_code);
-        println!("Target Language: {} ({})", config.target_language, target_code);
-        println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
-        println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
-        println!("Show Terminal on Translate: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
-        println!("Auto-hide Terminal (seconds): {}", 
-            if config.auto_hide_terminal_seconds == 0 { 
-                "Disabled".to_string() 
-            } else { 
-                config.auto_hide_terminal_seconds.to_string() 
-            }
-        );
-        println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
-        println!("History File: {}", config.history_file);
-        println!();
-
-        // Show config file location
-        if let Ok(config_path) = ConfigManager::get_default_config_path() {
-            println!("Config file: {}", config_path.display());
-        } else {
-            println!("Config file: tagent.conf");
-        }
-        println!("Edit this file to change settings (changes take effect immediately)");
-        
-        Ok(())
+        self.config_manager.display_config()
     }
 
     /// Process CLI arguments and determine action
