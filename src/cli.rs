@@ -85,6 +85,12 @@ impl CliHandler {
         println!("  CLI Mode: Run 'tagent <text>' for one-time translation");
         println!();
         println!("CONFIGURATION:");
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("  Config file location: {}", config_path.display());
+        } else {
+            println!("  Config file: tagent.conf (typically in %APPDATA%\\Tagent\\)");
+        }
+        println!();
         println!("  Edit 'tagent.conf' to change translation settings:");
         println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
@@ -128,7 +134,13 @@ impl CliHandler {
         println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
         println!("History File: {}", config.history_file);
         println!();
-        println!("Config file: tagent.conf");
+
+        // Show config file location
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("Config file: {}", config_path.display());
+        } else {
+            println!("Config file: tagent.conf");
+        }
         println!("Edit this file to change settings (changes take effect immediately)");
         
         Ok(())

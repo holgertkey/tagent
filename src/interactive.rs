@@ -222,7 +222,14 @@ impl InteractiveMode {
         println!();
         println!("Translation:");
         println!("- Same translation engine for both interactive and hotkey methods");
-        println!("- Uses current configuration from tagent.conf");
+
+        // Show config file location
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("- Uses current configuration from: {}", config_path.display());
+        } else {
+            println!("- Uses current configuration from tagent.conf");
+        }
+
         println!("- Configuration changes take effect immediately");
         println!("- Results copied to clipboard (if enabled in config)");
         println!("- Translation history saved automatically (if enabled in config)");
@@ -255,7 +262,13 @@ impl InteractiveMode {
         );
         println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
         println!("History File: {}", config.history_file);
-        println!("Config file: tagent.conf");
+
+        // Show config file location
+        if let Ok(config_path) = ConfigManager::get_default_config_path() {
+            println!("Config file: {}", config_path.display());
+        } else {
+            println!("Config file: tagent.conf");
+        }
         println!("============================");
         println!();
         
