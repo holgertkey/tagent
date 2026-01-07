@@ -103,16 +103,6 @@ impl CliHandler {
         println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
         println!("Translation tool with unified GUI/Interactive interface and CLI mode");
         println!();
-        println!("Features:");
-        println!("- Unified mode: Interactive prompt + GUI hotkeys work simultaneously");
-        println!("- Customizable hotkeys: Ctrl+Ctrl (default) + configurable alternatives (F9, Alt+Space, etc.)");
-        println!("- CLI mode: Direct text translation from command line");
-        println!("- Interactive commands: /h, /c, /v, /q, /cls and full names");
-        println!("- Dictionary lookup for single words");
-        println!("- Translation history logging");
-        println!("- Multi-language support");
-        println!("- Configurable settings");
-        println!();
     }
 
     /// Show current configuration

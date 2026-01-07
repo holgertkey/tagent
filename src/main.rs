@@ -109,7 +109,8 @@ fn show_unified_mode_info() {
     println!();
     println!("2. Interactive Mode (Current Terminal):");
     println!("   - Type text directly below and press Enter");
-    println!("   - Commands: /h (help), /c (config), /v (version), /q (quit), /cls (clear)");
+    println!("   - Commands: /h (help), /c (config), /v (version)");
+    println!("   - Commands: /q (quit), /cls (clear), /s (speech)");    
     println!("   - Single words show dictionary entries");
     println!("   - Phrases show translations");
     println!("   - Any text not recognized as command will be translated");

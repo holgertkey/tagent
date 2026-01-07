@@ -220,14 +220,6 @@ impl InteractiveMode {
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /exit        - Exit program");
         println!();
-        println!("Important:");
-        println!("- Commands MUST start with slash (/)");
-        println!("- Text without slash prefix will be translated");
-        println!("- Examples: 'help' → translates word 'help'");
-        println!("            '/h'   → shows this help");
-        println!("            'exit' → translates word 'exit'");
-        println!("            '/q'   → exits the program");
-        println!();
         println!("Translation:");
         println!("- Same translation engine for both interactive and hotkey methods");
         println!("- Uses current configuration from tagent.conf");
