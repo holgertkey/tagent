@@ -48,7 +48,7 @@ impl Default for Config {
             dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
             auto_prompt_color: "None".to_string(),                 // Default no color for Auto
             translate_hotkey: "Ctrl+Ctrl".to_string(),             // Default translation hotkey
-            enable_text_to_speech: false,                          // TTS disabled by default
+            enable_text_to_speech: true,                           // TTS enabled by default
             speech_hotkey: "Alt+E".to_string(),                    // Default speech hotkey
             enable_speech_hotkey: true,                            // Enable speech hotkey by default
         }
@@ -218,7 +218,7 @@ TranslateHotkey = {}
 
 [Speech]
 ; Enable text-to-speech functionality
-; Set to true to enable TTS for selected text
+; Set to true to enable TTS for selected text (default)
 ; Set to false to disable TTS completely
 EnableTextToSpeech = {}
 
