@@ -95,43 +95,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Display unified mode information
 fn show_unified_mode_info() {
-    println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
+    use config::ConfigManager;
+
+    println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("Translation Methods:");
-    println!();
-    println!("1. Hotkeys (GUI Mode):");
-    println!("   - Select text in any application");
-    println!("   - Quickly double-press Ctrl (Ctrl + Ctrl) or press configured hotkey");
-    println!("   - Default alternative hotkey: F9");
-    println!("   - Configure custom hotkeys in tagent.conf [Hotkeys] section");
-    println!("   - Translation will be copied to clipboard");
-    println!("   - Prompt will automatically return after translation");
-    println!();
-    println!("2. Interactive Mode (Current Terminal):");
-    println!("   - Type text directly below and press Enter");
-    println!("   - Commands: /h (help), /c (config), /v (version)");
-    println!("   - Commands: /q (quit), /cls (clear), /s (speech)");    
-    println!("   - Single words show dictionary entries");
-    println!("   - Phrases show translations");
-    println!("   - Any text not recognized as command will be translated");
-    println!();
-    println!("CLI Mode:");
-    println!("Run: tagent <text to translate>");
-    println!("Examples:");
-    println!("  tagent hello");
-    println!("  tagent \"Hello world\"");
-    println!("  tagent --help        (show detailed help)");
-    println!("  tagent --config      (show current configuration)");
-    println!("  tagent --version     (show version information)");
-    println!();
-    println!("Configuration:");
-    println!("- Edit 'tagent.conf' to change translation languages");
-    println!("- Set 'ShowDictionary = false' to disable dictionary lookup");
-    println!("- Set 'CopyToClipboard = false' to display results only");
-    println!("- Set 'SaveTranslationHistory = true' to log all translations");
-    println!("- Changes take effect immediately (no restart required)");
-    println!();
-    println!("Exit: Type '/exit', '/quit', or '/q' below");
-    println!("=====================================");
+
+    // Load config to show active hotkeys
+    if let Ok(config_path) = ConfigManager::get_default_config_path() {
+        if let Ok(config_manager) = ConfigManager::new(config_path.to_string_lossy().as_ref()) {
+            let config = config_manager.get_config();
+
+            println!("Active Hotkeys:");
+            println!("  Translation: {}", config.translate_hotkey);
+            if config.enable_speech_hotkey && config.enable_text_to_speech {
+                println!("  Speech: {}", config.speech_hotkey);
+            }
+            println!();
+        }
+    }
+
+    println!("Commands: /h (help), /c (config), /v (version), /s (speech), /q (quit), /cls (clear)");
     println!();
 }
