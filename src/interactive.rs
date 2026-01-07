@@ -243,11 +243,7 @@ impl InteractiveMode {
         println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
         println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
 
-        if config.enable_alternative_hotkey {
-            println!("Alternative: {} (enabled)", config.alternative_hotkey);
-        } else {
-            println!("Alternative: {} (disabled)", config.alternative_hotkey);
-        }
+        println!("Translation Hotkey: {}", config.translate_hotkey);
 
         println!("Show Terminal on Hotkey: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
         println!("Auto-hide Terminal: {} seconds",

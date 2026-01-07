@@ -19,8 +19,7 @@ pub struct Config {
     pub translation_prompt_color: String,  // Color for translation prompt
     pub dictionary_prompt_color: String,   // Color for dictionary prompt
     pub auto_prompt_color: String,         // Color for Auto prompt
-    pub alternative_hotkey: String,        // Alternative hotkey (e.g., "F9", "Alt+Space")
-    pub enable_alternative_hotkey: bool,   // Enable/disable alternative hotkey
+    pub translate_hotkey: String,          // Translation hotkey (e.g., "Ctrl+Ctrl", "Alt+Q", "F9")
     pub enable_text_to_speech: bool,       // Enable text-to-speech functionality
     pub speech_hotkey: String,             // Hotkey for speech (e.g., "Alt+E")
     pub enable_speech_hotkey: bool,        // Enable/disable speech hotkey
@@ -48,8 +47,7 @@ impl Default for Config {
             translation_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for translation
             dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
             auto_prompt_color: "None".to_string(),                 // Default no color for Auto
-            alternative_hotkey: "Alt+Q".to_string(),               // Default alternative hotkey
-            enable_alternative_hotkey: true,                       // Enable by default
+            translate_hotkey: "Ctrl+Ctrl".to_string(),             // Default translation hotkey
             enable_text_to_speech: false,                          // TTS disabled by default
             speech_hotkey: "Alt+E".to_string(),                    // Default speech hotkey
             enable_speech_hotkey: true,                            // Enable speech hotkey by default
@@ -201,27 +199,22 @@ SaveTranslationHistory = {}
 HistoryFile = {}
 
 [Hotkeys]
-; Alternative hotkey for translation
+; Hotkey for translation
 ; Supported formats:
 ;   - Single keys: F1-F12 ONLY (other keys must use modifiers)
-;   - Modifier combinations: Alt+Space, Ctrl+Shift+T, Win+T, etc.
+;   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, Win+T, etc.
 ;     NOTE: Shift+Key is NOT allowed (interferes with text input)
 ;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
-;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, etc.
+;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, Alt+Alt, etc.
 ; Examples:
-;   AlternativeHotkey = Alt+Q
-;   AlternativeHotkey = F9
-;   AlternativeHotkey = Alt+Space
-;   AlternativeHotkey = Ctrl+Shift+C
-;   AlternativeHotkey = F8+F8
-; Note: Ctrl+Ctrl double-press is always active regardless of this setting
-AlternativeHotkey = {}
-
-; Enable or disable the alternative hotkey
-; Set to true to enable the alternative hotkey in addition to Ctrl+Ctrl
-; Set to false to use only Ctrl+Ctrl double-press
+;   TranslateHotkey = Ctrl+Ctrl
+;   TranslateHotkey = Alt+Q
+;   TranslateHotkey = F9
+;   TranslateHotkey = Alt+Space
+;   TranslateHotkey = Ctrl+Shift+C
+;   TranslateHotkey = F8+F8
 ; Note: Hotkey changes require application restart to take effect
-EnableAlternativeHotkey = {}
+TranslateHotkey = {}
 
 [Speech]
 ; Enable text-to-speech functionality
@@ -257,8 +250,7 @@ EnableSpeechHotkey = {}
             config.dictionary_prompt_color,
             config.save_translation_history,
             config.history_file,
-            config.alternative_hotkey,
-            config.enable_alternative_hotkey,
+            config.translate_hotkey,
             config.enable_text_to_speech,
             config.speech_hotkey,
             config.enable_speech_hotkey
@@ -339,17 +331,11 @@ EnableSpeechHotkey = {}
             .unwrap_or_else(|| "None".to_string());
 
         // Hotkey settings
-        let alternative_hotkey = parsed_config
+        let translate_hotkey = parsed_config
             .get("Hotkeys")
-            .and_then(|section| section.get("AlternativeHotkey"))
+            .and_then(|section| section.get("TranslateHotkey"))
             .cloned()
-            .unwrap_or_else(|| "F9".to_string());
-
-        let enable_alternative_hotkey = parsed_config
-            .get("Hotkeys")
-            .and_then(|section| section.get("EnableAlternativeHotkey"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
+            .unwrap_or_else(|| "Ctrl+Ctrl".to_string());
 
         // Speech settings
         let enable_text_to_speech = parsed_config
@@ -382,8 +368,7 @@ EnableSpeechHotkey = {}
             translation_prompt_color,
             dictionary_prompt_color,
             auto_prompt_color,
-            alternative_hotkey,
-            enable_alternative_hotkey,
+            translate_hotkey,
             enable_text_to_speech,
             speech_hotkey,
             enable_speech_hotkey,

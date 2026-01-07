@@ -68,7 +68,7 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 ## Project Overview
 
 **Tagent** is a Windows text translation tool (v0.8.0+041) built in Rust that provides three translation modes:
-1. **GUI Hotkeys**: System-wide Ctrl+Ctrl double-press to translate selected text
+1. **GUI Hotkeys**: System-wide configurable hotkey to translate selected text (default: Ctrl+Ctrl)
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
 
@@ -106,7 +106,7 @@ The application is structured into 7 main modules in `src/`:
 - **main.rs**: Entry point, orchestrates unified mode (GUI + Interactive) or CLI mode
 - **translator.rs**: Translation engine, Google Translate API integration, dictionary lookups
 - **config.rs**: Configuration management with live-reload (INI format, stored in AppData)
-- **keyboard.rs**: Windows low-level keyboard hook for Ctrl+Ctrl detection
+- **keyboard.rs**: Windows low-level keyboard hook for configurable hotkey detection
 - **interactive.rs**: Interactive terminal mode with command handling
 - **cli.rs**: Command-line argument processing and single-shot translations
 - **clipboard.rs**: Windows clipboard operations
@@ -141,37 +141,30 @@ The translator module uses unofficial Google Translate API endpoints:
 
 Dictionary responses are parsed from JSON arrays and formatted with parts of speech in the target language.
 
-### Double Ctrl Detection
+### Translation Hotkey Configuration
 
-The keyboard hook in `keyboard.rs` implements debounced double-press detection:
-1. Track timestamp of last Ctrl press
-2. On new Ctrl press, check if 50-500ms elapsed since last press
-3. Ignore key repeat events (track Ctrl up/down state)
-4. Spawn translation task on successful double-press
-5. Prevent concurrent translations with `is_processing` mutex
-
-### Alternative Hotkey Support
-
-The application supports customizable hotkeys in addition to the default Ctrl+Ctrl double-press. This feature allows users to configure alternative key combinations through the configuration file.
+The application uses a fully configurable hotkey system for triggering translations. Users can customize the translation hotkey through the configuration file, with no hardcoded hotkey bindings in the code.
 
 **Configuration** (`[Hotkeys]` section in tagent.conf):
-- `AlternativeHotkey`: Hotkey string specifying the key combination (default: "Alt+Q")
-- `EnableAlternativeHotkey`: Boolean flag to enable/disable alternative hotkey (default: true)
+- `TranslateHotkey`: Hotkey string specifying the key combination (default: "Ctrl+Ctrl")
 
 **Supported Hotkey Formats**:
-1. **Single keys**: `F1-F12`, `Space`, `Tab`, `Enter`, etc.
-   - Example: `AlternativeHotkey = F9` (or single modifier combo like `Alt+Q`)
-2. **Modifier combinations**: `Alt+Space`, `Ctrl+Shift+T`, `Win+T`
-   - Example: `AlternativeHotkey = Alt+Space`
-3. **Double-press patterns**: `F8+F8`, `Ctrl+Ctrl`
-   - Example: `AlternativeHotkey = F8+F8`
+1. **Single keys**: `F1-F12` ONLY (other single keys require modifiers for safety)
+   - Example: `TranslateHotkey = F9`
+   - Validation: Only F1-F12 allowed as single keys to prevent interference with normal typing
+2. **Modifier combinations**: `Alt+Q`, `Alt+Space`, `Ctrl+Shift+T`, `Win+T`
+   - Example: `TranslateHotkey = Alt+Q`
+   - Note: Shift+Key alone is not allowed (interferes with text input); use multi-modifier combos like `Ctrl+Shift+T`
+3. **Double-press patterns**: `Ctrl+Ctrl`, `F8+F8`, `Shift+Shift`, `Alt+Alt`, etc.
+   - Example: `TranslateHotkey = Ctrl+Ctrl`
+   - Double-press detection uses configurable time window: 50-500ms between presses
 
 **Implementation Architecture**:
 
 *Hotkey Parsing* (`src/config.rs`):
 - `HotkeyType` enum: Represents three types of hotkeys (SingleKey, ModifierCombo, DoublePress)
 - `HotkeyParser::parse()`: Converts configuration strings to HotkeyType enum
-- `HotkeyParser::key_name_to_vk()`: Maps key names (e.g., "F9", "Alt", "Space") to Windows VK codes
+- `HotkeyParser::key_name_to_vk()`: Maps key names (e.g., "F9", "Alt", "Space", "Ctrl") to Windows VK codes
 - `HotkeyParser::validate_hotkey()`: Validates hotkeys against dangerous system shortcuts (Ctrl+Alt+Delete, Win+L)
 
 *Detection Logic* (`src/keyboard.rs`):
@@ -179,43 +172,44 @@ The application supports customizable hotkeys in addition to the default Ctrl+Ct
 - **Modifier combo**:
   - Track modifier key states in `MODIFIER_STATE` HashMap
   - On target key press, verify all required modifiers are currently pressed
+  - Normalize VK codes (e.g., VK_LCONTROL/VK_RCONTROL → VK_CONTROL) for consistent detection
   - Clear state on WM_KEYUP to handle key releases
 - **Double-press**:
   - Track timestamp of key presses in `LAST_KEY_TIME`
+  - Normalize VK codes for consistent detection (handles left/right variants)
   - Trigger translation if second press occurs within configured time window (50-500ms)
-  - Similar to Ctrl+Ctrl logic but configurable for any key
+  - Works for any key, not just Ctrl
 
 *Static Variables*:
-- `ALT_HOTKEY_CONFIG`: Stores parsed HotkeyType configuration
-- `ALT_HOTKEY_ENABLED`: Atomic flag for quick enabled/disabled check
+- `TRANSLATE_HOTKEY_CONFIG`: Stores parsed HotkeyType configuration
 - `MODIFIER_STATE`: HashMap tracking modifier key states (for combo detection)
 - `LAST_KEY_TIME`: Timestamp for double-press detection
-
-**Backward Compatibility**:
-- Ctrl+Ctrl double-press **always works** regardless of alternative hotkey settings
-- Missing `[Hotkeys]` section in config uses defaults (Alt+Q enabled)
-- Invalid hotkey strings disable alternative hotkey with warning message, Ctrl+Ctrl continues to work
-- No breaking changes to existing functionality
+- `IS_PROCESSING`: Mutex to prevent concurrent translations
 
 **Initialization Flow**:
 1. `KeyboardHook::new()` loads configuration via `ConfigManager`
-2. Parse `alternative_hotkey` string using `HotkeyParser::parse()`
+2. Parse `translate_hotkey` string using `HotkeyParser::parse()`
 3. Validate parsed hotkey with `HotkeyParser::validate_hotkey()`
 4. Initialize static variables with parsed configuration
-5. On parse/validation errors: log warning, disable alternative hotkey, continue with Ctrl+Ctrl only
+5. On parse/validation errors: log warning, disable translation hotkey
 
 **Detection Flow** (in `keyboard_hook_proc()`):
 1. WM_KEYDOWN event received
-2. First, attempt Ctrl+Ctrl detection (existing logic)
-3. If not Ctrl+Ctrl, attempt alternative hotkey detection via `handle_alternative_hotkey()`
+2. Call `handle_translate_hotkey()` with key code and is_key_down=true
+3. If hotkey matches, trigger translation and block the event
 4. WM_KEYUP event received
-5. Update Ctrl state for Ctrl+Ctrl logic
-6. Update modifier states for alternative hotkey combos
+5. Call `handle_translate_hotkey()` with key code and is_key_down=false
+6. Update modifier states and handle double-press timing
 
 **System Shortcut Protection**:
 - Blocks configuration of dangerous combinations: Ctrl+Alt+Delete, Win+L
 - Warns about potentially disruptive shortcuts: Alt+F4
 - Returns validation errors before initialization
+
+**Key Architecture Change**:
+- **No hardcoded hotkeys**: The old hardcoded Ctrl+Ctrl logic has been removed entirely
+- **Unified detection**: All hotkey types (single, combo, double-press) are handled through the same configurable system
+- **Universal double-press**: Double-press detection works for any key, not just Ctrl
 
 **Limitations**:
 - Hotkey changes require application restart to take effect
@@ -241,7 +235,7 @@ Configuration file is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Us
 - `[Dictionary]`: ShowDictionary
 - `[Interface]`: ShowTerminalOnTranslate, AutoHideTerminalSeconds
 - `[History]`: SaveTranslationHistory, HistoryFile
-- `[Hotkeys]`: AlternativeHotkey, EnableAlternativeHotkey
+- `[Hotkeys]`: TranslateHotkey
 
 Language names (e.g., "Russian", "English") are mapped to Google Translate codes (ru, en) in `ConfigManager::language_to_code()`.
 
@@ -289,9 +283,14 @@ In unified mode:
 - Interactive mode: Uses CLI format methods via public methods
 
 ### Changing Hotkey Combination
-Modify `keyboard_hook_proc()` in keyboard.rs:
-- Change virtual key codes (currently `VK_LCONTROL`/`VK_RCONTROL`)
-- Adjust timing thresholds (`Duration::from_millis(50)` to `500`)
+Users can change the translation hotkey through the configuration file:
+- Edit `TranslateHotkey` in `%APPDATA%\Tagent\tagent.conf`
+- Use any supported format: single keys (F1-F12), modifier combos (Alt+Q), or double-press (Ctrl+Ctrl)
+- Changes require application restart to take effect
+
+For developers adjusting double-press timing:
+- Edit `HotkeyType::DoublePress` defaults in `HotkeyParser::parse()` in config.rs
+- Current thresholds: min_interval_ms=50, max_interval_ms=500
 
 ### Adding New Interactive Commands
 In `InteractiveMode::handle_command()`, add new command patterns to the match statement and implement handler methods.
