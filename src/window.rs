@@ -1,11 +1,7 @@
 use std::error::Error;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
-use windows::{
-    Win32::Foundation::*,
-    Win32::System::Console::*,
-    Win32::UI::WindowsAndMessaging::*,
-};
+use windows::{Win32::Foundation::*, Win32::System::Console::*, Win32::UI::WindowsAndMessaging::*};
 
 #[cfg(debug_assertions)]
 use std::io::Write;
@@ -31,16 +27,16 @@ impl WindowManager {
         unsafe {
             // Show the window if it's hidden
             ShowWindow(self.console_window, SW_SHOW);
-            
+
             // Bring it to the foreground
             SetForegroundWindow(self.console_window);
-            
+
             // Make sure it's not minimized
             if IsIconic(self.console_window).as_bool() {
                 ShowWindow(self.console_window, SW_RESTORE);
             }
         }
-        
+
         Ok(())
     }
 
@@ -55,9 +51,7 @@ impl WindowManager {
     /// Check if terminal window is visible
     #[allow(dead_code)]
     pub fn is_terminal_visible(&self) -> bool {
-        unsafe {
-            IsWindowVisible(self.console_window).as_bool()
-        }
+        unsafe { IsWindowVisible(self.console_window).as_bool() }
     }
 
     /// Get the currently active (foreground) window
@@ -79,7 +73,7 @@ impl WindowManager {
             if IsIconic(hwnd).as_bool() {
                 ShowWindow(hwnd, SW_RESTORE);
             }
-            
+
             // Then bring it to foreground
             SetForegroundWindow(hwnd);
         }
@@ -97,7 +91,7 @@ impl WindowManager {
 
             let mut buffer = [0u16; 512];
             let length = GetWindowTextW(active_window, &mut buffer);
-            
+
             if length > 0 {
                 let os_string = OsString::from_wide(&buffer[..length as usize]);
                 Ok(os_string.to_string_lossy().into_owned())
@@ -115,7 +109,13 @@ impl WindowManager {
 
     /// Set window position and size
     #[allow(dead_code)]
-    pub fn set_window_position(&self, x: i32, y: i32, width: i32, height: i32) -> Result<(), Box<dyn Error>> {
+    pub fn set_window_position(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<(), Box<dyn Error>> {
         unsafe {
             SetWindowPos(
                 self.console_window,
@@ -134,7 +134,7 @@ impl WindowManager {
     #[allow(dead_code)]
     pub fn flash_window(&self) -> Result<(), Box<dyn Error>> {
         unsafe {
-            let mut flash_info = FLASHWINFO {
+            let flash_info = FLASHWINFO {
                 cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
                 hwnd: self.console_window,
                 dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
@@ -142,7 +142,7 @@ impl WindowManager {
                 dwTimeout: 0,
             };
 
-            FlashWindowEx(&mut flash_info);
+            FlashWindowEx(&flash_info);
         }
         Ok(())
     }
@@ -156,7 +156,7 @@ impl WindowManager {
         unsafe {
             // Get current cursor position
             let mut cursor_pos = POINT { x: 0, y: 0 };
-            if !GetCursorPos(&mut cursor_pos).is_ok() {
+            if GetCursorPos(&mut cursor_pos).is_err() {
                 #[cfg(debug_assertions)]
                 {
                     let _ = writeln!(
@@ -172,7 +172,8 @@ impl WindowManager {
                 let _ = writeln!(
                     std::io::stderr(),
                     "[DEBUG] is_mouse_over_terminal: Cursor position = ({}, {})",
-                    cursor_pos.x, cursor_pos.y
+                    cursor_pos.x,
+                    cursor_pos.y
                 );
             }
 
@@ -192,8 +193,10 @@ impl WindowManager {
 
                 GetWindowTextW(window_at_cursor, &mut buffer);
                 let cursor_title = OsString::from_wide(
-                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)]
-                ).to_string_lossy().into_owned();
+                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)],
+                )
+                .to_string_lossy()
+                .into_owned();
                 let _ = writeln!(
                     std::io::stderr(),
                     "[DEBUG] is_mouse_over_terminal: Window at cursor title = '{}'",
@@ -208,8 +211,10 @@ impl WindowManager {
 
                 GetWindowTextW(self.console_window, &mut buffer);
                 let console_title = OsString::from_wide(
-                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)]
-                ).to_string_lossy().into_owned();
+                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)],
+                )
+                .to_string_lossy()
+                .into_owned();
                 let _ = writeln!(
                     std::io::stderr(),
                     "[DEBUG] is_mouse_over_terminal: Console window title = '{}'",
@@ -306,8 +311,11 @@ mod tests {
             Err(e) => {
                 // In some test environments, there might not be a console window
                 // This is acceptable - just ensure we got a meaningful error
-                assert!(e.to_string().contains("console"),
-                    "Error should mention console: {}", e);
+                assert!(
+                    e.to_string().contains("console"),
+                    "Error should mention console: {}",
+                    e
+                );
             }
         }
     }
@@ -344,7 +352,10 @@ mod tests {
             // The terminal should be visible when we're running tests
             let is_visible = window_manager.is_terminal_visible();
             // We expect the terminal to be visible during test execution
-            assert!(is_visible, "Terminal should be visible during test execution");
+            assert!(
+                is_visible,
+                "Terminal should be visible during test execution"
+            );
         }
     }
 }

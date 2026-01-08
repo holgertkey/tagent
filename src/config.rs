@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -14,15 +14,15 @@ pub struct Config {
     pub auto_hide_terminal_seconds: u64,
     pub show_dictionary: bool,
     pub copy_to_clipboard: bool,
-    pub save_translation_history: bool,    // Новое поле
-    pub history_file: String,              // Новое поле
-    pub translation_prompt_color: String,  // Color for translation prompt
-    pub dictionary_prompt_color: String,   // Color for dictionary prompt
-    pub auto_prompt_color: String,         // Color for Auto prompt
-    pub translate_hotkey: String,          // Translation hotkey (e.g., "Ctrl+Ctrl", "Alt+Q", "F9")
-    pub enable_text_to_speech: bool,       // Enable text-to-speech functionality
-    pub speech_hotkey: String,             // Hotkey for speech (e.g., "Alt+E")
-    pub enable_speech_hotkey: bool,        // Enable/disable speech hotkey
+    pub save_translation_history: bool,   // Новое поле
+    pub history_file: String,             // Новое поле
+    pub translation_prompt_color: String, // Color for translation prompt
+    pub dictionary_prompt_color: String,  // Color for dictionary prompt
+    pub auto_prompt_color: String,        // Color for Auto prompt
+    pub translate_hotkey: String,         // Translation hotkey (e.g., "Ctrl+Ctrl", "Alt+Q", "F9")
+    pub enable_text_to_speech: bool,      // Enable text-to-speech functionality
+    pub speech_hotkey: String,            // Hotkey for speech (e.g., "Alt+E")
+    pub enable_speech_hotkey: bool,       // Enable/disable speech hotkey
 }
 
 impl Default for Config {
@@ -42,15 +42,15 @@ impl Default for Config {
             auto_hide_terminal_seconds: 5,
             show_dictionary: true,
             copy_to_clipboard: true,
-            save_translation_history: false,        // По умолчанию отключено
+            save_translation_history: false, // По умолчанию отключено
             history_file: default_history,
-            translation_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for translation
-            dictionary_prompt_color: "BrightYellow".to_string(),   // Default bright yellow for dictionary
-            auto_prompt_color: "None".to_string(),                 // Default no color for Auto
-            translate_hotkey: "Ctrl+Ctrl".to_string(),             // Default translation hotkey
-            enable_text_to_speech: true,                           // TTS enabled by default
-            speech_hotkey: "Alt+E".to_string(),                    // Default speech hotkey
-            enable_speech_hotkey: true,                            // Enable speech hotkey by default
+            translation_prompt_color: "BrightYellow".to_string(), // Default bright yellow for translation
+            dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
+            auto_prompt_color: "None".to_string(),               // Default no color for Auto
+            translate_hotkey: "Ctrl+Ctrl".to_string(),           // Default translation hotkey
+            enable_text_to_speech: true,                         // TTS enabled by default
+            speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
+            enable_speech_hotkey: true,                          // Enable speech hotkey by default
         }
     }
 }
@@ -85,7 +85,7 @@ impl ConfigManager {
 
         // Load or create config file
         manager.load_or_create_config()?;
-        
+
         Ok(manager)
     }
 
@@ -103,20 +103,20 @@ impl ConfigManager {
     fn create_default_config(&self) -> Result<(), Box<dyn Error>> {
         let default_config = Config::default();
         let ini_content = self.create_ini_content(&default_config);
-        
+
         fs::write(&self.config_path, ini_content)?;
         println!("Created default configuration file: {}", self.config_path);
-        
+
         // Update last modified time
         self.update_last_modified_time()?;
-        
+
         Ok(())
     }
 
     /// Create INI format content
     fn create_ini_content(&self, config: &Config) -> String {
         format!(
-r#"; Text Translator Configuration File
+            r#"; Text Translator Configuration File
 ; This program translates selected text using keyboard shortcuts
 ;
 ; Usage:
@@ -261,13 +261,13 @@ EnableSpeechHotkey = {}
     fn load_config(&self) -> Result<(), Box<dyn Error>> {
         let content = fs::read_to_string(&self.config_path)?;
         let parsed_config = self.parse_ini(&content)?;
-        
+
         let source_lang = parsed_config
             .get("Translation")
             .and_then(|section| section.get("SourceLanguage"))
             .cloned()
             .unwrap_or_else(|| "Auto".to_string());
-            
+
         let target_lang = parsed_config
             .get("Translation")
             .and_then(|section| section.get("TargetLanguage"))
@@ -379,18 +379,21 @@ EnableSpeechHotkey = {}
         }
 
         self.update_last_modified_time()?;
-        
+
         Ok(())
     }
 
     /// Parse INI format content
-    fn parse_ini(&self, content: &str) -> Result<HashMap<String, HashMap<String, String>>, Box<dyn Error>> {
+    fn parse_ini(
+        &self,
+        content: &str,
+    ) -> Result<HashMap<String, HashMap<String, String>>, Box<dyn Error>> {
         let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
         let mut current_section: Option<String> = None;
 
         for line in content.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines and comments
             if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
                 continue;
@@ -398,15 +401,15 @@ EnableSpeechHotkey = {}
 
             // Section header
             if line.starts_with('[') && line.ends_with(']') {
-                let section_name = line[1..line.len()-1].to_string();
+                let section_name = line[1..line.len() - 1].to_string();
                 current_section = Some(section_name.clone());
                 sections.insert(section_name, HashMap::new());
             }
             // Key-value pair
             else if let Some(eq_pos) = line.find('=') {
                 let key = line[..eq_pos].trim().to_string();
-                let value = line[eq_pos+1..].trim().to_string();
-                
+                let value = line[eq_pos + 1..].trim().to_string();
+
                 if let Some(section_name) = &current_section {
                     if let Some(section) = sections.get_mut(section_name) {
                         section.insert(key, value);
@@ -480,7 +483,9 @@ EnableSpeechHotkey = {}
         println!("  /h, /help, /?           - Show this help");
         println!("  /c, /config             - Show current configuration");
         println!("  /v, /version            - Show version information");
-        println!("  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)");
+        println!(
+            "  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)"
+        );
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /exit        - Exit program");
         println!();
@@ -525,14 +530,42 @@ EnableSpeechHotkey = {}
 
         println!();
         println!("=== Current Configuration ===");
-        println!("Source Language: {} ({})", config.source_language, source_code);
-        println!("Target Language: {} ({})", config.target_language, target_code);
-        println!("Show Dictionary: {}", if config.show_dictionary { "Enabled" } else { "Disabled" });
-        println!("Copy to Clipboard: {}", if config.copy_to_clipboard { "Enabled" } else { "Disabled" });
+        println!(
+            "Source Language: {} ({})",
+            config.source_language, source_code
+        );
+        println!(
+            "Target Language: {} ({})",
+            config.target_language, target_code
+        );
+        println!(
+            "Show Dictionary: {}",
+            if config.show_dictionary {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        println!(
+            "Copy to Clipboard: {}",
+            if config.copy_to_clipboard {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
         println!();
         println!("Translation Hotkey: {}", config.translate_hotkey);
-        println!("Show Terminal on Translate: {}", if config.show_terminal_on_translate { "Enabled" } else { "Disabled" });
-        println!("Auto-hide Terminal: {}",
+        println!(
+            "Show Terminal on Translate: {}",
+            if config.show_terminal_on_translate {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
+        println!(
+            "Auto-hide Terminal: {}",
             if config.auto_hide_terminal_seconds == 0 {
                 "Disabled".to_string()
             } else {
@@ -540,11 +573,32 @@ EnableSpeechHotkey = {}
             }
         );
         println!();
-        println!("Text-to-Speech: {}", if config.enable_text_to_speech { "Enabled" } else { "Disabled" });
+        println!(
+            "Text-to-Speech: {}",
+            if config.enable_text_to_speech {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
         println!("Speech Hotkey: {}", config.speech_hotkey);
-        println!("Speech Hotkey Enabled: {}", if config.enable_speech_hotkey { "Yes" } else { "No" });
+        println!(
+            "Speech Hotkey Enabled: {}",
+            if config.enable_speech_hotkey {
+                "Yes"
+            } else {
+                "No"
+            }
+        );
         println!();
-        println!("Save Translation History: {}", if config.save_translation_history { "Enabled" } else { "Disabled" });
+        println!(
+            "Save Translation History: {}",
+            if config.save_translation_history {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        );
         println!("History File: {}", config.history_file);
         println!();
 
@@ -569,7 +623,7 @@ EnableSpeechHotkey = {}
 
         let metadata = fs::metadata(&self.config_path)?;
         let current_modified = metadata.modified()?;
-        
+
         let should_reload = {
             let last_modified = self.last_modified.lock().unwrap();
             match *last_modified {
@@ -591,7 +645,7 @@ EnableSpeechHotkey = {}
         if Path::new(&self.config_path).exists() {
             let metadata = fs::metadata(&self.config_path)?;
             let modified = metadata.modified()?;
-            
+
             if let Ok(mut last_modified) = self.last_modified.lock() {
                 *last_modified = Some(modified);
             }
@@ -604,7 +658,7 @@ EnableSpeechHotkey = {}
         match language.to_lowercase().as_str() {
             "auto" => "auto",
             "english" => "en",
-            "russian" => "ru", 
+            "russian" => "ru",
             "spanish" => "es",
             "french" => "fr",
             "german" => "de",
@@ -666,9 +720,18 @@ EnableSpeechHotkey = {}
 // Hotkey configuration types and parser
 #[derive(Debug, Clone, PartialEq)]
 pub enum HotkeyType {
-    SingleKey { vk_code: u32 },
-    ModifierCombo { modifiers: Vec<u32>, key: u32 },
-    DoublePress { vk_code: u32, min_interval_ms: u64, max_interval_ms: u64 },
+    SingleKey {
+        vk_code: u32,
+    },
+    ModifierCombo {
+        modifiers: Vec<u32>,
+        key: u32,
+    },
+    DoublePress {
+        vk_code: u32,
+        min_interval_ms: u64,
+        max_interval_ms: u64,
+    },
 }
 
 pub struct HotkeyParser;
@@ -703,7 +766,7 @@ impl HotkeyParser {
             }
 
             let key = Self::key_name_to_vk(parts.last().unwrap())?;
-            let modifiers: Result<Vec<u32>, String> = parts[..parts.len()-1]
+            let modifiers: Result<Vec<u32>, String> = parts[..parts.len() - 1]
                 .iter()
                 .map(|m| Self::key_name_to_vk(m))
                 .collect();
@@ -795,15 +858,13 @@ impl HotkeyParser {
                 const VK_F1: u32 = 112;
                 const VK_F12: u32 = 123;
                 if *vk_code < VK_F1 || *vk_code > VK_F12 {
-                    return Err(format!(
-                        "Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)"
-                    ));
+                    return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
                 }
             }
             HotkeyType::ModifierCombo { modifiers, key } => {
                 // Forbid Shift-only combinations (Shift+Key interferes with text input)
                 // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
-                let has_shift = modifiers.iter().any(|&m| m == VK_SHIFT.0 as u32);
+                let has_shift = modifiers.contains(&(VK_SHIFT.0 as u32));
                 let only_shift = modifiers.len() == 1 && has_shift;
 
                 if only_shift {
@@ -811,9 +872,17 @@ impl HotkeyParser {
                 }
 
                 // Warn about common system shortcuts
-                let has_ctrl = modifiers.iter().any(|&m| m == VK_CONTROL.0 as u32 || m == VK_LCONTROL.0 as u32 || m == VK_RCONTROL.0 as u32);
-                let has_alt = modifiers.iter().any(|&m| m == VK_MENU.0 as u32 || m == VK_LMENU.0 as u32 || m == VK_RMENU.0 as u32);
-                let has_win = modifiers.iter().any(|&m| m == VK_LWIN.0 as u32 || m == VK_RWIN.0 as u32);
+                let has_ctrl = modifiers.iter().any(|&m| {
+                    m == VK_CONTROL.0 as u32
+                        || m == VK_LCONTROL.0 as u32
+                        || m == VK_RCONTROL.0 as u32
+                });
+                let has_alt = modifiers.iter().any(|&m| {
+                    m == VK_MENU.0 as u32 || m == VK_LMENU.0 as u32 || m == VK_RMENU.0 as u32
+                });
+                let has_win = modifiers
+                    .iter()
+                    .any(|&m| m == VK_LWIN.0 as u32 || m == VK_RWIN.0 as u32);
 
                 // Block dangerous combinations
                 if has_ctrl && has_alt && *key == VK_DELETE.0 as u32 {

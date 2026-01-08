@@ -1,6 +1,6 @@
-use winres::WindowsResource;
 use std::fs;
 use std::path::Path;
+use winres::WindowsResource;
 
 fn main() {
     // Get version from Cargo.toml (format: "MAJOR.MINOR.PATCH+BUILD" or "MAJOR.MINOR.PATCH")
@@ -20,9 +20,15 @@ fn main() {
             .set_icon("assets/icons/taa_256.ico")
             // Set application information
             .set("ProductName", "Text Agent Translator")
-            .set("FileDescription", "Text translator with unified GUI/Interactive interface and CLI mode")
+            .set(
+                "FileDescription",
+                "Text translator with unified GUI/Interactive interface and CLI mode",
+            )
             .set("CompanyName", "Holgert K")
-            .set("LegalCopyright", "© 2024 Holgert K. Licensed under MIT License")
+            .set(
+                "LegalCopyright",
+                "© 2024 Holgert K. Licensed under MIT License",
+            )
             .set("FileVersion", &windows_version)
             .set("ProductVersion", &windows_version)
             .set("OriginalFilename", "tagent.exe")
@@ -38,22 +44,29 @@ fn main() {
 fn sync_version_in_docs(version: &str) {
     // Files to update with version patterns
     let files = vec![
-        ("README.md", vec![
-            ("# Tagent Text Translator v", "\n"),
-            ("**Current Version**: v", "\n"),
-            ("**Tagent Text Translator v", "** - Fast, reliable"),
-        ]),
-        ("CLAUDE.md", vec![
-            ("(v", ") built in Rust"),
-        ]),
-        ("CHANGELOG.md", vec![
-            ("## [", "] - "),  // Changelog section header: ## [VERSION] - DATE
-        ]),
+        (
+            "README.md",
+            vec![
+                ("# Tagent Text Translator v", "\n"),
+                ("**Current Version**: v", "\n"),
+                ("**Tagent Text Translator v", "** - Fast, reliable"),
+            ],
+        ),
+        ("CLAUDE.md", vec![("(v", ") built in Rust")]),
+        (
+            "CHANGELOG.md",
+            vec![
+                ("## [", "] - "), // Changelog section header: ## [VERSION] - DATE
+            ],
+        ),
     ];
 
     for (file_path, patterns) in files {
         if let Err(e) = update_version_in_file(file_path, version, &patterns) {
-            println!("cargo:warning=Failed to sync version in {}: {}", file_path, e);
+            println!(
+                "cargo:warning=Failed to sync version in {}: {}",
+                file_path, e
+            );
         }
     }
 }
@@ -101,7 +114,10 @@ fn update_version_in_file(
     // Only write if content changed
     if changed {
         fs::write(file_path, updated_content)?;
-        println!("cargo:warning=Updated version to {} in {}", new_version, file_path);
+        println!(
+            "cargo:warning=Updated version to {} in {}",
+            new_version, file_path
+        );
     }
 
     Ok(())

@@ -1,16 +1,14 @@
-use crate::translator::Translator;
-use crate::config::{ConfigManager, HotkeyType, HotkeyParser};
+use crate::config::{ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
+use crate::translator::Translator;
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::{
-    Win32::Foundation::*,
-    Win32::System::LibraryLoader::GetModuleHandleW,
-    Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*,
+    Win32::Foundation::*, Win32::System::LibraryLoader::GetModuleHandleW,
+    Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*,
 };
 
 static TRANSLATOR: OnceLock<Arc<Translator>> = OnceLock::new();
@@ -32,65 +30,81 @@ static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 pub struct KeyboardHook;
 
 impl KeyboardHook {
-    pub fn new(translator: Translator, should_exit: Arc<AtomicBool>) -> Result<Self, Box<dyn Error>> {
-        TRANSLATOR.set(Arc::new(translator))
+    pub fn new(
+        translator: Translator,
+        should_exit: Arc<AtomicBool>,
+    ) -> Result<Self, Box<dyn Error>> {
+        TRANSLATOR
+            .set(Arc::new(translator))
             .map_err(|_| "Translator already initialized")?;
 
         let is_processing = Arc::new(Mutex::new(false));
 
-        IS_PROCESSING.set(is_processing)
+        IS_PROCESSING
+            .set(is_processing)
             .map_err(|_| "IsProcessing already initialized")?;
-        SHOULD_EXIT.set(should_exit)
+        SHOULD_EXIT
+            .set(should_exit)
             .map_err(|_| "ShouldExit already initialized")?;
 
         // Initialize translation hotkey configuration
-        let config_manager = ConfigManager::new(
-            &ConfigManager::get_default_config_path()?.to_string_lossy()
-        )?;
+        let config_manager =
+            ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
         let config = config_manager.get_config();
 
         let translate_hotkey = match HotkeyParser::parse(&config.translate_hotkey) {
-            Ok(hotkey) => {
-                match HotkeyParser::validate_hotkey(&hotkey) {
-                    Ok(_) => Some(hotkey),
-                    Err(e) => {
-                        eprintln!("Warning: Hotkey validation failed for '{}': {}", config.translate_hotkey, e);
-                        eprintln!("Translation hotkey disabled.");
-                        None
-                    }
+            Ok(hotkey) => match HotkeyParser::validate_hotkey(&hotkey) {
+                Ok(_) => Some(hotkey),
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Hotkey validation failed for '{}': {}",
+                        config.translate_hotkey, e
+                    );
+                    eprintln!("Translation hotkey disabled.");
+                    None
                 }
-            }
+            },
             Err(e) => {
-                eprintln!("Warning: Failed to parse hotkey '{}': {}", config.translate_hotkey, e);
+                eprintln!(
+                    "Warning: Failed to parse hotkey '{}': {}",
+                    config.translate_hotkey, e
+                );
                 eprintln!("Translation hotkey disabled.");
                 None
             }
         };
 
-        TRANSLATE_HOTKEY_CONFIG.set(Arc::new(Mutex::new(translate_hotkey)))
+        TRANSLATE_HOTKEY_CONFIG
+            .set(Arc::new(Mutex::new(translate_hotkey)))
             .map_err(|_| "TranslateHotkeyConfig already initialized")?;
 
-        MODIFIER_STATE.set(Arc::new(Mutex::new(HashMap::new())))
+        MODIFIER_STATE
+            .set(Arc::new(Mutex::new(HashMap::new())))
             .map_err(|_| "ModifierState already initialized")?;
 
-        LAST_KEY_TIME.set(Arc::new(Mutex::new(None)))
+        LAST_KEY_TIME
+            .set(Arc::new(Mutex::new(None)))
             .map_err(|_| "LastKeyTime already initialized")?;
 
         // Initialize speech hotkey configuration
         let speech_hotkey = if config.enable_speech_hotkey && config.enable_text_to_speech {
             match HotkeyParser::parse(&config.speech_hotkey) {
-                Ok(hotkey) => {
-                    match HotkeyParser::validate_hotkey(&hotkey) {
-                        Ok(_) => Some(hotkey),
-                        Err(e) => {
-                            eprintln!("Warning: Speech hotkey validation failed for '{}': {}", config.speech_hotkey, e);
-                            eprintln!("Speech hotkey disabled.");
-                            None
-                        }
+                Ok(hotkey) => match HotkeyParser::validate_hotkey(&hotkey) {
+                    Ok(_) => Some(hotkey),
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Speech hotkey validation failed for '{}': {}",
+                            config.speech_hotkey, e
+                        );
+                        eprintln!("Speech hotkey disabled.");
+                        None
                     }
-                }
+                },
                 Err(e) => {
-                    eprintln!("Warning: Failed to parse speech hotkey '{}': {}", config.speech_hotkey, e);
+                    eprintln!(
+                        "Warning: Failed to parse speech hotkey '{}': {}",
+                        config.speech_hotkey, e
+                    );
                     eprintln!("Speech hotkey disabled.");
                     None
                 }
@@ -99,24 +113,30 @@ impl KeyboardHook {
             None
         };
 
-        SPEECH_HOTKEY_CONFIG.set(Arc::new(Mutex::new(speech_hotkey)))
+        SPEECH_HOTKEY_CONFIG
+            .set(Arc::new(Mutex::new(speech_hotkey)))
             .map_err(|_| "SpeechHotkeyConfig already initialized")?;
 
-        SPEECH_HOTKEY_ENABLED.set(Arc::new(AtomicBool::new(config.enable_speech_hotkey)))
+        SPEECH_HOTKEY_ENABLED
+            .set(Arc::new(AtomicBool::new(config.enable_speech_hotkey)))
             .map_err(|_| "SpeechHotkeyEnabled already initialized")?;
 
-        SPEECH_ENABLED.set(Arc::new(AtomicBool::new(config.enable_text_to_speech)))
+        SPEECH_ENABLED
+            .set(Arc::new(AtomicBool::new(config.enable_text_to_speech)))
             .map_err(|_| "SpeechEnabled already initialized")?;
 
         // Note: Speech hotkeys use shared MODIFIER_STATE, no need for separate state
 
-        SPEECH_LAST_KEY_TIME.set(Arc::new(Mutex::new(None)))
+        SPEECH_LAST_KEY_TIME
+            .set(Arc::new(Mutex::new(None)))
             .map_err(|_| "SpeechLastKeyTime already initialized")?;
 
-        IS_SPEAKING.set(Arc::new(Mutex::new(false)))
+        IS_SPEAKING
+            .set(Arc::new(Mutex::new(false)))
             .map_err(|_| "IsSpeaking already initialized")?;
 
-        SHOULD_STOP_SPEECH.set(Arc::new(AtomicBool::new(false)))
+        SHOULD_STOP_SPEECH
+            .set(Arc::new(AtomicBool::new(false)))
             .map_err(|_| "ShouldStopSpeech already initialized")?;
 
         Ok(Self)
@@ -131,7 +151,6 @@ impl KeyboardHook {
                 return Err("Failed to set keyboard hook".into());
             }
 
-
             loop {
                 // Check if we should exit
                 if let Some(should_exit) = SHOULD_EXIT.get() {
@@ -142,10 +161,16 @@ impl KeyboardHook {
                 }
 
                 let mut msg = MSG::default();
-                
+
                 // Use PeekMessage instead of GetMessage to avoid blocking
-                let has_message = PeekMessageW(&mut msg, HWND::default(), 0, 0, PEEK_MESSAGE_REMOVE_TYPE(1u32));
-                
+                let has_message = PeekMessageW(
+                    &mut msg,
+                    HWND::default(),
+                    0,
+                    0,
+                    PEEK_MESSAGE_REMOVE_TYPE(1u32),
+                );
+
                 if has_message.as_bool() {
                     match msg.message {
                         WM_QUIT => {
@@ -245,11 +270,14 @@ unsafe fn trigger_speech() {
 }
 
 /// Speak text from clipboard
-async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
+async fn speak_clipboard(
+    _translator: &Translator,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<(), Box<dyn Error>> {
     use crate::clipboard::ClipboardManager;
     use crate::window::WindowManager;
-    use std::io::{self, Write};
     use colored::Colorize;
+    use std::io::{self, Write};
 
     // Create clipboard manager
     let clipboard = ClipboardManager::new();
@@ -261,9 +289,8 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
     let text = clipboard.get_text()?;
     if text.trim().is_empty() {
         // Get config for prompt color
-        let config_manager = ConfigManager::new(
-            &ConfigManager::get_default_config_path()?.to_string_lossy()
-        )?;
+        let config_manager =
+            ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
         let config = config_manager.get_config();
 
         // Clear current line and print error message
@@ -285,9 +312,8 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
     }
 
     // Get language code from config
-    let config_manager = ConfigManager::new(
-        &ConfigManager::get_default_config_path()?.to_string_lossy()
-    )?;
+    let config_manager =
+        ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
 
     let config = config_manager.get_config();
 
@@ -332,7 +358,10 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
 
     // Call speech directly (blocking until completion or cancellation)
     let speech_manager = SpeechManager::new();
-    match speech_manager.speak_text_with_cancel(&text, lang_code, stop_flag).await {
+    match speech_manager
+        .speak_text_with_cancel(&text, lang_code, stop_flag)
+        .await
+    {
         Ok(_) => {
             // Speech completed successfully
         }
@@ -357,9 +386,9 @@ async fn speak_clipboard(_translator: &Translator, stop_flag: Arc<AtomicBool>) -
 /// Normalize virtual key code (convert specific L/R codes to generic codes)
 fn normalize_vk_code(vk_code: u32) -> u32 {
     match vk_code {
-        162 | 163 => 17,  // VK_LCONTROL/VK_RCONTROL -> VK_CONTROL
-        164 | 165 => 18,  // VK_LMENU/VK_RMENU -> VK_MENU
-        160 | 161 => 16,  // VK_LSHIFT/VK_RSHIFT -> VK_SHIFT
+        162 | 163 => 17, // VK_LCONTROL/VK_RCONTROL -> VK_CONTROL
+        164 | 165 => 18, // VK_LMENU/VK_RMENU -> VK_MENU
+        160 | 161 => 16, // VK_LSHIFT/VK_RSHIFT -> VK_SHIFT
         _ => vk_code,
     }
 }
@@ -392,7 +421,8 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
 
                                 // Check if all modifiers are pressed and the key is pressed
                                 if is_key_down && vk_code == *key {
-                                    let all_modifiers_pressed = modifiers.iter()
+                                    let all_modifiers_pressed = modifiers
+                                        .iter()
                                         .all(|m| state.get(m).copied().unwrap_or(false));
 
                                     if all_modifiers_pressed {
@@ -409,7 +439,11 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                         }
                     }
 
-                    HotkeyType::DoublePress { vk_code: target_vk, min_interval_ms, max_interval_ms } => {
+                    HotkeyType::DoublePress {
+                        vk_code: target_vk,
+                        min_interval_ms,
+                        max_interval_ms,
+                    } => {
                         let normalized_vk = normalize_vk_code(vk_code);
                         if is_key_down && normalized_vk == *target_vk {
                             if let Some(last_key_time) = SPEECH_LAST_KEY_TIME.get() {
@@ -419,12 +453,15 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                     match *last_time {
                                         Some(last) => {
                                             let elapsed = now.duration_since(last);
-                                            if elapsed >= Duration::from_millis(*min_interval_ms) &&
-                                               elapsed < Duration::from_millis(*max_interval_ms) {
+                                            if elapsed >= Duration::from_millis(*min_interval_ms)
+                                                && elapsed < Duration::from_millis(*max_interval_ms)
+                                            {
                                                 trigger_speech();
                                                 *last_time = None;
                                                 return true;
-                                            } else if elapsed >= Duration::from_millis(*max_interval_ms) {
+                                            } else if elapsed
+                                                >= Duration::from_millis(*max_interval_ms)
+                                            {
                                                 *last_time = Some(now);
                                             }
                                         }
@@ -471,7 +508,8 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
 
                                 // Check if all modifiers are pressed and the key is pressed
                                 if is_key_down && vk_code == *key {
-                                    let all_modifiers_pressed = modifiers.iter()
+                                    let all_modifiers_pressed = modifiers
+                                        .iter()
                                         .all(|m| state.get(m).copied().unwrap_or(false));
 
                                     if all_modifiers_pressed {
@@ -488,7 +526,11 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                         }
                     }
 
-                    HotkeyType::DoublePress { vk_code: target_vk, min_interval_ms, max_interval_ms } => {
+                    HotkeyType::DoublePress {
+                        vk_code: target_vk,
+                        min_interval_ms,
+                        max_interval_ms,
+                    } => {
                         let normalized_vk = normalize_vk_code(vk_code);
                         if is_key_down && normalized_vk == *target_vk {
                             if let Some(last_key_time) = LAST_KEY_TIME.get() {
@@ -498,12 +540,15 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                     match *last_time {
                                         Some(last) => {
                                             let elapsed = now.duration_since(last);
-                                            if elapsed >= Duration::from_millis(*min_interval_ms) &&
-                                               elapsed < Duration::from_millis(*max_interval_ms) {
+                                            if elapsed >= Duration::from_millis(*min_interval_ms)
+                                                && elapsed < Duration::from_millis(*max_interval_ms)
+                                            {
                                                 trigger_translation();
                                                 *last_time = None;
                                                 return true;
-                                            } else if elapsed >= Duration::from_millis(*max_interval_ms) {
+                                            } else if elapsed
+                                                >= Duration::from_millis(*max_interval_ms)
+                                            {
                                                 *last_time = Some(now);
                                             }
                                         }
@@ -522,7 +567,11 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
     false
 }
 
-unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+unsafe extern "system" fn keyboard_hook_proc(
+    n_code: i32,
+    w_param: WPARAM,
+    l_param: LPARAM,
+) -> LRESULT {
     if n_code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
 
@@ -560,11 +609,11 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
             if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
                 if speech_enabled.load(Ordering::Relaxed) {
                     if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed) {
-                            if handle_speech_hotkey(kbd_struct.vkCode, true) {
-                                // Block the event - don't pass it to other applications
-                                return LRESULT(1);
-                            }
+                        if tts_enabled.load(Ordering::Relaxed)
+                            && handle_speech_hotkey(kbd_struct.vkCode, true)
+                        {
+                            // Block the event - don't pass it to other applications
+                            return LRESULT(1);
                         }
                     }
                 }
@@ -580,11 +629,11 @@ unsafe extern "system" fn keyboard_hook_proc(n_code: i32, w_param: WPARAM, l_par
             if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
                 if speech_enabled.load(Ordering::Relaxed) {
                     if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed) {
-                            if handle_speech_hotkey(kbd_struct.vkCode, false) {
-                                // Block the key up event to match the blocked key down event
-                                return LRESULT(1);
-                            }
+                        if tts_enabled.load(Ordering::Relaxed)
+                            && handle_speech_hotkey(kbd_struct.vkCode, false)
+                        {
+                            // Block the key up event to match the blocked key down event
+                            return LRESULT(1);
                         }
                     }
                 }

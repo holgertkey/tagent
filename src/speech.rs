@@ -93,7 +93,7 @@ impl SpeechManager {
 
         // Split by sentences first (by . ! ?)
         let sentences: Vec<&str> = text
-            .split(|c| c == '.' || c == '!' || c == '?')
+            .split(['.', '!', '?'])
             .filter(|s| !s.trim().is_empty())
             .collect();
 
@@ -104,24 +104,45 @@ impl SpeechManager {
             if sentence.len() > MAX_TEXT_LENGTH {
                 let words: Vec<&str> = sentence.split_whitespace().collect();
                 for word in words {
-                    if current_chunk.len() + word.len() + 1 > MAX_TEXT_LENGTH {
-                        if !current_chunk.is_empty() {
+                    // If word itself is too long, split it by character chunks
+                    if word.len() > MAX_TEXT_LENGTH {
+                        let mut word_start = 0;
+                        while word_start < word.len() {
+                            let word_end = std::cmp::min(word_start + MAX_TEXT_LENGTH, word.len());
+                            let word_chunk = &word[word_start..word_end];
+
+                            if current_chunk.len() + word_chunk.len() + 1 > MAX_TEXT_LENGTH
+                                && !current_chunk.is_empty()
+                            {
+                                chunks.push(current_chunk.clone());
+                                current_chunk.clear();
+                            }
+                            if !current_chunk.is_empty() {
+                                current_chunk.push(' ');
+                            }
+                            current_chunk.push_str(word_chunk);
+                            word_start = word_end;
+                        }
+                    } else {
+                        if current_chunk.len() + word.len() + 1 > MAX_TEXT_LENGTH
+                            && !current_chunk.is_empty()
+                        {
                             chunks.push(current_chunk.clone());
                             current_chunk.clear();
                         }
+                        if !current_chunk.is_empty() {
+                            current_chunk.push(' ');
+                        }
+                        current_chunk.push_str(word);
                     }
-                    if !current_chunk.is_empty() {
-                        current_chunk.push(' ');
-                    }
-                    current_chunk.push_str(word);
                 }
             } else {
                 // Check if adding this sentence would exceed limit
-                if current_chunk.len() + sentence.len() + 2 > MAX_TEXT_LENGTH {
-                    if !current_chunk.is_empty() {
-                        chunks.push(current_chunk.clone());
-                        current_chunk.clear();
-                    }
+                if current_chunk.len() + sentence.len() + 2 > MAX_TEXT_LENGTH
+                    && !current_chunk.is_empty()
+                {
+                    chunks.push(current_chunk.clone());
+                    current_chunk.clear();
                 }
 
                 if !current_chunk.is_empty() {
@@ -148,52 +169,13 @@ impl SpeechManager {
         chunks
     }
 
-    /// Speak text using Google Translate TTS
-    pub async fn speak_text(&self, text: &str, lang_code: &str) -> Result<(), SpeechError> {
-        if text.trim().is_empty() {
-            return Err(SpeechError::TextTooLong("Text is empty".to_string()));
-        }
-
-        // Split text into chunks if needed
-        let chunks = if text.len() > MAX_TEXT_LENGTH {
-            self.split_text_for_tts(text)
-        } else {
-            vec![text.to_string()]
-        };
-
-        // Play each chunk sequentially
-        for chunk in chunks.iter() {
-            if chunk.trim().is_empty() {
-                continue;
-            }
-
-            // Fetch audio for this chunk
-            let audio_bytes = self.fetch_tts_audio(chunk, lang_code).await?;
-
-            // Create audio output stream for each chunk
-            let builder = OutputStreamBuilder::from_default_device()
-                .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
-
-            let stream_handle = builder.open_stream()
-                .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
-
-            // Create sink for playback
-            let sink = Sink::connect_new(stream_handle.mixer());
-
-            // Decode MP3 and play
-            let cursor = Cursor::new(audio_bytes);
-            let source = Decoder::new(cursor)
-                .map_err(|e| SpeechError::AudioError(format!("Failed to decode MP3: {}", e)))?;
-
-            sink.append(source);
-            sink.sleep_until_end();
-        }
-
-        Ok(())
-    }
-
     /// Speak text with cancellation support
-    pub async fn speak_text_with_cancel(&self, text: &str, lang_code: &str, stop_flag: Arc<AtomicBool>) -> Result<(), SpeechError> {
+    pub async fn speak_text_with_cancel(
+        &self,
+        text: &str,
+        lang_code: &str,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Result<(), SpeechError> {
         if text.trim().is_empty() {
             return Err(SpeechError::TextTooLong("Text is empty".to_string()));
         }
@@ -209,7 +191,8 @@ impl SpeechManager {
         let builder = OutputStreamBuilder::from_default_device()
             .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
 
-        let stream_handle = builder.open_stream()
+        let stream_handle = builder
+            .open_stream()
             .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
 
         // Create sink for playback
@@ -248,17 +231,6 @@ impl SpeechManager {
         }
 
         Ok(())
-    }
-
-    /// Speak text in a separate thread to avoid blocking
-    pub fn speak_text_async(text: String, lang_code: String) {
-        tokio::spawn(async move {
-            let manager = SpeechManager::new();
-            match manager.speak_text(&text, &lang_code).await {
-                Ok(_) => println!("Speech completed successfully."),
-                Err(e) => eprintln!("Speech error: {}", e),
-            }
-        });
     }
 }
 

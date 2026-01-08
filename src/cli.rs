@@ -1,11 +1,11 @@
-use crate::translator::Translator;
 use crate::config::ConfigManager;
 use crate::speech::SpeechManager;
-use std::error::Error;
-use std::sync::Arc;
+use crate::translator::Translator;
 use chrono::{DateTime, Utc};
+use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::Arc;
 
 pub struct CliHandler {
     translator: Translator,
@@ -28,14 +28,21 @@ impl CliHandler {
     }
 
     /// Save translation history to file (CLI version)
-    fn save_translation_history(&self, original: &str, translated: &str, source_lang: &str, target_lang: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+    fn save_translation_history(
+        &self,
+        original: &str,
+        translated: &str,
+        source_lang: &str,
+        target_lang: &str,
+        config: &crate::config::Config,
+    ) -> Result<(), Box<dyn Error>> {
         if !config.save_translation_history {
             return Ok(()); // История отключена
         }
 
         let timestamp: DateTime<Utc> = Utc::now();
         let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
-        
+
         let entry = format!(
             "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
             formatted_time, source_lang, target_lang, original, translated
@@ -48,7 +55,7 @@ impl CliHandler {
 
         file.write_all(entry.as_bytes())?;
         file.flush()?; // Принудительно записываем на диск
-        
+
         Ok(())
     }
 
@@ -83,14 +90,12 @@ impl CliHandler {
             "-h" | "--help" => {
                 Self::show_help();
                 Ok(())
-            },
-            "-c" | "--config" => {
-                self.show_config()
-            },
+            }
+            "-c" | "--config" => self.show_config(),
             "-v" | "--version" => {
                 Self::show_version();
                 Ok(())
-            },
+            }
             "-s" | "--speech" => {
                 // Speak the following text
                 if args.len() < 3 {
@@ -100,12 +105,12 @@ impl CliHandler {
                 }
                 let text_to_speak = args[2..].join(" ");
                 self.speak_text(&text_to_speak).await
-            },
+            }
             "-q" => {
                 // Exit command for CLI mode (though it doesn't make much sense here)
                 println!("Exiting...");
                 Ok(())
-            },
+            }
             _ => {
                 // Treat as text to translate
                 let text_to_translate = args[1..].join(" ");
@@ -129,10 +134,14 @@ impl CliHandler {
 
         // Check if it's a single word and dictionary feature is enabled
         if config.show_dictionary && self.is_single_word(text) {
-            match self.translator.get_dictionary_entry_public(text, &source_code, &target_code).await {
+            match self
+                .translator
+                .get_dictionary_entry_public(text, &source_code, &target_code)
+                .await
+            {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
-                    
+
                     if config.copy_to_clipboard {
                         if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
                             println!("Clipboard error: {}", e);
@@ -140,7 +149,13 @@ impl CliHandler {
                     }
 
                     // Сохраняем словарную статью в историю
-                    if let Err(e) = self.save_translation_history(text, &dictionary_info, &source_code, &target_code, &config) {
+                    if let Err(e) = self.save_translation_history(
+                        text,
+                        &dictionary_info,
+                        &source_code,
+                        &target_code,
+                        &config,
+                    ) {
                         println!("History save error: {}", e);
                     }
 
@@ -154,22 +169,39 @@ impl CliHandler {
         }
 
         // Regular translation
-        self.perform_translation(text, &source_code, &target_code, &config).await
+        self.perform_translation(text, &source_code, &target_code, &config)
+            .await
     }
 
     /// Perform translation and display results
-    async fn perform_translation(&self, text: &str, source_code: &str, target_code: &str, config: &crate::config::Config) -> Result<(), Box<dyn Error>> {
+    async fn perform_translation(
+        &self,
+        text: &str,
+        source_code: &str,
+        target_code: &str,
+        config: &crate::config::Config,
+    ) -> Result<(), Box<dyn Error>> {
         // Perform translation
-        match self.translator.translate_text_public(text, source_code, target_code).await {
+        match self
+            .translator
+            .translate_text_public(text, source_code, target_code)
+            .await
+        {
             Ok(translated_text) => {
                 println!("{}", translated_text);
-                
+
                 if config.copy_to_clipboard {
                     self.copy_to_clipboard(&translated_text).ok(); // Ignore clipboard errors
                 }
 
                 // Сохраняем перевод в историю
-                if let Err(e) = self.save_translation_history(text, &translated_text, source_code, target_code, config) {
+                if let Err(e) = self.save_translation_history(
+                    text,
+                    &translated_text,
+                    source_code,
+                    target_code,
+                    config,
+                ) {
                     println!("History save error: {}", e);
                 }
             }
@@ -178,15 +210,18 @@ impl CliHandler {
                 return Err(e);
             }
         }
-        
+
         Ok(())
     }
 
     /// Check if text is a single word
     fn is_single_word(&self, text: &str) -> bool {
         let cleaned = text.trim_matches(|c: char| !c.is_alphabetic());
-        !cleaned.is_empty() && !cleaned.contains(' ') && 
-        cleaned.chars().all(|c| c.is_alphabetic() || c == '-' || c == '\'')
+        !cleaned.is_empty()
+            && !cleaned.contains(' ')
+            && cleaned
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
     }
 
     /// Copy text to clipboard
@@ -242,11 +277,10 @@ impl CliHandler {
         let speech_lang_owned = speech_lang.to_string();
         let stop_flag_for_speech = stop_flag.clone();
 
-        let speech_result = self.speech_manager.speak_text_with_cancel(
-            &text_owned,
-            &speech_lang_owned,
-            stop_flag_for_speech
-        ).await;
+        let speech_result = self
+            .speech_manager
+            .speak_text_with_cancel(&text_owned, &speech_lang_owned, stop_flag_for_speech)
+            .await;
 
         // Cancel the Esc monitor task
         esc_monitor.abort();

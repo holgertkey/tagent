@@ -1,8 +1,6 @@
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
-use windows::{
-    Win32::UI::Input::KeyboardAndMouse::*,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
 #[derive(Clone)]
 pub struct ClipboardManager;
@@ -36,24 +34,21 @@ impl ClipboardManager {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Create input array for SendInput
-            let mut inputs: Vec<INPUT> = Vec::new();
-
             // Release any pressed modifiers first (Alt, Shift, Win)
             // This ensures Ctrl+C is recognized correctly when triggered by hotkeys like Alt+Space
-
-            // Release Alt (both left and right)
-            inputs.push(Self::create_key_input(VK_MENU.0 as u16, true));
-            inputs.push(Self::create_key_input(VK_LMENU.0 as u16, true));
-            inputs.push(Self::create_key_input(VK_RMENU.0 as u16, true));
-
-            // Release Shift (both left and right)
-            inputs.push(Self::create_key_input(VK_SHIFT.0 as u16, true));
-            inputs.push(Self::create_key_input(VK_LSHIFT.0 as u16, true));
-            inputs.push(Self::create_key_input(VK_RSHIFT.0 as u16, true));
-
-            // Release Win (both left and right)
-            inputs.push(Self::create_key_input(VK_LWIN.0 as u16, true));
-            inputs.push(Self::create_key_input(VK_RWIN.0 as u16, true));
+            let inputs: Vec<INPUT> = vec![
+                // Release Alt (both left and right)
+                Self::create_key_input(VK_MENU.0, true),
+                Self::create_key_input(VK_LMENU.0, true),
+                Self::create_key_input(VK_RMENU.0, true),
+                // Release Shift (both left and right)
+                Self::create_key_input(VK_SHIFT.0, true),
+                Self::create_key_input(VK_LSHIFT.0, true),
+                Self::create_key_input(VK_RSHIFT.0, true),
+                // Release Win (both left and right)
+                Self::create_key_input(VK_LWIN.0, true),
+                Self::create_key_input(VK_RWIN.0, true),
+            ];
 
             // Send all key releases at once
             if !inputs.is_empty() {
@@ -64,16 +59,16 @@ impl ClipboardManager {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Simulate Ctrl+C using SendInput
-            let mut ctrl_c_inputs: Vec<INPUT> = Vec::new();
-
-            // Ctrl down
-            ctrl_c_inputs.push(Self::create_key_input(VK_CONTROL.0 as u16, false));
-            // C down
-            ctrl_c_inputs.push(Self::create_key_input(b'C' as u16, false));
-            // C up
-            ctrl_c_inputs.push(Self::create_key_input(b'C' as u16, true));
-            // Ctrl up
-            ctrl_c_inputs.push(Self::create_key_input(VK_CONTROL.0 as u16, true));
+            let ctrl_c_inputs: Vec<INPUT> = vec![
+                // Ctrl down
+                Self::create_key_input(VK_CONTROL.0, false),
+                // C down
+                Self::create_key_input(b'C' as u16, false),
+                // C up
+                Self::create_key_input(b'C' as u16, true),
+                // Ctrl up
+                Self::create_key_input(VK_CONTROL.0, true),
+            ];
 
             SendInput(&ctrl_c_inputs, std::mem::size_of::<INPUT>() as i32);
 
@@ -86,15 +81,20 @@ impl ClipboardManager {
 
     /// Helper function to create keyboard input structure for SendInput
     unsafe fn create_key_input(vk_code: u16, is_keyup: bool) -> INPUT {
-        let mut input = INPUT::default();
-        input.r#type = INPUT_KEYBOARD;
+        let ki = KEYBDINPUT {
+            wVk: VIRTUAL_KEY(vk_code),
+            dwFlags: if is_keyup {
+                KEYEVENTF_KEYUP
+            } else {
+                KEYBD_EVENT_FLAGS(0)
+            },
+            ..Default::default()
+        };
 
-        let mut ki = KEYBDINPUT::default();
-        ki.wVk = VIRTUAL_KEY(vk_code);
-        ki.dwFlags = if is_keyup { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) };
-
-        input.Anonymous.ki = ki;
-        input
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 { ki },
+        }
     }
 
     /// Get text from clipboard with automatic copying

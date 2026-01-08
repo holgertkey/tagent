@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.8.0+045
+# Tagent Text Translator v0.9.0+002
 
 A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
 
@@ -327,7 +327,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.8.0+045
+**Current Version**: v0.9.0+002
 
 **Recent Changes**:
 - Automatic version synchronization system
@@ -356,4 +356,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.8.0+045** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.9.0+002** - Fast, reliable, and feature-rich translation tool for Windows.

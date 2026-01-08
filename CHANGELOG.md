@@ -5,6 +5,16 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.9.0+002] - 2026-01-08
+
+### Changed
+- Code cleanup: removed unused speech methods to eliminate compilation warnings
+- Code quality improvements: fixed all Clippy warnings and lints
+- Code formatting: applied rustfmt to entire codebase for consistent style
+
+### Fixed
+- Speech: fixed text splitting for very long words without spaces (improves TTS for edge cases)
+
 ## [0.8.0+045] - 2026-01-06
 
 ### Added

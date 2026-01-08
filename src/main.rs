@@ -1,18 +1,18 @@
-mod translator;
-mod clipboard;
-mod keyboard;
-mod config;
-mod window;
 mod cli;
+mod clipboard;
+mod config;
 mod interactive;
+mod keyboard;
 mod speech;
+mod translator;
+mod window;
 
-use translator::Translator;
-use keyboard::KeyboardHook;
 use cli::CliHandler;
 use interactive::InteractiveMode;
+use keyboard::KeyboardHook;
 use std::env;
-use windows::Win32::System::Console::{SetConsoleCtrlHandler};
+use translator::Translator;
+use windows::Win32::System::Console::SetConsoleCtrlHandler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,10 +20,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         SetConsoleCtrlHandler(None, true)?;
     }
-    
+
     // Получаем аргументы командной строки
     let args: Vec<String> = env::args().collect();
-    
+
     // Если есть аргументы, работаем в режиме CLI
     if args.len() > 1 {
         let cli_handler = match CliHandler::new() {
@@ -33,13 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(e);
             }
         };
-        
+
         return cli_handler.process_args(args).await;
     }
-    
+
     // Если аргументов нет, запускаем объединенный GUI+Interactive режим
     show_unified_mode_info();
-    
+
     let translator = match Translator::new() {
         Ok(t) => t,
         Err(e) => {
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e);
         }
     };
-    
+
     // Создаем интерактивный режим
     let interactive_mode = match InteractiveMode::new() {
         Ok(mode) => mode,
@@ -56,10 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e);
         }
     };
-    
+
     // Получаем общий флаг выхода
     let should_exit = interactive_mode.get_exit_flag();
-    
+
     // Запускаем горячие клавиши в отдельном потоке
     let should_exit_clone = should_exit.clone();
     let keyboard_task = tokio::spawn(async move {
@@ -70,25 +70,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
         };
-        
+
         if let Err(e) = keyboard_hook.start().await {
             println!("Keyboard hook error: {}", e);
         }
     });
-    
+
     // Запускаем интерактивный режим в основном потоке
     let interactive_result = interactive_mode.start().await;
-    
+
     // Устанавливаем флаг выхода для завершения keyboard hook
     should_exit.store(true, std::sync::atomic::Ordering::SeqCst);
-    
+
     // Ждем завершения keyboard task
     let _ = keyboard_task.await;
-    
+
     if let Err(e) = interactive_result {
         println!("Interactive mode error: {}", e);
     }
-    
+
     // println!("Program terminated successfully.");
     Ok(())
 }
@@ -114,6 +114,8 @@ fn show_unified_mode_info() {
         }
     }
 
-    println!("Commands: /h (help), /c (config), /v (version), /s (speech), /q (quit), /cls (clear)");
+    println!(
+        "Commands: /h (help), /c (config), /v (version), /s (speech), /q (quit), /cls (clear)"
+    );
     println!();
 }
