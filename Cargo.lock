@@ -1608,7 +1608,7 @@ dependencies = [
 
 [[package]]
 name = "tagent"
-version = "0.9.0+002"
+version = "0.9.0+004"
 dependencies = [
  "chrono",
  "clipboard-win",

@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.9.0+002
+# Tagent Text Translator v0.9.0+004
 
 A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
 
@@ -15,11 +15,26 @@ A fast, lightweight text translation tool for Windows with unified GUI hotkeys, 
 - Automatic fallback to translation for phrases
 - Supports multiple target languages
 
+### 🔊 **Text-to-Speech (TTS)**
+- Built-in speech synthesis using Google TTS API
+- Available in all modes (GUI, Interactive, CLI)
+- Speech hotkey for selected text (default: Alt+E)
+- Press Esc to cancel speech playback
+- Automatic language detection for speech
+- Supports long text with automatic chunking
+
 ### 📝 **Translation History**
 - Optional logging of all translations with timestamps
 - Multi-line format for better readability
 - Configurable file path
 - Works across all translation modes
+
+### ⚙️ **Customizable Hotkeys**
+- Fully configurable translation hotkey
+- Single keys (F1-F12)
+- Modifier combinations (Alt+Q, Ctrl+Shift+T)
+- Double-press patterns (Ctrl+Ctrl, Shift+Shift)
+- No hardcoded hotkeys - complete flexibility
 
 ### ⚡ **Performance & Usability**
 - Instant translations using Google Translate API
@@ -27,6 +42,7 @@ A fast, lightweight text translation tool for Windows with unified GUI hotkeys, 
 - Automatic clipboard copying (configurable)
 - Smart terminal window management
 - Multi-language support
+- Colored terminal output (customizable)
 
 ## Installation
 
@@ -65,6 +81,10 @@ tagent hello
 # Translate a phrase
 tagent "Hello world"
 
+# Text-to-speech (speaks the text)
+tagent -s "Hello world"
+tagent --speech "Привет мир"
+
 # Show help
 tagent --help
 
@@ -75,10 +95,18 @@ tagent --config
 ## Usage Guide
 
 ### GUI Hotkeys (System-wide)
+
+**Translation Hotkey** (default: Ctrl+Ctrl)
 1. Select any text in any Windows application
-2. Quickly double-press Ctrl key (Ctrl + Ctrl)
+2. Press the translation hotkey (Ctrl+Ctrl by default)
 3. Translation appears in terminal and copies to clipboard
 4. Paste anywhere with Ctrl+V
+
+**Speech Hotkey** (default: Alt+E)
+1. Select any text in any Windows application
+2. Press the speech hotkey (Alt+E by default)
+3. Text is spoken aloud using Google TTS
+4. Press Esc to cancel playback
 
 ### Interactive Terminal
 ```
@@ -97,8 +125,9 @@ Goodbye!
 
 ### Interactive Commands
 - `/?`, `/h`, `/help` - Show help
-- `/c`, `/config` - Show current configuration  
+- `/c`, `/config` - Show current configuration
 - `/v`, `/version` - Show version information
+- `/s <text>`, `/speech <text>` - Text-to-speech (press Esc to cancel)
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q` - Exit program
 
@@ -111,7 +140,7 @@ Configuration is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Users\<
 ; Source language (Auto, English, Russian, Spanish, etc.)
 SourceLanguage = Auto
 
-; Target language  
+; Target language
 TargetLanguage = Russian
 
 ; Copy results to clipboard automatically
@@ -128,18 +157,82 @@ ShowTerminalOnTranslate = true
 ; Auto-hide terminal after translation (seconds, 0 = disabled)
 AutoHideTerminalSeconds = 5
 
+; Terminal output colors (Red, Green, Blue, Yellow, Magenta, Cyan, White)
+TranslationPromptColor = Green
+DictionaryPromptColor = Cyan
+AutoPromptColor = Yellow
+
 [History]
 ; Save all translations to file with timestamps
 SaveTranslationHistory = false
 
 ; History file path (defaults to AppData\Tagent folder)
 HistoryFile = C:\Users\<YourName>\AppData\Roaming\Tagent\translation_history.txt
+
+[Hotkeys]
+; Translation hotkey (configurable)
+; Formats:
+;   - Single keys: F1-F12 (e.g., F9)
+;   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
+;   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
+TranslateHotkey = Ctrl+Ctrl
+
+; Text-to-speech hotkey (same formats as TranslateHotkey)
+SpeechHotkey = Alt+E
+
+; Enable or disable the speech hotkey
+EnableSpeechHotkey = true
 ```
+
+### Customizing Hotkeys
+
+Both translation and speech hotkeys are fully customizable. Edit `[Hotkeys]` section in config file:
+
+**Single Keys (F1-F12 only)**
+```ini
+TranslateHotkey = F9
+```
+
+**Modifier Combinations**
+```ini
+TranslateHotkey = Alt+Q         # Alt + Q
+TranslateHotkey = Ctrl+Shift+T  # Ctrl + Shift + T
+TranslateHotkey = Win+T         # Windows key + T
+TranslateHotkey = Alt+Space     # Alt + Spacebar
+```
+
+**Double-Press Patterns**
+```ini
+TranslateHotkey = Ctrl+Ctrl     # Double-press Ctrl (default)
+TranslateHotkey = Shift+Shift   # Double-press Shift
+TranslateHotkey = Alt+Alt       # Double-press Alt
+TranslateHotkey = F8+F8         # Double-press F8
+```
+
+**Speech Hotkey Examples**
+```ini
+SpeechHotkey = Alt+E          # Alt + E (default)
+SpeechHotkey = F10            # Function key F10
+SpeechHotkey = Ctrl+Shift+S   # Ctrl + Shift + S
+SpeechHotkey = Win+S          # Windows key + S
+
+; Disable speech hotkey
+EnableSpeechHotkey = false
+```
+
+**Notes:**
+- Changes require application restart
+- Both hotkeys use the same format (single keys, combos, double-press)
+- Avoid dangerous combinations (Ctrl+Alt+Del, Win+L)
+- Some system shortcuts may be intercepted by Windows
+- Single non-function keys require modifiers for safety
+- Speech and translation hotkeys must be different
 
 ### Supported Languages
 - **Auto-detection**: Auto
 - **Major Languages**: English, Russian, Spanish, French, German, Chinese, Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
 - **Language Codes**: en, ru, es, fr, de, zh, ja, ko, it, pt, nl, pl, tr, ar, hi
+- **Speech Support**: All languages supported by Google TTS
 
 ## Translation History
 
@@ -189,6 +282,38 @@ tagent beautiful
   прекрасный [великолепный, чудесный]
 ```
 
+### Text-to-Speech Examples
+
+**GUI Mode - Speech Hotkey**
+```bash
+# 1. Select text in any application
+# 2. Press Alt+E (or your configured speech hotkey)
+# 3. Text is spoken aloud
+# 4. Press Esc to cancel playback
+```
+
+**CLI Mode**
+```bash
+tagent -s "Hello, how are you?"
+tagent --speech "Привет, как дела?"
+```
+
+**Interactive Mode**
+```bash
+[Auto]: /s Hello world
+# Speaks "Hello world" (press Esc to cancel)
+
+[Auto]: /speech Bonjour le monde
+# Speaks "Bonjour le monde" in French
+```
+
+**Speech Notes:**
+- **GUI Speech Hotkey**: Select text → Press Alt+E (or configured key)
+- Press **Esc** anytime to cancel speech playback
+- Speech language determined by `SourceLanguage` config setting
+- Long text is automatically chunked (100 char limit per chunk)
+- Works in GUI (hotkey), Interactive, and CLI modes
+
 ### Configuration Management
 ```bash
 # Show current settings
@@ -202,6 +327,9 @@ tagent --config
 # Copy to Clipboard: Enabled
 # Save Translation History: Disabled
 # History File: translation_history.txt
+# Translation Hotkey: Ctrl+Ctrl
+# Speech Hotkey: Alt+E
+# Speech Hotkey Enabled: Yes
 ```
 
 ## Advanced Usage
@@ -233,6 +361,29 @@ ShowDictionary = false
 ShowTerminalOnTranslate = false
 ```
 
+### Configure Hotkeys
+```ini
+[Hotkeys]
+; Translation hotkeys
+TranslateHotkey = Alt+Q         # Use Alt+Q instead of Ctrl+Ctrl
+TranslateHotkey = F9            # Or use function key
+TranslateHotkey = Shift+Shift   # Or double-press Shift
+
+; Speech hotkeys
+SpeechHotkey = Alt+S            # Change speech hotkey to Alt+S
+SpeechHotkey = F10              # Or use F10
+EnableSpeechHotkey = false      # Disable speech hotkey if not needed
+```
+
+### Customize Colors
+```ini
+[Interface]
+; Available colors: Red, Green, Blue, Yellow, Magenta, Cyan, White
+TranslationPromptColor = Green
+DictionaryPromptColor = Cyan
+AutoPromptColor = Yellow
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -254,8 +405,21 @@ ShowTerminalOnTranslate = false
 
 **Hotkeys not working**
 - Run as administrator if needed
-- Check if another application is capturing Ctrl key
+- Check if another application is capturing the hotkey
 - Ensure application has keyboard input permissions
+- Try changing the hotkey in config file (e.g., Alt+Q, F9)
+- Restart the application after changing hotkey configuration
+- Verify hotkey format in config file is correct
+
+**Speech (TTS) not working**
+- Check internet connection (uses Google TTS API)
+- Verify audio device is working
+- Try shorter text if speech fails
+- Press Esc to cancel stuck speech playback
+- Speech language is based on `SourceLanguage` config setting
+- Check if `EnableSpeechHotkey` is set to `true` in config
+- Verify speech hotkey is not conflicting with other applications
+- Try changing `SpeechHotkey` to a different key combination
 
 ### Performance Tips
 
@@ -327,13 +491,16 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.9.0+002
+**Current Version**: v0.9.0+004
 
 **Recent Changes**:
-- Automatic version synchronization system
-- Configuration moved to AppData folder
+- Code quality improvements (fixed all Clippy warnings)
+- Text-to-speech (TTS) with Esc cancellation
+- Fully configurable hotkeys (single keys, combos, double-press)
+- Customizable terminal colors
 - Translation history logging with timestamps
 - Unified GUI + Interactive interface
+- Configuration moved to AppData folder
 
 ## Contributing
 
@@ -356,4 +523,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.9.0+002** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.9.0+004** - Fast, reliable, and feature-rich translation tool for Windows.
