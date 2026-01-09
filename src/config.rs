@@ -129,6 +129,12 @@ impl ConfigManager {
 ;
 ; Configuration changes take effect immediately (no restart required)
 
+[Provider]
+; Translation service provider
+; Supported values: google (more providers will be added in the future)
+; Default: google
+TranslateProvider = {}
+
 [Translation]
 ; Source language for translation
 ; Supported values: Auto, English, Russian, Spanish, French, German, Chinese,
@@ -240,13 +246,8 @@ SpeechHotkey = {}
 ; Set to true to enable the speech hotkey
 ; Set to false to disable speech hotkey
 EnableSpeechHotkey = {}
-
-[Provider]
-; Translation service provider
-; Supported values: google (more providers will be added in the future)
-; Default: google
-TranslateProvider = {}
 "#,
+            config.translate_provider,
             config.source_language,
             config.target_language,
             config.copy_to_clipboard,
@@ -261,8 +262,7 @@ TranslateProvider = {}
             config.translate_hotkey,
             config.enable_text_to_speech,
             config.speech_hotkey,
-            config.enable_speech_hotkey,
-            config.translate_provider
+            config.enable_speech_hotkey
         )
     }
 
