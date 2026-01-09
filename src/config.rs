@@ -23,6 +23,7 @@ pub struct Config {
     pub enable_text_to_speech: bool,      // Enable text-to-speech functionality
     pub speech_hotkey: String,            // Hotkey for speech (e.g., "Alt+E")
     pub enable_speech_hotkey: bool,       // Enable/disable speech hotkey
+    pub translate_provider: String,       // Translation provider (e.g., "google")
 }
 
 impl Default for Config {
@@ -51,6 +52,7 @@ impl Default for Config {
             enable_text_to_speech: true,                         // TTS enabled by default
             speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
             enable_speech_hotkey: true,                          // Enable speech hotkey by default
+            translate_provider: "google".to_string(),            // Default translation provider
         }
     }
 }
@@ -238,6 +240,12 @@ SpeechHotkey = {}
 ; Set to true to enable the speech hotkey
 ; Set to false to disable speech hotkey
 EnableSpeechHotkey = {}
+
+[Provider]
+; Translation service provider
+; Supported values: google (more providers will be added in the future)
+; Default: google
+TranslateProvider = {}
 "#,
             config.source_language,
             config.target_language,
@@ -253,7 +261,8 @@ EnableSpeechHotkey = {}
             config.translate_hotkey,
             config.enable_text_to_speech,
             config.speech_hotkey,
-            config.enable_speech_hotkey
+            config.enable_speech_hotkey,
+            config.translate_provider
         )
     }
 
@@ -356,6 +365,13 @@ EnableSpeechHotkey = {}
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(true);
 
+        // Provider settings
+        let translate_provider = parsed_config
+            .get("Provider")
+            .and_then(|section| section.get("TranslateProvider"))
+            .cloned()
+            .unwrap_or_else(|| "google".to_string());
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -372,6 +388,7 @@ EnableSpeechHotkey = {}
             enable_text_to_speech,
             speech_hotkey,
             enable_speech_hotkey,
+            translate_provider,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -530,6 +547,8 @@ EnableSpeechHotkey = {}
 
         println!();
         println!("=== Current Configuration ===");
+        println!("Translation Provider: {}", config.translate_provider);
+        println!();
         println!(
             "Source Language: {} ({})",
             config.source_language, source_code

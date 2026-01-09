@@ -1,19 +1,17 @@
 use crate::clipboard::ClipboardManager;
 use crate::config::ConfigManager;
+use crate::providers::{self, TranslationProvider};
 use crate::window::WindowManager;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
-use reqwest::Client;
-use serde_json::Value;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::sync::Arc;
-use url::form_urlencoded;
 
 #[derive(Clone)]
 pub struct Translator {
-    client: Client,
+    provider: Arc<Box<dyn TranslationProvider>>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Arc<WindowManager>,
@@ -26,8 +24,12 @@ impl Translator {
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
         let window_manager = Arc::new(WindowManager::new()?);
 
+        // Create translation provider based on config
+        let config = config_manager.get_config();
+        let provider = providers::create_provider(&config.translate_provider)?;
+
         Ok(Self {
-            client: Client::new(),
+            provider: Arc::new(provider),
             clipboard: ClipboardManager::new(),
             config_manager,
             window_manager,
@@ -316,37 +318,12 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error>> {
-        let url = "https://translate.googleapis.com/translate_a/single";
+        let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
 
-        let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
-        let from_param = if from == "auto" { "auto" } else { from };
-
-        // Request additional data types for dictionary information
-        let params = format!(
-            "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
-            from_param, to, encoded_word
-        );
-
-        let full_url = format!("{}{}", url, params);
-
-        let response = self
-            .client
-            .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
+        match entry_opt {
+            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, true)),
+            None => Err("Limited dictionary information available".into()),
         }
-
-        let body = response.text().await?;
-        let json: Value = serde_json::from_str(&body)?;
-
-        self.format_dictionary_response_cli(word, &json, to)
     }
 
     /// Get dictionary entry for a single word (GUI mode)
@@ -356,194 +333,45 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error>> {
-        let url = "https://translate.googleapis.com/translate_a/single";
+        let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
 
-        let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
-        let from_param = if from == "auto" { "auto" } else { from };
-
-        // Request additional data types for dictionary information
-        let params = format!(
-            "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
-            from_param, to, encoded_word
-        );
-
-        let full_url = format!("{}{}", url, params);
-
-        let response = self
-            .client
-            .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
+        match entry_opt {
+            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, false)),
+            None => Err("Limited dictionary information available".into()),
         }
-
-        let body = response.text().await?;
-        let json: Value = serde_json::from_str(&body)?;
-
-        self.format_dictionary_response(word, &json, to)
     }
 
-    /// Format dictionary response for CLI (clean output without headers)
-    fn format_dictionary_response_cli(
+    /// Format dictionary entry into string
+    /// cli_mode: true for CLI (no word header), false for GUI (with word header)
+    fn format_dictionary_entry(
         &self,
-        _word: &str,
-        json: &Value,
+        entry: &crate::providers::DictionaryEntry,
         target_lang: &str,
-    ) -> Result<String, Box<dyn Error>> {
+        cli_mode: bool,
+    ) -> String {
         let mut result = Vec::new();
 
-        // Don't add [Word]: header for CLI
+        // Add the original word at the beginning (only for GUI mode)
+        if !cli_mode {
+            result.push(entry.word.clone());
+        }
 
-        // Dictionary definitions (at index 1)
-        if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
-            for entry in dict_data {
-                if let Some(entry_array) = entry.as_array() {
-                    if entry_array.len() >= 3 {
-                        // Part of speech (first element)
-                        if let Some(pos) = entry_array.first().and_then(|v| v.as_str()) {
-                            let pos_full = self.get_full_part_of_speech(pos, target_lang);
+        // Format each part of speech entry
+        for pos_entry in &entry.definitions {
+            let pos_full = self.get_full_part_of_speech(&pos_entry.part_of_speech, target_lang);
+            result.push(pos_full.to_string());
 
-                            // Detailed definitions with synonyms (third element)
-                            if let Some(detailed_defs) =
-                                entry_array.get(2).and_then(|v| v.as_array())
-                            {
-                                let mut def_lines = Vec::new();
-
-                                for def in detailed_defs.iter().take(5) {
-                                    // Limit to 5 definitions per part of speech
-                                    if let Some(def_array) = def.as_array() {
-                                        if def_array.len() >= 2 {
-                                            if let Some(definition) =
-                                                def_array.first().and_then(|v| v.as_str())
-                                            {
-                                                // Get synonyms if available
-                                                if let Some(synonyms) =
-                                                    def_array.get(1).and_then(|v| v.as_array())
-                                                {
-                                                    let syn_list: Vec<String> = synonyms
-                                                        .iter()
-                                                        .filter_map(|s| s.as_str())
-                                                        .map(|s| s.to_string())
-                                                        .collect();
-
-                                                    if !syn_list.is_empty() {
-                                                        def_lines.push(format!(
-                                                            "  {} [{}]",
-                                                            definition,
-                                                            syn_list.join(", ")
-                                                        ));
-                                                    } else {
-                                                        def_lines.push(format!("  {}", definition));
-                                                    }
-                                                } else {
-                                                    def_lines.push(format!("  {}", definition));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !def_lines.is_empty() {
-                                    result.push(pos_full.to_string());
-                                    result.extend(def_lines);
-                                }
-                            }
-                        }
-                    }
+            // Format definitions with synonyms
+            for def in &pos_entry.definitions {
+                if !def.synonyms.is_empty() {
+                    result.push(format!("  {} [{}]", def.text, def.synonyms.join(", ")));
+                } else {
+                    result.push(format!("  {}", def.text));
                 }
             }
         }
 
-        if result.is_empty() {
-            return Err("Limited dictionary information available".into());
-        }
-
-        Ok(result.join("\n"))
-    }
-
-    /// Format dictionary response into compact format (GUI mode)
-    fn format_dictionary_response(
-        &self,
-        word: &str,
-        json: &Value,
-        target_lang: &str,
-    ) -> Result<String, Box<dyn Error>> {
-        let mut result = Vec::new();
-
-        // Add the original word at the beginning (without [Word]: prefix, it's added by caller)
-        result.push(word.to_string());
-
-        // Dictionary definitions (at index 1)
-        if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
-            for entry in dict_data {
-                if let Some(entry_array) = entry.as_array() {
-                    if entry_array.len() >= 3 {
-                        // Part of speech (first element)
-                        if let Some(pos) = entry_array.first().and_then(|v| v.as_str()) {
-                            let pos_full = self.get_full_part_of_speech(pos, target_lang);
-
-                            // Detailed definitions with synonyms (third element)
-                            if let Some(detailed_defs) =
-                                entry_array.get(2).and_then(|v| v.as_array())
-                            {
-                                let mut def_lines = Vec::new();
-
-                                for def in detailed_defs.iter().take(5) {
-                                    // Limit to 5 definitions per part of speech
-                                    if let Some(def_array) = def.as_array() {
-                                        if def_array.len() >= 2 {
-                                            if let Some(definition) =
-                                                def_array.first().and_then(|v| v.as_str())
-                                            {
-                                                // Get synonyms if available
-                                                if let Some(synonyms) =
-                                                    def_array.get(1).and_then(|v| v.as_array())
-                                                {
-                                                    let syn_list: Vec<String> = synonyms
-                                                        .iter()
-                                                        .filter_map(|s| s.as_str())
-                                                        .map(|s| s.to_string())
-                                                        .collect();
-
-                                                    if !syn_list.is_empty() {
-                                                        def_lines.push(format!(
-                                                            "  {} [{}]",
-                                                            definition,
-                                                            syn_list.join(", ")
-                                                        ));
-                                                    } else {
-                                                        def_lines.push(format!("  {}", definition));
-                                                    }
-                                                } else {
-                                                    def_lines.push(format!("  {}", definition));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !def_lines.is_empty() {
-                                    result.push(pos_full.to_string());
-                                    result.extend(def_lines);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if result.is_empty() {
-            return Err("Limited dictionary information available".into());
-        }
-
-        Ok(result.join("\n"))
+        result.join("\n")
     }
 
     /// Get full part of speech name in target language
@@ -749,60 +577,13 @@ impl Translator {
         russian_ratio > 0.3 // Lower threshold for Russian as it might contain English words
     }
 
-    /// Translate text using Google Translate API
+    /// Translate text using translation provider
     async fn translate_text_internal(
         &self,
         text: &str,
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error>> {
-        let url = "https://translate.googleapis.com/translate_a/single";
-
-        let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
-
-        let from_param = if from == "auto" { "auto" } else { from };
-
-        let params = format!(
-            "?client=gtx&sl={}&tl={}&dt=t&q={}",
-            from_param, to, encoded_text
-        );
-
-        let full_url = format!("{}{}", url, params);
-
-        let response = self
-            .client
-            .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
-        }
-
-        let body = response.text().await?;
-
-        let json: Value = serde_json::from_str(&body)?;
-
-        if let Some(translations) = json.get(0).and_then(|v| v.as_array()) {
-            let mut result = String::new();
-
-            for translation in translations {
-                if let Some(text) = translation.get(0).and_then(|v| v.as_str()) {
-                    result.push_str(text);
-                }
-            }
-
-            if result.is_empty() {
-                return Err("Failed to extract translation from response".into());
-            }
-
-            Ok(result)
-        } else {
-            Err("Invalid response format from Google Translate".into())
-        }
+        self.provider.translate_text(text, from, to).await
     }
 }

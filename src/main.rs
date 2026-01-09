@@ -3,6 +3,7 @@ mod clipboard;
 mod config;
 mod interactive;
 mod keyboard;
+mod providers;
 mod speech;
 mod translator;
 mod window;

@@ -67,7 +67,7 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.9.0+004) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.9.0+005) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide configurable hotkey to translate selected text (default: Ctrl+Ctrl)
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
@@ -101,16 +101,20 @@ The compiled executable is located at `target/release/tagent.exe`.
 
 ### Core Modules
 
-The application is structured into 7 main modules in `src/`:
+The application is structured into 9 main modules in `src/`:
 
 - **main.rs**: Entry point, orchestrates unified mode (GUI + Interactive) or CLI mode
-- **translator.rs**: Translation engine, Google Translate API integration, dictionary lookups
+- **translator.rs**: Translation engine orchestrator, handles UI and formatting
+- **providers/**: Translation provider abstraction layer
+  - **mod.rs**: `TranslationProvider` trait and provider factory
+  - **google.rs**: Google Translate API implementation
 - **config.rs**: Configuration management with live-reload (INI format, stored in AppData)
 - **keyboard.rs**: Windows low-level keyboard hook for configurable hotkey detection
 - **interactive.rs**: Interactive terminal mode with command handling
 - **cli.rs**: Command-line argument processing and single-shot translations
 - **clipboard.rs**: Windows clipboard operations
 - **window.rs**: Windows window management (show/hide terminal)
+- **speech.rs**: Text-to-speech functionality
 
 ### Key Architectural Patterns
 
@@ -133,13 +137,39 @@ The application is structured into 7 main modules in `src/`:
 - Window management for showing/hiding terminal
 - Message loop with `PeekMessageW` for non-blocking processing
 
-### Google Translate API Integration
+### Translation Provider Architecture
 
-The translator module uses unofficial Google Translate API endpoints:
-- Translation: `translate.googleapis.com/translate_a/single?client=gtx&sl=<from>&tl=<to>&dt=t&q=<text>`
-- Dictionary: Same endpoint with additional `dt` parameters (bd, ex, ld, md, qca, rw, rm, ss)
+The application uses a **provider abstraction pattern** for translation services, allowing easy integration of multiple translation APIs:
 
-Dictionary responses are parsed from JSON arrays and formatted with parts of speech in the target language.
+**Provider Trait** (`src/providers/mod.rs`):
+- `TranslationProvider` trait defines the interface all providers must implement
+- `async fn translate_text()`: Translate text from one language to another
+- `async fn get_dictionary_entry()`: Get detailed dictionary information for single words
+- `fn name()`: Get provider display name
+- Uses `async_trait` crate for trait object compatibility
+
+**Common Data Structures**:
+- `DictionaryEntry`: Contains word and list of part-of-speech entries
+- `PartOfSpeechEntry`: Contains part of speech and definitions
+- `Definition`: Contains definition text and synonyms
+
+**Provider Factory** (`create_provider()`):
+- Creates provider instances based on configuration
+- Currently supports: `"google"` (Google Translate)
+- Easy to extend for new providers (DeepL, Yandex, etc.)
+
+**Google Translate Provider** (`src/providers/google.rs`):
+- Implements `TranslationProvider` trait
+- Uses unofficial Google Translate API endpoints:
+  - Translation: `translate.googleapis.com/translate_a/single?client=gtx&sl=<from>&tl=<to>&dt=t&q=<text>`
+  - Dictionary: Same endpoint with additional `dt` parameters (bd, ex, ld, md, qca, rw, rm, ss)
+- Parses JSON responses and converts to common data structures
+
+**Translator Orchestrator** (`src/translator.rs`):
+- Initializes provider based on configuration (`translate_provider` setting)
+- Handles UI rendering, clipboard operations, history logging
+- Formats provider-agnostic data structures for display
+- Provider logic is completely separated from UI logic
 
 ### Translation Hotkey Configuration
 
@@ -236,8 +266,9 @@ Configuration file is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Us
 - `[Interface]`: ShowTerminalOnTranslate, AutoHideTerminalSeconds
 - `[History]`: SaveTranslationHistory, HistoryFile
 - `[Hotkeys]`: TranslateHotkey
+- `[Provider]`: TranslateProvider (default: "google")
 
-Language names (e.g., "Russian", "English") are mapped to Google Translate codes (ru, en) in `ConfigManager::language_to_code()`.
+Language names (e.g., "Russian", "English") are mapped to language codes (ru, en) in `ConfigManager::language_to_code()`.
 
 ### Configuration File Location
 
@@ -273,14 +304,55 @@ In unified mode:
 
 ## Common Development Tasks
 
+### Adding a New Translation Provider
+
+To add a new translation provider (e.g., DeepL, Yandex, etc.):
+
+1. **Create provider file**: `src/providers/yourprovider.rs`
+2. **Implement the `TranslationProvider` trait**:
+   ```rust
+   use super::{TranslationProvider, DictionaryEntry};
+   use async_trait::async_trait;
+
+   pub struct YourProvider {
+       // Add API client, credentials, etc.
+   }
+
+   #[async_trait]
+   impl TranslationProvider for YourProvider {
+       async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Box<dyn Error>> {
+           // Your implementation
+       }
+
+       async fn get_dictionary_entry(&self, word: &str, from: &str, to: &str)
+           -> Result<Option<DictionaryEntry>, Box<dyn Error>> {
+           // Return None if dictionary not supported
+       }
+
+       fn name(&self) -> &str {
+           "Your Provider Name"
+       }
+   }
+   ```
+3. **Add to providers module**: In `src/providers/mod.rs`:
+   - Add `pub mod yourprovider;`
+   - Update `create_provider()` function to include your provider
+4. **Update configuration**: Users can now set `TranslateProvider = yourprovider` in config file
+
+**Key Points**:
+- Convert provider-specific data to common `DictionaryEntry` structure
+- Handle language code mapping if your provider uses different codes
+- Return `None` for `get_dictionary_entry()` if dictionary not supported
+- All UI formatting is handled by `Translator`, providers only return data
+
 ### Adding a New Language
 1. Add language name → code mapping in `ConfigManager::language_to_code()`
 2. (Optional) Add part-of-speech translations in `Translator::get_full_part_of_speech()`
 
 ### Modifying Translation Output Format
-- GUI mode: Edit `Translator::format_dictionary_response()` and `Translator::perform_translation()`
-- CLI mode: Edit `Translator::format_dictionary_response_cli()` and `CliHandler::perform_translation()`
-- Interactive mode: Uses CLI format methods via public methods
+- Edit `Translator::format_dictionary_entry()` for dictionary display formatting
+- Edit `Translator::perform_translation()` for translation output
+- Format logic is provider-agnostic and works with all providers
 
 ### Changing Hotkey Combination
 Users can change the translation hotkey through the configuration file:
