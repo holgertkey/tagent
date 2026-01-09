@@ -16,9 +16,9 @@ pub struct Config {
     pub copy_to_clipboard: bool,
     pub save_translation_history: bool,   // Новое поле
     pub history_file: String,             // Новое поле
-    pub translation_prompt_color: String, // Color for translation prompt
+    pub target_prompt_color: String,      // Color for target language prompt
     pub dictionary_prompt_color: String,  // Color for dictionary prompt
-    pub auto_prompt_color: String,        // Color for Auto prompt
+    pub source_prompt_color: String,      // Color for source language prompt
     pub translate_hotkey: String,         // Translation hotkey (e.g., "Ctrl+Ctrl", "Alt+Q", "F9")
     pub enable_text_to_speech: bool,      // Enable text-to-speech functionality
     pub speech_hotkey: String,            // Hotkey for speech (e.g., "Alt+E")
@@ -45,14 +45,14 @@ impl Default for Config {
             copy_to_clipboard: true,
             save_translation_history: false, // По умолчанию отключено
             history_file: default_history,
-            translation_prompt_color: "BrightYellow".to_string(), // Default bright yellow for translation
+            target_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
-            auto_prompt_color: "None".to_string(),               // Default no color for Auto
-            translate_hotkey: "Ctrl+Ctrl".to_string(),           // Default translation hotkey
-            enable_text_to_speech: true,                         // TTS enabled by default
-            speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
-            enable_speech_hotkey: true,                          // Enable speech hotkey by default
-            translate_provider: "google".to_string(),            // Default translation provider
+            source_prompt_color: "None".to_string(),          // Default no color for source
+            translate_hotkey: "Ctrl+Ctrl".to_string(),        // Default translation hotkey
+            enable_text_to_speech: true,                      // TTS enabled by default
+            speech_hotkey: "Alt+E".to_string(),               // Default speech hotkey
+            enable_speech_hotkey: true,                       // Enable speech hotkey by default
+            translate_provider: "google".to_string(),         // Default translation provider
         }
     }
 }
@@ -172,19 +172,19 @@ ShowTerminalOnTranslate = {}
 AutoHideTerminalSeconds = {}
 
 [Colors]
-; Color for Auto language prompt (e.g., "[Auto]: ")
+; Color for source language prompt (e.g., "[Auto]: ", "[English]: ")
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 ; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
 ; Use "None" to disable color
 ; Default: None (no color)
-AutoPromptColor = {}
+SourcePromptColor = {}
 
-; Color for translation prompt (e.g., "[Russian]: ")
+; Color for target language prompt (e.g., "[Russian]: ")
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 ; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
 ; Use "None" to disable color
 ; Default: BrightYellow
-TranslationPromptColor = {}
+TargetPromptColor = {}
 
 ; Color for dictionary prompt (e.g., "[Word]: ")
 ; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
@@ -254,8 +254,8 @@ EnableSpeechHotkey = {}
             config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
-            config.auto_prompt_color,
-            config.translation_prompt_color,
+            config.source_prompt_color,
+            config.target_prompt_color,
             config.dictionary_prompt_color,
             config.save_translation_history,
             config.history_file,
@@ -321,9 +321,13 @@ EnableSpeechHotkey = {}
             .unwrap_or_else(|| "translation_history.txt".to_string());
 
         // Color settings
-        let translation_prompt_color = parsed_config
+        // Try new names first, fallback to old names for backward compatibility
+        let target_prompt_color = parsed_config
             .get("Colors")
-            .and_then(|section| section.get("TranslationPromptColor"))
+            .and_then(|section| {
+                section.get("TargetPromptColor")
+                    .or_else(|| section.get("TranslationPromptColor"))
+            })
             .cloned()
             .unwrap_or_else(|| "BrightYellow".to_string());
 
@@ -333,9 +337,12 @@ EnableSpeechHotkey = {}
             .cloned()
             .unwrap_or_else(|| "BrightYellow".to_string());
 
-        let auto_prompt_color = parsed_config
+        let source_prompt_color = parsed_config
             .get("Colors")
-            .and_then(|section| section.get("AutoPromptColor"))
+            .and_then(|section| {
+                section.get("SourcePromptColor")
+                    .or_else(|| section.get("AutoPromptColor"))
+            })
             .cloned()
             .unwrap_or_else(|| "None".to_string());
 
@@ -381,9 +388,9 @@ EnableSpeechHotkey = {}
             auto_hide_terminal_seconds: auto_hide_seconds,
             save_translation_history,
             history_file,
-            translation_prompt_color,
+            target_prompt_color,
             dictionary_prompt_color,
-            auto_prompt_color,
+            source_prompt_color,
             translate_hotkey,
             enable_text_to_speech,
             speech_hotkey,

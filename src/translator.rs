@@ -172,7 +172,7 @@ impl Translator {
 
                     // Show [Auto]: prompt after hotkey translation
                     let auto_prompt = "[Auto]: ";
-                    if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+                    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
                         print!("{}", auto_prompt.color(color));
                     } else {
                         print!("{}", auto_prompt);
@@ -221,14 +221,8 @@ impl Translator {
 
         let source_label = format!("[{}]: ", source_display);
 
-        // Choose color based on whether it's Auto or a specific language
-        let source_color = if source_code == "auto" {
-            &config.auto_prompt_color
-        } else {
-            &config.translation_prompt_color
-        };
-
-        if let Some(color) = ConfigManager::parse_color(source_color) {
+        // Use source prompt color for all source language labels
+        if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
             print!("{}", source_label.color(color));
         } else {
             print!("{}", source_label);
@@ -251,7 +245,7 @@ impl Translator {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+                if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
                     print!("{}", trans_label.color(color));
                 } else {
                     print!("{}", trans_label);
@@ -276,7 +270,7 @@ impl Translator {
 
                 // Show [Auto]: prompt after hotkey translation
                 let auto_prompt = "[Auto]: ";
-                if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+                if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
                     print!("{}", auto_prompt.color(color));
                 } else {
                     print!("{}", auto_prompt);

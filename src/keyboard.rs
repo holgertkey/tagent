@@ -301,7 +301,7 @@ async fn speak_clipboard(
         // Show [Auto]: prompt on new line
         println!();
         let auto_prompt = "[Auto]: ";
-        if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+        if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
             print!("{}", auto_prompt.color(color));
         } else {
             print!("{}", auto_prompt);
@@ -349,7 +349,7 @@ async fn speak_clipboard(
 
     // Show speech label
     let speech_label = "[Speech]: ";
-    if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+    if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
         print!("{}", speech_label.color(color));
     } else {
         print!("{}", speech_label);
@@ -373,7 +373,7 @@ async fn speak_clipboard(
     // Show [Auto]: prompt after speech completes
     println!(); // Add empty line after speech
     let auto_prompt = "[Auto]: ";
-    if let Some(color) = ConfigManager::parse_color(&config.auto_prompt_color) {
+    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
         print!("{}", auto_prompt.color(color));
     } else {
         print!("{}", auto_prompt);

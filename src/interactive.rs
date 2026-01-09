@@ -87,14 +87,8 @@ impl InteractiveMode {
             // Show colored prompt
             let prompt = format!("[{}]: ", config.source_language);
 
-            // Choose color based on whether it's Auto or a specific language
-            let prompt_color = if config.source_language.to_lowercase() == "auto" {
-                &config.auto_prompt_color
-            } else {
-                &config.translation_prompt_color
-            };
-
-            if let Some(color) = ConfigManager::parse_color(prompt_color) {
+            // Use source prompt color for source language
+            if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
                 print!("{}", prompt.color(color));
             } else {
                 print!("{}", prompt); // No color if None or parsing fails
@@ -279,7 +273,7 @@ impl InteractiveMode {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+                if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
                     print!("{}", trans_label.color(color));
                 } else {
                     print!("{}", trans_label);
@@ -353,7 +347,7 @@ impl InteractiveMode {
 
         // Show speech label with color
         let speech_label = "[Speech]: ";
-        if let Some(color) = ConfigManager::parse_color(&config.translation_prompt_color) {
+        if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
             print!("{}", speech_label.color(color));
         } else {
             print!("{}", speech_label);
