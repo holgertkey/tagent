@@ -170,12 +170,12 @@ impl Translator {
                         println!("History save error: {}", e);
                     }
 
-                    // Show [Auto]: prompt after hotkey translation
-                    let auto_prompt = "[Auto]: ";
+                    // Show source language prompt after hotkey translation
+                    let source_prompt = format!("[{}]: ", config.source_language);
                     if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                        print!("{}", auto_prompt.color(color));
+                        print!("{}", source_prompt.color(color));
                     } else {
-                        print!("{}", auto_prompt);
+                        print!("{}", source_prompt);
                     }
                     io::stdout().flush().ok();
                 }
@@ -268,12 +268,12 @@ impl Translator {
                     println!("History save error: {}", e);
                 }
 
-                // Show [Auto]: prompt after hotkey translation
-                let auto_prompt = "[Auto]: ";
+                // Show source language prompt after hotkey translation
+                let source_prompt = format!("[{}]: ", config.source_language);
                 if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                    print!("{}", auto_prompt.color(color));
+                    print!("{}", source_prompt.color(color));
                 } else {
-                    print!("{}", auto_prompt);
+                    print!("{}", source_prompt);
                 }
                 io::stdout().flush().ok();
             }

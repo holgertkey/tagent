@@ -298,13 +298,13 @@ async fn speak_clipboard(
         io::stdout().flush().ok();
         println!("Clipboard is empty, nothing to speak");
 
-        // Show [Auto]: prompt on new line
+        // Show source language prompt on new line
         println!();
-        let auto_prompt = "[Auto]: ";
+        let source_prompt = format!("[{}]: ", config.source_language);
         if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-            print!("{}", auto_prompt.color(color));
+            print!("{}", source_prompt.color(color));
         } else {
-            print!("{}", auto_prompt);
+            print!("{}", source_prompt);
         }
         io::stdout().flush().ok();
 
@@ -370,13 +370,13 @@ async fn speak_clipboard(
         }
     }
 
-    // Show [Auto]: prompt after speech completes
+    // Show source language prompt after speech completes
     println!(); // Add empty line after speech
-    let auto_prompt = "[Auto]: ";
+    let source_prompt = format!("[{}]: ", config.source_language);
     if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-        print!("{}", auto_prompt.color(color));
+        print!("{}", source_prompt.color(color));
     } else {
-        print!("{}", auto_prompt);
+        print!("{}", source_prompt);
     }
     io::stdout().flush().ok();
 
