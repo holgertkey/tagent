@@ -146,12 +146,6 @@ SourceLanguage = {}
 ; Supported values: Russian, English, Spanish, French, German, etc.
 TargetLanguage = {}
 
-; Automatically copy translation result to clipboard
-; Set to true to automatically copy result to clipboard after translation
-; Set to false to display result only (without copying to clipboard)
-; When enabled, you can paste the result anywhere with Ctrl+V
-CopyToClipboard = {}
-
 [Dictionary]
 ; Show dictionary entry for single words instead of simple translation
 ; Set to true to show detailed word information (definitions, part of speech, examples)
@@ -170,6 +164,12 @@ ShowTerminalOnTranslate = {}
 ; Set to any number > 0 to auto-hide after that many seconds
 ; Example: 3 = hide terminal after 3 seconds
 AutoHideTerminalSeconds = {}
+
+; Automatically copy translation result to clipboard
+; Set to true to automatically copy result to clipboard after translation
+; Set to false to display result only (without copying to clipboard)
+; When enabled, you can paste the result anywhere with Ctrl+V
+CopyToClipboard = {}
 
 [Colors]
 ; Color for source language prompt (e.g., "[Auto]: ", "[English]: ")
@@ -250,10 +250,10 @@ EnableSpeechHotkey = {}
             config.translate_provider,
             config.source_language,
             config.target_language,
-            config.copy_to_clipboard,
             config.show_dictionary,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
+            config.copy_to_clipboard,
             config.source_prompt_color,
             config.target_prompt_color,
             config.dictionary_prompt_color,
@@ -283,12 +283,6 @@ EnableSpeechHotkey = {}
             .cloned()
             .unwrap_or_else(|| "Russian".to_string());
 
-        let copy_to_clipboard = parsed_config
-            .get("Translation")
-            .and_then(|section| section.get("CopyToClipboard"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
         let show_dictionary = parsed_config
             .get("Dictionary")
             .and_then(|section| section.get("ShowDictionary"))
@@ -306,6 +300,18 @@ EnableSpeechHotkey = {}
             .and_then(|section| section.get("AutoHideTerminalSeconds"))
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(5);
+
+        // Try new location first, fallback to old location for backward compatibility
+        let copy_to_clipboard = parsed_config
+            .get("Interface")
+            .and_then(|section| section.get("CopyToClipboard"))
+            .or_else(|| {
+                parsed_config
+                    .get("Translation")
+                    .and_then(|section| section.get("CopyToClipboard"))
+            })
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true);
 
         // Новые поля для истории
         let save_translation_history = parsed_config
