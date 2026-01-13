@@ -5,7 +5,28 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.9.0+011] - 2026-01-13
+## [0.9.0+015] - 2026-01-13
+
+### Fixed
+- Dictionary mode: unified format between hotkey and interactive modes
+  - Hotkey mode now matches interactive mode format: `[Auto]: word` then `[Word]: Part of Speech...`
+  - Example: `[Auto]: auction` then `[Word]: Существительное` (not separate translation line)
+  - Dictionary definitions now start immediately after `[Word]:` label
+
+## [0.9.0+014] - 2026-01-13
+
+### Fixed
+- Dictionary mode: corrected display order - now shows original word in `[Auto]` line and translation in `[Word]` line
+  - Example: `[Auto]: auction` (original) then `[Word]: аукцион` (translation)
+  - Previously showed translation in `[Auto]` line which was incorrect
+
+## [0.9.0+013] - 2026-01-13
+
+### Fixed
+- Dictionary mode: added simple translation prompt before dictionary entry
+- Fixed missing word translation in dictionary mode when translating via hotkeys
+
+## [0.9.0+012] - 2026-01-13
 
 ### Fixed
 - Double-press hotkey pattern now prevents false triggering when using Copy/Paste shortcuts (Ctrl+C, Ctrl+V)

@@ -144,6 +144,23 @@ impl Translator {
                     print!("\r");
                     io::stdout().flush().ok();
 
+                    // Show the original text (source word)
+                    let source_display = if source_code == "auto" {
+                        "Auto".to_string()
+                    } else {
+                        config.source_language.clone()
+                    };
+
+                    let source_label = format!("[{}]: ", source_display);
+
+                    // Use source prompt color for source language label
+                    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
+                        print!("{}", source_label.color(color));
+                    } else {
+                        print!("{}", source_label);
+                    }
+                    println!("{}", original_text);
+
                     // Print colored dictionary label
                     let dict_label = "[Word]: ";
                     if let Some(color) = ConfigManager::parse_color(&config.dictionary_prompt_color)
@@ -330,7 +347,7 @@ impl Translator {
         let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
 
         match entry_opt {
-            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, false)),
+            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, true)), // Use cli_mode=true to skip word header
             None => Err("Limited dictionary information available".into()),
         }
     }
