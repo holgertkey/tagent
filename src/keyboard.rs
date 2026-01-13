@@ -17,6 +17,7 @@ static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static TRANSLATE_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
 static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
 static LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
+static LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
 // Speech hotkey variables
 static SPEECH_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
@@ -24,6 +25,7 @@ static SPEECH_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 // Note: Speech hotkeys use shared MODIFIER_STATE (declared above with alternative hotkey vars)
 static SPEECH_LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
+static SPEECH_LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
@@ -86,6 +88,10 @@ impl KeyboardHook {
             .set(Arc::new(Mutex::new(None)))
             .map_err(|_| "LastKeyTime already initialized")?;
 
+        LAST_KEY_PRESSED
+            .set(Arc::new(Mutex::new(false)))
+            .map_err(|_| "LastKeyPressed already initialized")?;
+
         // Initialize speech hotkey configuration
         let speech_hotkey = if config.enable_speech_hotkey && config.enable_text_to_speech {
             match HotkeyParser::parse(&config.speech_hotkey) {
@@ -130,6 +136,10 @@ impl KeyboardHook {
         SPEECH_LAST_KEY_TIME
             .set(Arc::new(Mutex::new(None)))
             .map_err(|_| "SpeechLastKeyTime already initialized")?;
+
+        SPEECH_LAST_KEY_PRESSED
+            .set(Arc::new(Mutex::new(false)))
+            .map_err(|_| "SpeechLastKeyPressed already initialized")?;
 
         IS_SPEAKING
             .set(Arc::new(Mutex::new(false)))
@@ -445,29 +455,51 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                         max_interval_ms,
                     } => {
                         let normalized_vk = normalize_vk_code(vk_code);
-                        if is_key_down && normalized_vk == *target_vk {
-                            if let Some(last_key_time) = SPEECH_LAST_KEY_TIME.get() {
-                                if let Ok(mut last_time) = last_key_time.lock() {
-                                    let now = Instant::now();
+                        if normalized_vk == *target_vk {
+                            if is_key_down {
+                                // Check if this is a key repeat (auto-repeat from holding key down)
+                                if let Some(key_pressed) = SPEECH_LAST_KEY_PRESSED.get() {
+                                    if let Ok(mut is_pressed) = key_pressed.lock() {
+                                        if *is_pressed {
+                                            // This is an auto-repeat event, ignore it
+                                            return false;
+                                        }
+                                        // Mark key as pressed
+                                        *is_pressed = true;
+                                    }
+                                }
 
-                                    match *last_time {
-                                        Some(last) => {
-                                            let elapsed = now.duration_since(last);
-                                            if elapsed >= Duration::from_millis(*min_interval_ms)
-                                                && elapsed < Duration::from_millis(*max_interval_ms)
-                                            {
-                                                trigger_speech();
-                                                *last_time = None;
-                                                return true;
-                                            } else if elapsed
-                                                >= Duration::from_millis(*max_interval_ms)
-                                            {
+                                if let Some(last_key_time) = SPEECH_LAST_KEY_TIME.get() {
+                                    if let Ok(mut last_time) = last_key_time.lock() {
+                                        let now = Instant::now();
+
+                                        match *last_time {
+                                            Some(last) => {
+                                                let elapsed = now.duration_since(last);
+                                                if elapsed >= Duration::from_millis(*min_interval_ms)
+                                                    && elapsed
+                                                        < Duration::from_millis(*max_interval_ms)
+                                                {
+                                                    trigger_speech();
+                                                    *last_time = None;
+                                                    return true;
+                                                } else if elapsed
+                                                    >= Duration::from_millis(*max_interval_ms)
+                                                {
+                                                    *last_time = Some(now);
+                                                }
+                                            }
+                                            None => {
                                                 *last_time = Some(now);
                                             }
                                         }
-                                        None => {
-                                            *last_time = Some(now);
-                                        }
+                                    }
+                                }
+                            } else {
+                                // Key up event - mark key as not pressed
+                                if let Some(key_pressed) = SPEECH_LAST_KEY_PRESSED.get() {
+                                    if let Ok(mut is_pressed) = key_pressed.lock() {
+                                        *is_pressed = false;
                                     }
                                 }
                             }
@@ -532,29 +564,51 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                         max_interval_ms,
                     } => {
                         let normalized_vk = normalize_vk_code(vk_code);
-                        if is_key_down && normalized_vk == *target_vk {
-                            if let Some(last_key_time) = LAST_KEY_TIME.get() {
-                                if let Ok(mut last_time) = last_key_time.lock() {
-                                    let now = Instant::now();
+                        if normalized_vk == *target_vk {
+                            if is_key_down {
+                                // Check if this is a key repeat (auto-repeat from holding key down)
+                                if let Some(key_pressed) = LAST_KEY_PRESSED.get() {
+                                    if let Ok(mut is_pressed) = key_pressed.lock() {
+                                        if *is_pressed {
+                                            // This is an auto-repeat event, ignore it
+                                            return false;
+                                        }
+                                        // Mark key as pressed
+                                        *is_pressed = true;
+                                    }
+                                }
 
-                                    match *last_time {
-                                        Some(last) => {
-                                            let elapsed = now.duration_since(last);
-                                            if elapsed >= Duration::from_millis(*min_interval_ms)
-                                                && elapsed < Duration::from_millis(*max_interval_ms)
-                                            {
-                                                trigger_translation();
-                                                *last_time = None;
-                                                return true;
-                                            } else if elapsed
-                                                >= Duration::from_millis(*max_interval_ms)
-                                            {
+                                if let Some(last_key_time) = LAST_KEY_TIME.get() {
+                                    if let Ok(mut last_time) = last_key_time.lock() {
+                                        let now = Instant::now();
+
+                                        match *last_time {
+                                            Some(last) => {
+                                                let elapsed = now.duration_since(last);
+                                                if elapsed >= Duration::from_millis(*min_interval_ms)
+                                                    && elapsed
+                                                        < Duration::from_millis(*max_interval_ms)
+                                                {
+                                                    trigger_translation();
+                                                    *last_time = None;
+                                                    return true;
+                                                } else if elapsed
+                                                    >= Duration::from_millis(*max_interval_ms)
+                                                {
+                                                    *last_time = Some(now);
+                                                }
+                                            }
+                                            None => {
                                                 *last_time = Some(now);
                                             }
                                         }
-                                        None => {
-                                            *last_time = Some(now);
-                                        }
+                                    }
+                                }
+                            } else {
+                                // Key up event - mark key as not pressed
+                                if let Some(key_pressed) = LAST_KEY_PRESSED.get() {
+                                    if let Ok(mut is_pressed) = key_pressed.lock() {
+                                        *is_pressed = false;
                                     }
                                 }
                             }

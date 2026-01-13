@@ -5,12 +5,12 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.9.0+009] - 2026-01-08
+## [0.9.0+010] - 2026-01-13
 
-### Changed
-- Documentation: added speech hotkey (Alt+E) documentation to README
-- Documentation: added GUI speech hotkey usage guide
-- Documentation: added speech hotkey configuration examples
+### Fixed
+- Double-press hotkey pattern now ignores key auto-repeat when key is held down
+- Prevents false triggering of translation/speech when holding down a configured double-press key
+- Added `LAST_KEY_PRESSED` and `SPEECH_LAST_KEY_PRESSED` state tracking to detect first press vs auto-repeat
 
 ## [0.9.0+003] - 2026-01-08
 
