@@ -18,6 +18,7 @@ static TRANSLATE_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceL
 static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
 static LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static LAST_KEY_INTERRUPTED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
 // Speech hotkey variables
 static SPEECH_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
@@ -26,6 +27,7 @@ static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 // Note: Speech hotkeys use shared MODIFIER_STATE (declared above with alternative hotkey vars)
 static SPEECH_LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
 static SPEECH_LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static SPEECH_LAST_KEY_INTERRUPTED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
@@ -92,6 +94,10 @@ impl KeyboardHook {
             .set(Arc::new(Mutex::new(false)))
             .map_err(|_| "LastKeyPressed already initialized")?;
 
+        LAST_KEY_INTERRUPTED
+            .set(Arc::new(Mutex::new(false)))
+            .map_err(|_| "LastKeyInterrupted already initialized")?;
+
         // Initialize speech hotkey configuration
         let speech_hotkey = if config.enable_speech_hotkey && config.enable_text_to_speech {
             match HotkeyParser::parse(&config.speech_hotkey) {
@@ -140,6 +146,10 @@ impl KeyboardHook {
         SPEECH_LAST_KEY_PRESSED
             .set(Arc::new(Mutex::new(false)))
             .map_err(|_| "SpeechLastKeyPressed already initialized")?;
+
+        SPEECH_LAST_KEY_INTERRUPTED
+            .set(Arc::new(Mutex::new(false)))
+            .map_err(|_| "SpeechLastKeyInterrupted already initialized")?;
 
         IS_SPEAKING
             .set(Arc::new(Mutex::new(false)))
@@ -403,6 +413,65 @@ fn normalize_vk_code(vk_code: u32) -> u32 {
     }
 }
 
+/// Mark double-press sequence as interrupted if another key was pressed
+unsafe fn mark_double_press_interrupted_if_needed(vk_code: u32) {
+    let normalized_vk = normalize_vk_code(vk_code);
+
+    // Check translate hotkey
+    if let Some(hotkey_config) = TRANSLATE_HOTKEY_CONFIG.get() {
+        if let Ok(hotkey_opt) = hotkey_config.lock() {
+            if let Some(HotkeyType::DoublePress {
+                vk_code: target_vk,
+                ..
+            }) = hotkey_opt.as_ref()
+            {
+                // If this is not the target key and we have an active timer, mark as interrupted
+                if normalized_vk != *target_vk {
+                    if let Some(last_time) = LAST_KEY_TIME.get() {
+                        if let Ok(time) = last_time.lock() {
+                            if time.is_some() {
+                                // We have an active timer, mark as interrupted
+                                if let Some(interrupted) = LAST_KEY_INTERRUPTED.get() {
+                                    if let Ok(mut flag) = interrupted.lock() {
+                                        *flag = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check speech hotkey
+    if let Some(hotkey_config) = SPEECH_HOTKEY_CONFIG.get() {
+        if let Ok(hotkey_opt) = hotkey_config.lock() {
+            if let Some(HotkeyType::DoublePress {
+                vk_code: target_vk,
+                ..
+            }) = hotkey_opt.as_ref()
+            {
+                // If this is not the target key and we have an active timer, mark as interrupted
+                if normalized_vk != *target_vk {
+                    if let Some(last_time) = SPEECH_LAST_KEY_TIME.get() {
+                        if let Ok(time) = last_time.lock() {
+                            if time.is_some() {
+                                // We have an active timer, mark as interrupted
+                                if let Some(interrupted) = SPEECH_LAST_KEY_INTERRUPTED.get() {
+                                    if let Ok(mut flag) = interrupted.lock() {
+                                        *flag = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Handle speech hotkey detection
 unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
     if let Some(hotkey_config) = SPEECH_HOTKEY_CONFIG.get() {
@@ -476,7 +545,19 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                         match *last_time {
                                             Some(last) => {
                                                 let elapsed = now.duration_since(last);
-                                                if elapsed >= Duration::from_millis(*min_interval_ms)
+
+                                                // Check if sequence was interrupted
+                                                let was_interrupted =
+                                                    if let Some(interrupted) =
+                                                        SPEECH_LAST_KEY_INTERRUPTED.get()
+                                                    {
+                                                        interrupted.lock().ok().map_or(false, |f| *f)
+                                                    } else {
+                                                        false
+                                                    };
+
+                                                if !was_interrupted
+                                                    && elapsed >= Duration::from_millis(*min_interval_ms)
                                                     && elapsed
                                                         < Duration::from_millis(*max_interval_ms)
                                                 {
@@ -485,12 +566,31 @@ unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                                     return true;
                                                 } else if elapsed
                                                     >= Duration::from_millis(*max_interval_ms)
+                                                    || was_interrupted
                                                 {
+                                                    // Start new sequence
                                                     *last_time = Some(now);
+                                                    // Reset interrupted flag
+                                                    if let Some(interrupted) =
+                                                        SPEECH_LAST_KEY_INTERRUPTED.get()
+                                                    {
+                                                        if let Ok(mut flag) = interrupted.lock() {
+                                                            *flag = false;
+                                                        }
+                                                    }
                                                 }
                                             }
                                             None => {
+                                                // First press - start new sequence
                                                 *last_time = Some(now);
+                                                // Reset interrupted flag
+                                                if let Some(interrupted) =
+                                                    SPEECH_LAST_KEY_INTERRUPTED.get()
+                                                {
+                                                    if let Ok(mut flag) = interrupted.lock() {
+                                                        *flag = false;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -585,7 +685,19 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                         match *last_time {
                                             Some(last) => {
                                                 let elapsed = now.duration_since(last);
-                                                if elapsed >= Duration::from_millis(*min_interval_ms)
+
+                                                // Check if sequence was interrupted
+                                                let was_interrupted =
+                                                    if let Some(interrupted) =
+                                                        LAST_KEY_INTERRUPTED.get()
+                                                    {
+                                                        interrupted.lock().ok().map_or(false, |f| *f)
+                                                    } else {
+                                                        false
+                                                    };
+
+                                                if !was_interrupted
+                                                    && elapsed >= Duration::from_millis(*min_interval_ms)
                                                     && elapsed
                                                         < Duration::from_millis(*max_interval_ms)
                                                 {
@@ -594,12 +706,30 @@ unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
                                                     return true;
                                                 } else if elapsed
                                                     >= Duration::from_millis(*max_interval_ms)
+                                                    || was_interrupted
                                                 {
+                                                    // Start new sequence
                                                     *last_time = Some(now);
+                                                    // Reset interrupted flag
+                                                    if let Some(interrupted) =
+                                                        LAST_KEY_INTERRUPTED.get()
+                                                    {
+                                                        if let Ok(mut flag) = interrupted.lock() {
+                                                            *flag = false;
+                                                        }
+                                                    }
                                                 }
                                             }
                                             None => {
+                                                // First press - start new sequence
                                                 *last_time = Some(now);
+                                                // Reset interrupted flag
+                                                if let Some(interrupted) = LAST_KEY_INTERRUPTED.get()
+                                                {
+                                                    if let Ok(mut flag) = interrupted.lock() {
+                                                        *flag = false;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -637,6 +767,9 @@ unsafe extern "system" fn keyboard_hook_proc(
         }
 
         if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
+            // Mark double-press sequence as interrupted if another key was pressed
+            mark_double_press_interrupted_if_needed(kbd_struct.vkCode);
+
             // Handle Esc key to stop speech
             if kbd_struct.vkCode == VK_ESCAPE.0 as u32 {
                 if let Some(is_speaking) = IS_SPEAKING.get() {

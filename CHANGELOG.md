@@ -5,6 +5,14 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.9.0+011] - 2026-01-13
+
+### Fixed
+- Double-press hotkey pattern now prevents false triggering when using Copy/Paste shortcuts (Ctrl+C, Ctrl+V)
+- Added sequence interruption detection: if another key is pressed between two target key presses, the double-press sequence is reset
+- Added `LAST_KEY_INTERRUPTED` and `SPEECH_LAST_KEY_INTERRUPTED` state tracking to detect interrupted sequences
+- Ensures Ctrl+C followed by Ctrl+V (within double-press time window) no longer triggers translation hotkey
+
 ## [0.9.0+010] - 2026-01-13
 
 ### Fixed
