@@ -5,9 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.9.0+015] - 2026-01-13
+## [0.9.0+017] - 2026-01-15
 
 ### Fixed
+- Text-to-speech: suppressed "Dropping OutputStream, audio playing through this stream will stop" console message
+  - Used rodio's `log_on_drop(false)` method to disable the warning on stream drop
 - Dictionary mode: unified format between hotkey and interactive modes
   - Hotkey mode now matches interactive mode format: `[Auto]: word` then `[Word]: Part of Speech...`
   - Example: `[Auto]: auction` then `[Word]: Существительное` (not separate translation line)

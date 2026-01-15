@@ -191,9 +191,12 @@ impl SpeechManager {
         let builder = OutputStreamBuilder::from_default_device()
             .map_err(|e| SpeechError::AudioError(format!("Failed to get default device: {}", e)))?;
 
-        let stream_handle = builder
+        let mut stream_handle = builder
             .open_stream()
             .map_err(|e| SpeechError::AudioError(format!("Failed to open stream: {}", e)))?;
+
+        // Disable "Dropping OutputStream" warning message on drop
+        stream_handle.log_on_drop(false);
 
         // Create sink for playback
         let sink = Sink::connect_new(stream_handle.mixer());
