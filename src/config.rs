@@ -456,6 +456,14 @@ EnableSpeechHotkey = {}
         self.config.lock().unwrap().clone()
     }
 
+    /// Set source and target languages in memory (without saving to file)
+    pub fn set_languages(&self, source: &str, target: &str) {
+        if let Ok(mut config) = self.config.lock() {
+            config.source_language = source.to_string();
+            config.target_language = target.to_string();
+        }
+    }
+
     /// Display help information (unified for CLI and Interactive modes)
     pub fn display_help() {
         println!();
@@ -483,6 +491,7 @@ EnableSpeechHotkey = {}
         println!("  -c, --config   Show current configuration");
         println!("  -v, --version  Show version information");
         println!("  -s, --speech   Speak the following text using text-to-speech");
+        println!("  -l, --lang     Set languages: -l <target> or -l <source> <target>");
         println!();
 
         println!("EXAMPLES:");
@@ -490,6 +499,8 @@ EnableSpeechHotkey = {}
         println!("  tagent hello                     Translate 'hello' (CLI mode)");
         println!("  tagent \"Hello world\"             Translate phrase (CLI mode)");
         println!("  tagent -s \"Hello world\"          Speak text using TTS");
+        println!("  tagent -l German hello               Translate 'hello' to German");
+        println!("  tagent -l English German hello        Translate 'hello' from English to German");
         println!("  tagent --config                  Show configuration");
         println!();
 
@@ -516,6 +527,8 @@ EnableSpeechHotkey = {}
         println!(
             "  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)"
         );
+        println!("  /l, /lang <target>      - Set target language (source=Auto)");
+        println!("  /l, /lang <src> <tgt>   - Set source and target languages");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /exit        - Exit program");
         println!();

@@ -130,6 +130,46 @@ impl InteractiveMode {
 
     /// Handle interactive commands, returns true if command was processed
     async fn handle_command(&self, text: &str) -> Result<bool, String> {
+        // Check for language switch commands
+        if text.starts_with("/l ") || text.starts_with("/lang ") {
+            let lang_args = if let Some(stripped) = text.strip_prefix("/l ") {
+                stripped
+            } else {
+                text.strip_prefix("/lang ").unwrap_or("")
+            };
+
+            let parts: Vec<&str> = lang_args.split_whitespace().collect();
+            if parts.is_empty() {
+                println!("Usage: /l <target> or /l <source> <target>");
+                println!("Example: /l French  or  /l English German");
+                println!();
+                return Ok(true);
+            }
+
+            let (source, target) = if parts.len() == 1 {
+                ("Auto", parts[0])
+            } else {
+                (parts[0], parts[1])
+            };
+
+            // Validate languages
+            let source_code = ConfigManager::language_to_code(source);
+            let target_code = ConfigManager::language_to_code(target);
+
+            // Warn if language name maps to itself (unknown language)
+            if source.to_lowercase() != "auto" && source_code == source {
+                println!("Warning: Unknown language '{}', using as language code", source);
+            }
+            if target_code == target {
+                println!("Warning: Unknown language '{}', using as language code", target);
+            }
+
+            self.config_manager.set_languages(source, target);
+            println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
+            println!();
+            return Ok(true);
+        }
+
         // Check for speech commands with arguments
         if text.starts_with("/s ") || text.starts_with("/speech ") {
             let speech_text = if let Some(stripped) = text.strip_prefix("/s ") {

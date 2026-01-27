@@ -96,6 +96,49 @@ impl CliHandler {
                 Self::show_version();
                 Ok(())
             }
+            "-l" | "--lang" => {
+                // Set languages and optionally translate
+                if args.len() < 3 {
+                    eprintln!("Error: No language provided");
+                    eprintln!("Usage: tagent -l <target> [text]");
+                    eprintln!("       tagent -l <source> <target> [text]");
+                    return Ok(());
+                }
+
+                // Determine if second arg is a known language name or text
+                let arg2 = &args[2];
+                let arg2_code = ConfigManager::language_to_code(arg2);
+                let arg2_is_lang = arg2_code != arg2 || arg2.to_lowercase() == "auto";
+
+                let (source, target, text_start_idx) = if args.len() >= 4 {
+                    let arg3 = &args[3];
+                    let arg3_code = ConfigManager::language_to_code(arg3);
+                    let arg3_is_lang = arg3_code != arg3 || arg3.to_lowercase() == "auto";
+
+                    if arg2_is_lang && arg3_is_lang {
+                        // -l Source Target [text...]
+                        (arg2.as_str(), arg3.as_str(), 4)
+                    } else {
+                        // -l Target text...
+                        ("Auto", arg2.as_str(), 3)
+                    }
+                } else {
+                    // -l Target (no text)
+                    ("Auto", arg2.as_str(), 3)
+                };
+
+                self.config_manager.set_languages(source, target);
+
+                if args.len() > text_start_idx {
+                    let text_to_translate = args[text_start_idx..].join(" ");
+                    self.translate_text(&text_to_translate).await
+                } else {
+                    let source_code = ConfigManager::language_to_code(source);
+                    let target_code = ConfigManager::language_to_code(target);
+                    println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
+                    Ok(())
+                }
+            }
             "-s" | "--speech" => {
                 // Speak the following text
                 if args.len() < 3 {

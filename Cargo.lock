@@ -1619,7 +1619,7 @@ dependencies = [
 
 [[package]]
 name = "tagent"
-version = "0.9.0+017"
+version = "0.9.0+018"
 dependencies = [
  "async-trait",
  "chrono",
