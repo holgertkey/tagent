@@ -162,25 +162,28 @@ impl InteractiveMode {
                 return Ok(true);
             }
 
-            let (source, target) = if parts.len() == 1 {
+            let (raw_source, raw_target) = if parts.len() == 1 {
                 ("Auto", parts[0])
             } else {
                 (parts[0], parts[1])
             };
 
-            // Validate languages
-            let source_code = ConfigManager::language_to_code(source);
-            let target_code = ConfigManager::language_to_code(target);
+            // Normalize: accept both names ("English") and codes ("en")
+            let source = ConfigManager::normalize_language(raw_source);
+            let target = ConfigManager::normalize_language(raw_target);
 
-            // Warn if language name maps to itself (unknown language)
-            if source.to_lowercase() != "auto" && source_code == source {
+            let source_code = ConfigManager::language_to_code(&source);
+            let target_code = ConfigManager::language_to_code(&target);
+
+            // Warn if language is completely unknown
+            if source.to_lowercase() != "auto" && source_code == source.as_str() {
                 println!("Warning: Unknown language '{}', using as language code", source);
             }
-            if target_code == target {
+            if target_code == target.as_str() {
                 println!("Warning: Unknown language '{}', using as language code", target);
             }
 
-            self.config_manager.set_languages(source, target);
+            self.config_manager.set_languages(&source, &target);
             println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
             println!();
             return Ok(true);

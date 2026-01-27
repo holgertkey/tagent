@@ -105,36 +105,38 @@ impl CliHandler {
                     return Ok(());
                 }
 
-                // Determine if second arg is a known language name or text
+                // Determine if second arg is a known language (name or code)
                 let arg2 = &args[2];
-                let arg2_code = ConfigManager::language_to_code(arg2);
-                let arg2_is_lang = arg2_code != arg2 || arg2.to_lowercase() == "auto";
+                let arg2_norm = ConfigManager::normalize_language(arg2);
+                let arg2_code = ConfigManager::language_to_code(&arg2_norm);
+                let arg2_is_lang = arg2_code != arg2_norm.as_str() || arg2.to_lowercase() == "auto";
 
                 let (source, target, text_start_idx) = if args.len() >= 4 {
                     let arg3 = &args[3];
-                    let arg3_code = ConfigManager::language_to_code(arg3);
-                    let arg3_is_lang = arg3_code != arg3 || arg3.to_lowercase() == "auto";
+                    let arg3_norm = ConfigManager::normalize_language(arg3);
+                    let arg3_code = ConfigManager::language_to_code(&arg3_norm);
+                    let arg3_is_lang = arg3_code != arg3_norm.as_str() || arg3.to_lowercase() == "auto";
 
                     if arg2_is_lang && arg3_is_lang {
                         // -l Source Target [text...]
-                        (arg2.as_str(), arg3.as_str(), 4)
+                        (arg2_norm, arg3_norm, 4)
                     } else {
                         // -l Target text...
-                        ("Auto", arg2.as_str(), 3)
+                        ("Auto".to_string(), arg2_norm, 3)
                     }
                 } else {
                     // -l Target (no text)
-                    ("Auto", arg2.as_str(), 3)
+                    ("Auto".to_string(), arg2_norm, 3)
                 };
 
-                self.config_manager.set_languages(source, target);
+                self.config_manager.set_languages(&source, &target);
 
                 if args.len() > text_start_idx {
                     let text_to_translate = args[text_start_idx..].join(" ");
                     self.translate_text(&text_to_translate).await
                 } else {
-                    let source_code = ConfigManager::language_to_code(source);
-                    let target_code = ConfigManager::language_to_code(target);
+                    let source_code = ConfigManager::language_to_code(&source);
+                    let target_code = ConfigManager::language_to_code(&target);
                     println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
                     Ok(())
                 }

@@ -722,6 +722,57 @@ EnableSpeechHotkey = {}
         }
     }
 
+    /// Convert language code to language name (reverse of language_to_code)
+    /// Returns the code as-is if no matching name is found
+    pub fn code_to_language(code: &str) -> &str {
+        match code.to_lowercase().as_str() {
+            "auto" => "Auto",
+            "en" => "English",
+            "ru" => "Russian",
+            "es" => "Spanish",
+            "fr" => "French",
+            "de" => "German",
+            "zh" => "Chinese",
+            "ja" => "Japanese",
+            "ko" => "Korean",
+            "it" => "Italian",
+            "pt" => "Portuguese",
+            "nl" => "Dutch",
+            "pl" => "Polish",
+            "tr" => "Turkish",
+            "ar" => "Arabic",
+            "hi" => "Hindi",
+            _ => code,
+        }
+    }
+
+    /// Normalize language input: accept both names ("English") and codes ("en"),
+    /// always return the full language name
+    pub fn normalize_language(input: &str) -> String {
+        // First check if it's already a known language name
+        let code = Self::language_to_code(input);
+        if code != input || input.to_lowercase() == "auto" {
+            // It was a known name, return as-is (capitalized)
+            return Self::capitalize_first(input);
+        }
+        // Otherwise try as a code
+        let name = Self::code_to_language(input);
+        if name != input {
+            return name.to_string();
+        }
+        // Unknown — return as-is
+        input.to_string()
+    }
+
+    /// Capitalize the first letter of a string
+    fn capitalize_first(s: &str) -> String {
+        let mut chars = s.chars();
+        match chars.next() {
+            None => String::new(),
+            Some(c) => c.to_uppercase().to_string() + &chars.as_str().to_lowercase(),
+        }
+    }
+
     /// Get language codes for translation
     pub fn get_language_codes(&self) -> (String, String) {
         let config = self.get_config();
