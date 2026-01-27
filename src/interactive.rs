@@ -385,7 +385,7 @@ impl InteractiveMode {
                 if stop_flag.load(Ordering::Relaxed) {
                     println!("Speech cancelled by user (Esc)");
                 } else {
-                    println!("Speech completed successfully.");
+                    // println!("Speech completed successfully.");
                 }
                 Ok(())
             }
