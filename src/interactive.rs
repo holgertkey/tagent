@@ -131,8 +131,12 @@ impl InteractiveMode {
     /// Handle interactive commands, returns true if command was processed
     async fn handle_command(&self, text: &str) -> Result<bool, String> {
         // Check for language switch commands
-        if text.starts_with("/l ") || text.starts_with("/lang ") {
-            let lang_args = if let Some(stripped) = text.strip_prefix("/l ") {
+        if text == "/l" || text == "/lang"
+            || text.starts_with("/l ") || text.starts_with("/lang ")
+        {
+            let lang_args = if text == "/l" || text == "/lang" {
+                ""
+            } else if let Some(stripped) = text.strip_prefix("/l ") {
                 stripped
             } else {
                 text.strip_prefix("/lang ").unwrap_or("")
@@ -140,8 +144,20 @@ impl InteractiveMode {
 
             let parts: Vec<&str> = lang_args.split_whitespace().collect();
             if parts.is_empty() {
-                println!("Usage: /l <target> or /l <source> <target>");
-                println!("Example: /l French  or  /l English German");
+                // Swap source and target languages
+                let config = self.config_manager.get_config();
+                let mut source = config.source_language.clone();
+                let target = config.target_language.clone();
+
+                // If source is Auto, treat it as English before swapping
+                if source.to_lowercase() == "auto" {
+                    source = "English".to_string();
+                }
+
+                self.config_manager.set_languages(&target, &source);
+                let new_source_code = ConfigManager::language_to_code(&target);
+                let new_target_code = ConfigManager::language_to_code(&source);
+                println!("Languages swapped: {} ({}) -> {} ({})", target, new_source_code, source, new_target_code);
                 println!();
                 return Ok(true);
             }

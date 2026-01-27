@@ -527,6 +527,7 @@ EnableSpeechHotkey = {}
         println!(
             "  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)"
         );
+        println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
         println!("  /clear, /cls            - Clear screen");
