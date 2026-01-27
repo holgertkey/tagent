@@ -5,6 +5,21 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.10.0+000] - 2026-01-27
+
+### Added
+- Language switching command `/l` (`/lang`) for interactive mode
+  - `/l` or `/lang` without arguments swaps source and target languages (Auto becomes English before swapping)
+  - `/l <target>` sets target language with source=Auto (e.g., `/l French`)
+  - `/l <source> <target>` sets both languages (e.g., `/l English German`)
+  - Accepts both language names (`English`, `German`) and codes (`en`, `de`)
+- CLI flag `-l` (`--lang`) for setting languages before translation
+  - `tagent -l German hello` translates "hello" to German
+  - `tagent -l en de "Hello world"` translates from English to German
+- `ConfigManager::set_languages()` method for in-memory language updates
+- `ConfigManager::code_to_language()` reverse lookup (code to language name)
+- `ConfigManager::normalize_language()` to accept both names and codes as input
+
 ## [0.9.0+020] - 2026-01-15
 
 ### Fixed

@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.9.0+020
+# Tagent Text Translator v0.10.0+000
 
 A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
 
@@ -85,6 +85,10 @@ tagent "Hello world"
 tagent -s "Hello world"
 tagent --speech "Привет мир"
 
+# Translate with specific languages (names or codes)
+tagent -l German hello
+tagent -l en de "Hello world"
+
 # Show help
 tagent --help
 
@@ -128,8 +132,13 @@ Goodbye!
 - `/c`, `/config` - Show current configuration
 - `/v`, `/version` - Show version information
 - `/s <text>`, `/speech <text>` - Text-to-speech (press Esc to cancel)
+- `/l`, `/lang` - Swap source and target languages
+- `/l <target>`, `/lang <target>` - Set target language (source=Auto)
+- `/l <source> <target>`, `/lang <source> <target>` - Set both languages
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q` - Exit program
+
+Language names (`English`, `German`) and codes (`en`, `de`) are both accepted.
 
 ## Configuration
 
@@ -491,7 +500,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.9.0+020
+**Current Version**: v0.10.0+000
 
 **Recent Changes**:
 - Code quality improvements (fixed all Clippy warnings)
@@ -523,4 +532,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.9.0+020** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.10.0+000** - Fast, reliable, and feature-rich translation tool for Windows.
