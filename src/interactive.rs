@@ -235,6 +235,16 @@ impl InteractiveMode {
                     Ok(true)
                 }
 
+                // Save configuration to file
+                "/save" => {
+                    match self.config_manager.save_config() {
+                        Ok(()) => println!("Configuration saved successfully."),
+                        Err(e) => println!("Error saving configuration: {}", e),
+                    }
+                    println!();
+                    Ok(true)
+                }
+
                 // Version commands (only with slash)
                 "/v" | "/version" => {
                     CliHandler::show_version();

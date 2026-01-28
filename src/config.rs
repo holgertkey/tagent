@@ -452,6 +452,15 @@ EnableSpeechHotkey = {}
     }
 
     /// Get current configuration
+    /// Save current in-memory configuration to the config file
+    pub fn save_config(&self) -> Result<(), Box<dyn Error>> {
+        let config = self.get_config();
+        let ini_content = self.create_ini_content(&config);
+        fs::write(&self.config_path, ini_content)?;
+        self.update_last_modified_time()?;
+        Ok(())
+    }
+
     pub fn get_config(&self) -> Config {
         self.config.lock().unwrap().clone()
     }
@@ -530,6 +539,7 @@ EnableSpeechHotkey = {}
         println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
+        println!("  /save                   - Save current configuration to file");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /exit        - Exit program");
         println!();
