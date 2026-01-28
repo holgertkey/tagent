@@ -135,6 +135,7 @@ Goodbye!
 - `/l`, `/lang` - Swap source and target languages
 - `/l <target>`, `/lang <target>` - Set target language (source=Auto)
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
+- `/save` - Save current configuration to file
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q` - Exit program
 

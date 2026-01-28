@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.10.0+001] - 2026-01-27
 
 ### Added
+- `/save` command in interactive mode to save current configuration to file
 - Language switching command `/l` (`/lang`) for interactive mode
   - `/l` or `/lang` without arguments swaps source and target languages (Auto becomes English before swapping)
   - `/l <target>` sets target language with source=Auto (e.g., `/l French`)
