@@ -355,12 +355,25 @@ async fn speak_clipboard(
     let (source_code, _target_code) = config_manager.get_language_codes();
 
     // Use auto-detected language or source language for speech
-    let lang_code = if source_code == "auto" {
-        // Try to detect language from text
-        // For now, default to English if auto
-        "en"
+    let lang_code: String = if source_code == "auto" {
+        // Auto-detect language using translation provider
+        use crate::providers::create_provider;
+
+        match create_provider(&config.translate_provider) {
+            Ok(provider) => match provider.detect_language(&text).await {
+                Ok(detected) => detected,
+                Err(e) => {
+                    eprintln!("Language detection failed: {}, using 'en'", e);
+                    "en".to_string()
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to create provider for language detection: {}", e);
+                "en".to_string()
+            }
+        }
     } else {
-        &source_code
+        source_code.clone()
     };
 
     // Clear any existing prompt and print speech info
@@ -379,7 +392,7 @@ async fn speak_clipboard(
     // Call speech directly (blocking until completion or cancellation)
     let speech_manager = SpeechManager::new();
     match speech_manager
-        .speak_text_with_cancel(&text, lang_code, stop_flag)
+        .speak_text_with_cancel(&text, &lang_code, stop_flag)
         .await
     {
         Ok(_) => {

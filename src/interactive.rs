@@ -404,15 +404,28 @@ impl InteractiveMode {
         // Load current configuration to get source language
         self.config_manager.check_and_reload().ok();
         let (source_code, _) = self.config_manager.get_language_codes();
-
-        // If source language is "auto", use English by default for TTS
-        let speech_lang = if source_code == "auto" {
-            "en"
-        } else {
-            &source_code
-        };
-
         let config = self.config_manager.get_config();
+
+        // If source language is "auto", detect language from text
+        let speech_lang: String = if source_code == "auto" {
+            use crate::providers::create_provider;
+
+            match create_provider(&config.translate_provider) {
+                Ok(provider) => match provider.detect_language(text).await {
+                    Ok(detected) => detected,
+                    Err(e) => {
+                        eprintln!("Language detection failed: {}, using 'en'", e);
+                        "en".to_string()
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to create provider for language detection: {}", e);
+                    "en".to_string()
+                }
+            }
+        } else {
+            source_code.clone()
+        };
 
         // Show speech label with color
         let speech_label = "[Speech]: ";
@@ -443,7 +456,7 @@ impl InteractiveMode {
         // Start speech with cancellation support
         let speech_result = self
             .speech_manager
-            .speak_text_with_cancel(text, speech_lang, stop_flag.clone())
+            .speak_text_with_cancel(text, &speech_lang, stop_flag.clone())
             .await;
 
         // Cancel the Esc monitor task

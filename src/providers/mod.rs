@@ -42,6 +42,10 @@ pub trait TranslationProvider: Send + Sync {
         to: &str,
     ) -> Result<Option<DictionaryEntry>, Box<dyn Error>>;
 
+    /// Detect the language of the given text
+    /// Returns language code (e.g., "en", "ru", "de")
+    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error>>;
+
     /// Get provider name for display purposes
     fn name(&self) -> &str;
 }

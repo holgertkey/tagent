@@ -190,7 +190,80 @@ impl TranslationProvider for GoogleTranslateProvider {
         Ok(self.parse_dictionary_response(&json))
     }
 
+    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error>> {
+        let url = "https://translate.googleapis.com/translate_a/single";
+
+        let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
+
+        // Use auto-detect (sl=auto) and request language detection
+        let params = format!("?client=gtx&sl=auto&tl=en&dt=t&q={}", encoded_text);
+
+        let full_url = format!("{}{}", url, params);
+
+        let response = self
+            .client
+            .get(&full_url)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        let body = response.text().await?;
+        let json: Value = serde_json::from_str(&body)?;
+
+        // Detected language is at index 2 in the response
+        if let Some(detected_lang) = json.get(2).and_then(|v| v.as_str()) {
+            Ok(detected_lang.to_string())
+        } else {
+            // Fallback to English if detection fails
+            Ok("en".to_string())
+        }
+    }
+
     fn name(&self) -> &str {
         "Google Translate"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_detect_language_english() {
+        let provider = GoogleTranslateProvider::new();
+        let result = provider.detect_language("Hello, how are you?").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "en");
+    }
+
+    #[tokio::test]
+    async fn test_detect_language_russian() {
+        let provider = GoogleTranslateProvider::new();
+        let result = provider.detect_language("Привет, как дела?").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ru");
+    }
+
+    #[tokio::test]
+    async fn test_detect_language_german() {
+        let provider = GoogleTranslateProvider::new();
+        let result = provider.detect_language("Guten Tag, wie geht es Ihnen?").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "de");
+    }
+
+    #[tokio::test]
+    async fn test_detect_language_french() {
+        let provider = GoogleTranslateProvider::new();
+        let result = provider.detect_language("Bonjour, comment allez-vous?").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "fr");
     }
 }

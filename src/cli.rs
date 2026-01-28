@@ -292,12 +292,27 @@ impl CliHandler {
         // Load current configuration to get source language
         self.config_manager.check_and_reload().ok();
         let (source_code, _) = self.config_manager.get_language_codes();
+        let config = self.config_manager.get_config();
 
-        // If source language is "auto", use English by default for TTS
-        let speech_lang = if source_code == "auto" {
-            "en"
+        // If source language is "auto", detect language from text
+        let speech_lang: String = if source_code == "auto" {
+            use crate::providers::create_provider;
+
+            match create_provider(&config.translate_provider) {
+                Ok(provider) => match provider.detect_language(text).await {
+                    Ok(detected) => detected,
+                    Err(e) => {
+                        eprintln!("Language detection failed: {}, using 'en'", e);
+                        "en".to_string()
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to create provider for language detection: {}", e);
+                    "en".to_string()
+                }
+            }
         } else {
-            &source_code
+            source_code.clone()
         };
 
         // Create stop flag for cancellation
@@ -319,12 +334,11 @@ impl CliHandler {
 
         // Start speech with cancellation support
         let text_owned = text.to_string();
-        let speech_lang_owned = speech_lang.to_string();
         let stop_flag_for_speech = stop_flag.clone();
 
         let speech_result = self
             .speech_manager
-            .speak_text_with_cancel(&text_owned, &speech_lang_owned, stop_flag_for_speech)
+            .speak_text_with_cancel(&text_owned, &speech_lang, stop_flag_for_speech)
             .await;
 
         // Cancel the Esc monitor task
