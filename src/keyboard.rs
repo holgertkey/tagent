@@ -30,6 +30,7 @@ static SPEECH_LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SPEECH_LAST_KEY_INTERRUPTED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static CONFIG_MANAGER: OnceLock<Arc<ConfigManager>> = OnceLock::new();
 
 pub struct KeyboardHook;
 
@@ -37,10 +38,15 @@ impl KeyboardHook {
     pub fn new(
         translator: Translator,
         should_exit: Arc<AtomicBool>,
+        config_manager: Arc<ConfigManager>,
     ) -> Result<Self, Box<dyn Error>> {
         TRANSLATOR
             .set(Arc::new(translator))
             .map_err(|_| "Translator already initialized")?;
+
+        CONFIG_MANAGER
+            .set(config_manager.clone())
+            .map_err(|_| "ConfigManager already initialized")?;
 
         let is_processing = Arc::new(Mutex::new(false));
 
@@ -52,8 +58,6 @@ impl KeyboardHook {
             .map_err(|_| "ShouldExit already initialized")?;
 
         // Initialize translation hotkey configuration
-        let config_manager =
-            ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
         let config = config_manager.get_config();
 
         let translate_hotkey = match HotkeyParser::parse(&config.translate_hotkey) {
@@ -307,9 +311,13 @@ async fn speak_clipboard(
     // Read text from clipboard
     let text = clipboard.get_text()?;
 
-    // Get config
-    let config_manager =
-        ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
+    // Get config from shared ConfigManager
+    let config_manager = CONFIG_MANAGER
+        .get()
+        .ok_or("ConfigManager not initialized")?;
+    if let Err(e) = config_manager.check_and_reload() {
+        eprintln!("Config reload error: {}", e);
+    }
     let config = config_manager.get_config();
 
     if text.trim().is_empty() {

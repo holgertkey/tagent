@@ -5,7 +5,7 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.10.0+003] - 2026-01-27
+## [0.10.0+004] - 2026-01-27
 
 ### Added
 - `/save` command in interactive mode to save current configuration to file

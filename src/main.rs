@@ -9,9 +9,11 @@ mod translator;
 mod window;
 
 use cli::CliHandler;
+use config::ConfigManager;
 use interactive::InteractiveMode;
 use keyboard::KeyboardHook;
 use std::env;
+use std::sync::Arc;
 use translator::Translator;
 use windows::Win32::System::Console::SetConsoleCtrlHandler;
 
@@ -41,7 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Если аргументов нет, запускаем объединенный GUI+Interactive режим
     show_unified_mode_info();
 
-    let translator = match Translator::new() {
+    // Create shared ConfigManager
+    let config_path = ConfigManager::get_default_config_path()?;
+    let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+
+    let translator = match Translator::new_with_config(config_manager.clone()) {
         Ok(t) => t,
         Err(e) => {
             println!("Failed to initialize translator: {}", e);
@@ -49,8 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Создаем интерактивный режим
-    let interactive_mode = match InteractiveMode::new() {
+    // Create interactive mode with shared config
+    let interactive_mode = match InteractiveMode::new_with_config(config_manager.clone()) {
         Ok(mode) => mode,
         Err(e) => {
             println!("Failed to initialize interactive mode: {}", e);
@@ -58,13 +64,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Получаем общий флаг выхода
+    // Get shared exit flag
     let should_exit = interactive_mode.get_exit_flag();
 
-    // Запускаем горячие клавиши в отдельном потоке
+    // Start keyboard hook in a separate thread
     let should_exit_clone = should_exit.clone();
+    let config_manager_clone = config_manager.clone();
     let keyboard_task = tokio::spawn(async move {
-        let mut keyboard_hook = match KeyboardHook::new(translator, should_exit_clone) {
+        let mut keyboard_hook = match KeyboardHook::new(translator, should_exit_clone, config_manager_clone) {
             Ok(hook) => hook,
             Err(e) => {
                 println!("Failed to create keyboard hook: {}", e);

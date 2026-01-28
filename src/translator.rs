@@ -22,6 +22,10 @@ impl Translator {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+        Self::new_with_config(config_manager)
+    }
+
+    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
         let window_manager = Arc::new(WindowManager::new()?);
 
         // Create translation provider based on config

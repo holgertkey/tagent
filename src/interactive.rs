@@ -20,9 +20,13 @@ pub struct InteractiveMode {
 
 impl InteractiveMode {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let translator = Translator::new()?;
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+        Self::new_with_config(config_manager)
+    }
+
+    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
+        let translator = Translator::new_with_config(config_manager.clone())?;
         let should_exit = Arc::new(AtomicBool::new(false));
         let speech_manager = SpeechManager::new();
 
