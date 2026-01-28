@@ -1,9 +1,14 @@
+use crate::config::ConfigManager;
+use crate::providers::create_provider;
+use colored::Colorize;
 use reqwest::Client;
 use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::io::Cursor;
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
 
 const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
@@ -234,6 +239,116 @@ impl SpeechManager {
         }
 
         Ok(())
+    }
+
+    /// Detect speech language - uses auto-detection if source_code is "auto"
+    pub async fn detect_speech_language(
+        &self,
+        text: &str,
+        source_code: &str,
+        provider_name: &str,
+    ) -> String {
+        if source_code == "auto" {
+            match create_provider(provider_name) {
+                Ok(provider) => match provider.detect_language(text).await {
+                    Ok(detected) => detected,
+                    Err(e) => {
+                        eprintln!("Language detection failed: {}, using 'en'", e);
+                        "en".to_string()
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to create provider for language detection: {}", e);
+                    "en".to_string()
+                }
+            }
+        } else {
+            source_code.to_string()
+        }
+    }
+
+    /// Print speech label with optional color
+    pub fn print_speech_label(text: &str, label_color: Option<&str>) {
+        let speech_label = "[Speech]: ";
+        if let Some(color) = label_color.and_then(|c| ConfigManager::parse_color(c)) {
+            print!("{}", speech_label.color(color));
+        } else {
+            print!("{}", speech_label);
+        }
+        println!("{}", text);
+    }
+
+    /// Speak text with Esc key monitoring for cancellation
+    /// Returns true if speech was cancelled by user, false otherwise
+    pub async fn speak_with_esc_monitor(
+        &self,
+        text: &str,
+        lang_code: &str,
+    ) -> Result<bool, SpeechError> {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+
+        // Spawn task to monitor Esc key
+        let esc_monitor = tokio::spawn(async move {
+            loop {
+                unsafe {
+                    if GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000 != 0 {
+                        stop_flag_clone.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+
+        // Start speech with cancellation support
+        let speech_result = self
+            .speak_text_with_cancel(text, lang_code, stop_flag.clone())
+            .await;
+
+        // Cancel the Esc monitor task
+        esc_monitor.abort();
+
+        match speech_result {
+            Ok(_) => {
+                let was_cancelled = stop_flag.load(Ordering::Relaxed);
+                if was_cancelled {
+                    println!("Speech cancelled by user (Esc)");
+                }
+                Ok(was_cancelled)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// High-level speak function that handles language detection, label printing, and Esc monitoring
+    /// This is the main entry point for speech in interactive/CLI modes
+    pub async fn speak_text_full(
+        &self,
+        text: &str,
+        config_manager: &ConfigManager,
+    ) -> Result<bool, String> {
+        if text.trim().is_empty() {
+            return Err("Empty text provided".to_string());
+        }
+
+        config_manager.check_and_reload().ok();
+        let (source_code, _) = config_manager.get_language_codes();
+        let config = config_manager.get_config();
+
+        // Detect language
+        let speech_lang = self
+            .detect_speech_language(text, &source_code, &config.translate_provider)
+            .await;
+
+        // Print speech label
+        Self::print_speech_label(text, Some(&config.target_prompt_color));
+        io::stdout().flush().ok();
+
+        // Speak with Esc monitoring
+        self.speak_with_esc_monitor(text, &speech_lang)
+            .await
+            .map_err(|e| format!("Speech error: {}", e))
     }
 }
 

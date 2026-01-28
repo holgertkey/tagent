@@ -278,85 +278,16 @@ impl CliHandler {
 
     /// Speak text using text-to-speech
     async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
-        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
-
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
             eprintln!("Usage: tagent -s \"text to speak\"");
             return Ok(());
         }
 
-        // Load current configuration to get source language
-        self.config_manager.check_and_reload().ok();
-        let (source_code, _) = self.config_manager.get_language_codes();
-        let config = self.config_manager.get_config();
-
-        // If source language is "auto", detect language from text
-        let speech_lang: String = if source_code == "auto" {
-            use crate::providers::create_provider;
-
-            match create_provider(&config.translate_provider) {
-                Ok(provider) => match provider.detect_language(text).await {
-                    Ok(detected) => detected,
-                    Err(e) => {
-                        eprintln!("Language detection failed: {}, using 'en'", e);
-                        "en".to_string()
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Failed to create provider for language detection: {}", e);
-                    "en".to_string()
-                }
-            }
-        } else {
-            source_code.clone()
-        };
-
-        // Create stop flag for cancellation
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
-
-        // Spawn task to monitor Esc key
-        let esc_monitor = tokio::spawn(async move {
-            loop {
-                unsafe {
-                    if GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000 != 0 {
-                        stop_flag_clone.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        });
-
-        // Start speech with cancellation support
-        let text_owned = text.to_string();
-        let stop_flag_for_speech = stop_flag.clone();
-
-        let speech_result = self
-            .speech_manager
-            .speak_text_with_cancel(&text_owned, &speech_lang, stop_flag_for_speech)
-            .await;
-
-        // Cancel the Esc monitor task
-        esc_monitor.abort();
-
-        match speech_result {
-            Ok(_) => {
-                if stop_flag.load(Ordering::Relaxed) {
-                    println!("Speech cancelled by user (Esc)");
-                } else {
-                    // println!("Speech completed successfully.");
-                }
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("Speech error: {}", e);
-                Err(Box::new(e))
-            }
-        }
+        self.speech_manager
+            .speak_text_full(text, &self.config_manager)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.into())
     }
 }

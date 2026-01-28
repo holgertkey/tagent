@@ -296,7 +296,6 @@ async fn speak_clipboard(
 ) -> Result<(), Box<dyn Error>> {
     use crate::clipboard::ClipboardManager;
     use crate::window::WindowManager;
-    use colored::Colorize;
     use std::io::{self, Write};
 
     // Create clipboard manager
@@ -307,12 +306,13 @@ async fn speak_clipboard(
 
     // Read text from clipboard
     let text = clipboard.get_text()?;
-    if text.trim().is_empty() {
-        // Get config for prompt color
-        let config_manager =
-            ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
-        let config = config_manager.get_config();
 
+    // Get config
+    let config_manager =
+        ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
+    let config = config_manager.get_config();
+
+    if text.trim().is_empty() {
         // Clear current line and print error message
         print!("\r");
         io::stdout().flush().ok();
@@ -320,91 +320,50 @@ async fn speak_clipboard(
 
         // Show source language prompt on new line
         println!();
-        let source_prompt = format!("[{}]: ", config.source_language);
-        if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-            print!("{}", source_prompt.color(color));
-        } else {
-            print!("{}", source_prompt);
-        }
-        io::stdout().flush().ok();
-
+        print_source_prompt(&config);
         return Ok(());
     }
 
-    // Get language code from config
-    let config_manager =
-        ConfigManager::new(&ConfigManager::get_default_config_path()?.to_string_lossy())?;
-
-    let config = config_manager.get_config();
-
     // Show terminal window if configured
     if config.show_terminal_on_translate {
-        match WindowManager::new() {
-            Ok(window_manager) => {
-                if let Err(e) = window_manager.show_terminal() {
-                    println!("Failed to show terminal: {}", e);
-                }
-            }
-            Err(e) => {
-                println!("Failed to create window manager: {}", e);
-            }
+        if let Ok(window_manager) = WindowManager::new() {
+            let _ = window_manager.show_terminal();
         }
     }
 
-    // Detect or use source language
-    let (source_code, _target_code) = config_manager.get_language_codes();
-
-    // Use auto-detected language or source language for speech
-    let lang_code: String = if source_code == "auto" {
-        // Auto-detect language using translation provider
-        use crate::providers::create_provider;
-
-        match create_provider(&config.translate_provider) {
-            Ok(provider) => match provider.detect_language(&text).await {
-                Ok(detected) => detected,
-                Err(e) => {
-                    eprintln!("Language detection failed: {}, using 'en'", e);
-                    "en".to_string()
-                }
-            },
-            Err(e) => {
-                eprintln!("Failed to create provider for language detection: {}", e);
-                "en".to_string()
-            }
-        }
-    } else {
-        source_code.clone()
-    };
+    // Detect language
+    let (source_code, _) = config_manager.get_language_codes();
+    let speech_manager = SpeechManager::new();
+    let lang_code = speech_manager
+        .detect_speech_language(&text, &source_code, &config.translate_provider)
+        .await;
 
     // Clear any existing prompt and print speech info
     print!("\r");
     io::stdout().flush().ok();
 
-    // Show speech label
-    let speech_label = "[Speech]: ";
-    if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
-        print!("{}", speech_label.color(color));
-    } else {
-        print!("{}", speech_label);
-    }
-    println!("{}", text);
+    // Show speech label and speak
+    SpeechManager::print_speech_label(&text, Some(&config.target_prompt_color));
 
-    // Call speech directly (blocking until completion or cancellation)
-    let speech_manager = SpeechManager::new();
-    match speech_manager
+    // Call speech with provided stop flag (from hotkey handler)
+    if let Err(e) = speech_manager
         .speak_text_with_cancel(&text, &lang_code, stop_flag)
         .await
     {
-        Ok(_) => {
-            // Speech completed successfully
-        }
-        Err(e) => {
-            eprintln!("Speech error: {}", e);
-        }
+        eprintln!("Speech error: {}", e);
     }
 
     // Show source language prompt after speech completes
-    println!(); // Add empty line after speech
+    println!();
+    print_source_prompt(&config);
+    Ok(())
+}
+
+/// Print source language prompt with color
+fn print_source_prompt(config: &crate::config::Config) {
+    use colored::Colorize;
+    use std::io::{self, Write};
+
     let source_prompt = format!("[{}]: ", config.source_language);
     if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
         print!("{}", source_prompt.color(color));
@@ -412,8 +371,6 @@ async fn speak_clipboard(
         print!("{}", source_prompt);
     }
     io::stdout().flush().ok();
-
-    Ok(())
 }
 
 /// Normalize virtual key code (convert specific L/R codes to generic codes)
