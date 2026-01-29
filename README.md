@@ -1,11 +1,11 @@
-# Tagent Text Translator v0.10.0+004
+# Tagent Text Translator v0.10.0+005
 
-A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple double-Ctrl press or use the command line for quick translations.
+A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations.
 
 ## Features
 
 ### 🔥 **Unified Translation Modes**
-- **GUI Hotkeys**: Select text anywhere, press Ctrl+Ctrl, get instant translation
+- **GUI Hotkeys**: Select text anywhere, press Alt+Q, get instant translation
 - **Interactive Terminal**: Type text directly in the terminal prompt
 - **CLI Mode**: One-time translations from command line
 
@@ -71,7 +71,7 @@ tagent.exe
 ```
 This starts both:
 - **Interactive prompt** in the terminal
-- **GUI hotkeys** (Ctrl+Ctrl) for system-wide translation
+- **GUI hotkeys** (Alt+Q) for system-wide translation
 
 ### CLI Mode
 ```bash
@@ -100,9 +100,9 @@ tagent --config
 
 ### GUI Hotkeys (System-wide)
 
-**Translation Hotkey** (default: Ctrl+Ctrl)
+**Translation Hotkey** (default: Alt+Q)
 1. Select any text in any Windows application
-2. Press the translation hotkey (Ctrl+Ctrl by default)
+2. Press the translation hotkey (Alt+Q by default)
 3. Translation appears in terminal and copies to clipboard
 4. Paste anywhere with Ctrl+V
 
@@ -185,7 +185,7 @@ HistoryFile = C:\Users\<YourName>\AppData\Roaming\Tagent\translation_history.txt
 ;   - Single keys: F1-F12 (e.g., F9)
 ;   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
 ;   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
-TranslateHotkey = Ctrl+Ctrl
+TranslateHotkey = Alt+Q
 
 ; Text-to-speech hotkey (same formats as TranslateHotkey)
 SpeechHotkey = Alt+E
@@ -213,7 +213,7 @@ TranslateHotkey = Alt+Space     # Alt + Spacebar
 
 **Double-Press Patterns**
 ```ini
-TranslateHotkey = Ctrl+Ctrl     # Double-press Ctrl (default)
+TranslateHotkey = Ctrl+Ctrl     # Double-press Ctrl
 TranslateHotkey = Shift+Shift   # Double-press Shift
 TranslateHotkey = Alt+Alt       # Double-press Alt
 TranslateHotkey = F8+F8         # Double-press F8
@@ -337,7 +337,7 @@ tagent --config
 # Copy to Clipboard: Enabled
 # Save Translation History: Disabled
 # History File: translation_history.txt
-# Translation Hotkey: Ctrl+Ctrl
+# Translation Hotkey: Alt+Q
 # Speech Hotkey: Alt+E
 # Speech Hotkey Enabled: Yes
 ```
@@ -399,7 +399,7 @@ AutoPromptColor = Yellow
 ### Common Issues
 
 **"No selected text or clipboard is empty"**
-- Ensure text is properly selected before pressing Ctrl+Ctrl
+- Ensure text is properly selected before pressing the translation hotkey
 - Try selecting text again
 - Check if another application is interfering with clipboard
 
@@ -501,7 +501,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.10.0+004
+**Current Version**: v0.10.0+005
 
 **Recent Changes**:
 - Code quality improvements (fixed all Clippy warnings)
@@ -533,4 +533,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.10.0+004** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.10.0+005** - Fast, reliable, and feature-rich translation tool for Windows.

@@ -67,8 +67,8 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.10.0+004) built in Rust that provides three translation modes:
-1. **GUI Hotkeys**: System-wide configurable hotkey to translate selected text (default: Ctrl+Ctrl)
+**Tagent** is a Windows text translation tool (v0.10.0+005) built in Rust that provides three translation modes:
+1. **GUI Hotkeys**: System-wide configurable hotkey to translate selected text (default: Alt+Q)
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations
 
@@ -176,7 +176,7 @@ The application uses a **provider abstraction pattern** for translation services
 The application uses a fully configurable hotkey system for triggering translations. Users can customize the translation hotkey through the configuration file, with no hardcoded hotkey bindings in the code.
 
 **Configuration** (`[Hotkeys]` section in tagent.conf):
-- `TranslateHotkey`: Hotkey string specifying the key combination (default: "Ctrl+Ctrl")
+- `TranslateHotkey`: Hotkey string specifying the key combination (default: "Alt+Q")
 
 **Supported Hotkey Formats**:
 1. **Single keys**: `F1-F12` ONLY (other single keys require modifiers for safety)

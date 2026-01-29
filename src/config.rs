@@ -19,7 +19,7 @@ pub struct Config {
     pub target_prompt_color: String,      // Color for target language prompt
     pub dictionary_prompt_color: String,  // Color for dictionary prompt
     pub source_prompt_color: String,      // Color for source language prompt
-    pub translate_hotkey: String,         // Translation hotkey (e.g., "Ctrl+Ctrl", "Alt+Q", "F9")
+    pub translate_hotkey: String,         // Translation hotkey (e.g., "Alt+Q", "Ctrl+Ctrl", "F9")
     pub enable_text_to_speech: bool,      // Enable text-to-speech functionality
     pub speech_hotkey: String,            // Hotkey for speech (e.g., "Alt+E")
     pub enable_speech_hotkey: bool,       // Enable/disable speech hotkey
@@ -48,7 +48,7 @@ impl Default for Config {
             target_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
             source_prompt_color: "None".to_string(),          // Default no color for source
-            translate_hotkey: "Ctrl+Ctrl".to_string(),        // Default translation hotkey
+            translate_hotkey: "Alt+Q".to_string(),            // Default translation hotkey
             enable_text_to_speech: true,                      // TTS enabled by default
             speech_hotkey: "Alt+E".to_string(),               // Default speech hotkey
             enable_speech_hotkey: true,                       // Enable speech hotkey by default
@@ -213,10 +213,10 @@ HistoryFile = {}
 ;   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, Win+T, etc.
 ;     NOTE: Shift+Key is NOT allowed (interferes with text input)
 ;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
-;   - Double-press: Ctrl+Ctrl (default), F8+F8, Shift+Shift, Alt+Alt, etc.
+;   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.
 ; Examples:
+;   TranslateHotkey = Alt+Q (default)
 ;   TranslateHotkey = Ctrl+Ctrl
-;   TranslateHotkey = Alt+Q
 ;   TranslateHotkey = F9
 ;   TranslateHotkey = Alt+Space
 ;   TranslateHotkey = Ctrl+Shift+C
@@ -357,7 +357,7 @@ EnableSpeechHotkey = {}
             .get("Hotkeys")
             .and_then(|section| section.get("TranslateHotkey"))
             .cloned()
-            .unwrap_or_else(|| "Ctrl+Ctrl".to_string());
+            .unwrap_or_else(|| "Alt+Q".to_string());
 
         // Speech settings
         let enable_text_to_speech = parsed_config
@@ -524,7 +524,7 @@ EnableSpeechHotkey = {}
 
         println!("2. GUI Hotkeys (Any Application):");
         println!("   - Select text anywhere in Windows");
-        println!("   - Press configured hotkey (default: Ctrl+Ctrl)");
+        println!("   - Press configured hotkey (default: Alt+Q)");
         println!("   - Result copied to clipboard automatically");
         println!("   - Configure hotkeys in tagent.conf [Hotkeys] section");
         println!();
