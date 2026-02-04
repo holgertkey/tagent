@@ -125,7 +125,7 @@ fn show_unified_mode_info() {
     println!(
         r#"Commands: 
   /h (help), /c (config), /s (speech), /l (lang), 
-  /save (save config), /cls (clear), /q (quit)"#
+  /save (config), /cls (clear), /q (quit)"#
 
     );
     println!();
