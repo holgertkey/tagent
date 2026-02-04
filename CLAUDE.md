@@ -16,6 +16,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **IMPORTANT: When fixing bugs or errors in the code, ALWAYS write proper tests immediately to prevent regression.**
 
+- **Build Mode Selection**:
+  - **Debug mode** (`cargo build`): Use when only the build number changes (e.g., `+001` → `+002`)
+  - **Release mode** (`cargo build --release`): Use when the version number changes (e.g., `0.10.0` → `0.10.1` or `0.11.0`)
+
 
 ### Version Management
 
@@ -67,7 +71,7 @@ To change version: edit only `Cargo.toml`, then rebuild. All files will automati
 
 ## Project Overview
 
-**Tagent** is a Windows text translation tool (v0.10.0+005) built in Rust that provides three translation modes:
+**Tagent** is a Windows text translation tool (v0.10.0+006) built in Rust that provides three translation modes:
 1. **GUI Hotkeys**: System-wide configurable hotkey to translate selected text (default: Alt+Q)
 2. **Interactive Terminal**: Interactive prompt for typing translations
 3. **CLI Mode**: One-off command-line translations

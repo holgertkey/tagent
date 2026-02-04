@@ -518,16 +518,7 @@ impl Translator {
 
         // Check if mouse is over terminal, and wait until it moves away
         loop {
-            let is_mouse_over = self.window_manager.is_mouse_over_terminal();
-
-            #[cfg(debug_assertions)]
-            {
-                if is_mouse_over {
-                    println!("[DEBUG] Mouse is over terminal, delaying auto-hide...");
-                }
-            }
-
-            if !is_mouse_over {
+            if !self.window_manager.is_mouse_over_terminal() {
                 // Mouse is not over terminal, proceed with hiding
                 break;
             }

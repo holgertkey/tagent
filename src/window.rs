@@ -3,9 +3,6 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::{Win32::Foundation::*, Win32::System::Console::*, Win32::UI::WindowsAndMessaging::*};
 
-#[cfg(debug_assertions)]
-use std::io::Write;
-
 pub struct WindowManager {
     console_window: HWND,
 }
@@ -150,87 +147,20 @@ impl WindowManager {
     /// Check if mouse cursor is currently over the terminal window
     ///
     /// Returns true if the cursor is over the console window or any of its child windows.
-    /// Includes debug output when compiled in debug mode.
     #[allow(dead_code)]
     pub fn is_mouse_over_terminal(&self) -> bool {
         unsafe {
             // Get current cursor position
             let mut cursor_pos = POINT { x: 0, y: 0 };
             if GetCursorPos(&mut cursor_pos).is_err() {
-                #[cfg(debug_assertions)]
-                {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "[DEBUG] is_mouse_over_terminal: Failed to get cursor position"
-                    );
-                }
                 return false;
-            }
-
-            #[cfg(debug_assertions)]
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Cursor position = ({}, {})",
-                    cursor_pos.x,
-                    cursor_pos.y
-                );
             }
 
             // Get window at cursor position
             let window_at_cursor = WindowFromPoint(cursor_pos);
 
-            #[cfg(debug_assertions)]
-            {
-                // Get window titles for debugging
-                let mut buffer = [0u16; 256];
-
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Window at cursor = {:?}",
-                    window_at_cursor
-                );
-
-                GetWindowTextW(window_at_cursor, &mut buffer);
-                let cursor_title = OsString::from_wide(
-                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)],
-                )
-                .to_string_lossy()
-                .into_owned();
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Window at cursor title = '{}'",
-                    cursor_title
-                );
-
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Console window = {:?}",
-                    self.console_window
-                );
-
-                GetWindowTextW(self.console_window, &mut buffer);
-                let console_title = OsString::from_wide(
-                    &buffer[..buffer.iter().position(|&x| x == 0).unwrap_or(0)],
-                )
-                .to_string_lossy()
-                .into_owned();
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Console window title = '{}'",
-                    console_title
-                );
-            }
-
             // Direct match
             if window_at_cursor == self.console_window {
-                #[cfg(debug_assertions)]
-                {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "[DEBUG] is_mouse_over_terminal: Direct match - cursor is over terminal"
-                    );
-                }
                 return true;
             }
 
@@ -243,53 +173,13 @@ impl WindowManager {
             let console_root = GetAncestor(self.console_window, GA_ROOT);
             let console_parent = GetParent(self.console_window);
 
-            #[cfg(debug_assertions)]
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Root window = {:?}",
-                    root_window
-                );
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Root owner = {:?}",
-                    root_owner
-                );
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Parent window = {:?}",
-                    parent_window
-                );
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Console root = {:?}",
-                    console_root
-                );
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Console parent = {:?}",
-                    console_parent
-                );
-            }
-
             // Check various relationships
-            let is_over = root_window == self.console_window
+            root_window == self.console_window
                 || root_owner == self.console_window
                 || parent_window == self.console_window
                 || window_at_cursor == console_root
                 || window_at_cursor == console_parent
-                || root_window == console_root;
-
-            #[cfg(debug_assertions)]
-            {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "[DEBUG] is_mouse_over_terminal: Result = {}",
-                    is_over
-                );
-            }
-
-            is_over
+                || root_window == console_root
         }
     }
 }
