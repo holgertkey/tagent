@@ -5,7 +5,7 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.10.0+006] - 2026-01-29
+## [0.10.0+007] - 2026-01-29
 
 ### Changed
 - Default translation hotkey changed from `Ctrl+Ctrl` to `Alt+Q`
