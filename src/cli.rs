@@ -1,10 +1,8 @@
-use crate::config::ConfigManager;
+use crate::clipboard::ClipboardManager;
+use crate::config::{self, ConfigManager};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
-use chrono::{DateTime, Utc};
 use std::error::Error;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::sync::Arc;
 
 pub struct CliHandler {
@@ -15,9 +13,9 @@ pub struct CliHandler {
 
 impl CliHandler {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let translator = Translator::new()?;
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+        let translator = Translator::new_with_config(config_manager.clone())?;
         let speech_manager = SpeechManager::new();
 
         Ok(Self {
@@ -25,38 +23,6 @@ impl CliHandler {
             config_manager,
             speech_manager,
         })
-    }
-
-    /// Save translation history to file (CLI version)
-    fn save_translation_history(
-        &self,
-        original: &str,
-        translated: &str,
-        source_lang: &str,
-        target_lang: &str,
-        config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
-        if !config.save_translation_history {
-            return Ok(()); // История отключена
-        }
-
-        let timestamp: DateTime<Utc> = Utc::now();
-        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
-
-        let entry = format!(
-            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
-            formatted_time, source_lang, target_lang, original, translated
-        );
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&config.history_file)?;
-
-        file.write_all(entry.as_bytes())?;
-        file.flush()?; // Принудительно записываем на диск
-
-        Ok(())
     }
 
     /// Display CLI help information
@@ -152,7 +118,6 @@ impl CliHandler {
                 self.speak_text(&text_to_speak).await
             }
             "-q" => {
-                // Exit command for CLI mode (though it doesn't make much sense here)
                 println!("Exiting...");
                 Ok(())
             }
@@ -173,28 +138,29 @@ impl CliHandler {
         }
 
         // Load current configuration
-        self.config_manager.check_and_reload().ok(); // Ignore errors, use defaults
+        self.config_manager.check_and_reload().ok();
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
 
         // Check if it's a single word and dictionary feature is enabled
-        if config.show_dictionary && self.is_single_word(text) {
+        if config.show_dictionary && config::is_single_word(text) {
             match self
                 .translator
-                .get_dictionary_entry_public(text, &source_code, &target_code)
+                .get_dictionary_entry(text, &source_code, &target_code)
                 .await
             {
                 Ok(dictionary_info) => {
                     println!("{}", dictionary_info);
 
                     if config.copy_to_clipboard {
-                        if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
+                        let clipboard = ClipboardManager::new();
+                        if let Err(e) = clipboard.set_text(&dictionary_info) {
                             println!("Clipboard error: {}", e);
                         }
                     }
 
-                    // Сохраняем словарную статью в историю
-                    if let Err(e) = self.save_translation_history(
+                    // Save dictionary entry to history
+                    if let Err(e) = config::save_translation_history(
                         text,
                         &dictionary_info,
                         &source_code,
@@ -226,7 +192,6 @@ impl CliHandler {
         target_code: &str,
         config: &crate::config::Config,
     ) -> Result<(), Box<dyn Error>> {
-        // Perform translation
         match self
             .translator
             .translate_text_public(text, source_code, target_code)
@@ -236,11 +201,12 @@ impl CliHandler {
                 println!("{}", translated_text);
 
                 if config.copy_to_clipboard {
-                    self.copy_to_clipboard(&translated_text).ok(); // Ignore clipboard errors
+                    let clipboard = ClipboardManager::new();
+                    clipboard.set_text(&translated_text).ok();
                 }
 
-                // Сохраняем перевод в историю
-                if let Err(e) = self.save_translation_history(
+                // Save translation to history
+                if let Err(e) = config::save_translation_history(
                     text,
                     &translated_text,
                     source_code,
@@ -257,23 +223,6 @@ impl CliHandler {
         }
 
         Ok(())
-    }
-
-    /// Check if text is a single word
-    fn is_single_word(&self, text: &str) -> bool {
-        let cleaned = text.trim_matches(|c: char| !c.is_alphabetic());
-        !cleaned.is_empty()
-            && !cleaned.contains(' ')
-            && cleaned
-                .chars()
-                .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
-    }
-
-    /// Copy text to clipboard
-    fn copy_to_clipboard(&self, text: &str) -> Result<(), Box<dyn Error>> {
-        use crate::clipboard::ClipboardManager;
-        let clipboard = ClipboardManager::new();
-        clipboard.set_text(text)
     }
 
     /// Speak text using text-to-speech

@@ -5,10 +5,20 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.10.0+007] - 2026-01-29
+## [0.11.0+000] - 2026-02-05
 
 ### Changed
 - Default translation hotkey changed from `Ctrl+Ctrl` to `Alt+Q`
+- Major refactoring: eliminated code duplication across modules
+  - `save_translation_history()` consolidated into shared function in `config.rs` (was duplicated 3x)
+  - `is_single_word()` consolidated into shared function in `config.rs` (was duplicated 3x)
+  - Added `print_colored()` shared helper to eliminate 9+ repeated color-printing patterns
+  - Merged duplicate `get_dictionary_entry`/`get_dictionary_entry_cli`/`get_dictionary_entry_public` into single public `get_dictionary_entry` method
+  - Fixed `Arc<Box<dyn TranslationProvider>>` double indirection to `Arc<dyn TranslationProvider>`
+  - Deduplicated keyboard hotkey handlers (~280 lines to ~130 lines) via `HotkeyState` struct
+  - Fixed `CliHandler` creating duplicate `ConfigManager` (now shares one instance with `Translator`)
+  - Removed dead code: `InteractiveMode::new()`, `Translator::new()`, and 4 unused `WindowManager` methods
+  - Translated all Russian comments to English
 
 ### Added
 - `/save` command in interactive mode to save current configuration to file

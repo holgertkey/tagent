@@ -1,4 +1,4 @@
-use crate::config::{ConfigManager, HotkeyParser, HotkeyType};
+use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use std::collections::HashMap;
@@ -14,23 +14,184 @@ use windows::{
 static TRANSLATOR: OnceLock<Arc<Translator>> = OnceLock::new();
 static IS_PROCESSING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-static TRANSLATE_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
 static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
-static LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
-static LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
-static LAST_KEY_INTERRUPTED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
-// Speech hotkey variables
-static SPEECH_HOTKEY_CONFIG: OnceLock<Arc<Mutex<Option<HotkeyType>>>> = OnceLock::new();
+// Hotkey state instances for translate and speech
+static TRANSLATE_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
+static SPEECH_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
+
+// Speech-specific state
 static SPEECH_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-// Note: Speech hotkeys use shared MODIFIER_STATE (declared above with alternative hotkey vars)
-static SPEECH_LAST_KEY_TIME: OnceLock<Arc<Mutex<Option<Instant>>>> = OnceLock::new();
-static SPEECH_LAST_KEY_PRESSED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
-static SPEECH_LAST_KEY_INTERRUPTED: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static CONFIG_MANAGER: OnceLock<Arc<ConfigManager>> = OnceLock::new();
+
+/// Encapsulates hotkey detection state for a single hotkey.
+/// Eliminates duplication between translate and speech hotkey handlers.
+struct HotkeyState {
+    config: Arc<Mutex<Option<HotkeyType>>>,
+    last_key_time: Arc<Mutex<Option<Instant>>>,
+    last_key_pressed: Arc<Mutex<bool>>,
+    last_key_interrupted: Arc<Mutex<bool>>,
+}
+
+impl HotkeyState {
+    fn new(hotkey: Option<HotkeyType>) -> Self {
+        Self {
+            config: Arc::new(Mutex::new(hotkey)),
+            last_key_time: Arc::new(Mutex::new(None)),
+            last_key_pressed: Arc::new(Mutex::new(false)),
+            last_key_interrupted: Arc::new(Mutex::new(false)),
+        }
+    }
+
+    /// Handle hotkey detection for key events.
+    /// Returns true if the event was consumed (should be blocked).
+    /// Calls `trigger_fn` when the hotkey combination is activated.
+    fn handle(&self, vk_code: u32, is_key_down: bool, trigger_fn: unsafe fn()) -> bool {
+        let hotkey_opt = match self.config.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return false,
+        };
+
+        let hotkey = match hotkey_opt.as_ref() {
+            Some(h) => h,
+            None => return false,
+        };
+
+        match hotkey {
+            HotkeyType::SingleKey { vk_code: target_vk } => {
+                if is_key_down && vk_code == *target_vk {
+                    unsafe { trigger_fn() };
+                    return true;
+                }
+            }
+
+            HotkeyType::ModifierCombo { modifiers, key } => {
+                if let Some(modifier_state) = MODIFIER_STATE.get() {
+                    if let Ok(mut state) = modifier_state.lock() {
+                        let normalized_vk = normalize_vk_code(vk_code);
+
+                        // Update modifier state and block modifier events
+                        if modifiers.contains(&normalized_vk) {
+                            state.insert(normalized_vk, is_key_down);
+                            return true;
+                        }
+
+                        // Check if all modifiers are pressed and the key is pressed
+                        if is_key_down && vk_code == *key {
+                            let all_modifiers_pressed = modifiers
+                                .iter()
+                                .all(|m| state.get(m).copied().unwrap_or(false));
+
+                            if all_modifiers_pressed {
+                                unsafe { trigger_fn() };
+                                return true;
+                            }
+                        }
+
+                        // Clean up state on key up
+                        if !is_key_down {
+                            state.insert(normalized_vk, false);
+                        }
+                    }
+                }
+            }
+
+            HotkeyType::DoublePress {
+                vk_code: target_vk,
+                min_interval_ms,
+                max_interval_ms,
+            } => {
+                let normalized_vk = normalize_vk_code(vk_code);
+                if normalized_vk == *target_vk {
+                    if is_key_down {
+                        // Check if this is a key repeat (auto-repeat from holding key down)
+                        if let Ok(mut is_pressed) = self.last_key_pressed.lock() {
+                            if *is_pressed {
+                                return false;
+                            }
+                            *is_pressed = true;
+                        }
+
+                        if let Ok(mut last_time) = self.last_key_time.lock() {
+                            let now = Instant::now();
+
+                            match *last_time {
+                                Some(last) => {
+                                    let elapsed = now.duration_since(last);
+
+                                    // Check if sequence was interrupted
+                                    let was_interrupted = self
+                                        .last_key_interrupted
+                                        .lock()
+                                        .ok()
+                                        .map_or(false, |f| *f);
+
+                                    if !was_interrupted
+                                        && elapsed >= Duration::from_millis(*min_interval_ms)
+                                        && elapsed < Duration::from_millis(*max_interval_ms)
+                                    {
+                                        unsafe { trigger_fn() };
+                                        *last_time = None;
+                                        return true;
+                                    } else if elapsed >= Duration::from_millis(*max_interval_ms)
+                                        || was_interrupted
+                                    {
+                                        // Start new sequence
+                                        *last_time = Some(now);
+                                        if let Ok(mut flag) = self.last_key_interrupted.lock() {
+                                            *flag = false;
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // First press - start new sequence
+                                    *last_time = Some(now);
+                                    if let Ok(mut flag) = self.last_key_interrupted.lock() {
+                                        *flag = false;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Key up event - mark key as not pressed
+                        if let Ok(mut is_pressed) = self.last_key_pressed.lock() {
+                            *is_pressed = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Mark double-press sequence as interrupted if another key was pressed
+    fn mark_interrupted_if_needed(&self, vk_code: u32) {
+        let hotkey_opt = match self.config.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return,
+        };
+
+        if let Some(HotkeyType::DoublePress {
+            vk_code: target_vk, ..
+        }) = hotkey_opt.as_ref()
+        {
+            let normalized_vk = normalize_vk_code(vk_code);
+            if normalized_vk != *target_vk {
+                if let Ok(time) = self.last_key_time.lock() {
+                    if time.is_some() {
+                        if let Ok(mut flag) = self.last_key_interrupted.lock() {
+                            *flag = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub struct KeyboardHook;
 
@@ -48,16 +209,18 @@ impl KeyboardHook {
             .set(config_manager.clone())
             .map_err(|_| "ConfigManager already initialized")?;
 
-        let is_processing = Arc::new(Mutex::new(false));
-
         IS_PROCESSING
-            .set(is_processing)
+            .set(Arc::new(Mutex::new(false)))
             .map_err(|_| "IsProcessing already initialized")?;
         SHOULD_EXIT
             .set(should_exit)
             .map_err(|_| "ShouldExit already initialized")?;
 
-        // Initialize translation hotkey configuration
+        MODIFIER_STATE
+            .set(Arc::new(Mutex::new(HashMap::new())))
+            .map_err(|_| "ModifierState already initialized")?;
+
+        // Initialize translation hotkey
         let config = config_manager.get_config();
 
         let translate_hotkey = match HotkeyParser::parse(&config.translate_hotkey) {
@@ -82,27 +245,11 @@ impl KeyboardHook {
             }
         };
 
-        TRANSLATE_HOTKEY_CONFIG
-            .set(Arc::new(Mutex::new(translate_hotkey)))
-            .map_err(|_| "TranslateHotkeyConfig already initialized")?;
+        TRANSLATE_HOTKEY
+            .set(HotkeyState::new(translate_hotkey))
+            .map_err(|_| "TranslateHotkey already initialized")?;
 
-        MODIFIER_STATE
-            .set(Arc::new(Mutex::new(HashMap::new())))
-            .map_err(|_| "ModifierState already initialized")?;
-
-        LAST_KEY_TIME
-            .set(Arc::new(Mutex::new(None)))
-            .map_err(|_| "LastKeyTime already initialized")?;
-
-        LAST_KEY_PRESSED
-            .set(Arc::new(Mutex::new(false)))
-            .map_err(|_| "LastKeyPressed already initialized")?;
-
-        LAST_KEY_INTERRUPTED
-            .set(Arc::new(Mutex::new(false)))
-            .map_err(|_| "LastKeyInterrupted already initialized")?;
-
-        // Initialize speech hotkey configuration
+        // Initialize speech hotkey
         let speech_hotkey = if config.enable_speech_hotkey && config.enable_text_to_speech {
             match HotkeyParser::parse(&config.speech_hotkey) {
                 Ok(hotkey) => match HotkeyParser::validate_hotkey(&hotkey) {
@@ -129,9 +276,9 @@ impl KeyboardHook {
             None
         };
 
-        SPEECH_HOTKEY_CONFIG
-            .set(Arc::new(Mutex::new(speech_hotkey)))
-            .map_err(|_| "SpeechHotkeyConfig already initialized")?;
+        SPEECH_HOTKEY
+            .set(HotkeyState::new(speech_hotkey))
+            .map_err(|_| "SpeechHotkey already initialized")?;
 
         SPEECH_HOTKEY_ENABLED
             .set(Arc::new(AtomicBool::new(config.enable_speech_hotkey)))
@@ -140,20 +287,6 @@ impl KeyboardHook {
         SPEECH_ENABLED
             .set(Arc::new(AtomicBool::new(config.enable_text_to_speech)))
             .map_err(|_| "SpeechEnabled already initialized")?;
-
-        // Note: Speech hotkeys use shared MODIFIER_STATE, no need for separate state
-
-        SPEECH_LAST_KEY_TIME
-            .set(Arc::new(Mutex::new(None)))
-            .map_err(|_| "SpeechLastKeyTime already initialized")?;
-
-        SPEECH_LAST_KEY_PRESSED
-            .set(Arc::new(Mutex::new(false)))
-            .map_err(|_| "SpeechLastKeyPressed already initialized")?;
-
-        SPEECH_LAST_KEY_INTERRUPTED
-            .set(Arc::new(Mutex::new(false)))
-            .map_err(|_| "SpeechLastKeyInterrupted already initialized")?;
 
         IS_SPEAKING
             .set(Arc::new(Mutex::new(false)))
@@ -179,7 +312,6 @@ impl KeyboardHook {
                 // Check if we should exit
                 if let Some(should_exit) = SHOULD_EXIT.get() {
                     if should_exit.load(Ordering::Relaxed) {
-                        // println!("Exit signal detected, breaking message loop");
                         break;
                     }
                 }
@@ -212,7 +344,6 @@ impl KeyboardHook {
                 }
             }
 
-            // println!("Unhooking keyboard hook");
             UnhookWindowsHookEx(hook)?;
         }
 
@@ -225,7 +356,7 @@ unsafe fn trigger_translation() {
     if let Some(is_processing) = IS_PROCESSING.get() {
         if let Ok(mut processing) = is_processing.lock() {
             if *processing {
-                return; // Already processing
+                return;
             }
             *processing = true;
         }
@@ -263,7 +394,7 @@ unsafe fn trigger_speech() {
         if let Ok(mut speaking) = is_speaking.lock() {
             if *speaking {
                 println!("Already speaking, ignoring request");
-                return; // Already speaking
+                return;
             }
             *speaking = true;
         }
@@ -302,13 +433,8 @@ async fn speak_clipboard(
     use crate::window::WindowManager;
     use std::io::{self, Write};
 
-    // Create clipboard manager
     let clipboard = ClipboardManager::new();
-
-    // Copy selected text to clipboard
     clipboard.copy_selected_text()?;
-
-    // Read text from clipboard
     let text = clipboard.get_text()?;
 
     // Get config from shared ConfigManager
@@ -321,12 +447,9 @@ async fn speak_clipboard(
     let config = config_manager.get_config();
 
     if text.trim().is_empty() {
-        // Clear current line and print error message
         print!("\r");
         io::stdout().flush().ok();
         println!("Clipboard is empty, nothing to speak");
-
-        // Show source language prompt on new line
         println!();
         print_source_prompt(&config);
         return Ok(());
@@ -353,7 +476,6 @@ async fn speak_clipboard(
     // Show speech label and speak
     SpeechManager::print_speech_label(&text, Some(&config.target_prompt_color));
 
-    // Call speech with provided stop flag (from hotkey handler)
     if let Err(e) = speech_manager
         .speak_text_with_cancel(&text, &lang_code, stop_flag)
         .await
@@ -368,16 +490,11 @@ async fn speak_clipboard(
 }
 
 /// Print source language prompt with color
-fn print_source_prompt(config: &crate::config::Config) {
-    use colored::Colorize;
+fn print_source_prompt(cfg: &crate::config::Config) {
     use std::io::{self, Write};
 
-    let source_prompt = format!("[{}]: ", config.source_language);
-    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-        print!("{}", source_prompt.color(color));
-    } else {
-        print!("{}", source_prompt);
-    }
+    let source_prompt = format!("[{}]: ", cfg.source_language);
+    config::print_colored(&source_prompt, &cfg.source_prompt_color);
     io::stdout().flush().ok();
 }
 
@@ -391,344 +508,6 @@ fn normalize_vk_code(vk_code: u32) -> u32 {
     }
 }
 
-/// Mark double-press sequence as interrupted if another key was pressed
-unsafe fn mark_double_press_interrupted_if_needed(vk_code: u32) {
-    let normalized_vk = normalize_vk_code(vk_code);
-
-    // Check translate hotkey
-    if let Some(hotkey_config) = TRANSLATE_HOTKEY_CONFIG.get() {
-        if let Ok(hotkey_opt) = hotkey_config.lock() {
-            if let Some(HotkeyType::DoublePress {
-                vk_code: target_vk,
-                ..
-            }) = hotkey_opt.as_ref()
-            {
-                // If this is not the target key and we have an active timer, mark as interrupted
-                if normalized_vk != *target_vk {
-                    if let Some(last_time) = LAST_KEY_TIME.get() {
-                        if let Ok(time) = last_time.lock() {
-                            if time.is_some() {
-                                // We have an active timer, mark as interrupted
-                                if let Some(interrupted) = LAST_KEY_INTERRUPTED.get() {
-                                    if let Ok(mut flag) = interrupted.lock() {
-                                        *flag = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Check speech hotkey
-    if let Some(hotkey_config) = SPEECH_HOTKEY_CONFIG.get() {
-        if let Ok(hotkey_opt) = hotkey_config.lock() {
-            if let Some(HotkeyType::DoublePress {
-                vk_code: target_vk,
-                ..
-            }) = hotkey_opt.as_ref()
-            {
-                // If this is not the target key and we have an active timer, mark as interrupted
-                if normalized_vk != *target_vk {
-                    if let Some(last_time) = SPEECH_LAST_KEY_TIME.get() {
-                        if let Ok(time) = last_time.lock() {
-                            if time.is_some() {
-                                // We have an active timer, mark as interrupted
-                                if let Some(interrupted) = SPEECH_LAST_KEY_INTERRUPTED.get() {
-                                    if let Ok(mut flag) = interrupted.lock() {
-                                        *flag = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Handle speech hotkey detection
-unsafe fn handle_speech_hotkey(vk_code: u32, is_key_down: bool) -> bool {
-    if let Some(hotkey_config) = SPEECH_HOTKEY_CONFIG.get() {
-        if let Ok(hotkey_opt) = hotkey_config.lock() {
-            if let Some(hotkey) = hotkey_opt.as_ref() {
-                match hotkey {
-                    HotkeyType::SingleKey { vk_code: target_vk } => {
-                        if is_key_down && vk_code == *target_vk {
-                            trigger_speech();
-                            return true;
-                        }
-                    }
-
-                    HotkeyType::ModifierCombo { modifiers, key } => {
-                        // Use shared MODIFIER_STATE instead of separate state
-                        if let Some(modifier_state) = MODIFIER_STATE.get() {
-                            if let Ok(mut state) = modifier_state.lock() {
-                                let normalized_vk = normalize_vk_code(vk_code);
-
-                                // Update modifier state and block modifier events
-                                if modifiers.contains(&normalized_vk) {
-                                    state.insert(normalized_vk, is_key_down);
-                                    // Block modifier to prevent system sounds and menu activation
-                                    return true;
-                                }
-
-                                // Check if all modifiers are pressed and the key is pressed
-                                if is_key_down && vk_code == *key {
-                                    let all_modifiers_pressed = modifiers
-                                        .iter()
-                                        .all(|m| state.get(m).copied().unwrap_or(false));
-
-                                    if all_modifiers_pressed {
-                                        trigger_speech();
-                                        return true;
-                                    }
-                                }
-
-                                // Clean up state on key up
-                                if !is_key_down {
-                                    state.insert(normalized_vk, false);
-                                }
-                            }
-                        }
-                    }
-
-                    HotkeyType::DoublePress {
-                        vk_code: target_vk,
-                        min_interval_ms,
-                        max_interval_ms,
-                    } => {
-                        let normalized_vk = normalize_vk_code(vk_code);
-                        if normalized_vk == *target_vk {
-                            if is_key_down {
-                                // Check if this is a key repeat (auto-repeat from holding key down)
-                                if let Some(key_pressed) = SPEECH_LAST_KEY_PRESSED.get() {
-                                    if let Ok(mut is_pressed) = key_pressed.lock() {
-                                        if *is_pressed {
-                                            // This is an auto-repeat event, ignore it
-                                            return false;
-                                        }
-                                        // Mark key as pressed
-                                        *is_pressed = true;
-                                    }
-                                }
-
-                                if let Some(last_key_time) = SPEECH_LAST_KEY_TIME.get() {
-                                    if let Ok(mut last_time) = last_key_time.lock() {
-                                        let now = Instant::now();
-
-                                        match *last_time {
-                                            Some(last) => {
-                                                let elapsed = now.duration_since(last);
-
-                                                // Check if sequence was interrupted
-                                                let was_interrupted =
-                                                    if let Some(interrupted) =
-                                                        SPEECH_LAST_KEY_INTERRUPTED.get()
-                                                    {
-                                                        interrupted.lock().ok().map_or(false, |f| *f)
-                                                    } else {
-                                                        false
-                                                    };
-
-                                                if !was_interrupted
-                                                    && elapsed >= Duration::from_millis(*min_interval_ms)
-                                                    && elapsed
-                                                        < Duration::from_millis(*max_interval_ms)
-                                                {
-                                                    trigger_speech();
-                                                    *last_time = None;
-                                                    return true;
-                                                } else if elapsed
-                                                    >= Duration::from_millis(*max_interval_ms)
-                                                    || was_interrupted
-                                                {
-                                                    // Start new sequence
-                                                    *last_time = Some(now);
-                                                    // Reset interrupted flag
-                                                    if let Some(interrupted) =
-                                                        SPEECH_LAST_KEY_INTERRUPTED.get()
-                                                    {
-                                                        if let Ok(mut flag) = interrupted.lock() {
-                                                            *flag = false;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                // First press - start new sequence
-                                                *last_time = Some(now);
-                                                // Reset interrupted flag
-                                                if let Some(interrupted) =
-                                                    SPEECH_LAST_KEY_INTERRUPTED.get()
-                                                {
-                                                    if let Ok(mut flag) = interrupted.lock() {
-                                                        *flag = false;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Key up event - mark key as not pressed
-                                if let Some(key_pressed) = SPEECH_LAST_KEY_PRESSED.get() {
-                                    if let Ok(mut is_pressed) = key_pressed.lock() {
-                                        *is_pressed = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
-/// Handle translation hotkey detection
-unsafe fn handle_translate_hotkey(vk_code: u32, is_key_down: bool) -> bool {
-    if let Some(hotkey_config) = TRANSLATE_HOTKEY_CONFIG.get() {
-        if let Ok(hotkey_opt) = hotkey_config.lock() {
-            if let Some(hotkey) = hotkey_opt.as_ref() {
-                match hotkey {
-                    HotkeyType::SingleKey { vk_code: target_vk } => {
-                        if is_key_down && vk_code == *target_vk {
-                            trigger_translation();
-                            return true;
-                        }
-                    }
-
-                    HotkeyType::ModifierCombo { modifiers, key } => {
-                        if let Some(modifier_state) = MODIFIER_STATE.get() {
-                            if let Ok(mut state) = modifier_state.lock() {
-                                let normalized_vk = normalize_vk_code(vk_code);
-
-                                // Update modifier state and block modifier events to prevent system sounds
-                                if modifiers.contains(&normalized_vk) {
-                                    state.insert(normalized_vk, is_key_down);
-                                    // Block modifier key events (especially Alt) to prevent menu activation
-                                    // and system sounds
-                                    return true;
-                                }
-
-                                // Check if all modifiers are pressed and the key is pressed
-                                if is_key_down && vk_code == *key {
-                                    let all_modifiers_pressed = modifiers
-                                        .iter()
-                                        .all(|m| state.get(m).copied().unwrap_or(false));
-
-                                    if all_modifiers_pressed {
-                                        trigger_translation();
-                                        return true;
-                                    }
-                                }
-
-                                // Clean up state on key up
-                                if !is_key_down {
-                                    state.insert(normalized_vk, false);
-                                }
-                            }
-                        }
-                    }
-
-                    HotkeyType::DoublePress {
-                        vk_code: target_vk,
-                        min_interval_ms,
-                        max_interval_ms,
-                    } => {
-                        let normalized_vk = normalize_vk_code(vk_code);
-                        if normalized_vk == *target_vk {
-                            if is_key_down {
-                                // Check if this is a key repeat (auto-repeat from holding key down)
-                                if let Some(key_pressed) = LAST_KEY_PRESSED.get() {
-                                    if let Ok(mut is_pressed) = key_pressed.lock() {
-                                        if *is_pressed {
-                                            // This is an auto-repeat event, ignore it
-                                            return false;
-                                        }
-                                        // Mark key as pressed
-                                        *is_pressed = true;
-                                    }
-                                }
-
-                                if let Some(last_key_time) = LAST_KEY_TIME.get() {
-                                    if let Ok(mut last_time) = last_key_time.lock() {
-                                        let now = Instant::now();
-
-                                        match *last_time {
-                                            Some(last) => {
-                                                let elapsed = now.duration_since(last);
-
-                                                // Check if sequence was interrupted
-                                                let was_interrupted =
-                                                    if let Some(interrupted) =
-                                                        LAST_KEY_INTERRUPTED.get()
-                                                    {
-                                                        interrupted.lock().ok().map_or(false, |f| *f)
-                                                    } else {
-                                                        false
-                                                    };
-
-                                                if !was_interrupted
-                                                    && elapsed >= Duration::from_millis(*min_interval_ms)
-                                                    && elapsed
-                                                        < Duration::from_millis(*max_interval_ms)
-                                                {
-                                                    trigger_translation();
-                                                    *last_time = None;
-                                                    return true;
-                                                } else if elapsed
-                                                    >= Duration::from_millis(*max_interval_ms)
-                                                    || was_interrupted
-                                                {
-                                                    // Start new sequence
-                                                    *last_time = Some(now);
-                                                    // Reset interrupted flag
-                                                    if let Some(interrupted) =
-                                                        LAST_KEY_INTERRUPTED.get()
-                                                    {
-                                                        if let Ok(mut flag) = interrupted.lock() {
-                                                            *flag = false;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                // First press - start new sequence
-                                                *last_time = Some(now);
-                                                // Reset interrupted flag
-                                                if let Some(interrupted) = LAST_KEY_INTERRUPTED.get()
-                                                {
-                                                    if let Ok(mut flag) = interrupted.lock() {
-                                                        *flag = false;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Key up event - mark key as not pressed
-                                if let Some(key_pressed) = LAST_KEY_PRESSED.get() {
-                                    if let Ok(mut is_pressed) = key_pressed.lock() {
-                                        *is_pressed = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
 unsafe extern "system" fn keyboard_hook_proc(
     n_code: i32,
     w_param: WPARAM,
@@ -738,67 +517,74 @@ unsafe extern "system" fn keyboard_hook_proc(
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
 
         // Ignore injected events (simulated by keybd_event, SendInput, etc.)
-        // This allows our copy_selected_text() Ctrl+C simulation to work
         const LLKHF_INJECTED: u32 = 0x10;
         if (kbd_struct.flags.0 & LLKHF_INJECTED) != 0 {
             return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
         }
 
         if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
-            // Mark double-press sequence as interrupted if another key was pressed
-            mark_double_press_interrupted_if_needed(kbd_struct.vkCode);
+            // Mark double-press sequences as interrupted if another key was pressed
+            if let Some(state) = TRANSLATE_HOTKEY.get() {
+                state.mark_interrupted_if_needed(kbd_struct.vkCode);
+            }
+            if let Some(state) = SPEECH_HOTKEY.get() {
+                state.mark_interrupted_if_needed(kbd_struct.vkCode);
+            }
 
             // Handle Esc key to stop speech
             if kbd_struct.vkCode == VK_ESCAPE.0 as u32 {
                 if let Some(is_speaking) = IS_SPEAKING.get() {
                     if let Ok(speaking) = is_speaking.lock() {
                         if *speaking {
-                            // Stop speech playback
                             if let Some(stop_flag) = SHOULD_STOP_SPEECH.get() {
                                 stop_flag.store(true, Ordering::Relaxed);
                                 println!("Speech cancelled by user (Esc)");
                             }
-                            return LRESULT(1); // Block Esc to prevent other actions
+                            return LRESULT(1);
                         }
                     }
                 }
             }
 
             // Handle translation hotkey
-            if handle_translate_hotkey(kbd_struct.vkCode, true) {
-                // Block the event - don't pass it to other applications
-                return LRESULT(1);
+            if let Some(state) = TRANSLATE_HOTKEY.get() {
+                if state.handle(kbd_struct.vkCode, true, trigger_translation) {
+                    return LRESULT(1);
+                }
             }
 
             // Handle speech hotkey if enabled
             if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
                 if speech_enabled.load(Ordering::Relaxed) {
                     if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed)
-                            && handle_speech_hotkey(kbd_struct.vkCode, true)
-                        {
-                            // Block the event - don't pass it to other applications
-                            return LRESULT(1);
+                        if tts_enabled.load(Ordering::Relaxed) {
+                            if let Some(state) = SPEECH_HOTKEY.get() {
+                                if state.handle(kbd_struct.vkCode, true, trigger_speech) {
+                                    return LRESULT(1);
+                                }
+                            }
                         }
                     }
                 }
             }
         } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
             // Handle translation hotkey key up (for modifier state tracking)
-            if handle_translate_hotkey(kbd_struct.vkCode, false) {
-                // Block the key up event to match the blocked key down event
-                return LRESULT(1);
+            if let Some(state) = TRANSLATE_HOTKEY.get() {
+                if state.handle(kbd_struct.vkCode, false, trigger_translation) {
+                    return LRESULT(1);
+                }
             }
 
             // Handle speech hotkey key up (for modifier state tracking)
             if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
                 if speech_enabled.load(Ordering::Relaxed) {
                     if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed)
-                            && handle_speech_hotkey(kbd_struct.vkCode, false)
-                        {
-                            // Block the key up event to match the blocked key down event
-                            return LRESULT(1);
+                        if tts_enabled.load(Ordering::Relaxed) {
+                            if let Some(state) = SPEECH_HOTKEY.get() {
+                                if state.handle(kbd_struct.vkCode, false, trigger_speech) {
+                                    return LRESULT(1);
+                                }
+                            }
                         }
                     }
                 }

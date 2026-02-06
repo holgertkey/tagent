@@ -1,12 +1,9 @@
-// interactive.rs
 use crate::cli::CliHandler;
-use crate::config::ConfigManager;
+use crate::clipboard::ClipboardManager;
+use crate::config::{self, ConfigManager};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
-use chrono::{DateTime, Utc};
-use colored::Colorize;
 use std::error::Error;
-use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,12 +16,6 @@ pub struct InteractiveMode {
 }
 
 impl InteractiveMode {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        let config_path = ConfigManager::get_default_config_path()?;
-        let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
-        Self::new_with_config(config_manager)
-    }
-
     pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
         let translator = Translator::new_with_config(config_manager.clone())?;
         let should_exit = Arc::new(AtomicBool::new(false));
@@ -42,44 +33,11 @@ impl InteractiveMode {
         self.should_exit.clone()
     }
 
-    /// Save translation history to file (Interactive version)
-    fn save_translation_history(
-        &self,
-        original: &str,
-        translated: &str,
-        source_lang: &str,
-        target_lang: &str,
-        config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
-        if !config.save_translation_history {
-            return Ok(()); // История отключена
-        }
-
-        let timestamp: DateTime<Utc> = Utc::now();
-        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
-
-        let entry = format!(
-            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
-            formatted_time, source_lang, target_lang, original, translated
-        );
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&config.history_file)?;
-
-        file.write_all(entry.as_bytes())?;
-        file.flush()?; // Принудительно записываем на диск
-
-        Ok(())
-    }
-
     /// Start interactive translation mode (unified with GUI)
     pub async fn start(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         loop {
             // Check if we should exit
             if self.should_exit.load(Ordering::Relaxed) {
-                // println!("\nExiting program...");
                 break;
             }
 
@@ -90,13 +48,7 @@ impl InteractiveMode {
 
             // Show colored prompt
             let prompt = format!("[{}]: ", config.source_language);
-
-            // Use source prompt color for source language
-            if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                print!("{}", prompt.color(color));
-            } else {
-                print!("{}", prompt); // No color if None or parsing fails
-            }
+            config::print_colored(&prompt, &config.source_prompt_color);
             io::stdout()
                 .flush()
                 .map_err(|e| format!("IO error: {}", e))?;
@@ -109,7 +61,7 @@ impl InteractiveMode {
 
                     // Handle commands first
                     if self.handle_command(text).await? {
-                        continue; // Command was handled, continue to next iteration
+                        continue;
                     }
 
                     // If not a command, try to translate the text
@@ -211,7 +163,7 @@ impl InteractiveMode {
             if let Err(e) = self.speak_interactive_text(speech_text).await {
                 println!("Speech error: {}", e);
             }
-            println!(); // Add spacing
+            println!();
             Ok(true)
         } else {
             match text {
@@ -227,13 +179,13 @@ impl InteractiveMode {
 
                 // Help commands (only with slash)
                 "/h" | "/help" | "/?" => {
-                    self.show_unified_help();
+                    ConfigManager::display_help();
                     Ok(true)
                 }
 
                 // Config commands (only with slash)
                 "/c" | "/config" => {
-                    if let Err(e) = self.show_current_config() {
+                    if let Err(e) = self.config_manager.display_config() {
                         println!("Config error: {}", e);
                     }
                     Ok(true)
@@ -273,18 +225,6 @@ impl InteractiveMode {
         }
     }
 
-    /// Show unified mode help
-    fn show_unified_help(&self) {
-        ConfigManager::display_help();
-    }
-
-    /// Show current configuration in unified mode
-    fn show_current_config(&self) -> Result<(), String> {
-        self.config_manager
-            .display_config()
-            .map_err(|e| format!("Config display error: {}", e))
-    }
-
     /// Translate text in interactive mode
     async fn translate_interactive_text(
         &self,
@@ -294,31 +234,26 @@ impl InteractiveMode {
         config: &crate::config::Config,
     ) -> Result<(), String> {
         // Check if it's a single word and dictionary feature is enabled
-        if config.show_dictionary && self.is_single_word(text) {
+        if config.show_dictionary && config::is_single_word(text) {
             match self
                 .translator
-                .get_dictionary_entry_public(text, source_code, target_code)
+                .get_dictionary_entry(text, source_code, target_code)
                 .await
             {
                 Ok(dictionary_info) => {
                     // Print colored dictionary label
-                    let dict_label = "[Word]: ";
-                    if let Some(color) = ConfigManager::parse_color(&config.dictionary_prompt_color)
-                    {
-                        print!("{}", dict_label.color(color));
-                    } else {
-                        print!("{}", dict_label);
-                    }
+                    config::print_colored("[Word]: ", &config.dictionary_prompt_color);
                     println!("{}", dictionary_info);
 
                     if config.copy_to_clipboard {
-                        if let Err(e) = self.copy_to_clipboard(&dictionary_info) {
+                        let clipboard = ClipboardManager::new();
+                        if let Err(e) = clipboard.set_text(&dictionary_info) {
                             println!("Clipboard error: {}", e);
                         }
                     }
 
-                    // Сохраняем словарную статью в историю
-                    if let Err(e) = self.save_translation_history(
+                    // Save dictionary entry to history
+                    if let Err(e) = config::save_translation_history(
                         text,
                         &dictionary_info,
                         source_code,
@@ -328,7 +263,7 @@ impl InteractiveMode {
                         println!("History save error: {}", e);
                     }
 
-                    println!(); // Add spacing
+                    println!();
                     return Ok(());
                 }
                 Err(_) => {
@@ -346,19 +281,16 @@ impl InteractiveMode {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
-                    print!("{}", trans_label.color(color));
-                } else {
-                    print!("{}", trans_label);
-                }
+                config::print_colored(&trans_label, &config.target_prompt_color);
                 println!("{}", translated_text);
 
                 if config.copy_to_clipboard {
-                    self.copy_to_clipboard(&translated_text).ok();
+                    let clipboard = ClipboardManager::new();
+                    clipboard.set_text(&translated_text).ok();
                 }
 
-                // Сохраняем перевод в историю
-                if let Err(e) = self.save_translation_history(
+                // Save translation to history
+                if let Err(e) = config::save_translation_history(
                     text,
                     &translated_text,
                     source_code,
@@ -373,27 +305,8 @@ impl InteractiveMode {
             }
         }
 
-        println!(); // Add spacing
+        println!();
         Ok(())
-    }
-
-    /// Check if text is a single word
-    fn is_single_word(&self, text: &str) -> bool {
-        let cleaned = text.trim_matches(|c: char| !c.is_alphabetic());
-        !cleaned.is_empty()
-            && !cleaned.contains(' ')
-            && cleaned
-                .chars()
-                .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
-    }
-
-    /// Copy text to clipboard
-    fn copy_to_clipboard(&self, text: &str) -> Result<(), String> {
-        use crate::clipboard::ClipboardManager;
-        let clipboard = ClipboardManager::new();
-        clipboard
-            .set_text(text)
-            .map_err(|e| format!("Clipboard error: {}", e))
     }
 
     /// Speak text using text-to-speech in interactive mode

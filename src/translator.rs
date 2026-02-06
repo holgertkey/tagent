@@ -1,17 +1,14 @@
 use crate::clipboard::ClipboardManager;
-use crate::config::ConfigManager;
+use crate::config::{self, ConfigManager};
 use crate::providers::{self, TranslationProvider};
 use crate::window::WindowManager;
-use chrono::{DateTime, Utc};
-use colored::Colorize;
 use std::error::Error;
-use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Translator {
-    provider: Arc<Box<dyn TranslationProvider>>,
+    provider: Arc<dyn TranslationProvider>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Arc<WindowManager>,
@@ -19,12 +16,6 @@ pub struct Translator {
 }
 
 impl Translator {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        let config_path = ConfigManager::get_default_config_path()?;
-        let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
-        Self::new_with_config(config_manager)
-    }
-
     pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
         let window_manager = Arc::new(WindowManager::new()?);
 
@@ -33,54 +24,12 @@ impl Translator {
         let provider = providers::create_provider(&config.translate_provider)?;
 
         Ok(Self {
-            provider: Arc::new(provider),
+            provider: Arc::from(provider),
             clipboard: ClipboardManager::new(),
             config_manager,
             window_manager,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
         })
-    }
-
-    /// Save translation history to file in multi-line format
-    fn save_translation_history(
-        &self,
-        original: &str,
-        translated: &str,
-        source_lang: &str,
-        target_lang: &str,
-        config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
-        if !config.save_translation_history {
-            return Ok(()); // История отключена
-        }
-
-        let timestamp: DateTime<Utc> = Utc::now();
-        let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
-
-        let entry = format!(
-            "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
-            formatted_time, source_lang, target_lang, original, translated
-        );
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&config.history_file)?;
-
-        file.write_all(entry.as_bytes())?;
-        file.flush()?; // Принудительно записываем на диск
-
-        Ok(())
-    }
-
-    /// Check if text is a single word (no spaces, punctuation at edges allowed)
-    fn is_single_word(&self, text: &str) -> bool {
-        let cleaned = text.trim_matches(|c: char| !c.is_alphabetic());
-        !cleaned.is_empty()
-            && !cleaned.contains(' ')
-            && cleaned
-                .chars()
-                .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
     }
 
     /// Copy text to clipboard if enabled in config
@@ -94,6 +43,22 @@ impl Translator {
         } else {
             Ok(())
         }
+    }
+
+    /// Get the source display name (used for prompt labels)
+    fn source_display(source_code: &str, config: &crate::config::Config) -> String {
+        if source_code == "auto" {
+            "Auto".to_string()
+        } else {
+            config.source_language.clone()
+        }
+    }
+
+    /// Print source language prompt with color
+    fn print_source_prompt(config: &crate::config::Config) {
+        let source_prompt = format!("[{}]: ", config.source_language);
+        config::print_colored(&source_prompt, &config.source_prompt_color);
+        io::stdout().flush().ok();
     }
 
     /// Main function for translating text from clipboard
@@ -138,7 +103,7 @@ impl Translator {
         let (source_code, target_code) = self.config_manager.get_language_codes();
 
         // Check if it's a single word and dictionary feature is enabled
-        if config.show_dictionary && self.is_single_word(&original_text) {
+        if config.show_dictionary && config::is_single_word(&original_text) {
             match self
                 .get_dictionary_entry(&original_text, &source_code, &target_code)
                 .await
@@ -149,39 +114,22 @@ impl Translator {
                     io::stdout().flush().ok();
 
                     // Show the original text (source word)
-                    let source_display = if source_code == "auto" {
-                        "Auto".to_string()
-                    } else {
-                        config.source_language.clone()
-                    };
-
+                    let source_display = Self::source_display(&source_code, &config);
                     let source_label = format!("[{}]: ", source_display);
-
-                    // Use source prompt color for source language label
-                    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                        print!("{}", source_label.color(color));
-                    } else {
-                        print!("{}", source_label);
-                    }
+                    config::print_colored(&source_label, &config.source_prompt_color);
                     println!("{}", original_text);
 
                     // Print colored dictionary label
-                    let dict_label = "[Word]: ";
-                    if let Some(color) = ConfigManager::parse_color(&config.dictionary_prompt_color)
-                    {
-                        print!("{}", dict_label.color(color));
-                    } else {
-                        print!("{}", dict_label);
-                    }
+                    config::print_colored("[Word]: ", &config.dictionary_prompt_color);
                     println!("{}", dictionary_info);
-                    println!(); // Add empty line after dictionary entry in GUI mode
+                    println!();
 
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         println!("Dictionary clipboard write error: {}", e);
                     }
 
-                    // Сохраняем словарную статью в историю
-                    if let Err(e) = self.save_translation_history(
+                    // Save dictionary entry to history
+                    if let Err(e) = config::save_translation_history(
                         &original_text,
                         &dictionary_info,
                         &source_code,
@@ -192,13 +140,7 @@ impl Translator {
                     }
 
                     // Show source language prompt after hotkey translation
-                    let source_prompt = format!("[{}]: ", config.source_language);
-                    if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                        print!("{}", source_prompt.color(color));
-                    } else {
-                        print!("{}", source_prompt);
-                    }
-                    io::stdout().flush().ok();
+                    Self::print_source_prompt(&config);
                 }
                 Err(_) => {
                     // Fall back to regular translation
@@ -234,20 +176,9 @@ impl Translator {
         io::stdout().flush().ok();
 
         // Show source language info with colored prompt
-        let source_display = if source_code == "auto" {
-            "Auto".to_string()
-        } else {
-            config.source_language.clone()
-        };
-
+        let source_display = Self::source_display(source_code, config);
         let source_label = format!("[{}]: ", source_display);
-
-        // Use source prompt color for all source language labels
-        if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-            print!("{}", source_label.color(color));
-        } else {
-            print!("{}", source_label);
-        }
+        config::print_colored(&source_label, &config.source_prompt_color);
         println!("{}", text);
 
         // If source language is not Auto, check if text matches expected language
@@ -266,20 +197,16 @@ impl Translator {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                if let Some(color) = ConfigManager::parse_color(&config.target_prompt_color) {
-                    print!("{}", trans_label.color(color));
-                } else {
-                    print!("{}", trans_label);
-                }
+                config::print_colored(&trans_label, &config.target_prompt_color);
                 println!("{}", translated_text);
-                println!(); // Add empty line after translation result
+                println!();
 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     println!("Translation clipboard write error: {}", e);
                 }
 
-                // Сохраняем перевод в историю
-                if let Err(e) = self.save_translation_history(
+                // Save translation to history
+                if let Err(e) = config::save_translation_history(
                     text,
                     &translated_text,
                     source_code,
@@ -290,13 +217,7 @@ impl Translator {
                 }
 
                 // Show source language prompt after hotkey translation
-                let source_prompt = format!("[{}]: ", config.source_language);
-                if let Some(color) = ConfigManager::parse_color(&config.source_prompt_color) {
-                    print!("{}", source_prompt.color(color));
-                } else {
-                    print!("{}", source_prompt);
-                }
-                io::stdout().flush().ok();
+                Self::print_source_prompt(config);
             }
             Err(e) => {
                 println!("Translation error: {}", e);
@@ -306,28 +227,8 @@ impl Translator {
         Ok(())
     }
 
-    /// Public method for CLI to get dictionary entry (without headers)
-    pub async fn get_dictionary_entry_public(
-        &self,
-        word: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<String, Box<dyn Error>> {
-        self.get_dictionary_entry_cli(word, from, to).await
-    }
-
-    /// Public method for CLI to translate text
-    pub async fn translate_text_public(
-        &self,
-        text: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<String, Box<dyn Error>> {
-        self.translate_text_internal(text, from, to).await
-    }
-
-    /// Get dictionary entry for CLI (clean output)
-    async fn get_dictionary_entry_cli(
+    /// Public method to get dictionary entry
+    pub async fn get_dictionary_entry(
         &self,
         word: &str,
         from: &str,
@@ -341,19 +242,14 @@ impl Translator {
         }
     }
 
-    /// Get dictionary entry for a single word (GUI mode)
-    async fn get_dictionary_entry(
+    /// Public method to translate text
+    pub async fn translate_text_public(
         &self,
-        word: &str,
+        text: &str,
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error>> {
-        let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
-
-        match entry_opt {
-            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, true)), // Use cli_mode=true to skip word header
-            None => Err("Limited dictionary information available".into()),
-        }
+        self.translate_text_internal(text, from, to).await
     }
 
     /// Format dictionary entry into string
@@ -519,11 +415,8 @@ impl Translator {
         // Check if mouse is over terminal, and wait until it moves away
         loop {
             if !self.window_manager.is_mouse_over_terminal() {
-                // Mouse is not over terminal, proceed with hiding
                 break;
             }
-
-            // Wait 1 second before checking again
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
@@ -547,14 +440,13 @@ impl Translator {
         match language_code {
             "en" => self.is_english_text(text),
             "ru" => self.is_russian_text(text),
-            _ => true, // For other languages, assume it's correct
+            _ => true,
         }
     }
 
     /// Check if text contains English characters
     fn is_english_text(&self, text: &str) -> bool {
         let english_chars = text.chars().filter(|c| c.is_alphabetic()).count();
-
         let total_chars = text.chars().filter(|c| !c.is_whitespace()).count();
 
         if total_chars == 0 {
@@ -562,7 +454,6 @@ impl Translator {
         }
 
         let english_ratio = english_chars as f64 / total_chars as f64;
-
         english_ratio > 0.7 && text.chars().any(|c| c.is_ascii_alphabetic())
     }
 
@@ -580,7 +471,7 @@ impl Translator {
         }
 
         let russian_ratio = russian_chars as f64 / total_chars as f64;
-        russian_ratio > 0.3 // Lower threshold for Russian as it might contain English words
+        russian_ratio > 0.3
     }
 
     /// Translate text using translation provider

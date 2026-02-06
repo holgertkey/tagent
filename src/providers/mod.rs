@@ -47,6 +47,7 @@ pub trait TranslationProvider: Send + Sync {
     async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error>>;
 
     /// Get provider name for display purposes
+    #[allow(dead_code)]
     fn name(&self) -> &str;
 }
 

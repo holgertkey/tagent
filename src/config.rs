@@ -1,6 +1,9 @@
+use chrono::{DateTime, Utc};
+use colored::Colorize;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -14,8 +17,8 @@ pub struct Config {
     pub auto_hide_terminal_seconds: u64,
     pub show_dictionary: bool,
     pub copy_to_clipboard: bool,
-    pub save_translation_history: bool,   // Новое поле
-    pub history_file: String,             // Новое поле
+    pub save_translation_history: bool,
+    pub history_file: String,
     pub target_prompt_color: String,      // Color for target language prompt
     pub dictionary_prompt_color: String,  // Color for dictionary prompt
     pub source_prompt_color: String,      // Color for source language prompt
@@ -43,7 +46,7 @@ impl Default for Config {
             auto_hide_terminal_seconds: 5,
             show_dictionary: true,
             copy_to_clipboard: true,
-            save_translation_history: false, // По умолчанию отключено
+            save_translation_history: false,
             history_file: default_history,
             target_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
@@ -313,12 +316,11 @@ EnableSpeechHotkey = {}
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(true);
 
-        // Новые поля для истории
         let save_translation_history = parsed_config
             .get("History")
             .and_then(|section| section.get("SaveTranslationHistory"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false); // По умолчанию false
+            .unwrap_or(false);
 
         let history_file = parsed_config
             .get("History")
@@ -821,6 +823,61 @@ EnableSpeechHotkey = {}
             "brightwhite" | "bright_white" => Some(colored::Color::BrightWhite),
             _ => None, // Return None for unknown colors
         }
+    }
+}
+
+// === Shared utility functions ===
+
+/// Save translation history entry to file.
+/// Shared across translator, interactive, and CLI modes.
+pub fn save_translation_history(
+    original: &str,
+    translated: &str,
+    source_lang: &str,
+    target_lang: &str,
+    config: &Config,
+) -> Result<(), Box<dyn Error>> {
+    if !config.save_translation_history {
+        return Ok(());
+    }
+
+    let timestamp: DateTime<Utc> = Utc::now();
+    let formatted_time = timestamp.format("%Y-%m-%d %H:%M:%S UTC");
+
+    let entry = format!(
+        "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
+        formatted_time, source_lang, target_lang, original, translated
+    );
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&config.history_file)?;
+
+    file.write_all(entry.as_bytes())?;
+    file.flush()?;
+
+    Ok(())
+}
+
+/// Check if text is a single word (no spaces, punctuation at edges allowed).
+/// Shared across translator, interactive, and CLI modes.
+pub fn is_single_word(text: &str) -> bool {
+    let cleaned = text.trim_matches(|c: char| !c.is_alphabetic());
+    !cleaned.is_empty()
+        && !cleaned.contains(' ')
+        && cleaned
+            .chars()
+            .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
+}
+
+/// Print a label with optional color, without a trailing newline.
+/// Eliminates the repeated pattern of `if let Some(color) = parse_color(...) { ... } else { ... }`.
+pub fn print_colored(label: &str, color_name: &str) {
+    if let Some(color) = ConfigManager::parse_color(color_name) {
+        print!("{}", label.color(color));
+    } else {
+        print!("{}", label);
     }
 }
 

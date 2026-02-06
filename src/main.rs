@@ -19,15 +19,15 @@ use windows::Win32::System::Console::SetConsoleCtrlHandler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Отключаем стандартную обработку Ctrl+C в консоли Windows
+    // Disable default Ctrl+C handling in Windows console
     unsafe {
         SetConsoleCtrlHandler(None, true)?;
     }
 
-    // Получаем аргументы командной строки
+    // Get command-line arguments
     let args: Vec<String> = env::args().collect();
 
-    // Если есть аргументы, работаем в режиме CLI
+    // If arguments are provided, run in CLI mode
     if args.len() > 1 {
         let cli_handler = match CliHandler::new() {
             Ok(handler) => handler,
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return cli_handler.process_args(args).await;
     }
 
-    // Если аргументов нет, запускаем объединенный GUI+Interactive режим
+    // No arguments - start unified GUI+Interactive mode
     show_unified_mode_info();
 
     // Create shared ConfigManager
@@ -84,13 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Запускаем интерактивный режим в основном потоке
+    // Start interactive mode in the main thread
     let interactive_result = interactive_mode.start().await;
 
-    // Устанавливаем флаг выхода для завершения keyboard hook
+    // Set the exit flag to terminate the keyboard hook
     should_exit.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // Ждем завершения keyboard task
+    // Wait for keyboard task to finish
     let _ = keyboard_task.await;
 
     if let Err(e) = interactive_result {
