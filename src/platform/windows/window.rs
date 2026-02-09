@@ -1,6 +1,10 @@
 use std::error::Error;
 use windows::{Win32::Foundation::*, Win32::System::Console::*, Win32::UI::WindowsAndMessaging::*};
 
+/// Platform-agnostic window handle wrapper
+#[derive(Clone, Copy, Debug)]
+pub struct WindowHandle(HWND);
+
 pub struct WindowManager {
     console_window: HWND,
 }
@@ -40,11 +44,11 @@ impl WindowManager {
     }
 
     /// Get the currently active (foreground) window
-    pub fn get_foreground_window(&self) -> Option<HWND> {
+    pub fn get_foreground_window(&self) -> Option<WindowHandle> {
         unsafe {
             let hwnd = GetForegroundWindow();
             if hwnd.0 != 0 && hwnd != self.console_window {
-                Some(hwnd)
+                Some(WindowHandle(hwnd))
             } else {
                 None
             }
@@ -52,12 +56,12 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground
-    pub fn set_foreground_window(&self, hwnd: HWND) -> Result<(), Box<dyn Error>> {
+    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error>> {
         unsafe {
-            if IsIconic(hwnd).as_bool() {
-                ShowWindow(hwnd, SW_RESTORE);
+            if IsIconic(handle.0).as_bool() {
+                ShowWindow(handle.0, SW_RESTORE);
             }
-            SetForegroundWindow(hwnd);
+            SetForegroundWindow(handle.0);
         }
         Ok(())
     }

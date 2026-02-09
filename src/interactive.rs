@@ -1,5 +1,5 @@
 use crate::cli::CliHandler;
-use crate::clipboard::ClipboardManager;
+use crate::platform::ClipboardManager;
 use crate::config::{self, ConfigManager};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;

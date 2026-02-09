@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use winres::WindowsResource;
 
 fn main() {
     // Get version from Cargo.toml (format: "MAJOR.MINOR.PATCH+BUILD" or "MAJOR.MINOR.PATCH")
@@ -9,34 +8,41 @@ fn main() {
     // Sync version in documentation files
     sync_version_in_docs(version);
 
-    // Only build resources on Windows
-    if cfg!(target_os = "windows") {
-        // Convert version to Windows format (x.x.x.x)
-        // Example: "0.8.0+001" -> "0.8.0.1"
-        let windows_version = convert_to_windows_version(version);
+    // Only build Windows resources when targeting Windows
+    #[cfg(target_os = "windows")]
+    build_windows_resources(version);
+}
 
-        WindowsResource::new()
-            // Set the main icon (shows in file explorer, taskbar, etc.)
-            .set_icon("assets/icons/taa_256.ico")
-            // Set application information
-            .set("ProductName", "Text Agent Translator")
-            .set(
-                "FileDescription",
-                "Text translator with unified GUI/Interactive interface and CLI mode",
-            )
-            .set("CompanyName", "Holgert K")
-            .set(
-                "LegalCopyright",
-                "© 2024 Holgert K. Licensed under MIT License",
-            )
-            .set("FileVersion", &windows_version)
-            .set("ProductVersion", &windows_version)
-            .set("OriginalFilename", "tagent.exe")
-            .set("InternalName", "tagent")
-            // Compile the resource
-            .compile()
-            .expect("Failed to compile Windows resources");
-    }
+/// Build Windows executable resources (icon, version info)
+#[cfg(target_os = "windows")]
+fn build_windows_resources(version: &str) {
+    use winres::WindowsResource;
+
+    // Convert version to Windows format (x.x.x.x)
+    // Example: "0.8.0+001" -> "0.8.0.1"
+    let windows_version = convert_to_windows_version(version);
+
+    WindowsResource::new()
+        // Set the main icon (shows in file explorer, taskbar, etc.)
+        .set_icon("assets/icons/taa_256.ico")
+        // Set application information
+        .set("ProductName", "Text Agent Translator")
+        .set(
+            "FileDescription",
+            "Text translator with unified GUI/Interactive interface and CLI mode",
+        )
+        .set("CompanyName", "Holgert K")
+        .set(
+            "LegalCopyright",
+            "© 2024 Holgert K. Licensed under MIT License",
+        )
+        .set("FileVersion", &windows_version)
+        .set("ProductVersion", &windows_version)
+        .set("OriginalFilename", "tagent.exe")
+        .set("InternalName", "tagent")
+        // Compile the resource
+        .compile()
+        .expect("Failed to compile Windows resources");
 }
 
 /// Synchronize version in documentation files (README.md, CLAUDE.md, CHANGELOG.md)
@@ -128,6 +134,7 @@ fn update_version_in_file(
 ///   "0.8.0+001" -> "0.8.0.1"
 ///   "0.8.0" -> "0.8.0.0"
 ///   "1.2.3+123" -> "1.2.3.123"
+#[cfg(target_os = "windows")]
 fn convert_to_windows_version(version: &str) -> String {
     // Split by '+' to separate version from build metadata
     let parts: Vec<&str> = version.split('+').collect();

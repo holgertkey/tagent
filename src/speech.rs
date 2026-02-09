@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+use crate::platform::keycodes;
 
 const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
@@ -291,11 +291,9 @@ impl SpeechManager {
         // Spawn task to monitor Esc key
         let esc_monitor = tokio::spawn(async move {
             loop {
-                unsafe {
-                    if GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16 & 0x8000 != 0 {
-                        stop_flag_clone.store(true, Ordering::Relaxed);
-                        break;
-                    }
+                if keycodes::is_key_pressed(keycodes::KEY_ESCAPE as i32) {
+                    stop_flag_clone.store(true, Ordering::Relaxed);
+                    break;
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }

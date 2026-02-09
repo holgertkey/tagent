@@ -1,28 +1,23 @@
 mod cli;
-mod clipboard;
 mod config;
 mod interactive;
-mod keyboard;
+mod platform;
 mod providers;
 mod speech;
 mod translator;
-mod window;
 
 use cli::CliHandler;
 use config::ConfigManager;
 use interactive::InteractiveMode;
-use keyboard::KeyboardHook;
+use platform::KeyboardHook;
 use std::env;
 use std::sync::Arc;
 use translator::Translator;
-use windows::Win32::System::Console::SetConsoleCtrlHandler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Disable default Ctrl+C handling in Windows console
-    unsafe {
-        SetConsoleCtrlHandler(None, true)?;
-    }
+    // Set up platform-specific signal handling
+    platform::signals::setup()?;
 
     // Get command-line arguments
     let args: Vec<String> = env::args().collect();
@@ -97,7 +92,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Interactive mode error: {}", e);
     }
 
-    // println!("Program terminated successfully.");
     Ok(())
 }
 
@@ -123,8 +117,8 @@ fn show_unified_mode_info() {
     }
 
     println!(
-        r#"Commands: 
-  /h (help), /c (config), /s (speech), /l (lang), 
+        r#"Commands:
+  /h (help), /c (config), /s (speech), /l (lang),
   /save (config), /cls (clear), /q (quit)"#
 
     );

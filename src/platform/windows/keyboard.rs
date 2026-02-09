@@ -1,6 +1,7 @@
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
+use super::keycodes::normalize_vk_code;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -429,8 +430,8 @@ async fn speak_clipboard(
     _translator: &Translator,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn Error>> {
-    use crate::clipboard::ClipboardManager;
-    use crate::window::WindowManager;
+    use crate::platform::ClipboardManager;
+    use crate::platform::WindowManager;
     use std::io::{self, Write};
 
     let clipboard = ClipboardManager::new();
@@ -496,16 +497,6 @@ fn print_source_prompt(cfg: &crate::config::Config) {
     let source_prompt = format!("[{}]: ", cfg.source_language);
     config::print_colored(&source_prompt, &cfg.source_prompt_color);
     io::stdout().flush().ok();
-}
-
-/// Normalize virtual key code (convert specific L/R codes to generic codes)
-fn normalize_vk_code(vk_code: u32) -> u32 {
-    match vk_code {
-        162 | 163 => 17, // VK_LCONTROL/VK_RCONTROL -> VK_CONTROL
-        164 | 165 => 18, // VK_LMENU/VK_RMENU -> VK_MENU
-        160 | 161 => 16, // VK_LSHIFT/VK_RSHIFT -> VK_SHIFT
-        _ => vk_code,
-    }
 }
 
 unsafe extern "system" fn keyboard_hook_proc(

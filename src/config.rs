@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use crate::platform::keycodes;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -946,72 +946,9 @@ impl HotkeyParser {
         Ok(HotkeyType::SingleKey { vk_code })
     }
 
-    /// Convert key name to Windows virtual key code
+    /// Convert key name to platform-specific virtual key code
     fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
-        let key_lower = key_name.to_lowercase();
-
-        match key_lower.as_str() {
-            // Modifiers
-            "ctrl" | "control" => Ok(VK_CONTROL.0 as u32),
-            "lctrl" | "lcontrol" => Ok(VK_LCONTROL.0 as u32),
-            "rctrl" | "rcontrol" => Ok(VK_RCONTROL.0 as u32),
-            "alt" => Ok(VK_MENU.0 as u32),
-            "lalt" => Ok(VK_LMENU.0 as u32),
-            "ralt" => Ok(VK_RMENU.0 as u32),
-            "shift" => Ok(VK_SHIFT.0 as u32),
-            "lshift" => Ok(VK_LSHIFT.0 as u32),
-            "rshift" => Ok(VK_RSHIFT.0 as u32),
-            "win" | "windows" => Ok(VK_LWIN.0 as u32),
-            "lwin" => Ok(VK_LWIN.0 as u32),
-            "rwin" => Ok(VK_RWIN.0 as u32),
-
-            // Function keys
-            "f1" => Ok(VK_F1.0 as u32),
-            "f2" => Ok(VK_F2.0 as u32),
-            "f3" => Ok(VK_F3.0 as u32),
-            "f4" => Ok(VK_F4.0 as u32),
-            "f5" => Ok(VK_F5.0 as u32),
-            "f6" => Ok(VK_F6.0 as u32),
-            "f7" => Ok(VK_F7.0 as u32),
-            "f8" => Ok(VK_F8.0 as u32),
-            "f9" => Ok(VK_F9.0 as u32),
-            "f10" => Ok(VK_F10.0 as u32),
-            "f11" => Ok(VK_F11.0 as u32),
-            "f12" => Ok(VK_F12.0 as u32),
-
-            // Special keys
-            "space" => Ok(VK_SPACE.0 as u32),
-            "tab" => Ok(VK_TAB.0 as u32),
-            "enter" | "return" => Ok(VK_RETURN.0 as u32),
-            "esc" | "escape" => Ok(VK_ESCAPE.0 as u32),
-            "backspace" => Ok(VK_BACK.0 as u32),
-            "delete" | "del" => Ok(VK_DELETE.0 as u32),
-            "insert" | "ins" => Ok(VK_INSERT.0 as u32),
-            "home" => Ok(VK_HOME.0 as u32),
-            "end" => Ok(VK_END.0 as u32),
-            "pageup" | "pgup" => Ok(VK_PRIOR.0 as u32),
-            "pagedown" | "pgdn" => Ok(VK_NEXT.0 as u32),
-
-            // Arrow keys
-            "left" => Ok(VK_LEFT.0 as u32),
-            "right" => Ok(VK_RIGHT.0 as u32),
-            "up" => Ok(VK_UP.0 as u32),
-            "down" => Ok(VK_DOWN.0 as u32),
-
-            // Letters (A-Z)
-            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_alphabetic() => {
-                let ch = s.chars().next().unwrap().to_ascii_uppercase();
-                Ok(ch as u32)
-            }
-
-            // Numbers (0-9)
-            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_digit() => {
-                let ch = s.chars().next().unwrap();
-                Ok(ch as u32)
-            }
-
-            _ => Err(format!("Unknown key name: {}", key_name)),
-        }
+        keycodes::key_name_to_vk(key_name)
     }
 
     /// Validate that the hotkey doesn't conflict with critical system shortcuts
@@ -1019,16 +956,14 @@ impl HotkeyParser {
         match hotkey {
             HotkeyType::SingleKey { vk_code } => {
                 // Only allow F1-F12 as single keys
-                const VK_F1: u32 = 112;
-                const VK_F12: u32 = 123;
-                if *vk_code < VK_F1 || *vk_code > VK_F12 {
+                if *vk_code < keycodes::KEY_F1 || *vk_code > keycodes::KEY_F12 {
                     return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
                 }
             }
             HotkeyType::ModifierCombo { modifiers, key } => {
                 // Forbid Shift-only combinations (Shift+Key interferes with text input)
                 // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
-                let has_shift = modifiers.contains(&(VK_SHIFT.0 as u32));
+                let has_shift = modifiers.contains(&keycodes::KEY_SHIFT);
                 let only_shift = modifiers.len() == 1 && has_shift;
 
                 if only_shift {
@@ -1037,19 +972,19 @@ impl HotkeyParser {
 
                 // Warn about common system shortcuts
                 let has_ctrl = modifiers.iter().any(|&m| {
-                    m == VK_CONTROL.0 as u32
-                        || m == VK_LCONTROL.0 as u32
-                        || m == VK_RCONTROL.0 as u32
+                    m == keycodes::KEY_CONTROL
+                        || m == keycodes::KEY_LCONTROL
+                        || m == keycodes::KEY_RCONTROL
                 });
                 let has_alt = modifiers.iter().any(|&m| {
-                    m == VK_MENU.0 as u32 || m == VK_LMENU.0 as u32 || m == VK_RMENU.0 as u32
+                    m == keycodes::KEY_ALT || m == keycodes::KEY_LALT || m == keycodes::KEY_RALT
                 });
                 let has_win = modifiers
                     .iter()
-                    .any(|&m| m == VK_LWIN.0 as u32 || m == VK_RWIN.0 as u32);
+                    .any(|&m| m == keycodes::KEY_LWIN || m == keycodes::KEY_RWIN);
 
                 // Block dangerous combinations
-                if has_ctrl && has_alt && *key == VK_DELETE.0 as u32 {
+                if has_ctrl && has_alt && *key == keycodes::KEY_DELETE {
                     return Err("Ctrl+Alt+Delete is reserved by the system".to_string());
                 }
 
@@ -1058,7 +993,7 @@ impl HotkeyParser {
                 }
 
                 // Warnings for common shortcuts (don't block, just warn in logs)
-                if has_alt && *key == VK_F4.0 as u32 {
+                if has_alt && *key == keycodes::KEY_F4 {
                     eprintln!("Warning: Alt+F4 may close windows");
                 }
             }

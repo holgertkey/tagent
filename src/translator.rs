@@ -1,7 +1,6 @@
-use crate::clipboard::ClipboardManager;
 use crate::config::{self, ConfigManager};
+use crate::platform::{ClipboardManager, WindowHandle, WindowManager};
 use crate::providers::{self, TranslationProvider};
-use crate::window::WindowManager;
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::Arc;
@@ -12,7 +11,7 @@ pub struct Translator {
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Arc<WindowManager>,
-    stored_foreground_window: Arc<std::sync::Mutex<Option<windows::Win32::Foundation::HWND>>>,
+    stored_foreground_window: Arc<std::sync::Mutex<Option<WindowHandle>>>,
 }
 
 impl Translator {
