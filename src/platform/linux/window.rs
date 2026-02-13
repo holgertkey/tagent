@@ -2,7 +2,7 @@ use std::error::Error;
 
 /// Platform-agnostic window handle wrapper
 #[derive(Clone, Copy, Debug)]
-pub struct WindowHandle(pub u64);
+pub struct WindowHandle(#[allow(dead_code)] pub u64);
 
 pub struct WindowManager;
 

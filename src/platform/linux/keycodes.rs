@@ -1,6 +1,9 @@
 // Abstract key codes (matching Windows VK code values for internal consistency).
 // The keyboard hook implementation maps OS-specific events to these abstract codes.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 pub const KEY_CONTROL: u32 = 17;
 pub const KEY_LCONTROL: u32 = 162;
 pub const KEY_RCONTROL: u32 = 163;
@@ -17,6 +20,9 @@ pub const KEY_F4: u32 = 115;
 pub const KEY_F12: u32 = 123;
 pub const KEY_ESCAPE: u32 = 27;
 pub const KEY_DELETE: u32 = 46;
+
+/// Shared key state updated by the keyboard hook
+static KEY_STATES: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
 
 /// Convert key name to abstract virtual key code
 pub fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
@@ -96,7 +102,20 @@ pub fn normalize_vk_code(vk_code: u32) -> u32 {
     }
 }
 
-/// Check if a key is currently pressed (stub for Linux)
-pub fn is_key_pressed(_vk_code: i32) -> bool {
+/// Set key state (called by keyboard hook)
+pub fn set_key_state(vk_code: i32, pressed: bool) {
+    if let Ok(mut states) = KEY_STATES.lock() {
+        let map = states.get_or_insert_with(HashMap::new);
+        map.insert(vk_code, pressed);
+    }
+}
+
+/// Check if a key is currently pressed (updated by keyboard hook)
+pub fn is_key_pressed(vk_code: i32) -> bool {
+    if let Ok(states) = KEY_STATES.lock() {
+        if let Some(map) = states.as_ref() {
+            return map.get(&vk_code).copied().unwrap_or(false);
+        }
+    }
     false
 }
