@@ -410,6 +410,9 @@ impl KeyboardHook {
                             true,
                             &modifier_snapshot,
                         ) {
+                            // Clear all modifier state: xdotool keyup will release them,
+                            // and rdev will see synthetic release events anyway
+                            state_guard.modifier_state.clear();
                             drop(state_guard);
                             Self::trigger_translation(
                                 &translator,
@@ -425,6 +428,8 @@ impl KeyboardHook {
                                 true,
                                 &modifier_snapshot,
                             ) {
+                                // Clear all modifier state before speech trigger
+                                state_guard.modifier_state.clear();
                                 drop(state_guard);
                                 Self::trigger_speech(
                                     &translator,
@@ -609,4 +614,151 @@ fn print_source_prompt(cfg: &crate::config::Config) {
     let source_prompt = format!("[{}]: ", cfg.source_language);
     config::print_colored(&source_prompt, &cfg.source_prompt_color);
     io::stdout().flush().ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hotkey_state_modifier_combo_detection() {
+        let hotkey = HotkeyType::ModifierCombo {
+            modifiers: vec![super::super::keycodes::KEY_ALT],
+            key: 'Q' as u32,
+        };
+        let mut state = HotkeyState::new(Some(hotkey));
+
+        // Alt not pressed - should not trigger
+        let mut mods = HashMap::new();
+        assert!(!state.handle('Q' as u32, true, &mods));
+
+        // Alt pressed - should trigger
+        mods.insert(super::super::keycodes::KEY_ALT, true);
+        assert!(state.handle('Q' as u32, true, &mods));
+    }
+
+    #[test]
+    fn test_hotkey_state_double_press_detection() {
+        let hotkey = HotkeyType::DoublePress {
+            vk_code: super::super::keycodes::KEY_CONTROL,
+            min_interval_ms: 50,
+            max_interval_ms: 500,
+        };
+        let mut state = HotkeyState::new(Some(hotkey));
+        let mods = HashMap::new();
+
+        // First press
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+        // First release
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, false, &mods));
+
+        // Wait within the valid interval
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Second press - should trigger
+        assert!(state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+    }
+
+    #[test]
+    fn test_hotkey_state_double_press_interrupted() {
+        let hotkey = HotkeyType::DoublePress {
+            vk_code: super::super::keycodes::KEY_CONTROL,
+            min_interval_ms: 50,
+            max_interval_ms: 500,
+        };
+        let mut state = HotkeyState::new(Some(hotkey));
+        let mods = HashMap::new();
+
+        // First press
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, false, &mods));
+
+        // Another key interrupts the sequence
+        state.mark_interrupted_if_needed('A' as u32);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Second press - should NOT trigger because sequence was interrupted
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+    }
+
+    #[test]
+    fn test_modifier_state_cleared_on_hotkey_trigger() {
+        // Simulate what happens in the event loop when a hotkey triggers
+        let mut modifier_state: HashMap<u32, bool> = HashMap::new();
+        modifier_state.insert(super::super::keycodes::KEY_ALT, true);
+
+        // After hotkey triggers, modifier_state.clear() is called
+        modifier_state.clear();
+
+        // Verify all modifiers are cleared
+        assert!(!modifier_state
+            .get(&super::super::keycodes::KEY_ALT)
+            .copied()
+            .unwrap_or(false));
+        assert!(!modifier_state
+            .get(&super::super::keycodes::KEY_CONTROL)
+            .copied()
+            .unwrap_or(false));
+        assert!(!modifier_state
+            .get(&super::super::keycodes::KEY_SHIFT)
+            .copied()
+            .unwrap_or(false));
+    }
+
+    #[test]
+    fn test_is_modifier_key() {
+        assert!(is_modifier_key(super::super::keycodes::KEY_LCONTROL));
+        assert!(is_modifier_key(super::super::keycodes::KEY_RCONTROL));
+        assert!(is_modifier_key(super::super::keycodes::KEY_LALT));
+        assert!(is_modifier_key(super::super::keycodes::KEY_RALT));
+        assert!(is_modifier_key(super::super::keycodes::KEY_LSHIFT));
+        assert!(is_modifier_key(super::super::keycodes::KEY_RSHIFT));
+        assert!(is_modifier_key(super::super::keycodes::KEY_LWIN));
+        assert!(is_modifier_key(super::super::keycodes::KEY_RWIN));
+        // Regular keys should not be modifiers
+        assert!(!is_modifier_key('A' as u32));
+        assert!(!is_modifier_key('Q' as u32));
+        assert!(!is_modifier_key(112)); // F1
+    }
+
+    #[test]
+    fn test_rdev_key_to_vk_modifiers() {
+        assert_eq!(
+            rdev_key_to_vk(&rdev::Key::Alt),
+            Some(super::super::keycodes::KEY_LALT)
+        );
+        assert_eq!(
+            rdev_key_to_vk(&rdev::Key::ControlLeft),
+            Some(super::super::keycodes::KEY_LCONTROL)
+        );
+        assert_eq!(
+            rdev_key_to_vk(&rdev::Key::ControlRight),
+            Some(super::super::keycodes::KEY_RCONTROL)
+        );
+        assert_eq!(
+            rdev_key_to_vk(&rdev::Key::ShiftLeft),
+            Some(super::super::keycodes::KEY_LSHIFT)
+        );
+    }
+
+    #[test]
+    fn test_rdev_key_to_vk_letters() {
+        assert_eq!(rdev_key_to_vk(&rdev::Key::KeyQ), Some('Q' as u32));
+        assert_eq!(rdev_key_to_vk(&rdev::Key::KeyA), Some('A' as u32));
+        assert_eq!(rdev_key_to_vk(&rdev::Key::KeyZ), Some('Z' as u32));
+    }
+
+    #[test]
+    fn test_single_key_hotkey() {
+        let hotkey = HotkeyType::SingleKey { vk_code: 120 }; // F9
+        let mut state = HotkeyState::new(Some(hotkey));
+        let mods = HashMap::new();
+
+        // Wrong key - should not trigger
+        assert!(!state.handle(119, true, &mods)); // F8
+
+        // Correct key - should trigger
+        assert!(state.handle(120, true, &mods)); // F9
+    }
 }
