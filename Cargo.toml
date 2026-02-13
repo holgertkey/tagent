@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "0.11.0+003"
+version = "0.11.0+004"
 edition = "2021"
 description = "Text translator with unified GUI/Interactive interface and CLI mode"
 authors = ["Holgert K"]
@@ -40,6 +40,7 @@ windows = { version = "0.52", features = [
 # Linux-only dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 rdev = "0.5"
+x11 = { version = "2.21", features = ["xlib"] }
 
 [profile.release]
 lto = true

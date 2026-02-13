@@ -314,6 +314,18 @@ impl KeyboardHook {
             None
         };
 
+        // Grab hotkeys via X11 to prevent them from reaching other applications.
+        // _xgrab lives until the end of the event loop; Drop releases all grabs.
+        let mut _xgrab = super::xgrab::XGrabManager::new();
+        if let Some(ref mut xgrab) = _xgrab {
+            if let Some(ref hotkey) = translate_hotkey {
+                xgrab.grab_hotkey(hotkey);
+            }
+            if let Some(ref hotkey) = speech_hotkey {
+                xgrab.grab_hotkey(hotkey);
+            }
+        }
+
         // Create shared state
         let state = Arc::new(Mutex::new(KeyboardEventState {
             translate_hotkey: HotkeyState::new(translate_hotkey),

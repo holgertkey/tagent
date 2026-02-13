@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "tagent"
-version = "0.11.0+003"
+version = "0.11.0+004"
 dependencies = [
  "arboard",
  "async-trait",
@@ -1902,6 +1902,7 @@ dependencies = [
  "urlencoding",
  "windows 0.52.0",
  "winres",
+ "x11",
 ]
 
 [[package]]
