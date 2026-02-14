@@ -28,6 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Example: `1.0.0+000` → `1.0.0+001` → `1.0.0+002`
 - The build number (`+NNN`) is a 3-digit zero-padded counter
 - Reset build number to `+000` when MAJOR, MINOR, or PATCH version changes
+- If the build number is `+000`, it should be omitted from the displayed version (e.g., `v0.1.0+000` → `v0.1.0`)
 - This helps track development iterations between releases
 
 **When to increment**:
