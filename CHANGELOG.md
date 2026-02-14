@@ -5,7 +5,15 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.11.0+004] - 2026-02-05
+## [0.11.0+005] - 2026-02-14
+
+### Added
+- Linux X11 window management implementation for auto-hide feature
+  - `show_terminal()`: Uses `XMapRaised` + `_NET_ACTIVE_WINDOW` client message
+  - `hide_terminal()`: Uses `XIconifyWindow` to minimize the terminal
+  - `get_foreground_window()` / `set_foreground_window()`: Read/write `_NET_ACTIVE_WINDOW` property
+  - `is_mouse_over_terminal()`: Uses `XQueryPointer` + `XGetGeometry` for cursor hit-testing
+  - Terminal window found via `_NET_WM_PID` property matching against process ID
 
 ### Changed
 - Default translation hotkey changed from `Ctrl+Ctrl` to `Alt+Q`
