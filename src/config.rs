@@ -31,9 +31,11 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        // Try to get AppData path for history file, fallback to current directory
-        let default_history = if let Some(config_dir) = dirs::config_dir() {
-            let history_path = config_dir.join("Tagent").join("translation_history.txt");
+        // Try to get data directory path for history file, fallback to current directory
+        // On Linux: ~/.local/share/Tagent/translation_history.txt
+        // On Windows: %APPDATA%/Tagent/translation_history.txt
+        let default_history = if let Some(data_dir) = dirs::data_dir() {
+            let history_path = data_dir.join("Tagent").join("translation_history.txt");
             history_path.to_string_lossy().to_string()
         } else {
             "translation_history.txt".to_string()
@@ -848,6 +850,11 @@ pub fn save_translation_history(
         "[{}] {} -> {}\nIN:  {}\nOUT: {}\n---\n\n",
         formatted_time, source_lang, target_lang, original, translated
     );
+
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(&config.history_file).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
     let mut file = OpenOptions::new()
         .create(true)
