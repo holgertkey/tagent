@@ -43,7 +43,7 @@ impl Default for Config {
             source_language: "Auto".to_string(),
             target_language: "Russian".to_string(),
             show_terminal_on_translate: true,
-            auto_hide_terminal_seconds: 5,
+            auto_hide_terminal_seconds: 3,
             show_dictionary: true,
             copy_to_clipboard: true,
             save_translation_history: false,
@@ -302,7 +302,7 @@ EnableSpeechHotkey = {}
             .get("Interface")
             .and_then(|section| section.get("AutoHideTerminalSeconds"))
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(5);
+            .unwrap_or(3);
 
         // Try new location first, fallback to old location for backward compatibility
         let copy_to_clipboard = parsed_config

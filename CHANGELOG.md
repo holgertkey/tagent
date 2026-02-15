@@ -5,7 +5,7 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.11.0+005] - 2026-02-14
+## [0.11.0+007] - 2026-02-14
 
 ### Added
 - Linux X11 window management implementation for auto-hide feature
