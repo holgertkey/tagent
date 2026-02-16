@@ -1,6 +1,6 @@
-# Tagent Text Translator v0.11.0+008
+# Tagent Text Translator v0.11.0+014
 
-A fast, lightweight text translation tool for Windows with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations.
+A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
 ## Features
 
@@ -44,10 +44,30 @@ A fast, lightweight text translation tool for Windows with unified GUI hotkeys, 
 - Multi-language support
 - Colored terminal output (customizable)
 
+## Platform Support
+
+| Feature | Windows | Linux (X11) | Linux (Wayland) |
+|---|---|---|---|
+| Interactive mode | Yes | Yes | Yes |
+| CLI mode | Yes | Yes | Yes |
+| Clipboard read/write | Yes | Yes | Yes |
+| Global hotkeys (Alt+Q, etc.) | Yes | Yes | No |
+| Auto-copy selected text | Yes | Yes | No |
+| Show/hide terminal | Yes | Yes | No |
+| Auto-hide terminal | Yes | Yes | No |
+| Text-to-speech | Yes | Yes | Yes |
+
+**Wayland notes:**
+- On Wayland, the application runs in **interactive and CLI modes only**. Global hotkeys and window management are disabled due to Wayland's security model which prevents applications from intercepting input or managing other windows.
+- If XWayland is available, hotkeys may work through the X11 compatibility layer, but this is not guaranteed on all compositors.
+- Clipboard read/write works natively on Wayland via the `arboard` crate.
+- Full Wayland hotkey support (via `xdg-desktop-portal` GlobalShortcuts API) is planned for a future release.
+
 ## Installation
 
 ### Prerequisites
-- Windows 10/11
+- **Windows**: Windows 10/11
+- **Linux**: X11 or Wayland display server, `xdotool` (for hotkey auto-copy on X11)
 - Internet connection for translations
 
 ## Download
@@ -414,12 +434,14 @@ AutoPromptColor = Yellow
 - Delete config file from AppData folder to regenerate default settings
 
 **Hotkeys not working**
-- Run as administrator if needed
+- Run as administrator if needed (Windows)
 - Check if another application is capturing the hotkey
 - Ensure application has keyboard input permissions
 - Try changing the hotkey in config file (e.g., Alt+Q, F9)
 - Restart the application after changing hotkey configuration
 - Verify hotkey format in config file is correct
+- **Linux (Wayland)**: Global hotkeys are not supported on Wayland — use interactive or CLI mode instead
+- **Linux (X11)**: Ensure `xdotool` is installed (`sudo apt install xdotool`)
 
 **Speech (TTS) not working**
 - Check internet connection (uses Google TTS API)
@@ -447,10 +469,10 @@ AutoPromptColor = Yellow
 - **Windows API**: Clipboard and keyboard hook functionality
 
 ### System Requirements
-- Windows 10 or later
+- **Windows**: Windows 10 or later
+- **Linux**: X11 or Wayland, `xdotool` for hotkey auto-copy (X11 only)
 - ~5MB disk space
 - Network access for translations
-- No additional runtime dependencies
 
 ### Architecture
 - **Rust**: Safe, fast systems programming
@@ -501,7 +523,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.11.0+008
+**Current Version**: v0.11.0+014
 
 **Recent Changes**:
 - Code quality improvements (fixed all Clippy warnings)
@@ -533,4 +555,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.11.0+008** - Fast, reliable, and feature-rich translation tool for Windows.
+**Tagent Text Translator v0.11.0+014** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

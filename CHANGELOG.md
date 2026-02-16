@@ -5,6 +5,26 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.11.0+014] - 2026-02-16
+
+### Added
+- Wayland compatibility: application now starts and works on Wayland sessions
+  - Interactive mode and CLI mode fully functional on Wayland
+  - Window management gracefully disabled with informative message
+  - CLI mode skips window management entirely (no warnings)
+- `Translator::new_cli()` constructor for CLI mode without window management overhead
+
+### Fixed
+- **Double free crash** in `get_active_window()` (`platform/linux/window.rs`): `XFree(prop)` was called twice when `_NET_ACTIVE_WINDOW` returned window=0 (common on XWayland), causing `free(): double free detected in tcache 2` abort
+- Eliminated duplicate `WindowManager` initialization: `Translator` is now created once and shared between `KeyboardHook` and `InteractiveMode` via `InteractiveMode::with_translator()`
+- Removed duplicate "Window management disabled" warning that appeared twice on startup
+
+### Changed
+- `WindowManager` is now optional in `Translator` (`Option<Arc<WindowManager>>`): failure to initialize window management no longer crashes the application
+- `InteractiveMode::new_with_config()` replaced by `InteractiveMode::with_translator()` to accept a shared `Translator` instance
+
+---
+
 ## [0.11.0+008] - 2026-02-14
 
 ### Added

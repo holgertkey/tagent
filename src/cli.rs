@@ -15,7 +15,7 @@ impl CliHandler {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
-        let translator = Translator::new_with_config(config_manager.clone())?;
+        let translator = Translator::new_cli(config_manager.clone())?;
         let speech_manager = SpeechManager::new();
 
         Ok(Self {

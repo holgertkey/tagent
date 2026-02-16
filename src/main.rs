@@ -50,14 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Create interactive mode with shared config
-    let interactive_mode = match InteractiveMode::new_with_config(config_manager.clone()) {
-        Ok(mode) => mode,
-        Err(e) => {
-            println!("Failed to initialize interactive mode: {}", e);
-            return Err(e);
-        }
-    };
+    // Create interactive mode with shared translator
+    let interactive_mode = InteractiveMode::with_translator(translator.clone(), config_manager.clone());
 
     // Get shared exit flag
     let should_exit = interactive_mode.get_exit_flag();

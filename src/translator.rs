@@ -10,14 +10,33 @@ pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
-    window_manager: Arc<WindowManager>,
+    window_manager: Option<Arc<WindowManager>>,
     stored_foreground_window: Arc<std::sync::Mutex<Option<WindowHandle>>>,
 }
 
 impl Translator {
     pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
-        let window_manager = Arc::new(WindowManager::new()?);
+        let window_manager = match WindowManager::new() {
+            Ok(wm) => Some(Arc::new(wm)),
+            Err(_) => {
+                eprintln!("Window management unavailable (show/hide terminal and hotkeys disabled).");
+                eprintln!("This is expected on Wayland or when running outside a graphical terminal.");
+                None
+            }
+        };
 
+        Self::build(config_manager, window_manager)
+    }
+
+    /// Create Translator without window management (for CLI mode)
+    pub fn new_cli(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
+        Self::build(config_manager, None)
+    }
+
+    fn build(
+        config_manager: Arc<ConfigManager>,
+        window_manager: Option<Arc<WindowManager>>,
+    ) -> Result<Self, Box<dyn Error>> {
         // Create translation provider based on config
         let config = config_manager.get_config();
         let provider = providers::create_provider(&config.translate_provider)?;
@@ -71,9 +90,11 @@ impl Translator {
 
         // Store the current foreground window before any operations
         if config.show_terminal_on_translate {
-            if let Some(fg_window) = self.window_manager.get_foreground_window() {
-                if let Ok(mut stored) = self.stored_foreground_window.lock() {
-                    *stored = Some(fg_window);
+            if let Some(wm) = &self.window_manager {
+                if let Some(fg_window) = wm.get_foreground_window() {
+                    if let Ok(mut stored) = self.stored_foreground_window.lock() {
+                        *stored = Some(fg_window);
+                    }
                 }
             }
         }
@@ -94,8 +115,10 @@ impl Translator {
 
         // Show terminal window if configured
         if config.show_terminal_on_translate {
-            if let Err(e) = self.window_manager.show_terminal() {
-                println!("Failed to show terminal: {}", e);
+            if let Some(wm) = &self.window_manager {
+                if let Err(e) = wm.show_terminal() {
+                    println!("Failed to show terminal: {}", e);
+                }
             }
         }
 
@@ -154,7 +177,7 @@ impl Translator {
         }
 
         // Hide terminal and restore previous window after delay if configured
-        if config.show_terminal_on_translate && config.auto_hide_terminal_seconds > 0 {
+        if config.show_terminal_on_translate && config.auto_hide_terminal_seconds > 0 && self.window_manager.is_some() {
             self.hide_terminal_and_restore(config.auto_hide_terminal_seconds)
                 .await;
         }
@@ -408,12 +431,16 @@ impl Translator {
     /// Hide terminal window and restore previously active window
     /// Delays hiding if mouse cursor is over the terminal
     async fn hide_terminal_and_restore(&self, delay_seconds: u64) {
+        let Some(wm) = &self.window_manager else {
+            return;
+        };
+
         // Wait specified time to let user see the result
         tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
 
         // Check if mouse is over terminal, and wait until it moves away
         loop {
-            if !self.window_manager.is_mouse_over_terminal() {
+            if !wm.is_mouse_over_terminal() {
                 break;
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -422,14 +449,14 @@ impl Translator {
         // Restore the previously active window
         if let Ok(stored) = self.stored_foreground_window.lock() {
             if let Some(prev_window) = *stored {
-                if let Err(e) = self.window_manager.set_foreground_window(prev_window) {
+                if let Err(e) = wm.set_foreground_window(prev_window) {
                     println!("Failed to restore previous window: {}", e);
                 }
             }
         }
 
         // Hide the terminal
-        if let Err(e) = self.window_manager.hide_terminal() {
+        if let Err(e) = wm.hide_terminal() {
             println!("Failed to hide terminal: {}", e);
         }
     }

@@ -16,17 +16,16 @@ pub struct InteractiveMode {
 }
 
 impl InteractiveMode {
-    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
-        let translator = Translator::new_with_config(config_manager.clone())?;
+    pub fn with_translator(translator: Translator, config_manager: Arc<ConfigManager>) -> Self {
         let should_exit = Arc::new(AtomicBool::new(false));
         let speech_manager = SpeechManager::new();
 
-        Ok(Self {
+        Self {
             translator,
             config_manager,
             should_exit,
             speech_manager,
-        })
+        }
     }
 
     pub fn get_exit_flag(&self) -> Arc<AtomicBool> {

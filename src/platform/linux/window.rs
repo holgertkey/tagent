@@ -243,6 +243,7 @@ unsafe fn get_active_window(display: *mut xlib::Display, root: c_ulong) -> Optio
         if window != 0 {
             return Some(window);
         }
+        return None;
     }
     if !prop.is_null() {
         xlib::XFree(prop as *mut _);
