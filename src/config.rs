@@ -970,8 +970,11 @@ impl HotkeyParser {
             HotkeyType::ModifierCombo { modifiers, key } => {
                 // Forbid Shift-only combinations (Shift+Key interferes with text input)
                 // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
-                let has_shift = modifiers.contains(&keycodes::KEY_SHIFT);
-                let only_shift = modifiers.len() == 1 && has_shift;
+                let only_shift = modifiers.iter().all(|&m| {
+                    m == keycodes::KEY_SHIFT
+                        || m == keycodes::KEY_LSHIFT
+                        || m == keycodes::KEY_RSHIFT
+                });
 
                 if only_shift {
                     return Err("Shift+Key combinations are not allowed (interferes with text input). Use multi-modifier combinations like Ctrl+Shift+T or Alt+Shift+Space instead.".to_string());
