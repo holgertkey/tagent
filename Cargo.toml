@@ -2,13 +2,19 @@
 name = "tagent"
 version = "0.11.0+016"
 edition = "2021"
-description = "Text translator with unified GUI/Interactive interface and CLI mode"
+description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]
 license = "MIT"
-repository = "https://github.com/holgertkey/tagent-win"
+repository = "https://github.com/holgertkey/tagent"
+homepage = "https://github.com/holgertkey/tagent"
 readme = "README.md"
-keywords = ["translation", "gui", "cli", "dictionary"]
+keywords = ["translation", "translate", "cli", "dictionary", "tts"]
 categories = ["command-line-utilities", "internationalization"]
+exclude = [
+    "CLAUDE.md",
+    ".debug/",
+    ".github/",
+]
 
 [dependencies]
 # Cross-platform dependencies
