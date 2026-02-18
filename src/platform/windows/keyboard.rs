@@ -128,7 +128,7 @@ impl HotkeyState {
                                         .last_key_interrupted
                                         .lock()
                                         .ok()
-                                        .map_or(false, |f| *f);
+                                        .is_some_and(|f| *f);
 
                                     if !was_interrupted
                                         && elapsed >= Duration::from_millis(*min_interval_ms)

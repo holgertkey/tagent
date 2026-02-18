@@ -270,7 +270,7 @@ impl SpeechManager {
     /// Print speech label with optional color
     pub fn print_speech_label(text: &str, label_color: Option<&str>) {
         let speech_label = "[Speech]: ";
-        if let Some(color) = label_color.and_then(|c| ConfigManager::parse_color(c)) {
+        if let Some(color) = label_color.and_then(ConfigManager::parse_color) {
             print!("{}", speech_label.color(color));
         } else {
             print!("{}", speech_label);
