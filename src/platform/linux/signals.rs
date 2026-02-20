@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static CTRL_C_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 /// Set up Linux-specific signal handling (Ctrl+C)
-pub fn setup() -> Result<(), Box<dyn std::error::Error>> {
+pub fn setup() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ctrlc::set_handler(move || {
         // If Ctrl+C was already received once, force exit
         if CTRL_C_RECEIVED.load(Ordering::Relaxed) {

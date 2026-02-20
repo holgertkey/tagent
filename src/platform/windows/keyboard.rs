@@ -201,7 +201,7 @@ impl KeyboardHook {
         translator: Translator,
         should_exit: Arc<AtomicBool>,
         config_manager: Arc<ConfigManager>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         TRANSLATOR
             .set(Arc::new(translator))
             .map_err(|_| "Translator already initialized")?;
@@ -300,7 +300,7 @@ impl KeyboardHook {
         Ok(Self)
     }
 
-    pub async fn start(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             let h_instance = GetModuleHandleW(None)?;
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), h_instance, 0)?;
@@ -429,7 +429,7 @@ unsafe fn trigger_speech() {
 async fn speak_clipboard(
     _translator: &Translator,
     stop_flag: Arc<AtomicBool>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     use crate::platform::ClipboardManager;
     use crate::platform::WindowManager;
     use std::io::{self, Write};

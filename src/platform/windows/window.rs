@@ -10,7 +10,7 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         unsafe {
             let console_window = GetConsoleWindow();
             if console_window.0 == 0 {
@@ -22,7 +22,7 @@ impl WindowManager {
     }
 
     /// Show and bring the terminal window to foreground
-    pub fn show_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn show_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             ShowWindow(self.console_window, SW_SHOW);
             SetForegroundWindow(self.console_window);
@@ -36,7 +36,7 @@ impl WindowManager {
     }
 
     /// Hide the terminal window
-    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             ShowWindow(self.console_window, SW_HIDE);
         }
@@ -56,7 +56,7 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground
-    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error>> {
+    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             if IsIconic(handle.0).as_bool() {
                 ShowWindow(handle.0, SW_RESTORE);

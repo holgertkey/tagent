@@ -10,7 +10,7 @@ impl ClipboardManager {
     }
 
     /// Get text from clipboard
-    pub fn get_text(&self) -> Result<String, Box<dyn Error>> {
+    pub fn get_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         let mut clipboard = Clipboard::new()
             .map_err(|e| format!("Clipboard init error: {}", e))?;
         clipboard
@@ -19,7 +19,7 @@ impl ClipboardManager {
     }
 
     /// Set text to clipboard
-    pub fn set_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
+    pub fn set_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut clipboard = Clipboard::new()
             .map_err(|e| format!("Clipboard init error: {}", e))?;
         clipboard
@@ -28,7 +28,7 @@ impl ClipboardManager {
     }
 
     /// Automatically copy selected text (simulate Ctrl+C via xdotool on X11)
-    pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error>> {
+    pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
             // Pure Wayland without XWayland: auto-copy not supported
             return Err("Auto-copy not supported on Wayland. Copy text manually before pressing hotkey.".into());
@@ -90,7 +90,7 @@ impl ClipboardManager {
     }
 
     /// Get text from clipboard with automatic copying
-    pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error>> {
+    pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.copy_selected_text()?;
         self.get_text()
     }

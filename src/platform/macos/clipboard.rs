@@ -8,19 +8,19 @@ impl ClipboardManager {
         Self
     }
 
-    pub fn get_text(&self) -> Result<String, Box<dyn Error>> {
+    pub fn get_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         Err("Clipboard not yet implemented for macOS".into())
     }
 
-    pub fn set_text(&self, _text: &str) -> Result<(), Box<dyn Error>> {
+    pub fn set_text(&self, _text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         Err("Clipboard not yet implemented for macOS".into())
     }
 
-    pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error>> {
+    pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         Err("Auto-copy not yet implemented for macOS".into())
     }
 
-    pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error>> {
+    pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.copy_selected_text()?;
         self.get_text()
     }

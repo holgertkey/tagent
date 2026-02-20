@@ -12,7 +12,7 @@ pub struct CliHandler {
 }
 
 impl CliHandler {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         let config_path = ConfigManager::get_default_config_path()?;
         let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
         let translator = Translator::new_cli(config_manager.clone())?;
@@ -38,12 +38,12 @@ impl CliHandler {
     }
 
     /// Show current configuration
-    pub fn show_config(&self) -> Result<(), Box<dyn Error>> {
+    pub fn show_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.config_manager.display_config()
     }
 
     /// Process CLI arguments and determine action
-    pub async fn process_args(&self, args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    pub async fn process_args(&self, args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
         if args.len() < 2 {
             println!("Error: No arguments provided");
             println!("Use --help for usage information");
@@ -130,7 +130,7 @@ impl CliHandler {
     }
 
     /// Main translation function for CLI
-    pub async fn translate_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn translate_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
             eprintln!("Usage: tagent <text to translate>");
@@ -191,7 +191,7 @@ impl CliHandler {
         source_code: &str,
         target_code: &str,
         config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         match self
             .translator
             .translate_text_public(text, source_code, target_code)
@@ -226,7 +226,7 @@ impl CliHandler {
     }
 
     /// Speak text using text-to-speech
-    async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error>> {
+    async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
             eprintln!("Usage: tagent -s \"text to speak\"");

@@ -100,7 +100,7 @@ impl TranslationProvider for GoogleTranslateProvider {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
@@ -156,7 +156,7 @@ impl TranslationProvider for GoogleTranslateProvider {
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<Option<DictionaryEntry>, Box<dyn Error>> {
+    ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
@@ -190,7 +190,7 @@ impl TranslationProvider for GoogleTranslateProvider {
         Ok(self.parse_dictionary_response(&json))
     }
 
-    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error>> {
+    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();

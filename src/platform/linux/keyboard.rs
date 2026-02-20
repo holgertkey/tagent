@@ -233,7 +233,7 @@ impl KeyboardHook {
         translator: Translator,
         should_exit: Arc<AtomicBool>,
         config_manager: Arc<ConfigManager>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self {
             translator,
             should_exit,
@@ -241,7 +241,7 @@ impl KeyboardHook {
         })
     }
 
-    pub async fn start(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check display server
         let has_x11 = std::env::var("DISPLAY").is_ok();
         let has_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
@@ -264,7 +264,7 @@ impl KeyboardHook {
         self.start_x11().await
     }
 
-    async fn start_x11(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn start_x11(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Parse hotkeys from config
         let config = self.config_manager.get_config();
 
@@ -574,7 +574,7 @@ struct KeyboardEventState {
 async fn speak_clipboard(
     config_manager: &ConfigManager,
     stop_flag: Arc<AtomicBool>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     use crate::platform::ClipboardManager;
     use std::io::{self, Write};
 

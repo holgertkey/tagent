@@ -31,7 +31,7 @@ pub trait TranslationProvider: Send + Sync {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error>>;
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// Get dictionary entry for a single word
     /// Returns None if dictionary lookup is not supported or word not found
@@ -40,11 +40,11 @@ pub trait TranslationProvider: Send + Sync {
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<Option<DictionaryEntry>, Box<dyn Error>>;
+    ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>>;
 
     /// Detect the language of the given text
     /// Returns language code (e.g., "en", "ru", "de")
-    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error>>;
+    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// Get provider name for display purposes
     #[allow(dead_code)]
@@ -52,7 +52,7 @@ pub trait TranslationProvider: Send + Sync {
 }
 
 /// Create translation provider based on name
-pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvider>, Box<dyn Error>> {
+pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvider>, Box<dyn Error + Send + Sync>> {
     match provider_name.to_lowercase().as_str() {
         "google" => Ok(Box::new(google::GoogleTranslateProvider::new())),
         _ => Err(format!("Unknown translation provider: {}", provider_name).into()),

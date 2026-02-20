@@ -8,9 +8,13 @@ fn main() {
     // Sync version in documentation files
     sync_version_in_docs(version);
 
-    // Only build Windows resources when targeting Windows
+    // Only embed Windows resources when building the tagent binary (not when used as a library).
+    // Controlled by the "binary-resources" feature flag so that tagent-gui (which uses tauri-build
+    // for its own resources) does not get a duplicate VERSION resource linker error.
     #[cfg(target_os = "windows")]
-    build_windows_resources(version);
+    if std::env::var("CARGO_FEATURE_BINARY_RESOURCES").is_ok() {
+        build_windows_resources(version);
+    }
 }
 
 /// Build Windows executable resources (icon, version info)

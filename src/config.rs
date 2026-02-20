@@ -70,7 +70,7 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     /// Get default configuration file path in AppData\Roaming\Tagent
-    pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error>> {
+    pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
             .join("Tagent");
@@ -83,7 +83,7 @@ impl ConfigManager {
         Ok(config_dir.join("tagent.conf"))
     }
 
-    pub fn new(config_path: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn new(config_path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let manager = Self {
             config_path: config_path.to_string(),
             config: Arc::new(Mutex::new(Config::default())),
@@ -97,7 +97,7 @@ impl ConfigManager {
     }
 
     /// Load configuration from file or create default if not exists
-    fn load_or_create_config(&self) -> Result<(), Box<dyn Error>> {
+    fn load_or_create_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if Path::new(&self.config_path).exists() {
             self.load_config()?;
         } else {
@@ -107,7 +107,7 @@ impl ConfigManager {
     }
 
     /// Create default configuration file
-    fn create_default_config(&self) -> Result<(), Box<dyn Error>> {
+    fn create_default_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let default_config = Config::default();
         let ini_content = self.create_ini_content(&default_config);
 
@@ -272,7 +272,7 @@ EnableSpeechHotkey = {}
     }
 
     /// Load configuration from INI file
-    fn load_config(&self) -> Result<(), Box<dyn Error>> {
+    fn load_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let content = fs::read_to_string(&self.config_path)?;
         let parsed_config = self.parse_ini(&content)?;
 
@@ -421,7 +421,7 @@ EnableSpeechHotkey = {}
     fn parse_ini(
         &self,
         content: &str,
-    ) -> Result<HashMap<String, HashMap<String, String>>, Box<dyn Error>> {
+    ) -> Result<HashMap<String, HashMap<String, String>>, Box<dyn Error + Send + Sync>> {
         let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
         let mut current_section: Option<String> = None;
 
@@ -457,7 +457,7 @@ EnableSpeechHotkey = {}
 
     /// Get current configuration
     /// Save current in-memory configuration to the config file
-    pub fn save_config(&self) -> Result<(), Box<dyn Error>> {
+    pub fn save_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.get_config();
         let ini_content = self.create_ini_content(&config);
         fs::write(&self.config_path, ini_content)?;
@@ -467,6 +467,13 @@ EnableSpeechHotkey = {}
 
     pub fn get_config(&self) -> Config {
         self.config.lock().unwrap().clone()
+    }
+
+    /// Replace the entire in-memory config (without saving to file)
+    pub fn set_config(&self, new_config: Config) {
+        if let Ok(mut config) = self.config.lock() {
+            *config = new_config;
+        }
     }
 
     /// Set source and target languages in memory (without saving to file)
@@ -580,7 +587,7 @@ EnableSpeechHotkey = {}
     }
 
     /// Display current configuration (unified for CLI and Interactive modes)
-    pub fn display_config(&self) -> Result<(), Box<dyn Error>> {
+    pub fn display_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Reload config to get latest values
         self.check_and_reload()?;
         let config = self.get_config();
@@ -676,7 +683,7 @@ EnableSpeechHotkey = {}
     }
 
     /// Check if config file was modified and reload if necessary
-    pub fn check_and_reload(&self) -> Result<bool, Box<dyn Error>> {
+    pub fn check_and_reload(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         if !Path::new(&self.config_path).exists() {
             return Ok(false);
         }
@@ -701,7 +708,7 @@ EnableSpeechHotkey = {}
     }
 
     /// Update last modified time
-    fn update_last_modified_time(&self) -> Result<(), Box<dyn Error>> {
+    fn update_last_modified_time(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if Path::new(&self.config_path).exists() {
             let metadata = fs::metadata(&self.config_path)?;
             let modified = metadata.modified()?;
@@ -838,7 +845,7 @@ pub fn save_translation_history(
     source_lang: &str,
     target_lang: &str,
     config: &Config,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     if !config.save_translation_history {
         return Ok(());
     }

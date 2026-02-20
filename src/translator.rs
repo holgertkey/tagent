@@ -15,7 +15,7 @@ pub struct Translator {
 }
 
 impl Translator {
-    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
+    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let window_manager = match WindowManager::new() {
             Ok(wm) => Some(Arc::new(wm)),
             Err(_) => {
@@ -29,14 +29,14 @@ impl Translator {
     }
 
     /// Create Translator without window management (for CLI mode)
-    pub fn new_cli(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error>> {
+    pub fn new_cli(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Self::build(config_manager, None)
     }
 
     fn build(
         config_manager: Arc<ConfigManager>,
         window_manager: Option<Arc<WindowManager>>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         // Create translation provider based on config
         let config = config_manager.get_config();
         let provider = providers::create_provider(&config.translate_provider)?;
@@ -55,9 +55,9 @@ impl Translator {
         &self,
         text: &str,
         config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if config.copy_to_clipboard {
-            self.clipboard.set_text(text)
+            self.clipboard.set_text(text).map_err(|e| -> Box<dyn Error + Send + Sync> { e.to_string().into() })
         } else {
             Ok(())
         }
@@ -80,7 +80,7 @@ impl Translator {
     }
 
     /// Main function for translating text from clipboard
-    pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check if config file was modified and reload if necessary
         if let Err(e) = self.config_manager.check_and_reload() {
             println!("Config reload error: {}", e);
@@ -109,7 +109,7 @@ impl Translator {
             }
             Err(e) => {
                 println!("Copy or clipboard read error: {}", e);
-                return Err(e);
+                return Err(e.to_string().into());
             }
         };
 
@@ -192,7 +192,7 @@ impl Translator {
         source_code: &str,
         target_code: &str,
         config: &crate::config::Config,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Clear any existing prompt and move to new line
         print!("\r");
         io::stdout().flush().ok();
@@ -255,7 +255,7 @@ impl Translator {
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
 
         match entry_opt {
@@ -270,7 +270,7 @@ impl Translator {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.translate_text_internal(text, from, to).await
     }
 
@@ -506,7 +506,7 @@ impl Translator {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.provider.translate_text(text, from, to).await
     }
 }

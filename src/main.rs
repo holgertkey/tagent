@@ -15,7 +15,7 @@ use std::sync::Arc;
 use translator::Translator;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Set up platform-specific signal handling
     platform::signals::setup()?;
 

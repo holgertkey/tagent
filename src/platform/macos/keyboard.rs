@@ -13,11 +13,11 @@ impl KeyboardHook {
         _translator: Translator,
         should_exit: Arc<AtomicBool>,
         _config_manager: Arc<ConfigManager>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self { should_exit })
     }
 
-    pub async fn start(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         eprintln!("Global hotkeys not yet implemented for macOS. Use interactive mode.");
         loop {
             if self.should_exit.load(Ordering::Relaxed) {

@@ -1,0 +1,42 @@
+{
+  "productName": "tagent-gui",
+  "version": "0.11.0",
+  "identifier": "com.tagent.gui",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../ui && npm run dev",
+    "beforeBuildCommand": "cd ../ui && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tagent",
+        "width": 620,
+        "height": 720,
+        "minWidth": 480,
+        "minHeight": 500,
+        "resizable": true,
+        "decorations": true,
+        "center": true,
+        "visible": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.ico",
+      "iconAsTemplate": true,
+      "tooltip": "Tagent — Text Translator"
+    },
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico"
+    ]
+  }
+}

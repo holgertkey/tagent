@@ -18,7 +18,7 @@ unsafe impl Send for WindowManager {}
 unsafe impl Sync for WindowManager {}
 
 impl WindowManager {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         unsafe {
             let display = xlib::XOpenDisplay(std::ptr::null());
             if display.is_null() {
@@ -47,7 +47,7 @@ impl WindowManager {
     }
 
     /// Show and bring the terminal window to foreground
-    pub fn show_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn show_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             // Map the window (un-iconify)
             xlib::XMapRaised(self.display, self.terminal_window);
@@ -61,7 +61,7 @@ impl WindowManager {
     }
 
     /// Hide the terminal window (iconify/minimize)
-    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             let screen = xlib::XDefaultScreen(self.display);
             xlib::XIconifyWindow(self.display, self.terminal_window, screen);
@@ -83,7 +83,7 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground
-    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error>> {
+    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             xlib::XMapRaised(self.display, handle.0);
             send_active_window_message(self.display, self.root, handle.0);

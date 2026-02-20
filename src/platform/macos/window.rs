@@ -6,15 +6,15 @@ pub struct WindowHandle(pub u64);
 pub struct WindowManager;
 
 impl WindowManager {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self)
     }
 
-    pub fn show_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn show_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok(())
     }
 
-    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error>> {
+    pub fn hide_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok(())
     }
 
@@ -22,7 +22,7 @@ impl WindowManager {
         None
     }
 
-    pub fn set_foreground_window(&self, _handle: WindowHandle) -> Result<(), Box<dyn Error>> {
+    pub fn set_foreground_window(&self, _handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok(())
     }
 
