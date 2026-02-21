@@ -1,47 +1,63 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import LanguageSelector from "./components/LanguageSelector.svelte";
-  import DictionaryView from "./components/DictionaryView.svelte";
+  import { onMount, tick } from "svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import {
     translate,
     getConfig,
     getLanguages,
     speak,
-    swapLanguages,
+    saveConfig,
     copyToClipboard,
   } from "./lib/tauri";
-  import type { TranslationResult, ConfigData, LanguageEntry } from "./lib/types";
+  import type { ConfigData, LanguageEntry } from "./lib/types";
 
-  // ─── State ──────────────────────────────────────────────────────────────────
+  // ─── Types ────────────────────────────────────────────────────────────────
+
+  type LineKind = "echo" | "result" | "error" | "info";
+
+  interface Line {
+    kind: LineKind;
+    text: string;
+  }
+
+  // ─── State ────────────────────────────────────────────────────────────────
+
   let inputText = $state("");
-  let result = $state<TranslationResult | null>(null);
+  let lines = $state<Line[]>([]);
   let loading = $state(false);
-  let error = $state<string | null>(null);
-  let copied = $state(false);
-  let speaking = $state(false);
-
+  let config = $state<ConfigData | null>(null);
+  let languages = $state<LanguageEntry[]>([]);
   let fromLang = $state("auto");
   let toLang = $state("ru");
+  let lastResult = $state<string | null>(null);
 
-  let languages = $state<LanguageEntry[]>([]);
-  let config = $state<ConfigData | null>(null);
+  let inputEl: HTMLInputElement;
+  let outputEl: HTMLDivElement;
 
-  let textareaEl: HTMLTextAreaElement;
+  // ─── Derived ─────────────────────────────────────────────────────────────
 
-  // ─── Lifecycle ───────────────────────────────────────────────────────────────
+  const promptLabel = $derived(
+    fromLang === "auto"
+      ? "[Auto]"
+      : `[${languages.find((l) => l.code === fromLang)?.name ?? fromLang}]`
+  );
+
+  const translateHotkey = $derived(config?.translate_hotkey ?? "Alt+Q");
+  const speechHotkey = $derived(config?.speech_hotkey ?? "Alt+E");
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+
   onMount(async () => {
     [languages, config] = await Promise.all([getLanguages(), getConfig()]);
-
     if (config) {
-      // Convert language names to codes for the selectors
       fromLang = nameToCode(config.source_language, languages);
       toLang = nameToCode(config.target_language, languages);
     }
-
-    textareaEl?.focus();
+    inputEl?.focus();
   });
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+
   function nameToCode(name: string, langs: LanguageEntry[]): string {
     const found = langs.find(
       (l) => l.name.toLowerCase() === name.toLowerCase()
@@ -49,477 +65,400 @@
     return found ? found.code : name.toLowerCase();
   }
 
-  // ─── Actions ─────────────────────────────────────────────────────────────────
-  async function doTranslate() {
-    const text = inputText.trim();
-    if (!text || loading) return;
+  function codeToName(code: string): string {
+    if (code === "auto") return "Auto";
+    return languages.find((l) => l.code === code)?.name ?? code;
+  }
 
+  function addLine(kind: LineKind, text: string) {
+    lines = [...lines, { kind, text }];
+  }
+
+  async function scrollToBottom() {
+    await tick();
+    if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  // ─── Translation ──────────────────────────────────────────────────────────
+
+  async function doTranslate(text: string) {
+    if (!text || loading) return;
     loading = true;
-    error = null;
-    result = null;
-    copied = false;
+    addLine("echo", text);
 
     try {
-      result = await translate(text, fromLang, toLang);
+      const res = await translate(text, fromLang, toLang);
+
+      if (res.is_dictionary && res.dictionary) {
+        addLine("result", res.translated);
+        addLine("info", "");
+        for (const entry of res.dictionary.entries) {
+          addLine("info", `  ${entry.part_of_speech}:`);
+          for (const def of entry.definitions) {
+            addLine("info", `    ${def.text}`);
+            if (def.synonyms.length > 0) {
+              addLine("info", `    (${def.synonyms.slice(0, 3).join(", ")})`);
+            }
+          }
+        }
+      } else {
+        addLine("result", res.translated);
+      }
+
+      lastResult = res.translated;
+
+      if (config?.copy_to_clipboard) {
+        await copyToClipboard(res.translated).catch(() => {});
+      }
     } catch (e) {
-      error = String(e);
+      addLine("error", `Error: ${e}`);
     } finally {
       loading = false;
+      await scrollToBottom();
     }
   }
 
-  async function doSwap() {
-    try {
-      const [newFrom, newTo] = await swapLanguages();
-      fromLang = nameToCode(newFrom, languages);
-      toLang = nameToCode(newTo, languages);
-    } catch {
-      // Fallback: swap locally
-      if (fromLang !== "auto") {
-        [fromLang, toLang] = [toLang, fromLang];
+  // ─── Commands ─────────────────────────────────────────────────────────────
+
+  async function handleCommand(cmd: string) {
+    const parts = cmd.trim().split(/\s+/);
+    const name = parts[0].toLowerCase();
+
+    switch (name) {
+      case "/h":
+      case "/help":
+        addLine("info", "Commands:");
+        addLine("info", "  /h (help), /c (config), /s (speech), /l (lang),");
+        addLine("info", "  /save (config), /cls (clear), /q (quit)");
+        addLine("info", "");
+        addLine("info", "Language examples:");
+        addLine("info", "  /l ru            -- set target to Russian");
+        addLine("info", "  /l en ru         -- source=English, target=Russian");
+        addLine("info", "  /l auto          -- set source to Auto");
+        break;
+
+      case "/c":
+      case "/config":
+        if (config) {
+          addLine("info", "Current config:");
+          addLine(
+            "info",
+            `  Languages:  ${codeToName(fromLang)} \u2192 ${codeToName(toLang)}`
+          );
+          addLine("info", `  Provider:   ${config.translate_provider}`);
+          addLine(
+            "info",
+            `  Translate:  ${config.translate_hotkey}`
+          );
+          addLine(
+            "info",
+            `  Speech:     ${config.speech_hotkey}`
+          );
+          addLine(
+            "info",
+            `  Dictionary: ${config.show_dictionary ? "on" : "off"}`
+          );
+          addLine(
+            "info",
+            `  History:    ${config.save_translation_history ? "on" : "off"}`
+          );
+          addLine(
+            "info",
+            `  Auto-copy:  ${config.copy_to_clipboard ? "on" : "off"}`
+          );
+        }
+        break;
+
+      case "/s":
+      case "/speech": {
+        const text = lastResult ?? "";
+        if (text) {
+          addLine("info", `Speaking: ${text}`);
+          await speak(text).catch((e) => addLine("error", `TTS error: ${e}`));
+        } else {
+          addLine("info", "Nothing to speak. Translate something first.");
+        }
+        break;
       }
+
+      case "/l":
+      case "/lang": {
+        const args = parts.slice(1);
+        if (args.length === 0) {
+          addLine(
+            "info",
+            `Languages: ${codeToName(fromLang)} \u2192 ${codeToName(toLang)}`
+          );
+          break;
+        }
+        if (args.length === 1) {
+          // Set target (or source if "auto")
+          const code = args[0].toLowerCase();
+          if (code === "auto") {
+            fromLang = "auto";
+            addLine("info", "Source language: Auto");
+            break;
+          }
+          const lang = languages.find(
+            (l) => l.code === code || l.name.toLowerCase() === code
+          );
+          if (lang) {
+            toLang = lang.code;
+            addLine("info", `Target language: ${lang.name}`);
+          } else {
+            addLine("error", `Unknown language: ${args[0]}`);
+          }
+          break;
+        }
+        // Two args: source and target
+        const srcCode = args[0].toLowerCase();
+        const tgtCode = args[1].toLowerCase();
+        const srcLang =
+          srcCode === "auto"
+            ? { code: "auto", name: "Auto" }
+            : languages.find(
+                (l) => l.code === srcCode || l.name.toLowerCase() === srcCode
+              );
+        const tgtLang = languages.find(
+          (l) => l.code === tgtCode || l.name.toLowerCase() === tgtCode
+        );
+        if (srcLang && tgtLang) {
+          fromLang = srcLang.code;
+          toLang = tgtLang.code;
+          addLine(
+            "info",
+            `Languages: ${srcLang.name} \u2192 ${tgtLang.name}`
+          );
+        } else {
+          addLine("error", `Unknown language(s): ${args.join(" ")}`);
+        }
+        break;
+      }
+
+      case "/save":
+        if (config) {
+          try {
+            await saveConfig({
+              ...config,
+              source_language: codeToName(fromLang),
+              target_language: codeToName(toLang),
+            });
+            addLine("info", "Config saved.");
+          } catch (e) {
+            addLine("error", `Save failed: ${e}`);
+          }
+        }
+        break;
+
+      case "/cls":
+      case "/clear":
+        lines = [];
+        break;
+
+      case "/q":
+      case "/quit":
+        await getCurrentWindow().hide();
+        break;
+
+      default:
+        addLine("error", `Unknown command: ${name}. Type /h for help.`);
     }
-    // Re-translate if there's a result
-    if (result) doTranslate();
+
+    await scrollToBottom();
   }
 
-  async function doCopy() {
-    const text = result?.translated ?? "";
-    if (!text) return;
-    try {
-      await copyToClipboard(text);
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
-    } catch (e) {
-      error = `Copy failed: ${e}`;
-    }
-  }
+  // ─── Input handler ────────────────────────────────────────────────────────
 
-  async function doSpeak() {
-    const text = result?.translated ?? inputText.trim();
-    if (!text || speaking) return;
-    speaking = true;
-    try {
-      await speak(text);
-    } catch {
-      // TTS errors are non-critical
-    } finally {
-      speaking = false;
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      doTranslate();
-    }
-  }
-
-  function clearAll() {
+  async function handleKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const text = inputText.trim();
     inputText = "";
-    result = null;
-    error = null;
-    textareaEl?.focus();
+    if (!text) return;
+
+    if (text.startsWith("/")) {
+      addLine("echo", text);
+      await handleCommand(text);
+    } else {
+      await doTranslate(text);
+    }
   }
 
+  function focusInput() {
+    inputEl?.focus();
+  }
 </script>
 
-<div class="app">
-  <!-- ─── Header ──────────────────────────────────────────────────────────── -->
-  <header class="header">
-    <div class="lang-row">
-      <LanguageSelector bind:value={fromLang} {languages} allowAuto={true} />
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<div class="terminal" onclick={focusInput}>
 
-      <button class="swap-btn" onclick={doSwap} title="Swap languages (⇄)">
-        ⇄
-      </button>
-
-      <LanguageSelector bind:value={toLang} {languages} allowAuto={false} />
+  <!-- ─── Banner ──────────────────────────────────────────────────────────── -->
+  <div class="banner">
+    <div class="banner-title">Text Translator v{__APP_VERSION__}</div>
+    <div class="banner-section">
+      <div class="banner-label">Active Hotkeys:</div>
+      <div class="banner-item">Translation: <span class="key">{translateHotkey}</span></div>
+      <div class="banner-item">Speech: <span class="key">{speechHotkey}</span></div>
     </div>
-
-    <div class="header-right">
-      <span class="hotkey-hint">
-        {config?.translate_hotkey ?? "Alt+Q"}
-      </span>
+    <div class="banner-section">
+      <div class="banner-label">Commands:</div>
+      <div class="banner-item">/h (help), /c (config), /s (speech), /l (lang),</div>
+      <div class="banner-item">/save (config), /cls (clear), /q (quit)</div>
     </div>
-  </header>
+  </div>
 
-  <!-- ─── Input area ────────────────────────────────────────────────────────── -->
-  <section class="input-section">
-    <div class="input-wrapper">
-      <textarea
-        bind:this={textareaEl}
-        bind:value={inputText}
-        onkeydown={handleKeydown}
-        placeholder="Type text to translate… (Enter to translate, Shift+Enter for new line)"
-        class="input-area"
-        rows={5}
-        spellcheck={false}
-      ></textarea>
+  <div class="banner-sep"></div>
 
-      {#if inputText}
-        <button class="clear-btn" onclick={clearAll} title="Clear (Esc)">✕</button>
-      {/if}
-    </div>
-
-    <div class="input-actions">
-      <span class="char-count">{inputText.length}</span>
-
-      <button
-        class="action-btn secondary"
-        onclick={doSpeak}
-        disabled={speaking || !inputText.trim()}
-        title="Speak input text"
-      >
-        {speaking ? "…" : "🔊"} Speak
-      </button>
-
-      <button
-        class="action-btn primary"
-        onclick={doTranslate}
-        disabled={loading || !inputText.trim()}
-      >
-        {loading ? "Translating…" : "Translate ↵"}
-      </button>
-    </div>
-  </section>
-
-  <!-- ─── Output area ───────────────────────────────────────────────────────── -->
-  <section class="output-section">
-    {#if error}
-      <div class="error-banner">⚠ {error}</div>
-    {:else if loading}
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <span>Translating…</span>
-      </div>
-    {:else if result}
-      <!-- Translation result -->
-      <div class="result-header">
-        <span class="result-label">
-          {languages.find((l) => l.code === result!.from_lang)?.name ?? result.from_lang}
-          →
-          {languages.find((l) => l.code === result!.to_lang)?.name ?? result.to_lang}
-        </span>
-        <div class="result-actions">
-          <button
-            class="icon-btn"
-            onclick={doSpeak}
-            disabled={speaking}
-            title="Speak translation"
-          >
-            {speaking ? "…" : "🔊"}
-          </button>
-          <button
-            class="icon-btn"
-            onclick={doCopy}
-            title={copied ? "Copied!" : "Copy translation"}
-            class:copied
-          >
-            {copied ? "✓" : "📋"}
-          </button>
-        </div>
-      </div>
-
-      <p class="translation-text">{result.translated}</p>
-
-      {#if result.is_dictionary && result.dictionary}
-        <div class="divider"></div>
-        <DictionaryView data={result.dictionary} />
-      {/if}
-    {:else}
-      <div class="empty-state">
-        <span>Translation will appear here</span>
-      </div>
+  <!-- ─── Output ──────────────────────────────────────────────────────────── -->
+  <div class="output" bind:this={outputEl}>
+    {#each lines as line}
+      <div class="line line-{line.kind}">{line.text}</div>
+    {/each}
+    {#if loading}
+      <div class="line line-info">  ...</div>
     {/if}
-  </section>
+  </div>
 
-  <!-- ─── Status bar ────────────────────────────────────────────────────────── -->
-  <footer class="statusbar">
-    <span>Tagent v{__APP_VERSION__}</span>
-    <span class="statusbar-right">
-      {#if config?.save_translation_history}
-        <span class="badge">history on</span>
-      {/if}
-      {#if config?.copy_to_clipboard}
-        <span class="badge">auto-copy</span>
-      {/if}
-    </span>
-  </footer>
+  <!-- ─── Prompt ───────────────────────────────────────────────────────────── -->
+  <div class="prompt-row">
+    <span class="prompt-label">{promptLabel}:</span>
+    <input
+      bind:this={inputEl}
+      bind:value={inputText}
+      onkeydown={handleKeydown}
+      class="prompt-input"
+      spellcheck={false}
+      autocomplete="off"
+      disabled={loading}
+    />
+  </div>
 </div>
 
 <style>
-  /* ─── Layout ───────────────────────────────────────────────────────────────── */
-  .app {
+  /* ─── Terminal container ─────────────────────────────────────────────────── */
+  .terminal {
     display: flex;
     flex-direction: column;
     height: 100%;
-    gap: 0;
-  }
-
-  /* ─── Header ────────────────────────────────────────────────────────────────── */
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .lang-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .swap-btn {
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 16px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: color 0.15s, background 0.15s;
-  }
-
-  .swap-btn:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-accent);
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .hotkey-hint {
-    font-size: 11px;
-    color: var(--color-text-secondary);
     background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 2px 7px;
-    font-family: monospace;
-  }
-
-  /* ─── Input section ─────────────────────────────────────────────────────────── */
-  .input-section {
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    padding: 12px 14px;
-    gap: 8px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .input-wrapper {
-    position: relative;
-  }
-
-  .input-area {
-    width: 100%;
-    background: var(--color-bg);
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.55;
     color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 10px 34px 10px 12px;
-    resize: none;
-    font-size: 14px;
-    line-height: 1.6;
-    user-select: text;
-    transition: border-color 0.15s;
+    cursor: text;
+    padding: 0;
   }
 
-  .input-area::placeholder {
+  /* ─── Banner ─────────────────────────────────────────────────────────────── */
+  .banner {
+    padding: 12px 16px 10px;
+    flex-shrink: 0;
+  }
+
+  .banner-title {
+    color: var(--color-accent);
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .banner-section {
+    margin-bottom: 6px;
+  }
+
+  .banner-label {
+    color: var(--color-text-secondary);
+  }
+
+  .banner-item {
+    padding-left: 16px;
+    color: var(--color-text-secondary);
+  }
+
+  .key {
+    color: var(--color-warning);
+  }
+
+  .banner-sep {
+    height: 1px;
+    background: var(--color-border);
+    margin: 0 0 4px;
+    flex-shrink: 0;
+  }
+
+  /* ─── Output ─────────────────────────────────────────────────────────────── */
+  .output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 16px 4px;
+    min-height: 0;
+  }
+
+  .line {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 1px 0;
+    user-select: text;
+  }
+
+  .line-echo {
+    color: var(--color-text-secondary);
+  }
+
+  .line-echo::before {
+    content: "> ";
     color: var(--color-text-placeholder);
   }
 
-  .clear-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 13px;
-    padding: 2px 5px;
-    border-radius: 4px;
-  }
-
-  .clear-btn:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
-  }
-
-  .input-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .char-count {
-    font-size: 11px;
-    color: var(--color-text-secondary);
-    margin-right: auto;
-  }
-
-  /* ─── Buttons ───────────────────────────────────────────────────────────────── */
-  .action-btn {
-    padding: 7px 16px;
-    font-size: 13px;
-    border-radius: var(--radius);
-    font-weight: 500;
-  }
-
-  .action-btn.primary {
-    background: var(--color-accent);
-    color: #1e1e2e;
-  }
-
-  .action-btn.primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .action-btn.secondary {
-    background: var(--color-surface);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-  }
-
-  .action-btn.secondary:hover:not(:disabled) {
-    background: var(--color-surface-hover);
-  }
-
-  .action-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .icon-btn {
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 15px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: color 0.15s, background 0.15s;
-  }
-
-  .icon-btn:hover:not(:disabled) {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
-  }
-
-  .icon-btn.copied {
+  .line-result {
     color: var(--color-success);
+    padding-left: 16px;
+    font-size: 14px;
   }
 
-  .icon-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* ─── Output section ────────────────────────────────────────────────────────── */
-  .output-section {
-    flex: 1;
-    padding: 14px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-height: 0;
-    user-select: text;
-  }
-
-  .result-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .result-label {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-  }
-
-  .result-actions {
-    display: flex;
-    gap: 4px;
-  }
-
-  .translation-text {
-    font-size: 18px;
-    font-weight: 500;
-    color: var(--color-text);
-    line-height: 1.4;
-    word-break: break-word;
-  }
-
-  .divider {
-    height: 1px;
-    background: var(--color-border);
-    margin: 4px 0;
-  }
-
-  /* ─── States ────────────────────────────────────────────────────────────────── */
-  .empty-state,
-  .loading-state {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    color: var(--color-text-secondary);
-    font-size: 13px;
-  }
-
-  .spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--color-border);
-    border-top-color: var(--color-accent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .error-banner {
-    background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  .line-error {
     color: var(--color-danger);
-    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    font-size: 13px;
+    padding-left: 16px;
   }
 
-  /* ─── Status bar ─────────────────────────────────────────────────────────────── */
-  .statusbar {
+  .line-info {
+    color: var(--color-text-secondary);
+    padding-left: 16px;
+  }
+
+  /* ─── Prompt ─────────────────────────────────────────────────────────────── */
+  .prompt-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 5px 14px;
-    background: var(--color-surface);
+    padding: 6px 16px 10px;
+    flex-shrink: 0;
+    gap: 0;
     border-top: 1px solid var(--color-border);
-    font-size: 11px;
-    color: var(--color-text-secondary);
+  }
+
+  .prompt-label {
+    color: var(--color-accent);
+    white-space: nowrap;
+    padding-right: 6px;
+    font-family: inherit;
+    font-size: inherit;
     flex-shrink: 0;
   }
 
-  .statusbar-right {
-    display: flex;
-    gap: 6px;
+  .prompt-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    caret-color: var(--color-accent);
+    padding: 0;
   }
 
-  .badge {
-    background: var(--color-accent-dim);
-    color: var(--color-accent);
-    border-radius: 3px;
-    padding: 1px 6px;
-    font-size: 10px;
+  .prompt-input:disabled {
+    opacity: 0.5;
   }
 </style>
