@@ -6,7 +6,7 @@ export const translate = (
   from_lang: string,
   to_lang: string
 ) =>
-  invoke<TranslationResult>("translate", { text, from_lang, to_lang });
+  invoke<TranslationResult>("translate", { text, fromLang: from_lang, toLang: to_lang });
 
 export const getConfig = () => invoke<ConfigData>("get_config");
 
