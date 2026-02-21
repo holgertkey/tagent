@@ -4182,7 +4182,7 @@ dependencies = [
 
 [[package]]
 name = "tagent"
-version = "0.11.0+017"
+version = "0.11.0+018"
 dependencies = [
  "arboard",
  "async-trait",
