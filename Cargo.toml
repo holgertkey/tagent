@@ -68,7 +68,7 @@ x11 = { version = "2.21", features = ["xlib"] }
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
+strip = "debuginfo"
 
 # Windows-only build dependencies
 [target.'cfg(target_os = "windows")'.build-dependencies]
