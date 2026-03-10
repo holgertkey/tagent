@@ -5,7 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.11.0+018] - 2026-02-16
+## [0.11.0+019] - 2026-02-16
+
+### Changed
+- Dictionary entry display: `[Word]:` now shows the primary translation (from the translate API) instead of the first dictionary definition, matching the result shown when dictionary is disabled
+- Dictionary entry layout: primary translation appears on the `[Word]:` line, part-of-speech sections start on the next line
 
 ### Added
 - Wayland compatibility: application now starts and works on Wayland sessions

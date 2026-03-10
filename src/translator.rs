@@ -256,10 +256,21 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let entry_opt = self.provider.get_dictionary_entry(word, from, to).await?;
+        // Run regular translation and dictionary lookup concurrently
+        let (translation_result, dict_result) = tokio::join!(
+            self.translate_text_internal(word, from, to),
+            self.provider.get_dictionary_entry(word, from, to)
+        );
 
-        match entry_opt {
-            Some(entry) => Ok(self.format_dictionary_entry(&entry, to, true)),
+        let primary_translation = translation_result.ok();
+
+        match dict_result? {
+            Some(entry) => Ok(self.format_dictionary_entry(
+                &entry,
+                to,
+                true,
+                primary_translation.as_deref(),
+            )),
             None => Err("Limited dictionary information available".into()),
         }
     }
@@ -275,18 +286,37 @@ impl Translator {
     }
 
     /// Format dictionary entry into string
-    /// cli_mode: true for CLI (no word header), false for GUI (with word header)
+    /// cli_mode: true for CLI/terminal (no word header), false for GUI (with word header)
+    /// primary_translation: result from regular translate API, used as header in terminal mode
     fn format_dictionary_entry(
         &self,
         entry: &crate::providers::DictionaryEntry,
         target_lang: &str,
         cli_mode: bool,
+        primary_translation: Option<&str>,
     ) -> String {
         let mut result = Vec::new();
 
         // Add the original word at the beginning (only for GUI mode)
         if !cli_mode {
             result.push(entry.word.clone());
+        }
+
+        // In terminal mode use primary translation (from translate API) as the header,
+        // falling back to the first dictionary definition if translation unavailable
+        if cli_mode {
+            let header = primary_translation
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    entry
+                        .definitions
+                        .first()
+                        .and_then(|pos| pos.definitions.first())
+                        .map(|def| def.text.clone())
+                });
+            if let Some(h) = header {
+                result.push(h);
+            }
         }
 
         // Format each part of speech entry
