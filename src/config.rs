@@ -470,6 +470,7 @@ EnableSpeechHotkey = {}
     }
 
     /// Replace the entire in-memory config (without saving to file)
+    #[allow(dead_code)]
     pub fn set_config(&self, new_config: Config) {
         if let Ok(mut config) = self.config.lock() {
             *config = new_config;
