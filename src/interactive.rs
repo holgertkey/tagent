@@ -239,7 +239,20 @@ impl InteractiveMode {
                 .get_dictionary_entry(text, source_code, target_code)
                 .await
             {
-                Ok(dictionary_info) => {
+                Ok((dictionary_info, corrected_word)) => {
+                    // If a spelling correction was applied, notify the user
+                    if let Some(ref corrected) = corrected_word {
+                        if corrected.to_lowercase() != text.to_lowercase() {
+                            println!(
+                                "{}",
+                                crate::translator::Translator::correction_notice(
+                                    corrected,
+                                    target_code
+                                )
+                            );
+                        }
+                    }
+
                     // Print colored dictionary label
                     config::print_colored("[Word]: ", &config.dictionary_prompt_color);
                     println!("{}", dictionary_info);

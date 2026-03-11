@@ -88,7 +88,23 @@ impl GoogleTranslateProvider {
                 .unwrap_or("")
                 .to_string();
 
-            Some(DictionaryEntry { word, definitions })
+            // json[0][0][1] is the actual source word Google used for translation.
+            // When Google silently auto-corrects a misspelling (e.g. "violnt" → "violent"),
+            // this field holds the corrected word, which differs from the original input.
+            let corrected_word = json
+                .get(0)
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|v| v.get(1))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+
+            Some(DictionaryEntry {
+                word,
+                corrected_word,
+                definitions,
+            })
         }
     }
 }
@@ -187,7 +203,56 @@ impl TranslationProvider for GoogleTranslateProvider {
         let body = response.text().await?;
         let json: Value = serde_json::from_str(&body)?;
 
-        Ok(self.parse_dictionary_response(&json))
+        // Try parsing dictionary from the primary response.
+        if let Some(entry) = self.parse_dictionary_response(&json) {
+            return Ok(Some(entry));
+        }
+
+        // No dictionary entries found (badly misspelled or unknown word).
+        // Check json[7] for a spell-correction suggestion.
+        // Structure when present: json[7] = ["<b><i>word</i></b>", "word", [flag]]
+        //   json[7][1] = clean corrected word
+        let suggestion = json
+            .get(7)
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.get(1))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s.to_lowercase() != word.to_lowercase());
+
+        if let Some(corrected) = suggestion {
+            // Retry the dictionary lookup with the corrected word.
+            let encoded_corrected =
+                form_urlencoded::byte_serialize(corrected.as_bytes()).collect::<String>();
+            let retry_params = format!(
+                "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
+                from_param, to, encoded_corrected
+            );
+            let retry_url = format!("{}{}", url, retry_params);
+
+            let retry_response = self
+                .client
+                .get(&retry_url)
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                )
+                .send()
+                .await?;
+
+            if retry_response.status().is_success() {
+                let retry_body = retry_response.text().await?;
+                let retry_json: Value = serde_json::from_str(&retry_body)?;
+                if let Some(mut entry) = self.parse_dictionary_response(&retry_json) {
+                    // Override corrected_word with the explicit suggestion (more reliable
+                    // than what parse_dictionary_response would extract from retry_json).
+                    entry.corrected_word = Some(corrected);
+                    return Ok(Some(entry));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
@@ -234,6 +299,82 @@ impl TranslationProvider for GoogleTranslateProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_parse_corrected_word_silent_correction() {
+        let provider = GoogleTranslateProvider::new();
+        // Scenario B: Google silently corrected "violnt" -> "violent" and returned dict entries.
+        // json[0][0][1] = "violent" (the word Google actually translated).
+        let response = json!([
+            [["жестокий", "violent", null, null, 10]],
+            [["adjective", null, [
+                ["жестокий", ["violent"], null, null, null, null, null, []]
+            ]]]
+        ]);
+
+        let entry = provider.parse_dictionary_response(&response);
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        // corrected_word comes from json[0][0][1]
+        assert_eq!(entry.corrected_word, Some("violent".to_string()));
+    }
+
+    #[test]
+    fn test_parse_corrected_word_no_source_field() {
+        let provider = GoogleTranslateProvider::new();
+        // Response where json[0][0][1] is absent — corrected_word should be None
+        let response = json!([
+            [["жестокий"]],
+            [["adjective", null, [
+                ["жестокий", ["violent"], null, null, null, null, null, []]
+            ]]]
+        ]);
+
+        let entry = provider.parse_dictionary_response(&response);
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().corrected_word, None);
+    }
+
+    #[test]
+    fn test_correction_notice_russian() {
+        use crate::translator::Translator;
+        let notice = Translator::correction_notice("violent", "ru");
+        assert_eq!(notice, "Показан перевод слова violent");
+    }
+
+    #[test]
+    fn test_correction_notice_english() {
+        use crate::translator::Translator;
+        let notice = Translator::correction_notice("violent", "en");
+        assert_eq!(notice, "Showing translation for word violent");
+    }
+
+    /// Integration test: checks that both spell-correction scenarios work end-to-end.
+    /// Run with: cargo test test_spell_correction_integration -- --nocapture --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_spell_correction_integration() {
+        let provider = GoogleTranslateProvider::new();
+
+        // Scenario A: badly misspelled — no dict entries in primary response, json[7][1] has suggestion
+        let result_a = provider.get_dictionary_entry("vialent", "en", "ru").await;
+        println!("Scenario A (vialent): {:?}", result_a.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+        if let Ok(Some(entry)) = &result_a {
+            assert_eq!(entry.corrected_word.as_deref().map(|s| s.to_lowercase()), Some("violent".to_string()));
+        }
+
+        // Scenario B: slightly misspelled — Google auto-corrects, json[0][0][1] has the correction
+        let result_b = provider.get_dictionary_entry("violnt", "en", "ru").await;
+        println!("Scenario B (violnt): {:?}", result_b.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+        if let Ok(Some(entry)) = &result_b {
+            assert_eq!(entry.corrected_word.as_deref().map(|s| s.to_lowercase()), Some("violent".to_string()));
+        }
+
+        // Correctly spelled — corrected_word should equal the input (no notice will be shown)
+        let result_c = provider.get_dictionary_entry("violent", "en", "ru").await;
+        println!("Scenario C (violent): {:?}", result_c.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+    }
 
     #[tokio::test]
     async fn test_detect_language_english() {

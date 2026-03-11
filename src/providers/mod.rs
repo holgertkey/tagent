@@ -7,6 +7,8 @@ pub mod google;
 #[derive(Debug, Clone)]
 pub struct DictionaryEntry {
     pub word: String,
+    /// Corrected source word when the input had a spelling error (e.g. "violent" for input "vialent")
+    pub corrected_word: Option<String>,
     pub definitions: Vec<PartOfSpeechEntry>,
 }
 

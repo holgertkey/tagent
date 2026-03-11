@@ -130,7 +130,7 @@ impl Translator {
                 .get_dictionary_entry(&original_text, &source_code, &target_code)
                 .await
             {
-                Ok(dictionary_info) => {
+                Ok((dictionary_info, corrected_word)) => {
                     // Clear any existing prompt and print on new line
                     print!("\r");
                     io::stdout().flush().ok();
@@ -140,6 +140,16 @@ impl Translator {
                     let source_label = format!("[{}]: ", source_display);
                     config::print_colored(&source_label, &config.source_prompt_color);
                     println!("{}", original_text);
+
+                    // If a spelling correction was applied, notify the user
+                    if let Some(ref corrected) = corrected_word {
+                        if corrected.to_lowercase() != original_text.to_lowercase() {
+                            println!(
+                                "{}",
+                                Self::correction_notice(corrected, &target_code)
+                            );
+                        }
+                    }
 
                     // Print colored dictionary label
                     config::print_colored("[Word]: ", &config.dictionary_prompt_color);
@@ -249,13 +259,15 @@ impl Translator {
         Ok(())
     }
 
-    /// Public method to get dictionary entry
+    /// Public method to get dictionary entry.
+    /// Returns `(formatted_entry, corrected_word)` where `corrected_word` is `Some` when
+    /// the provider detected a spelling error and used a corrected word for the lookup.
     pub async fn get_dictionary_entry(
         &self,
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    ) -> Result<(String, Option<String>), Box<dyn Error + Send + Sync>> {
         // Run regular translation and dictionary lookup concurrently
         let (translation_result, dict_result) = tokio::join!(
             self.translate_text_internal(word, from, to),
@@ -265,14 +277,33 @@ impl Translator {
         let primary_translation = translation_result.ok();
 
         match dict_result? {
-            Some(entry) => Ok(self.format_dictionary_entry(
-                &entry,
-                to,
-                true,
-                primary_translation.as_deref(),
-            )),
+            Some(entry) => {
+                let corrected_word = entry.corrected_word.clone();
+                let formatted = self.format_dictionary_entry(
+                    &entry,
+                    to,
+                    true,
+                    primary_translation.as_deref(),
+                );
+                Ok((formatted, corrected_word))
+            }
             None => Err("Limited dictionary information available".into()),
         }
+    }
+
+    /// Returns a localized notice to show when a spelling correction was applied.
+    pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
+        let phrase = match target_lang {
+            "ru" => "Показан перевод слова",
+            "es" => "Mostrando traducción de la palabra",
+            "fr" => "Traduction affichée pour le mot",
+            "de" => "Übersetzung angezeigt für das Wort",
+            "it" => "Traduzione mostrata per la parola",
+            "pt" => "Tradução mostrada para a palavra",
+            "zh" => "显示单词翻译",
+            _ => "Showing translation for word",
+        };
+        format!("{} {}", phrase, corrected_word)
     }
 
     /// Public method to translate text
