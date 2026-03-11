@@ -5,7 +5,19 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
-## [0.11.0+023] - 2026-02-16
+## [0.11.0+023] - 2026-03-11
+
+### Added
+- **Spell checking for single words**: when a misspelled word is looked up, the correct word is found automatically and a correction notice is shown in the target language (e.g. "Показан перевод слова violent")
+  - Two detection scenarios: silent auto-correction by Google (`json[0][0][1]`) and explicit suggestion via `dt=qca` field (`json[7][1]`) with a retry request
+  - Notice is localized: Russian, English, Spanish, French, German, Italian, Portuguese, Chinese
+  - `DictionaryEntry` now carries `corrected_word: Option<String>`
+  - `Translator::correction_notice(word, lang)` public helper
+- **`SpellCheck` config option** in `[Dictionary]` section (default: `true`)
+  - `SpellCheck = false` disables the correction notice; misspelled words fall back to simple translation
+
+### Fixed
+- `cargo test` linking error (`LNK1123: duplicate resource`): changed `cargo:rustc-link-arg` to `cargo:rustc-link-arg-bins` in `build.rs` so `resource.lib` is only linked into binary targets, not test binaries
 
 ### Changed
 - Dictionary entry display: `[Word]:` now shows the primary translation (from the translate API) instead of the first dictionary definition, matching the result shown when dictionary is disabled
