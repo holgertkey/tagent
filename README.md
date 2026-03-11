@@ -15,6 +15,12 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 - Automatic fallback to translation for phrases
 - Supports multiple target languages
 
+### ✏️ **Spell Checking**
+- Automatically detects and corrects misspelled words during dictionary lookup
+- Shows a correction notice in the target language 
+- Works transparently: typos like "vialent" or "violnt" resolve to the correct word "violent"
+- Can be disabled via `SpellCheck = false` in config
+
 ### 🔊 **Text-to-Speech (TTS)**
 - Built-in speech synthesis using Google TTS API
 - Available in all modes (GUI, Interactive, CLI)
@@ -180,6 +186,9 @@ CopyToClipboard = true
 ; Show detailed word information for single words
 ShowDictionary = true
 
+; Detect and correct spelling errors, show correction notice
+SpellCheck = true
+
 [Interface]
 ; Show terminal window during GUI translation
 ShowTerminalOnTranslate = true
@@ -305,12 +314,25 @@ tagent beautiful
 #   красивый [прекрасный, красивая]
 #   прекрасный [великолепный, чудесный]
 
-# Interactive  
+# Interactive
 [Auto]: beautiful
 Прилагательное
   красивый [прекрасный, красивая]
   прекрасный [великолепный, чудесный]
 ```
+
+### Spell Check
+When a misspelled word is entered, the correct word is found automatically and a notice is shown:
+```
+[English]: vialent
+Показан перевод слова violent
+[Word]: жестокий
+Прилагательное
+  насильственный [violent, forcible]
+  неистовый [violent, outrageous, frantic]
+  яростный [furious, violent, raging]
+```
+The notice is shown in the target language. Works with both minor typos ("violnt") and heavily misspelled words ("vialent").
 
 ### Text-to-Speech Examples
 
@@ -386,6 +408,7 @@ CopyToClipboard = false
 
 [Dictionary]
 ShowDictionary = false
+SpellCheck = false
 
 [Interface]
 ShowTerminalOnTranslate = false
@@ -526,6 +549,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 **Current Version**: v0.12.0
 
 **Recent Changes**:
+- Spell checking for single words with correction notice in target language
 - Code quality improvements (fixed all Clippy warnings)
 - Text-to-speech (TTS) with Esc cancellation
 - Fully configurable hotkeys (single keys, combos, double-press)
