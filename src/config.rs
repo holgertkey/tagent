@@ -16,6 +16,7 @@ pub struct Config {
     pub show_terminal_on_translate: bool,
     pub auto_hide_terminal_seconds: u64,
     pub show_dictionary: bool,
+    pub spell_check: bool,
     pub copy_to_clipboard: bool,
     pub save_translation_history: bool,
     pub history_file: String,
@@ -47,6 +48,7 @@ impl Default for Config {
             show_terminal_on_translate: true,
             auto_hide_terminal_seconds: 3,
             show_dictionary: true,
+            spell_check: true,
             copy_to_clipboard: true,
             save_translation_history: false,
             history_file: default_history,
@@ -158,6 +160,11 @@ TargetLanguage = {}
 ; This feature works best with English words
 ShowDictionary = {}
 
+; Check spelling of single words and suggest the correct word if a typo is detected
+; When enabled, misspelled words are automatically corrected and the correction is shown
+; Set to false to disable spell checking (typos will fall back to simple translation)
+SpellCheck = {}
+
 [Interface]
 ; Show terminal window on top when translating
 ; Set to true to show terminal window during translation
@@ -256,6 +263,7 @@ EnableSpeechHotkey = {}
             config.source_language,
             config.target_language,
             config.show_dictionary,
+            config.spell_check,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
             config.copy_to_clipboard,
@@ -291,6 +299,12 @@ EnableSpeechHotkey = {}
         let show_dictionary = parsed_config
             .get("Dictionary")
             .and_then(|section| section.get("ShowDictionary"))
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(true);
+
+        let spell_check = parsed_config
+            .get("Dictionary")
+            .and_then(|section| section.get("SpellCheck"))
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(true);
 
@@ -394,6 +408,7 @@ EnableSpeechHotkey = {}
             target_language: target_lang,
             copy_to_clipboard,
             show_dictionary,
+            spell_check,
             show_terminal_on_translate: show_terminal,
             auto_hide_terminal_seconds: auto_hide_seconds,
             save_translation_history,

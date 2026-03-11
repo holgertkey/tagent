@@ -151,15 +151,17 @@ impl CliHandler {
             {
                 Ok((dictionary_info, corrected_word)) => {
                     // If a spelling correction was applied, notify the user
-                    if let Some(ref corrected) = corrected_word {
-                        if corrected.to_lowercase() != text.to_lowercase() {
-                            println!(
-                                "{}",
-                                crate::translator::Translator::correction_notice(
-                                    corrected,
-                                    &target_code
-                                )
-                            );
+                    if config.spell_check {
+                        if let Some(ref corrected) = corrected_word {
+                            if corrected.to_lowercase() != text.to_lowercase() {
+                                println!(
+                                    "{}",
+                                    crate::translator::Translator::correction_notice(
+                                        corrected,
+                                        &target_code
+                                    )
+                                );
+                            }
                         }
                     }
 

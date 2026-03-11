@@ -142,12 +142,14 @@ impl Translator {
                     println!("{}", original_text);
 
                     // If a spelling correction was applied, notify the user
-                    if let Some(ref corrected) = corrected_word {
-                        if corrected.to_lowercase() != original_text.to_lowercase() {
-                            println!(
-                                "{}",
-                                Self::correction_notice(corrected, &target_code)
-                            );
+                    if config.spell_check {
+                        if let Some(ref corrected) = corrected_word {
+                            if corrected.to_lowercase() != original_text.to_lowercase() {
+                                println!(
+                                    "{}",
+                                    Self::correction_notice(corrected, &target_code)
+                                );
+                            }
                         }
                     }
 
