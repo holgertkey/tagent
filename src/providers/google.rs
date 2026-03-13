@@ -376,7 +376,10 @@ mod tests {
         println!("Scenario C (violent): {:?}", result_c.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
     }
 
+    /// Integration test: requires network access to Google Translate API.
+    /// Run with: cargo test test_detect_language_english -- --nocapture --ignored
     #[tokio::test]
+    #[ignore]
     async fn test_detect_language_english() {
         let provider = GoogleTranslateProvider::new();
         let result = provider.detect_language("Hello, how are you?").await;
@@ -384,7 +387,10 @@ mod tests {
         assert_eq!(result.unwrap(), "en");
     }
 
+    /// Integration test: requires network access to Google Translate API.
+    /// Run with: cargo test test_detect_language_russian -- --nocapture --ignored
     #[tokio::test]
+    #[ignore]
     async fn test_detect_language_russian() {
         let provider = GoogleTranslateProvider::new();
         let result = provider.detect_language("Привет, как дела?").await;
@@ -392,7 +398,10 @@ mod tests {
         assert_eq!(result.unwrap(), "ru");
     }
 
+    /// Integration test: requires network access to Google Translate API.
+    /// Run with: cargo test test_detect_language_german -- --nocapture --ignored
     #[tokio::test]
+    #[ignore]
     async fn test_detect_language_german() {
         let provider = GoogleTranslateProvider::new();
         let result = provider.detect_language("Guten Tag, wie geht es Ihnen?").await;
@@ -400,7 +409,10 @@ mod tests {
         assert_eq!(result.unwrap(), "de");
     }
 
+    /// Integration test: requires network access to Google Translate API.
+    /// Run with: cargo test test_detect_language_french -- --nocapture --ignored
     #[tokio::test]
+    #[ignore]
     async fn test_detect_language_french() {
         let provider = GoogleTranslateProvider::new();
         let result = provider.detect_language("Bonjour, comment allez-vous?").await;
