@@ -25,7 +25,7 @@
 //!     let config_path = ConfigManager::get_default_config_path()?;
 //!     let config_manager = Arc::new(ConfigManager::new(config_path.to_str().unwrap())?);
 //!     let translator = Translator::new_cli(config_manager)?;
-//!     translator.translate("Hello world").await?;
+//!     translator.translate_text_public("Hello world", "auto", "en").await?;
 //!     Ok(())
 //! }
 //! ```

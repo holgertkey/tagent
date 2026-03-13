@@ -24,7 +24,7 @@ use std::sync::Arc;
 ///     let path = ConfigManager::get_default_config_path()?;
 ///     let cm = Arc::new(ConfigManager::new(path.to_str().unwrap())?);
 ///     let t = Translator::new_cli(cm)?;
-///     t.translate("Hello world").await?;
+///     t.translate_text_public("Hello world", "auto", "en").await?;
 ///     Ok(())
 /// }
 /// ```
