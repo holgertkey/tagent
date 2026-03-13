@@ -18,6 +18,7 @@ exclude = [
     "CLAUDE.md",
     ".debug/",
     ".github/",
+    "tagent-gui/",
 ]
 
 [features]

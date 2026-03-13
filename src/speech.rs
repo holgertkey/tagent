@@ -14,10 +14,14 @@ const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+/// Errors that can occur during text-to-speech playback.
 #[derive(Debug)]
 pub enum SpeechError {
+    /// A network or HTTP error prevented the audio from being fetched.
     NetworkError(String),
+    /// The audio data could not be decoded or played back.
     AudioError(String),
+    /// The input text exceeded the maximum allowed length for TTS.
     TextTooLong(String),
 }
 
@@ -33,6 +37,10 @@ impl std::fmt::Display for SpeechError {
 
 impl std::error::Error for SpeechError {}
 
+/// Plays back text as speech using Google TTS.
+///
+/// Text is limited to 100 characters per request. For longer input,
+/// split the text into smaller chunks before calling `speak`.
 pub struct SpeechManager {
     client: Client,
 }

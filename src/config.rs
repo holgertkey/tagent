@@ -9,25 +9,51 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use crate::platform::keycodes;
 
+/// Runtime configuration loaded from `tagent.conf`.
+///
+/// All fields correspond directly to INI keys documented inside the generated
+/// configuration file. The [`Default`] impl reflects the same defaults that are
+/// written when a new configuration file is created.
+///
+/// The config file is located at:
+/// - **Windows**: `%APPDATA%\Tagent\tagent.conf`
+/// - **Linux/macOS**: `~/.config/Tagent/tagent.conf`
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// BCP-47 language code for the source language, or `"Auto"` for auto-detection.
     pub source_language: String,
+    /// BCP-47 language code for the translation target (e.g. `"Russian"`, `"English"`).
     pub target_language: String,
+    /// Bring the terminal window to the foreground when a translation fires.
     pub show_terminal_on_translate: bool,
+    /// Seconds before the terminal window auto-hides after a translation. `0` disables auto-hide.
     pub auto_hide_terminal_seconds: u64,
+    /// Show a full dictionary entry instead of a plain translation for single words.
     pub show_dictionary: bool,
+    /// Automatically correct spelling of single-word input before looking up.
     pub spell_check: bool,
+    /// Copy the translation result to the system clipboard automatically.
     pub copy_to_clipboard: bool,
+    /// Append every translation to the history file.
     pub save_translation_history: bool,
+    /// Path to the history log file.
     pub history_file: String,
-    pub target_prompt_color: String,      // Color for target language prompt
-    pub dictionary_prompt_color: String,  // Color for dictionary prompt
-    pub source_prompt_color: String,      // Color for source language prompt
-    pub translate_hotkey: String,         // Translation hotkey (e.g., "Alt+Q", "Ctrl+Ctrl", "F9")
-    pub enable_text_to_speech: bool,      // Enable text-to-speech functionality
-    pub speech_hotkey: String,            // Hotkey for speech (e.g., "Alt+E")
-    pub enable_speech_hotkey: bool,       // Enable/disable speech hotkey
-    pub translate_provider: String,       // Translation provider (e.g., "google")
+    /// Terminal color for the target-language prompt (e.g. `"BrightYellow"`). `"None"` disables.
+    pub target_prompt_color: String,
+    /// Terminal color for the dictionary prompt. `"None"` disables.
+    pub dictionary_prompt_color: String,
+    /// Terminal color for the source-language prompt. `"None"` disables.
+    pub source_prompt_color: String,
+    /// Hotkey string for triggering translation, e.g. `"Alt+Q"`, `"Ctrl+Ctrl"`, `"F9"`.
+    pub translate_hotkey: String,
+    /// Enable text-to-speech playback of translations.
+    pub enable_text_to_speech: bool,
+    /// Hotkey string for triggering speech playback, e.g. `"Alt+E"`.
+    pub speech_hotkey: String,
+    /// Enable the speech hotkey. When `false`, the hotkey is registered but inactive.
+    pub enable_speech_hotkey: bool,
+    /// Name of the translation backend to use, e.g. `"google"`.
+    pub translate_provider: String,
 }
 
 impl Default for Config {
@@ -64,6 +90,23 @@ impl Default for Config {
     }
 }
 
+/// Thread-safe configuration manager with live-reload support.
+///
+/// `ConfigManager` loads `tagent.conf` on construction and can reload it at
+/// runtime without restarting the application. Use [`ConfigManager::new`] with
+/// the path returned by [`ConfigManager::get_default_config_path`].
+///
+/// # Example
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use tagent::config::ConfigManager;
+///
+/// let path = ConfigManager::get_default_config_path().unwrap();
+/// let manager = Arc::new(ConfigManager::new(path.to_str().unwrap()).unwrap());
+/// let config = manager.get_config();
+/// println!("Target language: {}", config.target_language);
+/// ```
 pub struct ConfigManager {
     config_path: String,
     config: Arc<Mutex<Config>>,
@@ -71,7 +114,10 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-    /// Get default configuration file path in AppData\Roaming\Tagent
+    /// Returns the platform-default path for `tagent.conf`, creating parent directories as needed.
+    ///
+    /// - **Windows**: `%APPDATA%\Tagent\tagent.conf`
+    /// - **Linux/macOS**: `~/.config/Tagent/tagent.conf`
     pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
@@ -85,6 +131,9 @@ impl ConfigManager {
         Ok(config_dir.join("tagent.conf"))
     }
 
+    /// Create a new `ConfigManager` for the given config file path.
+    ///
+    /// If the file does not exist, a default configuration file is created at `config_path`.
     pub fn new(config_path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let manager = Self {
             config_path: config_path.to_string(),
@@ -470,8 +519,7 @@ EnableSpeechHotkey = {}
         Ok(sections)
     }
 
-    /// Get current configuration
-    /// Save current in-memory configuration to the config file
+    /// Save the current in-memory configuration to the config file.
     pub fn save_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.get_config();
         let ini_content = self.create_ini_content(&config);
@@ -480,6 +528,7 @@ EnableSpeechHotkey = {}
         Ok(())
     }
 
+    /// Return a snapshot of the current in-memory configuration.
     pub fn get_config(&self) -> Config {
         self.config.lock().unwrap().clone()
     }
@@ -698,7 +747,10 @@ EnableSpeechHotkey = {}
         Ok(())
     }
 
-    /// Check if config file was modified and reload if necessary
+    /// Reload the configuration file if it has been modified on disk since the last load.
+    ///
+    /// Returns `true` when the configuration was actually reloaded, `false` when
+    /// the file was unchanged or did not exist.
     pub fn check_and_reload(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         if !Path::new(&self.config_path).exists() {
             return Ok(false);
@@ -736,7 +788,9 @@ EnableSpeechHotkey = {}
         Ok(())
     }
 
-    /// Convert language name to Google Translate language code
+    /// Convert a human-readable language name to its BCP-47 code (e.g. `"Russian"` → `"ru"`).
+    ///
+    /// Returns `"auto"` for `"Auto"` and falls back to the input lowercased for unknown names.
     pub fn language_to_code(language: &str) -> &str {
         match language.to_lowercase().as_str() {
             "auto" => "auto",

@@ -5,6 +5,29 @@ use std::error::Error;
 use std::io::{self, Write};
 use std::sync::Arc;
 
+/// High-level translation orchestrator.
+///
+/// `Translator` ties together a [`TranslationProvider`], the system clipboard,
+/// and optional window management to provide the full Tagent translation
+/// experience. For embedding in other applications, prefer [`Translator::new_cli`]
+/// which skips window management.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use tagent::config::ConfigManager;
+/// use tagent::translator::Translator;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+///     let path = ConfigManager::get_default_config_path()?;
+///     let cm = Arc::new(ConfigManager::new(path.to_str().unwrap())?);
+///     let t = Translator::new_cli(cm)?;
+///     t.translate("Hello world").await?;
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
