@@ -5,6 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.12.0+004] - 2026-08-03
+
+### Fixed
+- **A modifier in a combo hotkey was blocked system-wide on Windows** (`platform/windows/keyboard.rs`): `HotkeyState::handle`'s `ModifierCombo` arm blocked (returned `true` in the low-level keyboard hook) every press/release of a configured modifier unconditionally, not just at the moment the combo actually completed. With e.g. `TranslateHotkey = Alt+Q` configured, this meant Alt stopped working as a modifier system-wide for as long as tagent was running — breaking Alt-Tab, the system menu, Alt+F4, and any other app's Alt-based shortcuts. The modifier-tracking branch now only records state without blocking; blocking still happens only for the combo's target key, and only once all modifiers are confirmed pressed.
+
 ## [0.12.0+003] - 2026-08-03
 
 ### Fixed

@@ -74,14 +74,10 @@ impl HotkeyState {
                     if let Ok(mut state) = modifier_state.lock() {
                         let normalized_vk = normalize_vk_code(vk_code);
 
-                        // Update modifier state and block modifier events
                         if modifiers.contains(&normalized_vk) {
+                            // Track state only; modifiers must still reach other apps (Alt-Tab, menus).
                             state.insert(normalized_vk, is_key_down);
-                            return true;
-                        }
-
-                        // Check if all modifiers are pressed and the key is pressed
-                        if is_key_down && vk_code == *key {
+                        } else if is_key_down && vk_code == *key {
                             let all_modifiers_pressed = modifiers
                                 .iter()
                                 .all(|m| state.get(m).copied().unwrap_or(false));
@@ -90,10 +86,7 @@ impl HotkeyState {
                                 unsafe { trigger_fn() };
                                 return true;
                             }
-                        }
-
-                        // Clean up state on key up
-                        if !is_key_down {
+                        } else if !is_key_down {
                             state.insert(normalized_vk, false);
                         }
                     }
@@ -597,12 +590,18 @@ mod tests {
 
     static TEST_TRIGGERED: AtomicBool = AtomicBool::new(false);
 
+    // TEST_TRIGGERED and MODIFIER_STATE are process-global, and Rust runs tests in the same
+    // binary on parallel threads by default, so every test in this module must serialize on
+    // this lock before touching either one.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
     unsafe fn test_trigger_fn() {
         TEST_TRIGGERED.store(true, AtomicOrdering::SeqCst);
     }
 
     #[test]
     fn test_hotkey_state_triggers_on_lr_specific_modifier() {
+        let _guard = TEST_LOCK.lock().unwrap();
         // Regression test for a parsed "LAlt+Q" config: modifier state is tracked keyed by
         // the normalized code (see `normalize_vk_code(vk_code)` in the ModifierCombo arm of
         // `HotkeyState::handle`), so `HotkeyParser::parse` must normalize the configured
@@ -619,6 +618,90 @@ mod tests {
 
         // Q down while left Alt held - combo should trigger.
         state.handle('Q' as u32, true, test_trigger_fn);
+        assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    // Regression tests for item 1.3: a bare modifier press/release must never be blocked
+    // (must return `false`), only the combo's target key blocks, and only once the full
+    // combo actually fires. MODIFIER_STATE is a shared global, so each test resets the
+    // specific keys it touches before asserting to avoid cross-test interference.
+
+    #[test]
+    fn test_modifier_press_alone_is_not_blocked() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state
+            .lock()
+            .unwrap()
+            .insert(super::super::keycodes::KEY_ALT, false);
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        let blocked = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
+        assert!(!blocked, "a bare modifier press must not be blocked");
+        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    #[test]
+    fn test_modifier_release_alone_is_not_blocked() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state
+            .lock()
+            .unwrap()
+            .insert(super::super::keycodes::KEY_ALT, false);
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
+        let blocked_up = state.handle(super::super::keycodes::KEY_ALT, false, test_trigger_fn);
+        assert!(!blocked_up, "a bare modifier release must not be blocked");
+        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    #[test]
+    fn test_modifier_state_is_still_tracked_without_blocking() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state
+            .lock()
+            .unwrap()
+            .insert(super::super::keycodes::KEY_ALT, false);
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        let blocked_down = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
+        assert!(!blocked_down);
+
+        // Even though the modifier press itself wasn't blocked, its state must still be
+        // tracked so the combo can complete correctly.
+        let triggered = state.handle('Q' as u32, true, test_trigger_fn);
+        assert!(triggered, "combo must still fire after an unblocked modifier press");
+        assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    #[test]
+    fn test_combo_completion_still_blocks_target_key() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state
+            .lock()
+            .unwrap()
+            .insert(super::super::keycodes::KEY_ALT, false);
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
+        let blocked = state.handle('Q' as u32, true, test_trigger_fn);
+        assert!(blocked, "the target key must still be blocked once the combo fires");
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 }
