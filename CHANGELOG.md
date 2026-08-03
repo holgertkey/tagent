@@ -5,6 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.12.0+003] - 2026-08-03
+
+### Fixed
+- **Clipboard write warning on Linux/X11** (`platform/linux/clipboard.rs`): `set_text`/`get_text` created a new `arboard::Clipboard` per call and dropped it immediately afterward. On X11, clipboard ownership is process-based — the background thread that serves other apps' paste requests is spawned in `Clipboard::new()` and dies when the value is dropped, so clipboard managers polling a moment later could miss the contents (arboard's own "Clipboard was dropped very quickly after writing" warning). A single `arboard::Clipboard` is now kept alive for the process lifetime (guarded by a `Mutex`, following the same pattern already used for X11 key state in `keycodes.rs`) and reused across calls.
+
 ## [0.12.0+002] - 2026-08-03
 
 ### Fixed

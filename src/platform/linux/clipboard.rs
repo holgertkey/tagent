@@ -1,30 +1,47 @@
 use arboard::Clipboard;
 use std::error::Error;
+use std::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ClipboardManager;
+
+// On X11, clipboard ownership is process-based: a background thread spawned by
+// `Clipboard::new()` serves other apps' paste requests only as long as this `Clipboard`
+// value stays alive. Creating one per call and dropping it right after `set_text` (the
+// previous behavior) closed that thread before clipboard managers reliably picked up the
+// contents, which is exactly what arboard's own "Clipboard was dropped very quickly after
+// writing" warning flags. Keeping a single instance alive for the process lifetime fixes
+// this, per arboard's own recommendation to keep `Clipboard` in more persistent state.
+static CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
 
 impl ClipboardManager {
     pub fn new() -> Self {
         Self
     }
 
+    /// Run `f` against the shared, lazily-initialized clipboard context.
+    fn with_clipboard<T>(
+        f: impl FnOnce(&mut Clipboard) -> Result<T, arboard::Error>,
+    ) -> Result<T, Box<dyn Error + Send + Sync>> {
+        let mut guard = CLIPBOARD
+            .lock()
+            .map_err(|_| "Clipboard lock poisoned")?;
+        if guard.is_none() {
+            *guard = Some(Clipboard::new().map_err(|e| format!("Clipboard init error: {}", e))?);
+        }
+        let clipboard = guard.as_mut().expect("just initialized above");
+        f(clipboard).map_err(|e| format!("Clipboard error: {}", e).into())
+    }
+
     /// Get text from clipboard
     pub fn get_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let mut clipboard = Clipboard::new()
-            .map_err(|e| format!("Clipboard init error: {}", e))?;
-        clipboard
-            .get_text()
-            .map_err(|e| format!("Clipboard read error: {}", e).into())
+        Self::with_clipboard(|clipboard| clipboard.get_text())
     }
 
     /// Set text to clipboard
     pub fn set_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let mut clipboard = Clipboard::new()
-            .map_err(|e| format!("Clipboard init error: {}", e))?;
-        clipboard
-            .set_text(text.to_string())
-            .map_err(|e| format!("Clipboard write error: {}", e).into())
+        let text = text.to_string();
+        Self::with_clipboard(move |clipboard| clipboard.set_text(text))
     }
 
     /// Automatically copy selected text (simulate Ctrl+C via xdotool on X11)
@@ -134,5 +151,29 @@ mod tests {
         let _clipboard = ClipboardManager::new();
         // ClipboardManager is a zero-sized struct, just verify it can be created and cloned
         let _cloned = _clipboard.clone();
+    }
+
+    #[test]
+    fn test_set_text_reuses_persistent_clipboard_instance() {
+        // Regression test: `set_text` must reuse the shared `CLIPBOARD` static instead of
+        // creating and immediately dropping an `arboard::Clipboard`, or clipboard managers
+        // may miss the write (arboard's "dropped very quickly after writing" warning).
+        let clipboard = ClipboardManager::new();
+        if clipboard
+            .set_text("tagent-clipboard-persistence-test")
+            .is_err()
+        {
+            eprintln!("Skipping: no working clipboard in this test environment");
+            return;
+        }
+
+        assert!(
+            CLIPBOARD.lock().unwrap().is_some(),
+            "set_text should keep the arboard::Clipboard instance alive in CLIPBOARD, not drop it"
+        );
+        assert_eq!(
+            clipboard.get_text().unwrap(),
+            "tagent-clipboard-persistence-test"
+        );
     }
 }
