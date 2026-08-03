@@ -999,7 +999,9 @@ impl HotkeyParser {
 
             // Check if it's a double-press (same key twice)
             if parts.len() == 2 && parts[0].eq_ignore_ascii_case(parts[1]) {
-                let vk_code = Self::key_name_to_vk(parts[0])?;
+                // Normalized because the observed key event is always normalized to the
+                // generic code before comparison in the keyboard hooks (see keycodes::normalize_vk_code).
+                let vk_code = keycodes::normalize_vk_code(Self::key_name_to_vk(parts[0])?);
                 return Ok(HotkeyType::DoublePress {
                     vk_code,
                     min_interval_ms: 50,
@@ -1013,10 +1015,14 @@ impl HotkeyParser {
                 return Err("Invalid modifier combination".to_string());
             }
 
+            // `key` (the trigger) is compared against the raw observed vk_code and stays
+            // left/right-specific. `modifiers` are compared against the normalized observed
+            // code, so they must be normalized here too, or a side-specific modifier
+            // (e.g. "LAlt") would never match.
             let key = Self::key_name_to_vk(parts.last().unwrap())?;
             let modifiers: Result<Vec<u32>, String> = parts[..parts.len() - 1]
                 .iter()
-                .map(|m| Self::key_name_to_vk(m))
+                .map(|m| Self::key_name_to_vk(m).map(keycodes::normalize_vk_code))
                 .collect();
 
             return Ok(HotkeyType::ModifierCombo {
@@ -1168,6 +1174,62 @@ mod tests {
 
         let result = HotkeyParser::parse("F8+F8").unwrap();
         assert!(matches!(result, HotkeyType::DoublePress { .. }));
+    }
+
+    #[test]
+    fn test_modifier_combo_normalizes_lr_modifiers() {
+        let result = HotkeyParser::parse("LAlt+Q").unwrap();
+        match result {
+            HotkeyType::ModifierCombo { modifiers, .. } => {
+                assert_eq!(modifiers, vec![super::keycodes::KEY_ALT]);
+            }
+            _ => panic!("expected ModifierCombo"),
+        }
+
+        let result = HotkeyParser::parse("RCtrl+Shift+T").unwrap();
+        match result {
+            HotkeyType::ModifierCombo { modifiers, .. } => {
+                assert!(modifiers.contains(&super::keycodes::KEY_CONTROL));
+                assert!(modifiers.contains(&super::keycodes::KEY_SHIFT));
+                assert!(!modifiers.contains(&super::keycodes::KEY_RCONTROL));
+            }
+            _ => panic!("expected ModifierCombo"),
+        }
+    }
+
+    #[test]
+    fn test_modifier_combo_key_field_not_normalized() {
+        // The trigger key (last part) is compared against the raw observed vk_code by the
+        // keyboard hooks, so it must stay left/right-specific instead of being normalized.
+        let result = HotkeyParser::parse("Ctrl+LAlt").unwrap();
+        match result {
+            HotkeyType::ModifierCombo { key, .. } => {
+                assert_eq!(key, super::keycodes::KEY_LALT);
+            }
+            _ => panic!("expected ModifierCombo"),
+        }
+    }
+
+    #[test]
+    fn test_double_press_normalizes_lr_target() {
+        let result = HotkeyParser::parse("LCtrl+LCtrl").unwrap();
+        match result {
+            HotkeyType::DoublePress { vk_code, .. } => {
+                assert_eq!(vk_code, super::keycodes::KEY_CONTROL);
+            }
+            _ => panic!("expected DoublePress"),
+        }
+    }
+
+    #[test]
+    fn test_double_press_plain_ctrl_unaffected() {
+        let result = HotkeyParser::parse("Ctrl+Ctrl").unwrap();
+        match result {
+            HotkeyType::DoublePress { vk_code, .. } => {
+                assert_eq!(vk_code, super::keycodes::KEY_CONTROL);
+            }
+            _ => panic!("expected DoublePress"),
+        }
     }
 
     #[test]

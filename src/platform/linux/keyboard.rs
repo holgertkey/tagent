@@ -695,6 +695,43 @@ mod tests {
     }
 
     #[test]
+    fn test_hotkey_state_triggers_on_lr_specific_modifier() {
+        // Regression test for a parsed "LAlt+Q" config: the observed modifier is always
+        // normalized to the generic code before it's stored in modifier_state (see the
+        // event loop at `normalize_vk_code(event.vk_code)`), so HotkeyParser::parse must
+        // normalize the configured side too, or this never triggers.
+        let hotkey = HotkeyParser::parse("LAlt+Q").unwrap();
+        let mut state = HotkeyState::new(Some(hotkey));
+
+        // No modifier pressed - should not trigger
+        let mods = HashMap::new();
+        assert!(!state.handle('Q' as u32, true, &mods));
+
+        // Physical left Alt pressed, stored normalized exactly as the real event loop does
+        let mut mods = HashMap::new();
+        mods.insert(
+            normalize_vk_code(super::super::keycodes::KEY_LALT),
+            true,
+        );
+        assert!(state.handle('Q' as u32, true, &mods));
+    }
+
+    #[test]
+    fn test_hotkey_state_triggers_on_lr_specific_double_press() {
+        // Regression test for a parsed "LCtrl+LCtrl" config.
+        let hotkey = HotkeyParser::parse("LCtrl+LCtrl").unwrap();
+        let mut state = HotkeyState::new(Some(hotkey));
+        let mods = HashMap::new();
+
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+        assert!(!state.handle(super::super::keycodes::KEY_LCONTROL, false, &mods));
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        assert!(state.handle(super::super::keycodes::KEY_LCONTROL, true, &mods));
+    }
+
+    #[test]
     fn test_modifier_state_cleared_on_hotkey_trigger() {
         // Simulate what happens in the event loop when a hotkey triggers
         let mut modifier_state: HashMap<u32, bool> = HashMap::new();

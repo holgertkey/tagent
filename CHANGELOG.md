@@ -5,6 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.12.0+002] - 2026-08-03
+
+### Fixed
+- **Left/right-specific modifiers never triggered the hotkey** (`config.rs`): a hotkey configured with a side-specific modifier (e.g. `LAlt+Q`, `RCtrl+T`) or a side-specific double-press (e.g. `LCtrl+LCtrl`) passed validation but never fired. `HotkeyParser::parse` stored the specific left/right virtual-key code, while both the Windows and Linux keyboard hooks always normalize the *observed* key event to its generic form before comparing, so the two could never match. `HotkeyParser::parse` now normalizes the configured modifier codes (and the double-press target) the same way, so side-specific hotkeys work like their generic counterparts. The trigger key itself (the last part of a modifier combo) is left untouched, since it was already matched against the raw observed code and side-specific trigger keys already worked.
+
 ## [0.12.0+001] - 2026-03-11
 
 ### Fixed

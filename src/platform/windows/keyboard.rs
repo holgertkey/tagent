@@ -585,3 +585,40 @@ unsafe extern "system" fn keyboard_hook_proc(
 
     CallNextHookEx(HHOOK::default(), n_code, w_param, l_param)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+
+    // NOTE: written but unverified locally -- this module only compiles under
+    // `#[cfg(target_os = "windows")]`, so it cannot be run on the Linux dev machine.
+    // Needs a run on Windows CI/hardware before this test is trusted.
+
+    static TEST_TRIGGERED: AtomicBool = AtomicBool::new(false);
+
+    unsafe fn test_trigger_fn() {
+        TEST_TRIGGERED.store(true, AtomicOrdering::SeqCst);
+    }
+
+    #[test]
+    fn test_hotkey_state_triggers_on_lr_specific_modifier() {
+        // Regression test for a parsed "LAlt+Q" config: modifier state is tracked keyed by
+        // the normalized code (see `normalize_vk_code(vk_code)` in the ModifierCombo arm of
+        // `HotkeyState::handle`), so `HotkeyParser::parse` must normalize the configured
+        // modifier too, or this never triggers.
+        MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("LAlt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        // Physical left Alt down - tracked, not yet triggered.
+        state.handle(super::super::keycodes::KEY_LALT, true, test_trigger_fn);
+        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+
+        // Q down while left Alt held - combo should trigger.
+        state.handle('Q' as u32, true, test_trigger_fn);
+        assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+}
