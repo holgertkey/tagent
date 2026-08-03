@@ -14,6 +14,20 @@ const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+/// Rounds `index` down to the nearest UTF-8 character boundary in `s`.
+///
+/// Clamps to `s.len()` when `index` is out of range, so callers can pass an
+/// unclamped `start + MAX_TEXT_LENGTH` directly.
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 /// Errors that can occur during text-to-speech playback.
 #[derive(Debug)]
 pub enum SpeechError {
@@ -121,7 +135,11 @@ impl SpeechManager {
                     if word.len() > MAX_TEXT_LENGTH {
                         let mut word_start = 0;
                         while word_start < word.len() {
-                            let word_end = std::cmp::min(word_start + MAX_TEXT_LENGTH, word.len());
+                            // A UTF-8 char is at most 4 bytes, so floor_char_boundary can only
+                            // roll back a few bytes from word_start + MAX_TEXT_LENGTH (100),
+                            // guaranteeing forward progress.
+                            let word_end = floor_char_boundary(word, word_start + MAX_TEXT_LENGTH);
+                            debug_assert!(word_end > word_start);
                             let word_chunk = &word[word_start..word_end];
 
                             if current_chunk.len() + word_chunk.len() + 1 > MAX_TEXT_LENGTH
@@ -173,7 +191,10 @@ impl SpeechManager {
         if chunks.is_empty() && !text.is_empty() {
             let mut start = 0;
             while start < text.len() {
-                let end = std::cmp::min(start + MAX_TEXT_LENGTH, text.len());
+                // Same forward-progress guarantee as above: char boundaries are at most
+                // 3 bytes back from start + MAX_TEXT_LENGTH.
+                let end = floor_char_boundary(text, start + MAX_TEXT_LENGTH);
+                debug_assert!(end > start);
                 chunks.push(text[start..end].to_string());
                 start = end;
             }
@@ -389,6 +410,56 @@ mod tests {
         let chunks = manager.split_text_for_tts(text);
         assert!(chunks.len() >= 1);
         for chunk in chunks {
+            assert!(chunk.len() <= MAX_TEXT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn test_floor_char_boundary_ascii() {
+        let s = "Hello world";
+        assert_eq!(floor_char_boundary(s, 5), 5);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        // "д" (Cyrillic) is a 2-byte character starting at byte offset 0.
+        let s = "дом";
+        // Index 1 is in the middle of "д" (bytes 0..2), so it must round down to 0.
+        assert_eq!(floor_char_boundary(s, 1), 0);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_out_of_range() {
+        let s = "hello";
+        assert_eq!(floor_char_boundary(s, 100), s.len());
+    }
+
+    #[test]
+    fn test_split_text_multibyte_no_whitespace() {
+        let manager = SpeechManager::new();
+        // Cyrillic text longer than MAX_TEXT_LENGTH bytes with no whitespace/punctuation.
+        let text = "слово".repeat(30);
+        let chunks = manager.split_text_for_tts(&text);
+
+        assert!(!chunks.is_empty());
+        let mut rebuilt = String::new();
+        for chunk in &chunks {
+            assert!(!chunk.is_empty());
+            assert!(chunk.len() <= MAX_TEXT_LENGTH);
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+            rebuilt.push_str(chunk);
+        }
+        assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn test_split_text_mixed_ascii_multibyte() {
+        let manager = SpeechManager::new();
+        let text = "Hello мир this is тест of mixed текст content здесь and more слов to pad it out";
+        let chunks = manager.split_text_for_tts(text);
+
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
             assert!(chunk.len() <= MAX_TEXT_LENGTH);
         }
     }
