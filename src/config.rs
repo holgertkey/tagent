@@ -431,7 +431,7 @@ EnableSpeechHotkey = {}
             .get("Speech")
             .and_then(|section| section.get("EnableTextToSpeech"))
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         let speech_hotkey = parsed_config
             .get("Speech")
@@ -1245,5 +1245,46 @@ mod tests {
 
         let hotkey = HotkeyParser::parse("Win+L").unwrap();
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+
+    #[test]
+    fn test_load_config_missing_speech_section() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_missing_speech_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n")
+            .unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+
+        assert!(manager.get_config().enable_text_to_speech);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_config_explicit_false_is_respected() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_explicit_false_speech_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Speech]\nEnableTextToSpeech = false\n").unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+
+        assert!(!manager.get_config().enable_text_to_speech);
+
+        let _ = fs::remove_file(&path);
     }
 }

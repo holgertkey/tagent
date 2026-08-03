@@ -5,6 +5,11 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.12.0+005] - 2026-08-03
+
+### Fixed
+- **`EnableTextToSpeech` defaulted to off when loading a config file missing the `[Speech]` section** (`config.rs`): `Config::default()` set `enable_text_to_speech` to `true`, but `load_config()`'s fallback for a missing/absent key was `.unwrap_or(false)` — the only boolean setting with this divergence. A config file predating the `[Speech]` section, or a hand-edited one omitting `EnableTextToSpeech`, silently loaded TTS as disabled, and `/save` would then persist that `false` permanently to disk. The fallback now matches `Default` (`.unwrap_or(true)`).
+
 ## [0.12.0+004] - 2026-08-03
 
 ### Fixed
