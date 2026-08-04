@@ -5,6 +5,16 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.12.0+006] - 2026-08-04
+
+### Fixed
+- **No timeout on the Google Translate HTTP client** (`providers/google.rs`): `Client::new()` had no request timeout, so a hung connection or unresponsive endpoint blocked the calling task forever. Added a 10-second timeout (matching `speech.rs`) and a clear "Translation request timed out" message applied at every `.send()`/`.text()` call site (a stall during body read raises the same timeout error as a stalled connect, just on the second call).
+- **`parse_ini` discarded keys from a repeated INI section** (`config.rs`): a config file with the same section header appearing twice (e.g. after a manual hand-edit) silently dropped every key parsed under the first occurrence, since each `[Section]` line unconditionally inserted a fresh, empty `HashMap`. Now uses `.entry(section_name).or_default()` so keys from repeated sections merge instead of overwriting.
+- **Interactive prompt did not reappear after an error** (`translator.rs`): `perform_translation` only redrew the `[lang]:` prompt on the success path; a language mismatch or a translation error left the prompt missing, making the interactive session look stuck. Both branches now call `print_source_prompt` too.
+- **Retry request errors and language-detection fallback were silently masked as "not found"** (`providers/google.rs`): `get_dictionary_entry`'s spell-correction retry fell through to `Ok(None)` on a non-2xx HTTP status, indistinguishable from a genuinely unknown word; the retry branch now returns an explicit HTTP error. `detect_language`'s fallback to `"en"` on an unexpected response shape now logs a diagnostic instead of failing silently.
+- **`WindowManager` was declared `Send + Sync` without `XInitThreads()`** (`platform/linux/signals.rs`, `platform/linux/window.rs`): `WindowManager` and `XGrabManager` each open independent X11 `Display` connections from different threads (main thread vs. the keyboard-hook task) with no prior `XInitThreads()` call anywhere in the process — a real concurrency hazard, not just a documentation gap. `XInitThreads()` is now called as the first Xlib action in `platform::linux::signals::setup()`, which already runs before either manager is constructed.
+- **AltGr/right-Alt combos were grabbed only under `Mod1Mask`, leaking the keystroke to the focused app** (`platform/linux/xgrab.rs`): on keyboard layouts where the physical AltGr key produces `Mod5` (`ISO_Level3_Shift`) rather than `Mod1`, translation still fired correctly (Linux hotkey detection goes through `rdev`, not `XGrabKey`), but `XGrabKey` never suppressed the `Mod5` variant, so the keystroke also leaked through to whatever application had focus. Alt-containing combos are now grabbed under both `Mod1Mask` and `Mod5Mask`. Also added a process-wide `XSetErrorHandler` that logs and continues instead of aborting the process on a conflicting `XGrabKey` (`BadAccess`), a pre-existing crash risk that doubling the grab count made more likely to hit.
+
 ## [0.12.0+005] - 2026-08-03
 
 ### Fixed

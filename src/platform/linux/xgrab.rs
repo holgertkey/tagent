@@ -27,6 +27,18 @@ impl XGrabManager {
                 return None;
             }
             let root = xlib::XDefaultRootWindow(display);
+
+            // Process-global: replaces Xlib's default error handler (which calls
+            // exit() on any error, aborting the whole process/desktop session) for
+            // the entire process, not just for XGrabManager's own calls —
+            // WindowManager's Xlib calls go through it too. XGrabKey raises
+            // BadAccess when some other app/WM already grabbed the same
+            // combination; logging and continuing is what keeps that from being
+            // fatal. Logging the real error_code/serial (rather than a fixed
+            // string) is what lets a genuine WindowManager-side error be told
+            // apart from an expected grab conflict.
+            xlib::XSetErrorHandler(Some(log_x11_error));
+
             Some(Self {
                 display,
                 root,
@@ -45,6 +57,15 @@ impl XGrabManager {
             HotkeyType::ModifierCombo { modifiers, key } => {
                 let mask = vk_modifiers_to_x11_mask(modifiers);
                 self.grab_key(*key, mask);
+
+                // AltGr is Mod5 on many keyboard layouts, not Mod1 — grab the
+                // same combo under Mod5 too so the keystroke is suppressed
+                // (not just detected) regardless of how the active layout maps
+                // the physical right-Alt key.
+                if modifiers_contain_alt(modifiers) {
+                    let altgr_mask = (mask & !(xlib::Mod1Mask as c_uint)) | (xlib::Mod5Mask as c_uint);
+                    self.grab_key(*key, altgr_mask);
+                }
             }
             HotkeyType::DoublePress { .. } => {
                 // Cannot grab double-press patterns with XGrabKey
@@ -117,6 +138,32 @@ impl Drop for XGrabManager {
             xlib::XCloseDisplay(self.display);
         }
     }
+}
+
+/// Returns true if any of the abstract modifier codes represents an Alt key
+/// (generic or side-specific — side-specific values are currently unreachable
+/// after `HotkeyParser::parse`'s L/R-modifier normalization, but kept for
+/// clarity/defensiveness).
+fn modifiers_contain_alt(modifiers: &[u32]) -> bool {
+    use super::keycodes::*;
+    modifiers.iter().any(|m| matches!(*m, KEY_ALT | KEY_LALT | KEY_RALT))
+}
+
+/// X11 error handler installed process-wide by `XGrabManager::new()`. Replaces
+/// Xlib's default handler (which calls `exit()` on any error) so a conflicting
+/// `XGrabKey` (BadAccess) doesn't abort the whole process/desktop session.
+/// Logs the real error_code/serial instead of a fixed string so a genuine
+/// WindowManager-side error can be told apart from an expected grab conflict.
+extern "C" fn log_x11_error(_display: *mut xlib::Display, event: *mut xlib::XErrorEvent) -> c_int {
+    unsafe {
+        eprintln!(
+            "X11 error (continuing): error_code={} request_code={} serial={}",
+            (*event).error_code,
+            (*event).request_code,
+            (*event).serial
+        );
+    }
+    0
 }
 
 /// Convert abstract VK modifier codes to X11 modifier mask
@@ -235,5 +282,30 @@ mod tests {
         use super::super::keycodes::KEY_LWIN;
         let mask = vk_modifiers_to_x11_mask(&[KEY_LWIN]);
         assert_eq!(mask, xlib::Mod4Mask as c_uint);
+    }
+
+    #[test]
+    fn test_modifiers_contain_alt_true_for_generic_and_lr() {
+        use super::super::keycodes::{KEY_ALT, KEY_LALT, KEY_RALT};
+        assert!(modifiers_contain_alt(&[KEY_ALT]));
+        assert!(modifiers_contain_alt(&[KEY_LALT]));
+        assert!(modifiers_contain_alt(&[KEY_RALT]));
+    }
+
+    #[test]
+    fn test_modifiers_contain_alt_false_for_non_alt() {
+        use super::super::keycodes::{KEY_CONTROL, KEY_SHIFT};
+        assert!(!modifiers_contain_alt(&[KEY_CONTROL, KEY_SHIFT]));
+        assert!(!modifiers_contain_alt(&[]));
+    }
+
+    #[test]
+    fn test_altgr_mask_swaps_mod1_for_mod5_keeps_other_bits() {
+        use super::super::keycodes::{KEY_ALT, KEY_CONTROL};
+        let mask = vk_modifiers_to_x11_mask(&[KEY_CONTROL, KEY_ALT]);
+        let altgr_mask = (mask & !(xlib::Mod1Mask as c_uint)) | (xlib::Mod5Mask as c_uint);
+
+        assert_eq!(altgr_mask, (xlib::ControlMask | xlib::Mod5Mask) as c_uint);
+        assert_eq!(altgr_mask & (xlib::Mod1Mask as c_uint), 0);
     }
 }

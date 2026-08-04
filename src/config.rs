@@ -501,7 +501,7 @@ EnableSpeechHotkey = {}
             if line.starts_with('[') && line.ends_with(']') {
                 let section_name = line[1..line.len() - 1].to_string();
                 current_section = Some(section_name.clone());
-                sections.insert(section_name, HashMap::new());
+                sections.entry(section_name).or_default();
             }
             // Key-value pair
             else if let Some(eq_pos) = line.find('=') {
@@ -1286,5 +1286,24 @@ mod tests {
         assert!(!manager.get_config().enable_text_to_speech);
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_parse_ini_duplicate_section_merges() {
+        let manager = ConfigManager {
+            config_path: "unused.conf".to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        let sections = manager
+            .parse_ini(
+                "[Translation]\nSourceLanguage = Auto\n\n[Other]\nFoo = Bar\n\n[Translation]\nTargetLanguage = Russian\n",
+            )
+            .unwrap();
+
+        let translation = &sections["Translation"];
+        assert_eq!(translation.get("SourceLanguage"), Some(&"Auto".to_string()));
+        assert_eq!(translation.get("TargetLanguage"), Some(&"Russian".to_string()));
+        assert_eq!(sections["Other"].get("Foo"), Some(&"Bar".to_string()));
     }
 }

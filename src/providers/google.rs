@@ -3,7 +3,19 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 use std::error::Error;
+use std::time::Duration;
 use url::form_urlencoded;
+
+/// Turns a timed-out request into a clear message instead of raw `reqwest::Error` text.
+/// reqwest's configured timeout spans the whole request (including body read), so this
+/// is applied at both the `.send()` and the following `.text()` call at each request site.
+fn map_request_error(e: reqwest::Error) -> Box<dyn Error + Send + Sync> {
+    if e.is_timeout() {
+        "Translation request timed out. Check your internet connection.".into()
+    } else {
+        Box::new(e)
+    }
+}
 
 pub struct GoogleTranslateProvider {
     client: Client,
@@ -12,7 +24,10 @@ pub struct GoogleTranslateProvider {
 impl GoogleTranslateProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("Failed to create HTTP client for Google Translate"),
         }
     }
 
@@ -138,13 +153,14 @@ impl TranslationProvider for GoogleTranslateProvider {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             )
             .send()
-            .await?;
+            .await
+            .map_err(map_request_error)?;
 
         if !response.status().is_success() {
             return Err(format!("HTTP error: {}", response.status()).into());
         }
 
-        let body = response.text().await?;
+        let body = response.text().await.map_err(map_request_error)?;
 
         let json: Value = serde_json::from_str(&body)?;
 
@@ -194,13 +210,14 @@ impl TranslationProvider for GoogleTranslateProvider {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             )
             .send()
-            .await?;
+            .await
+            .map_err(map_request_error)?;
 
         if !response.status().is_success() {
             return Err(format!("HTTP error: {}", response.status()).into());
         }
 
-        let body = response.text().await?;
+        let body = response.text().await.map_err(map_request_error)?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Try parsing dictionary from the primary response.
@@ -238,10 +255,11 @@ impl TranslationProvider for GoogleTranslateProvider {
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 )
                 .send()
-                .await?;
+                .await
+                .map_err(map_request_error)?;
 
             if retry_response.status().is_success() {
-                let retry_body = retry_response.text().await?;
+                let retry_body = retry_response.text().await.map_err(map_request_error)?;
                 let retry_json: Value = serde_json::from_str(&retry_body)?;
                 if let Some(mut entry) = self.parse_dictionary_response(&retry_json) {
                     // Override corrected_word with the explicit suggestion (more reliable
@@ -249,6 +267,10 @@ impl TranslationProvider for GoogleTranslateProvider {
                     entry.corrected_word = Some(corrected);
                     return Ok(Some(entry));
                 }
+                // Retry succeeded but still no dictionary entries for the corrected
+                // word — a genuine "not found", not an error.
+            } else {
+                return Err(format!("HTTP error on retry: {}", retry_response.status()).into());
             }
         }
 
@@ -273,20 +295,21 @@ impl TranslationProvider for GoogleTranslateProvider {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             )
             .send()
-            .await?;
+            .await
+            .map_err(map_request_error)?;
 
         if !response.status().is_success() {
             return Err(format!("HTTP error: {}", response.status()).into());
         }
 
-        let body = response.text().await?;
+        let body = response.text().await.map_err(map_request_error)?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Detected language is at index 2 in the response
         if let Some(detected_lang) = json.get(2).and_then(|v| v.as_str()) {
             Ok(detected_lang.to_string())
         } else {
-            // Fallback to English if detection fails
+            eprintln!("Language detection: unexpected response shape, defaulting to 'en'");
             Ok("en".to_string())
         }
     }
@@ -374,6 +397,26 @@ mod tests {
         // Correctly spelled — corrected_word should equal the input (no notice will be shown)
         let result_c = provider.get_dictionary_entry("violent", "en", "ru").await;
         println!("Scenario C (violent): {:?}", result_c.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+    }
+
+    /// Integration test: requires network access (points at a non-routable address so the
+    /// request never completes, exercising reqwest's timeout path).
+    /// Run with: cargo test test_request_to_unroutable_address_times_out_with_clear_message -- --nocapture --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_request_to_unroutable_address_times_out_with_clear_message() {
+        let client = Client::builder()
+            .timeout(Duration::from_millis(50))
+            .build()
+            .unwrap();
+
+        // TEST-NET-1 (RFC 5737): reserved for documentation, guaranteed unroutable.
+        let result = client.get("http://192.0.2.0/").send().await;
+        let err = result.expect_err("request to a non-routable address should fail");
+        assert!(err.is_timeout(), "expected a timeout error, got: {:?}", err);
+
+        let mapped = map_request_error(err);
+        assert!(mapped.to_string().contains("timed out"));
     }
 
     /// Integration test: requires network access to Google Translate API.

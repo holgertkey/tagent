@@ -12,8 +12,10 @@ pub struct WindowManager {
     terminal_window: c_ulong,
 }
 
-// WindowManager is shared via Arc<WindowManager> across threads.
-// X11 operations are serialized by the caller (translator).
+// Thread safety is provided by calling xlib::XInitThreads() once at startup
+// (see platform::linux::signals::setup), not by caller-side serialization —
+// WindowManager and XGrabManager open independent Display connections from
+// different threads.
 unsafe impl Send for WindowManager {}
 unsafe impl Sync for WindowManager {}
 

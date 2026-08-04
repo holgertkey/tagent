@@ -244,6 +244,7 @@ impl Translator {
                 "Text does not appear to be in {} language",
                 config.source_language
             );
+            Self::print_source_prompt(config);
             return Ok(());
         }
 
@@ -278,6 +279,7 @@ impl Translator {
             }
             Err(e) => {
                 println!("Translation error: {}", e);
+                Self::print_source_prompt(config);
             }
         }
 
