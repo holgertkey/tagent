@@ -199,9 +199,9 @@ impl ConfigManager {
 ;
 ; Usage:
 ; 1. Select text in any application
-; 2. Double-press Ctrl key quickly (Ctrl + Ctrl)
+; 2. Press the translation hotkey (default: Alt+Q)
 ; 3. Translation will be copied to clipboard
-; 4. Press F12 to exit the program
+; 4. Type /q or /e in the interactive prompt to exit the program
 ;
 ; Configuration changes take effect immediately (no restart required)
 
