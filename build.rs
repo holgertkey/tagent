@@ -8,12 +8,9 @@ fn main() {
     // Sync version in documentation files
     sync_version_in_docs(version);
 
-    // Sync MAJOR.MINOR.PATCH version into tagent-gui files
-    sync_version_in_gui(version);
-
     // Only embed Windows resources when building the tagent binary (not when used as a library).
-    // Controlled by the "binary-resources" feature flag so that tagent-gui (which uses tauri-build
-    // for its own resources) does not get a duplicate VERSION resource linker error.
+    // Controlled by the "binary-resources" feature flag so that tagent-gui does not get a
+    // duplicate VERSION resource linker error.
     #[cfg(target_os = "windows")]
     if std::env::var("CARGO_FEATURE_BINARY_RESOURCES").is_ok() {
         build_windows_resources(version);
@@ -145,82 +142,6 @@ fn update_version_in_file(
     // Only write if content changed
     if changed {
         fs::write(file_path, updated_content)?;
-        println!(
-            "cargo:warning=Updated version to {} in {}",
-            new_version, file_path
-        );
-    }
-
-    Ok(())
-}
-
-/// Synchronize MAJOR.MINOR.PATCH version into tagent-gui files.
-/// Strips the +BUILD suffix — GUI tooling (Tauri, npm) does not support it.
-fn sync_version_in_gui(version: &str) {
-    let base = version.split('+').next().unwrap_or(version);
-
-    // tagent-gui/src-tauri/Cargo.toml — update only the package `version = "..."` line,
-    // leaving dependency versions (e.g. `tauri = { version = "2", ... }`) untouched.
-    if let Err(e) = update_gui_cargo_version("tagent-gui/src-tauri/Cargo.toml", base) {
-        println!(
-            "cargo:warning=Failed to sync version in tagent-gui/src-tauri/Cargo.toml: {}",
-            e
-        );
-    }
-
-    // JSON files: "version": "..."
-    for file_path in &[
-        "tagent-gui/ui/package.json",
-        "tagent-gui/src-tauri/tauri.conf.json",
-    ] {
-        if let Err(e) = update_version_in_file(file_path, base, &[("\"version\": \"", "\"")]) {
-            println!(
-                "cargo:warning=Failed to sync version in {}: {}",
-                file_path, e
-            );
-        }
-    }
-}
-
-/// Update the standalone `version = "..."` line in a Cargo.toml.
-/// Only matches lines that start with `version = "` (i.e. the [package] entry),
-/// not dependency versions inside `{ version = "..." }`.
-fn update_gui_cargo_version(
-    file_path: &str,
-    new_version: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !Path::new(file_path).exists() {
-        return Ok(());
-    }
-
-    let content = fs::read_to_string(file_path)?;
-    let mut changed = false;
-
-    let updated_lines: Vec<String> = content
-        .lines()
-        .map(|line| {
-            if line.starts_with("version = \"") && line.ends_with('"') {
-                let current = &line["version = \"".len()..line.len() - 1];
-                if current != new_version {
-                    changed = true;
-                    format!("version = \"{}\"", new_version)
-                } else {
-                    line.to_string()
-                }
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-
-    // Preserve trailing newline
-    let mut updated = updated_lines.join("\n");
-    if content.ends_with('\n') {
-        updated.push('\n');
-    }
-
-    if changed {
-        fs::write(file_path, updated)?;
         println!(
             "cargo:warning=Updated version to {} in {}",
             new_version, file_path
