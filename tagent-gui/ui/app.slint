@@ -40,13 +40,19 @@ export component AppWindow inherits Window {
             vertical-stretch: 1;
 
             ScrollView {
+                width: parent.width;
+                height: parent.height;
+
                 Text {
                     text: transcript;
                     font-family: "monospace";
                     font-size: 13px;
                     color: #d4d4d4;
                     wrap: word-wrap;
+                    horizontal-alignment: left;
+                    vertical-alignment: top;
                     x: 8px;
+                    y: 8px;
                     width: parent.width - 16px;
                 }
             }
