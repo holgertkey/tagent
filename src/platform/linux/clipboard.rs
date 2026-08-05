@@ -16,6 +16,12 @@ pub struct ClipboardManager;
 // this, per arboard's own recommendation to keep `Clipboard` in more persistent state.
 static CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
 
+impl Default for ClipboardManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipboardManager {
     /// Create a new clipboard manager. Cheap: the underlying `arboard::Clipboard`
     /// is lazily initialized on first use and kept alive for the process lifetime.

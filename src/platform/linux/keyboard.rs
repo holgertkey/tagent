@@ -206,7 +206,7 @@ fn rdev_key_to_vk(key: &rdev::Key) -> Option<u32> {
         Key::Num8 => Some('8' as u32),
         Key::Num9 => Some('9' as u32),
 
-        Key::Unknown(code) => Some(*code as u32),
+        Key::Unknown(code) => Some(*code),
         _ => None,
     }
 }
@@ -354,26 +354,14 @@ impl KeyboardHook {
         std::thread::spawn(move || {
             let callback = move |event: rdev::Event| {
                 let key_event = match event.event_type {
-                    rdev::EventType::KeyPress(key) => {
-                        if let Some(vk) = rdev_key_to_vk(&key) {
-                            Some(KeyEvent {
-                                vk_code: vk,
-                                is_key_down: true,
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    rdev::EventType::KeyRelease(key) => {
-                        if let Some(vk) = rdev_key_to_vk(&key) {
-                            Some(KeyEvent {
-                                vk_code: vk,
-                                is_key_down: false,
-                            })
-                        } else {
-                            None
-                        }
-                    }
+                    rdev::EventType::KeyPress(key) => rdev_key_to_vk(&key).map(|vk| KeyEvent {
+                        vk_code: vk,
+                        is_key_down: true,
+                    }),
+                    rdev::EventType::KeyRelease(key) => rdev_key_to_vk(&key).map(|vk| KeyEvent {
+                        vk_code: vk,
+                        is_key_down: false,
+                    }),
                     _ => None,
                 };
 
@@ -447,23 +435,24 @@ impl KeyboardHook {
                         }
 
                         // Check speech hotkey
-                        if state_guard.speech_enabled && state_guard.speech_hotkey_enabled {
-                            if state_guard.speech_hotkey.handle(
+                        if state_guard.speech_enabled
+                            && state_guard.speech_hotkey_enabled
+                            && state_guard.speech_hotkey.handle(
                                 event.vk_code,
                                 true,
                                 &modifier_snapshot,
-                            ) {
-                                // Clear all modifier state before speech trigger
-                                state_guard.modifier_state.clear();
-                                drop(state_guard);
-                                Self::trigger_speech(
-                                    &translator,
-                                    &config_manager,
-                                    &is_speaking,
-                                    &should_stop_speech,
-                                );
-                                continue;
-                            }
+                            )
+                        {
+                            // Clear all modifier state before speech trigger
+                            state_guard.modifier_state.clear();
+                            drop(state_guard);
+                            Self::trigger_speech(
+                                &translator,
+                                &config_manager,
+                                &is_speaking,
+                                &should_stop_speech,
+                            );
+                            continue;
                         }
                     } else {
                         // Key up - update hotkey state for modifier combos and double-press

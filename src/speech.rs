@@ -59,6 +59,12 @@ pub struct SpeechManager {
     client: Client,
 }
 
+impl Default for SpeechManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpeechManager {
     /// Create a new speech manager with a fresh HTTP client (10s request timeout).
     pub fn new() -> Self {
@@ -409,7 +415,7 @@ mod tests {
         let manager = SpeechManager::new();
         let text = "First sentence. Second sentence. Third sentence.";
         let chunks = manager.split_text_for_tts(text);
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
         for chunk in chunks {
             assert!(chunk.len() <= MAX_TEXT_LENGTH);
         }

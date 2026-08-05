@@ -184,11 +184,7 @@ impl Drop for WindowManager {
 
 /// Send _NET_ACTIVE_WINDOW client message to activate a window
 unsafe fn send_active_window_message(display: *mut xlib::Display, root: c_ulong, window: c_ulong) {
-    let net_active_window = xlib::XInternAtom(
-        display,
-        b"_NET_ACTIVE_WINDOW\0".as_ptr() as *const _,
-        xlib::False,
-    );
+    let net_active_window = xlib::XInternAtom(display, c"_NET_ACTIVE_WINDOW".as_ptr(), xlib::False);
 
     let mut event: xlib::XClientMessageEvent = std::mem::zeroed();
     event.type_ = xlib::ClientMessage;
@@ -210,11 +206,7 @@ unsafe fn send_active_window_message(display: *mut xlib::Display, root: c_ulong,
 
 /// Read _NET_ACTIVE_WINDOW property from root window
 unsafe fn get_active_window(display: *mut xlib::Display, root: c_ulong) -> Option<c_ulong> {
-    let net_active_window = xlib::XInternAtom(
-        display,
-        b"_NET_ACTIVE_WINDOW\0".as_ptr() as *const _,
-        xlib::True,
-    );
+    let net_active_window = xlib::XInternAtom(display, c"_NET_ACTIVE_WINDOW".as_ptr(), xlib::True);
     if net_active_window == 0 {
         return None;
     }
@@ -260,7 +252,7 @@ unsafe fn find_window_by_pid(
     root: c_ulong,
     target_pid: u32,
 ) -> Option<c_ulong> {
-    let net_wm_pid = xlib::XInternAtom(display, b"_NET_WM_PID\0".as_ptr() as *const _, xlib::True);
+    let net_wm_pid = xlib::XInternAtom(display, c"_NET_WM_PID".as_ptr(), xlib::True);
     if net_wm_pid == 0 {
         return None;
     }

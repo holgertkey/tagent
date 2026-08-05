@@ -23,6 +23,12 @@ pub struct GoogleTranslateProvider {
     client: Client,
 }
 
+impl Default for GoogleTranslateProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GoogleTranslateProvider {
     /// Create a new provider with a fresh HTTP client (10s request timeout).
     pub fn new() -> Self {
