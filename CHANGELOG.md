@@ -5,6 +5,18 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [0.13.0] - 2026-08-05
+
+### Added
+- **`rustyline`-based line editing for interactive mode** (`interactive.rs`): replaced the bare `io::stdin().read_line()` loop with a `rustyline` `Editor`, adding arrow-key/Emacs-style line editing, Ctrl+A/E, Ctrl+R history search, and Tab-completion for slash-commands (`/help`, `/config`, `/lang`, `/save`, `/speech`, `/clear`, `/quit`, `/version`, etc.). Input history now persists across sessions in a dedicated `interactive_history.txt` (separate from the translation-results history file), capped at 1000 entries with consecutive duplicates ignored.
+- Ctrl+C at the interactive prompt now behaves like a real shell: it clears the current line and reprints the prompt without exiting. Only Ctrl+D on an empty line (or `/quit`/`/exit`/`/q`) exits.
+
+### Changed
+- **Hotkey-triggered translation output no longer corrupts the interactive prompt** (`translator.rs`, `interactive.rs`): output from `Translator::translate_clipboard()` (invoked from the keyboard-hook thread) is now routed through a rustyline `ExternalPrinter` when the interactive prompt is active, so it can no longer interleave with and corrupt the prompt/typed-so-far text if the hotkey fires while the user is mid-typing.
+
+### Fixed
+- **Double Ctrl+C left the shell in raw mode** (`platform/linux/signals.rs`): the Ctrl+C signal handler's second-press `std::process::exit(1)` skipped `Drop`, so rustyline's terminal-mode guard never ran and the shell was left in raw mode after exit. The handler no longer force-exits; Ctrl+C is now handled in-band via `ReadlineError::Interrupted` in `InteractiveMode::start()`, which always goes through rustyline's normal (`Drop`-respecting) exit path.
+
 ## [0.12.0+006] - 2026-08-04
 
 ### Fixed

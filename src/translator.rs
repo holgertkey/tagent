@@ -1,9 +1,16 @@
 use crate::config::{self, ConfigManager};
 use crate::platform::{ClipboardManager, WindowHandle, WindowManager};
 use crate::providers::{self, TranslationProvider};
+use rustyline::ExternalPrinter;
 use std::error::Error;
 use std::io::{self, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// Shared slot for the rustyline external printer used to route hotkey-triggered
+/// translation output safely while the interactive prompt may be mid-read on another
+/// thread. `None` until [`InteractiveMode::start`](crate::interactive::InteractiveMode::start)
+/// installs one; always `None` in CLI mode, which never calls [`Translator::translate_clipboard`].
+type SharedPrinter = Arc<Mutex<Option<Box<dyn ExternalPrinter + Send>>>>;
 
 /// High-level translation orchestrator.
 ///
@@ -35,6 +42,7 @@ pub struct Translator {
     config_manager: Arc<ConfigManager>,
     window_manager: Option<Arc<WindowManager>>,
     stored_foreground_window: Arc<std::sync::Mutex<Option<WindowHandle>>>,
+    printer: SharedPrinter,
 }
 
 impl Translator {
@@ -70,7 +78,40 @@ impl Translator {
             config_manager,
             window_manager,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
+            printer: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// Install the external printer used to route [`translate_clipboard`](Self::translate_clipboard)
+    /// output safely while the interactive prompt may be reading a line in raw mode.
+    /// Called once, from `InteractiveMode::start()`, right after the rustyline `Editor` is built.
+    pub fn set_external_printer(&self, printer: impl ExternalPrinter + Send + 'static) {
+        *self.printer.lock().unwrap() = Some(Box::new(printer));
+    }
+
+    /// True once an external printer has been installed via [`set_external_printer`](Self::set_external_printer).
+    fn has_external_printer(&self) -> bool {
+        self.printer.lock().unwrap().is_some()
+    }
+
+    /// Emit hotkey-triggered translation output, routed through the external printer when
+    /// one is installed (so it can't corrupt an interactive prompt mid-read on another
+    /// thread), or printed directly to stdout otherwise.
+    fn emit(&self, msg: &str) {
+        let mut guard = self.printer.lock().unwrap();
+        if let Some(printer) = guard.as_mut() {
+            if printer.print(msg.to_string()).is_ok() {
+                return;
+            }
+        }
+        drop(guard);
+        print!("{}", msg);
+        io::stdout().flush().ok();
+    }
+
+    /// Like [`emit`](Self::emit) but appends a trailing newline, mirroring `println!`.
+    fn emit_line(&self, msg: impl AsRef<str>) {
+        self.emit(&format!("{}\n", msg.as_ref()));
     }
 
     /// Copy text to clipboard if enabled in config
@@ -95,8 +136,14 @@ impl Translator {
         }
     }
 
-    /// Print source language prompt with color
-    fn print_source_prompt(config: &crate::config::Config) {
+    /// Reprint the source language prompt after hotkey-triggered output, but only on the
+    /// no-printer fallback path — once an external printer is installed, rustyline redraws
+    /// the real (possibly non-empty) prompt itself, and a plain `print!` here would bypass
+    /// the printer and corrupt it.
+    fn maybe_print_source_prompt(&self, config: &crate::config::Config) {
+        if self.has_external_printer() {
+            return;
+        }
         let source_prompt = format!("[{}]: ", config.source_language);
         config::print_colored(&source_prompt, &config.source_prompt_color);
         io::stdout().flush().ok();
@@ -106,7 +153,7 @@ impl Translator {
     pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check if config file was modified and reload if necessary
         if let Err(e) = self.config_manager.check_and_reload() {
-            println!("Config reload error: {}", e);
+            self.emit_line(format!("Config reload error: {}", e));
         }
 
         let config = self.config_manager.get_config();
@@ -125,13 +172,13 @@ impl Translator {
         let original_text = match self.clipboard.get_text_with_copy() {
             Ok(text) => {
                 if text.trim().is_empty() {
-                    println!("No selected text or clipboard is empty");
+                    self.emit_line("No selected text or clipboard is empty");
                     return Ok(());
                 }
                 text.trim().to_string()
             }
             Err(e) => {
-                println!("Copy or clipboard read error: {}", e);
+                self.emit_line(format!("Copy or clipboard read error: {}", e));
                 return Err(e.to_string().into());
             }
         };
@@ -140,7 +187,7 @@ impl Translator {
         if config.show_terminal_on_translate {
             if let Some(wm) = &self.window_manager {
                 if let Err(e) = wm.show_terminal() {
-                    println!("Failed to show terminal: {}", e);
+                    self.emit_line(format!("Failed to show terminal: {}", e));
                 }
             }
         }
@@ -154,35 +201,35 @@ impl Translator {
                 .await
             {
                 Ok((dictionary_info, corrected_word)) => {
-                    // Clear any existing prompt and print on new line
-                    print!("\r");
-                    io::stdout().flush().ok();
+                    // Clear any existing prompt and print on new line (no-printer fallback only;
+                    // with a printer installed, rustyline handles redrawing on its own).
+                    if !self.has_external_printer() {
+                        print!("\r");
+                        io::stdout().flush().ok();
+                    }
 
                     // Show the original text (source word)
                     let source_display = Self::source_display(&source_code, &config);
                     let source_label = format!("[{}]: ", source_display);
-                    config::print_colored(&source_label, &config.source_prompt_color);
-                    println!("{}", original_text);
+                    self.emit(&config::colorize(&source_label, &config.source_prompt_color));
+                    self.emit_line(&original_text);
 
                     // If a spelling correction was applied, notify the user
                     if config.spell_check {
                         if let Some(ref corrected) = corrected_word {
                             if corrected.to_lowercase() != original_text.to_lowercase() {
-                                println!(
-                                    "{}",
-                                    Self::correction_notice(corrected, &target_code)
-                                );
+                                self.emit_line(Self::correction_notice(corrected, &target_code));
                             }
                         }
                     }
 
                     // Print colored dictionary label
-                    config::print_colored("[Word]: ", &config.dictionary_prompt_color);
-                    println!("{}", dictionary_info);
-                    println!();
+                    self.emit(&config::colorize("[Word]: ", &config.dictionary_prompt_color));
+                    self.emit_line(&dictionary_info);
+                    self.emit_line("");
 
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
-                        println!("Dictionary clipboard write error: {}", e);
+                        self.emit_line(format!("Dictionary clipboard write error: {}", e));
                     }
 
                     // Save dictionary entry to history
@@ -193,11 +240,11 @@ impl Translator {
                         &target_code,
                         &config,
                     ) {
-                        println!("History save error: {}", e);
+                        self.emit_line(format!("History save error: {}", e));
                     }
 
                     // Show source language prompt after hotkey translation
-                    Self::print_source_prompt(&config);
+                    self.maybe_print_source_prompt(&config);
                 }
                 Err(_) => {
                     // Fall back to regular translation
@@ -228,23 +275,25 @@ impl Translator {
         target_code: &str,
         config: &crate::config::Config,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Clear any existing prompt and move to new line
-        print!("\r");
-        io::stdout().flush().ok();
+        // Clear any existing prompt and move to new line (no-printer fallback only).
+        if !self.has_external_printer() {
+            print!("\r");
+            io::stdout().flush().ok();
+        }
 
         // Show source language info with colored prompt
         let source_display = Self::source_display(source_code, config);
         let source_label = format!("[{}]: ", source_display);
-        config::print_colored(&source_label, &config.source_prompt_color);
-        println!("{}", text);
+        self.emit(&config::colorize(&source_label, &config.source_prompt_color));
+        self.emit_line(text);
 
         // If source language is not Auto, check if text matches expected language
         if source_code != "auto" && !self.is_expected_language(text, source_code) {
-            println!(
+            self.emit_line(format!(
                 "Text does not appear to be in {} language",
                 config.source_language
-            );
-            Self::print_source_prompt(config);
+            ));
+            self.maybe_print_source_prompt(config);
             return Ok(());
         }
 
@@ -255,12 +304,12 @@ impl Translator {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                config::print_colored(&trans_label, &config.target_prompt_color);
-                println!("{}", translated_text);
-                println!();
+                self.emit(&config::colorize(&trans_label, &config.target_prompt_color));
+                self.emit_line(&translated_text);
+                self.emit_line("");
 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
-                    println!("Translation clipboard write error: {}", e);
+                    self.emit_line(format!("Translation clipboard write error: {}", e));
                 }
 
                 // Save translation to history
@@ -271,15 +320,15 @@ impl Translator {
                     target_code,
                     config,
                 ) {
-                    println!("History save error: {}", e);
+                    self.emit_line(format!("History save error: {}", e));
                 }
 
                 // Show source language prompt after hotkey translation
-                Self::print_source_prompt(config);
+                self.maybe_print_source_prompt(config);
             }
             Err(e) => {
-                println!("Translation error: {}", e);
-                Self::print_source_prompt(config);
+                self.emit_line(format!("Translation error: {}", e));
+                self.maybe_print_source_prompt(config);
             }
         }
 
@@ -538,14 +587,14 @@ impl Translator {
         if let Ok(stored) = self.stored_foreground_window.lock() {
             if let Some(prev_window) = *stored {
                 if let Err(e) = wm.set_foreground_window(prev_window) {
-                    println!("Failed to restore previous window: {}", e);
+                    self.emit_line(format!("Failed to restore previous window: {}", e));
                 }
             }
         }
 
         // Hide the terminal
         if let Err(e) = wm.hide_terminal() {
-            println!("Failed to hide terminal: {}", e);
+            self.emit_line(format!("Failed to hide terminal: {}", e));
         }
     }
 

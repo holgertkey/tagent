@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tagent"
-version = "0.12.0+006"
+version = "0.13.0"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]
@@ -48,6 +48,7 @@ rodio = { version = "0.21", features = ["symphonia-mp3"] }
 urlencoding = "2.1"
 arboard = "3.4"
 ctrlc = "3.4"
+rustyline = "18.0.1"
 
 # Windows-only dependencies
 [target.'cfg(target_os = "windows")'.dependencies]

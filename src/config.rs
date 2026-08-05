@@ -131,6 +131,26 @@ impl ConfigManager {
         Ok(config_dir.join("tagent.conf"))
     }
 
+    /// Returns the platform-default path for the interactive-mode line-editing history file,
+    /// creating parent directories as needed.
+    ///
+    /// This is separate from [`Config::history_file`], which logs translation *results* for
+    /// the user to read; this file stores rustyline's input-line history instead.
+    ///
+    /// - **Windows**: `%APPDATA%\Tagent\interactive_history.txt`
+    /// - **Linux/macOS**: `~/.config/Tagent/interactive_history.txt`
+    pub fn get_default_interactive_history_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
+        let config_dir = dirs::config_dir()
+            .ok_or("Failed to get config directory")?
+            .join("Tagent");
+
+        if !config_dir.exists() {
+            fs::create_dir_all(&config_dir)?;
+        }
+
+        Ok(config_dir.join("interactive_history.txt"))
+    }
+
     /// Create a new `ConfigManager` for the given config file path.
     ///
     /// If the file does not exist, a default configuration file is created at `config_path`.
@@ -596,6 +616,8 @@ EnableSpeechHotkey = {}
         println!("   - Single words show dictionary entries (if enabled)");
         println!("   - Phrases show translations");
         println!("   - Empty line = skip/continue");
+        println!("   - Arrow keys/Ctrl+A/Ctrl+E to edit, Ctrl+R to search history");
+        println!("   - Input history persists across sessions; Tab-completes slash-commands");
         println!();
 
         println!("2. GUI Hotkeys (Any Application):");
@@ -955,14 +977,20 @@ pub fn is_single_word(text: &str) -> bool {
             .all(|c| c.is_alphabetic() || c == '-' || c == '\'')
 }
 
+/// Wrap `label` in the ANSI escape sequence for `color_name`, or return it unchanged
+/// if the color name is unrecognized or `"None"`.
+pub fn colorize(label: &str, color_name: &str) -> String {
+    if let Some(color) = ConfigManager::parse_color(color_name) {
+        label.color(color).to_string()
+    } else {
+        label.to_string()
+    }
+}
+
 /// Print a label with optional color, without a trailing newline.
 /// Eliminates the repeated pattern of `if let Some(color) = parse_color(...) { ... } else { ... }`.
 pub fn print_colored(label: &str, color_name: &str) {
-    if let Some(color) = ConfigManager::parse_color(color_name) {
-        print!("{}", label.color(color));
-    } else {
-        print!("{}", label);
-    }
+    print!("{}", colorize(label, color_name));
 }
 
 // Hotkey configuration types and parser

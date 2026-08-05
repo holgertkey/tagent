@@ -1,6 +1,6 @@
 {
   "productName": "tagent-gui",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "identifier": "com.tagent.gui",
   "build": {
     "frontendDist": "../ui/dist",

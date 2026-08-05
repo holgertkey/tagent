@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Tagent GUI — cross-platform text translator with Tauri"
 publish = false

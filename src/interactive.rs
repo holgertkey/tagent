@@ -3,10 +3,67 @@ use crate::platform::ClipboardManager;
 use crate::config::{self, ConfigManager};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
+use rustyline::completion::Completer;
+use rustyline::error::ReadlineError;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+use rustyline::validate::Validator;
+use rustyline::{Context, EditMode, Editor, Helper};
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// Slash-commands offered for Tab-completion at the interactive prompt.
+const SLASH_COMMANDS: &[&str] = &[
+    "/help", "/h", "/?",
+    "/config", "/c",
+    "/lang", "/l",
+    "/save",
+    "/speech", "/s",
+    "/clear", "/cls",
+    "/quit", "/q", "/exit",
+    "/version", "/v",
+];
+
+/// Rustyline [`Helper`] that Tab-completes slash-commands. Hints, highlighting, and
+/// validation are left at rustyline's no-op defaults.
+struct TagentHelper;
+
+impl Completer for TagentHelper {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
+        // Only complete slash-commands, and only while the cursor sits at the end of them.
+        if pos != line.len() || !line.starts_with('/') {
+            return Ok((0, Vec::new()));
+        }
+
+        let candidates: Vec<String> = SLASH_COMMANDS
+            .iter()
+            .filter(|cmd| cmd.starts_with(line))
+            .map(|cmd| cmd.to_string())
+            .collect();
+
+        Ok((0, candidates))
+    }
+}
+
+impl Hinter for TagentHelper {
+    type Hint = String;
+}
+
+impl Highlighter for TagentHelper {}
+
+impl Validator for TagentHelper {}
+
+impl Helper for TagentHelper {}
 
 pub struct InteractiveMode {
     translator: Translator,
@@ -34,6 +91,35 @@ impl InteractiveMode {
 
     /// Start interactive translation mode (unified with GUI)
     pub async fn start(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let rl_config = rustyline::Config::builder()
+            .max_history_size(1000)?
+            .history_ignore_dups(true)?
+            .edit_mode(EditMode::Emacs)
+            .build();
+
+        let mut editor = Editor::<TagentHelper, DefaultHistory>::with_config(rl_config)?;
+        editor.set_helper(Some(TagentHelper));
+
+        let history_path = ConfigManager::get_default_interactive_history_path()
+            .map_err(|e| format!("Failed to resolve interactive history path: {}", e))?;
+
+        match editor.load_history(&history_path) {
+            Ok(()) => {}
+            Err(ReadlineError::Io(ref e)) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => println!("Warning: failed to load interactive history: {}", e),
+        }
+
+        // Route hotkey-triggered translation output through this printer so it can't
+        // corrupt the prompt/typed-so-far text if the hotkey fires while readline() is
+        // reading a line in raw mode.
+        match editor.create_external_printer() {
+            Ok(printer) => self.translator.set_external_printer(printer),
+            Err(e) => println!(
+                "Warning: could not set up safe hotkey output routing: {}",
+                e
+            ),
+        }
+
         loop {
             // Check if we should exit
             if self.should_exit.load(Ordering::Relaxed) {
@@ -45,18 +131,17 @@ impl InteractiveMode {
             let config = self.config_manager.get_config();
             let (source_code, target_code) = self.config_manager.get_language_codes();
 
-            // Show colored prompt
-            let prompt = format!("[{}]: ", config.source_language);
-            config::print_colored(&prompt, &config.source_prompt_color);
-            io::stdout()
-                .flush()
-                .map_err(|e| format!("IO error: {}", e))?;
+            let prompt = config::colorize(
+                &format!("[{}]: ", config.source_language),
+                &config.source_prompt_color,
+            );
 
-            // Read user input
-            let mut input = String::new();
-            match io::stdin().read_line(&mut input) {
-                Ok(_) => {
-                    let text = input.trim();
+            match editor.readline(&prompt) {
+                Ok(line) => {
+                    editor.add_history_entry(line.as_str()).ok();
+                    editor.append_history(&history_path).ok();
+
+                    let text = line.trim();
 
                     // Handle commands first
                     if self.handle_command(text).await? {
@@ -73,12 +158,25 @@ impl InteractiveMode {
                         }
                     }
                 }
+                Err(ReadlineError::Interrupted) => {
+                    // True bash behavior: Ctrl+C never exits on its own, just reprints the prompt.
+                    continue;
+                }
+                Err(ReadlineError::Eof) => {
+                    // Ctrl+D on an empty line: same as /quit.
+                    println!();
+                    println!("Goodbye!");
+                    self.should_exit.store(true, Ordering::SeqCst);
+                    break;
+                }
                 Err(e) => {
                     println!("Input error: {}", e);
-                    continue;
+                    break;
                 }
             }
         }
+
+        editor.save_history(&history_path).ok();
 
         Ok(())
     }
@@ -329,5 +427,45 @@ impl InteractiveMode {
             .speak_text_full(text, &self.config_manager)
             .await
             .map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustyline::history::DefaultHistory;
+
+    #[test]
+    fn completes_slash_commands_by_prefix() {
+        let helper = TagentHelper;
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+
+        let (start, candidates) = helper.complete("/h", 2, &ctx).unwrap();
+
+        assert_eq!(start, 0);
+        assert!(candidates.contains(&"/help".to_string()));
+        assert!(candidates.contains(&"/h".to_string()));
+        assert!(!candidates.iter().any(|c| c == "/lang"));
+    }
+
+    #[test]
+    fn no_completion_without_leading_slash() {
+        let helper = TagentHelper;
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+
+        let (_, candidates) = helper.complete("hello", 5, &ctx).unwrap();
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn no_completion_when_cursor_not_at_end() {
+        let helper = TagentHelper;
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+
+        let (_, candidates) = helper.complete("/help", 1, &ctx).unwrap();
+        assert!(candidates.is_empty());
     }
 }
