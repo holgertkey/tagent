@@ -2,10 +2,13 @@ use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
+/// Windows clipboard access, backed by `clipboard-win` (get/set) and `SendInput`
+/// (simulating Ctrl+C to copy the current text selection).
 #[derive(Clone)]
 pub struct ClipboardManager;
 
 impl ClipboardManager {
+    /// Create a new clipboard manager.
     pub fn new() -> Self {
         Self
     }

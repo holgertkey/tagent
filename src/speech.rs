@@ -60,6 +60,7 @@ pub struct SpeechManager {
 }
 
 impl SpeechManager {
+    /// Create a new speech manager with a fresh HTTP client (10s request timeout).
     pub fn new() -> Self {
         Self {
             client: Client::builder()

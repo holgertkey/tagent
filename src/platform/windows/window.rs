@@ -5,11 +5,13 @@ use windows::{Win32::Foundation::*, Win32::System::Console::*, Win32::UI::Window
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle(HWND);
 
+/// Win32-backed manager for showing, hiding, and focusing the console window.
 pub struct WindowManager {
     console_window: HWND,
 }
 
 impl WindowManager {
+    /// Locate the current process's console window via `GetConsoleWindow`.
     pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         unsafe {
             let console_window = GetConsoleWindow();

@@ -187,9 +187,16 @@ impl HotkeyState {
     }
 }
 
+/// Global hotkey listener for Windows, driven by a low-level `WH_KEYBOARD_LL` hook and
+/// a Win32 message loop. All state is process-global (`OnceLock` statics) because the
+/// hook callback is a plain `extern "system" fn` with no user-data pointer.
 pub struct KeyboardHook;
 
 impl KeyboardHook {
+    /// Initialize global hook state (translator, hotkey configs for translate and
+    /// speech, exit flag) from `config_manager`. Does not install the hook itself;
+    /// call [`KeyboardHook::start`] for that. Must only be called once per process —
+    /// returns an error if any of the underlying `OnceLock`s are already set.
     pub fn new(
         translator: Translator,
         should_exit: Arc<AtomicBool>,
@@ -293,6 +300,8 @@ impl KeyboardHook {
         Ok(Self)
     }
 
+    /// Install the low-level keyboard hook and run the Win32 message loop until
+    /// `should_exit` is set or `WM_QUIT` is received, then uninstall the hook.
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             let h_instance = GetModuleHandleW(None)?;

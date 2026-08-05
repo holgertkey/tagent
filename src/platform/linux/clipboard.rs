@@ -2,6 +2,8 @@ use arboard::Clipboard;
 use std::error::Error;
 use std::sync::Mutex;
 
+/// Linux clipboard access, backed by `arboard` (get/set) and `xdotool` (simulating Ctrl+C
+/// to copy the current text selection).
 #[derive(Clone)]
 pub struct ClipboardManager;
 
@@ -15,6 +17,8 @@ pub struct ClipboardManager;
 static CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
 
 impl ClipboardManager {
+    /// Create a new clipboard manager. Cheap: the underlying `arboard::Clipboard`
+    /// is lazily initialized on first use and kept alive for the process lifetime.
     pub fn new() -> Self {
         Self
     }

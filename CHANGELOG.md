@@ -5,6 +5,15 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+## [Unreleased]
+
+### Changed
+- **Documentation overhaul**: `CLAUDE.md`'s Architecture section described a stale, Windows-only module layout (flat `keyboard.rs`/`clipboard.rs`/`window.rs`) that no longer matched the codebase after the `src/platform/{linux,macos,windows}/` split and the addition of the `tagent-gui` crate. Rewrote the Core Modules, Platform Abstraction, Provider Trait, Configuration System, and Development Notes sections to reflect current reality, including the `[Colors]`/`[Speech]` config sections, the `detect_language` provider method, and cross-platform config file paths. Added `docs/ARCHITECTURE.md` for implementation-level detail that doesn't belong in `CLAUDE.md`'s day-to-day guidance: the platform abstraction mechanism, per-platform feature parity (macOS is a near-complete stub), `tagent-gui` internals and its gaps (hardcoded provider, no config integration), and a stale Tauri-era version-sync leftover in the root `build.rs`.
+- **Added `#![warn(missing_docs)]` to `src/lib.rs`** and documented all previously-undocumented public items across `config.rs`, `platform/{linux,macos,windows}/*`, `providers/*`, `speech.rs`, and `translator.rs` (51 warnings on the Linux build, all resolved). `CLAUDE.md` already claimed this lint was enabled; it wasn't — the claim is now accurate.
+
+### Fixed
+- **`build.rs`'s version sync silently deleted the CHANGELOG's `## [Unreleased]` section** (`build.rs`): `update_version_in_file`'s pattern search for `"## [0.13.0] - "` matched the `## [Unreleased]` header first, then scanned forward for the next `"] - "`, which only occurs at the *next real* version header — replacing everything in between (the entire Unreleased section) with just the version string. Found by hitting it firsthand: a freshly-written Unreleased entry vanished after the next `cargo build`. The scan now recognizes and skips `"## [Unreleased]"` headers instead of treating them as a version to replace.
+
 ## [0.13.0] - 2026-08-05
 
 ### Added

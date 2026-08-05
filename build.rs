@@ -109,23 +109,37 @@ fn update_version_in_file(
         // Find all occurrences of the pattern
         let pattern_start = *prefix;
         let pattern_end = *suffix;
+        let mut search_from = 0usize;
 
-        while let Some(start_pos) = updated_content.find(pattern_start) {
+        loop {
+            let Some(rel_start_pos) = updated_content[search_from..].find(pattern_start) else {
+                break;
+            };
+            let start_pos = search_from + rel_start_pos;
             let search_start = start_pos + pattern_start.len();
 
-            if let Some(end_pos) = updated_content[search_start..].find(pattern_end) {
-                let full_end_pos = search_start + end_pos;
-                let old_version = &updated_content[search_start..full_end_pos];
+            // Skip a CHANGELOG "## [Unreleased]" header: it has no version to sync, and
+            // naively searching for the next "] - " from here would run past it into the
+            // following real version header, swallowing everything in between (including
+            // the Unreleased section's own entries) when the span gets replaced.
+            if updated_content[search_start..].starts_with("Unreleased]") {
+                search_from = search_start;
+                continue;
+            }
 
-                // Only update if version actually changed
-                if old_version != new_version {
-                    updated_content.replace_range(search_start..full_end_pos, new_version);
-                    changed = true;
-                } else {
-                    // Break to avoid infinite loop when version matches
-                    break;
-                }
+            let Some(end_pos) = updated_content[search_start..].find(pattern_end) else {
+                break;
+            };
+            let full_end_pos = search_start + end_pos;
+            let old_version = &updated_content[search_start..full_end_pos];
+
+            // Only update if version actually changed
+            if old_version != new_version {
+                updated_content.replace_range(search_start..full_end_pos, new_version);
+                changed = true;
+                search_from = search_start + new_version.len();
             } else {
+                // Break to avoid infinite loop when version matches
                 break;
             }
         }
@@ -244,4 +258,84 @@ fn convert_to_windows_version(version: &str) -> String {
     let build = if build.is_empty() { "0" } else { &build };
 
     format!("{}.{}", base_version, build)
+}
+
+// NOTE: build.rs is compiled as a build-dependency binary, not as part of any
+// `[lib]`/`[[bin]]` target, so `cargo test` never runs these — verify manually with
+// `rustc --edition 2021 --test build.rs -o /tmp/build_rs_tests && /tmp/build_rs_tests`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_temp_file(name: &str, content: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("tagent_build_rs_test_{}_{}", std::process::id(), name));
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn changelog_unreleased_header_is_not_swallowed_by_version_sync() {
+        // Regression test: `find("## [")` used to match "## [Unreleased]" first, then
+        // scan forward for "] - ", which only appears at the *next* real version header —
+        // replacing everything in between (including the Unreleased section's own
+        // entries) with just the new version string.
+        let path = write_temp_file(
+            "changelog",
+            "# Changelog\n\n\
+             ## [Unreleased]\n\n\
+             ### Changed\n\
+             - Some entry that must survive a version sync.\n\n\
+             ## [0.12.0] - 2026-01-01\n\n\
+             ### Fixed\n\
+             - Old entry.\n",
+        );
+
+        update_version_in_file(
+            path.to_str().unwrap(),
+            "0.13.0",
+            &[("## [", "] - ")],
+        )
+        .unwrap();
+
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert!(
+            updated.contains("## [Unreleased]"),
+            "Unreleased header must survive version sync, got:\n{}",
+            updated
+        );
+        assert!(
+            updated.contains("Some entry that must survive a version sync."),
+            "Unreleased entry must survive version sync, got:\n{}",
+            updated
+        );
+        assert!(
+            updated.contains("## [0.13.0] - 2026-01-01"),
+            "the real version header must still get updated, got:\n{}",
+            updated
+        );
+    }
+
+    #[test]
+    fn version_header_updates_when_changed() {
+        let path = write_temp_file("simple", "## [0.12.0] - 2026-01-01\n");
+        update_version_in_file(path.to_str().unwrap(), "0.13.0", &[("## [", "] - ")]).unwrap();
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(updated, "## [0.13.0] - 2026-01-01\n");
+    }
+
+    #[test]
+    fn version_header_left_unchanged_when_already_current() {
+        let content = "## [0.13.0] - 2026-01-01\n";
+        let path = write_temp_file("nochange", content);
+        update_version_in_file(path.to_str().unwrap(), "0.13.0", &[("## [", "] - ")]).unwrap();
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(updated, content);
+    }
 }

@@ -1,21 +1,40 @@
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
-// Key code constants for cross-platform hotkey configuration and validation
+// Key code constants for cross-platform hotkey configuration and validation.
+// Unlike Linux/macOS, these alias the real `windows` crate `VK_*` values directly
+// rather than hardcoding numbers, but they are numerically identical so the
+// abstract layer stays consistent across platforms.
+/// Generic Control key (either side), used after normalizing [`KEY_LCONTROL`]/[`KEY_RCONTROL`].
 pub const KEY_CONTROL: u32 = VK_CONTROL.0 as u32;
+/// Left Control key.
 pub const KEY_LCONTROL: u32 = VK_LCONTROL.0 as u32;
+/// Right Control key.
 pub const KEY_RCONTROL: u32 = VK_RCONTROL.0 as u32;
+/// Generic Shift key (either side), used after normalizing [`KEY_LSHIFT`]/[`KEY_RSHIFT`].
 pub const KEY_SHIFT: u32 = VK_SHIFT.0 as u32;
+/// Left Shift key.
 pub const KEY_LSHIFT: u32 = VK_LSHIFT.0 as u32;
+/// Right Shift key.
 pub const KEY_RSHIFT: u32 = VK_RSHIFT.0 as u32;
+/// Generic Alt key (either side), used after normalizing [`KEY_LALT`]/[`KEY_RALT`].
 pub const KEY_ALT: u32 = VK_MENU.0 as u32;
+/// Left Alt key.
 pub const KEY_LALT: u32 = VK_LMENU.0 as u32;
+/// Right Alt key (AltGr on many layouts).
 pub const KEY_RALT: u32 = VK_RMENU.0 as u32;
+/// Left Windows key.
 pub const KEY_LWIN: u32 = VK_LWIN.0 as u32;
+/// Right Windows key.
 pub const KEY_RWIN: u32 = VK_RWIN.0 as u32;
+/// F1 function key; start of the F1-F12 range allowed as a standalone [`crate::config::HotkeyType::SingleKey`].
 pub const KEY_F1: u32 = VK_F1.0 as u32;
+/// F4 function key.
 pub const KEY_F4: u32 = VK_F4.0 as u32;
+/// F12 function key; end of the F1-F12 range allowed as a standalone [`crate::config::HotkeyType::SingleKey`].
 pub const KEY_F12: u32 = VK_F12.0 as u32;
+/// Escape key.
 pub const KEY_ESCAPE: u32 = VK_ESCAPE.0 as u32;
+/// Delete key.
 pub const KEY_DELETE: u32 = VK_DELETE.0 as u32;
 
 /// Convert key name to Windows virtual key code

@@ -46,6 +46,10 @@ pub struct Translator {
 }
 
 impl Translator {
+    /// Create a full translator for unified mode, including window management for
+    /// showing/hiding the terminal. If window management fails to initialize (e.g. no
+    /// display server), falls back to a translator without it rather than erroring out —
+    /// use [`Translator::new_cli`] instead if window management is never needed.
     pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let window_manager = match WindowManager::new() {
             Ok(wm) => Some(Arc::new(wm)),

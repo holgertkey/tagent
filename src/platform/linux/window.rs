@@ -6,6 +6,7 @@ use x11::xlib;
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle(pub u64);
 
+/// Xlib-backed manager for showing, hiding, and focusing the terminal window.
 pub struct WindowManager {
     display: *mut xlib::Display,
     root: c_ulong,
@@ -20,6 +21,8 @@ unsafe impl Send for WindowManager {}
 unsafe impl Sync for WindowManager {}
 
 impl WindowManager {
+    /// Open a new X11 display connection and locate the terminal window, either by
+    /// this process's PID (`_NET_WM_PID`) or by falling back to the currently focused window.
     pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         unsafe {
             let display = xlib::XOpenDisplay(std::ptr::null());

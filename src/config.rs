@@ -994,22 +994,35 @@ pub fn print_colored(label: &str, color_name: &str) {
 }
 
 // Hotkey configuration types and parser
+/// A parsed hotkey configuration, describing how a key or key combination
+/// should be detected by the platform keyboard hook.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HotkeyType {
+    /// A single key press (only `F1`-`F12` are allowed here for safety).
     SingleKey {
+        /// Virtual-key code of the key.
         vk_code: u32,
     },
+    /// A modifier(s) + key combination, e.g. `Alt+Q` or `Ctrl+Shift+T`.
     ModifierCombo {
+        /// Virtual-key codes of the required modifier keys, all of which must be held.
         modifiers: Vec<u32>,
+        /// Virtual-key code of the non-modifier key that completes the combo.
         key: u32,
     },
+    /// Two presses of the same key within a configurable time window, e.g. `Ctrl+Ctrl`.
     DoublePress {
+        /// Virtual-key code of the key.
         vk_code: u32,
+        /// Minimum time between presses, in milliseconds, for the second press to count.
         min_interval_ms: u64,
+        /// Maximum time between presses, in milliseconds, for the second press to count.
         max_interval_ms: u64,
     },
 }
 
+/// Stateless parser that converts hotkey configuration strings (e.g. `"Alt+Q"`)
+/// into [`HotkeyType`] values, and validates them against dangerous system shortcuts.
 pub struct HotkeyParser;
 
 impl HotkeyParser {

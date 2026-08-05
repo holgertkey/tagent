@@ -1,22 +1,39 @@
 // Abstract key codes (matching Windows VK code values for internal consistency)
 
+/// Generic Control key (either side), used after normalizing [`KEY_LCONTROL`]/[`KEY_RCONTROL`].
 pub const KEY_CONTROL: u32 = 17;
+/// Left Control key.
 pub const KEY_LCONTROL: u32 = 162;
+/// Right Control key.
 pub const KEY_RCONTROL: u32 = 163;
+/// Generic Shift key (either side), used after normalizing [`KEY_LSHIFT`]/[`KEY_RSHIFT`].
 pub const KEY_SHIFT: u32 = 16;
+/// Left Shift key.
 pub const KEY_LSHIFT: u32 = 160;
+/// Right Shift key.
 pub const KEY_RSHIFT: u32 = 161;
+/// Generic Alt key (either side), used after normalizing [`KEY_LALT`]/[`KEY_RALT`].
 pub const KEY_ALT: u32 = 18;
+/// Left Alt key.
 pub const KEY_LALT: u32 = 164;
+/// Right Alt key (Option on macOS keyboards).
 pub const KEY_RALT: u32 = 165;
+/// Left Windows/Super/Command key.
 pub const KEY_LWIN: u32 = 91;
+/// Right Windows/Super/Command key.
 pub const KEY_RWIN: u32 = 92;
+/// F1 function key; start of the F1-F12 range allowed as a standalone [`crate::config::HotkeyType::SingleKey`].
 pub const KEY_F1: u32 = 112;
+/// F4 function key.
 pub const KEY_F4: u32 = 115;
+/// F12 function key; end of the F1-F12 range allowed as a standalone [`crate::config::HotkeyType::SingleKey`].
 pub const KEY_F12: u32 = 123;
+/// Escape key.
 pub const KEY_ESCAPE: u32 = 27;
+/// Delete key.
 pub const KEY_DELETE: u32 = 46;
 
+/// Convert a key name (e.g. `"F9"`, `"Alt"`, `"Space"`, `"Ctrl"`) to an abstract virtual key code.
 pub fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
     let key_lower = key_name.to_lowercase();
 
@@ -58,6 +75,8 @@ pub fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
     }
 }
 
+/// Normalize a virtual key code, converting specific left/right variants (e.g. `KEY_LCONTROL`)
+/// to their generic form (e.g. [`KEY_CONTROL`]).
 pub fn normalize_vk_code(vk_code: u32) -> u32 {
     match vk_code {
         162 | 163 => 17,
@@ -67,6 +86,7 @@ pub fn normalize_vk_code(vk_code: u32) -> u32 {
     }
 }
 
+/// Check if a key is currently pressed. Always returns `false` on macOS: not yet implemented.
 pub fn is_key_pressed(_vk_code: i32) -> bool {
     false
 }

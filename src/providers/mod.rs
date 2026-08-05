@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use std::error::Error;
 
+/// Google Translate provider implementation.
 pub mod google;
 
 /// Dictionary lookup result returned by a translation provider.

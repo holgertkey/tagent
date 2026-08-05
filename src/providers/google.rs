@@ -17,11 +17,14 @@ fn map_request_error(e: reqwest::Error) -> Box<dyn Error + Send + Sync> {
     }
 }
 
+/// [`TranslationProvider`] implementation backed by the unofficial Google Translate
+/// web API (`translate.googleapis.com/translate_a/single`).
 pub struct GoogleTranslateProvider {
     client: Client,
 }
 
 impl GoogleTranslateProvider {
+    /// Create a new provider with a fresh HTTP client (10s request timeout).
     pub fn new() -> Self {
         Self {
             client: Client::builder()

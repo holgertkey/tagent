@@ -38,8 +38,15 @@
 //! - [`speech`] — Text-to-speech via Google TTS
 //! - [`platform`] — Platform-specific implementations (clipboard, keyboard hook, window management)
 
+#![warn(missing_docs)]
+
+/// Configuration management, hotkey parsing, and history logging helpers.
 pub mod config;
+/// Platform-specific implementations (clipboard, keyboard hook, window management).
 pub mod platform;
+/// Translation provider trait and factory; currently ships Google Translate.
 pub mod providers;
+/// Text-to-speech via Google TTS.
 pub mod speech;
+/// High-level translation orchestrator that ties provider, clipboard, and UI together.
 pub mod translator;

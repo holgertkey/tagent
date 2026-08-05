@@ -222,6 +222,7 @@ fn is_modifier_key(vk_code: u32) -> bool {
         || vk_code == super::keycodes::KEY_RWIN
 }
 
+/// Global hotkey listener for Linux, driven by `rdev` key events and X11 key grabbing (see [`super::xgrab`]).
 pub struct KeyboardHook {
     translator: Translator,
     should_exit: Arc<AtomicBool>,
@@ -229,6 +230,7 @@ pub struct KeyboardHook {
 }
 
 impl KeyboardHook {
+    /// Create a new hook. Does not start listening; call [`KeyboardHook::start`] for that.
     pub fn new(
         translator: Translator,
         should_exit: Arc<AtomicBool>,
@@ -241,6 +243,11 @@ impl KeyboardHook {
         })
     }
 
+    /// Start listening for the configured hotkeys and block until `should_exit` is set.
+    ///
+    /// Behavior depends on the detected display server: full X11/XWayland grabbing when
+    /// `DISPLAY` is set, a disabled-hotkeys fallback (interactive/CLI mode still works) on
+    /// pure Wayland or when no display server is detected at all.
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check display server
         let has_x11 = std::env::var("DISPLAY").is_ok();
