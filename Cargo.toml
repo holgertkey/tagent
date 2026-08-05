@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tagent"
-version = "0.13.0+001"
+version = "0.13.0+002"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]

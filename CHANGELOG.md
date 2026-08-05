@@ -19,7 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added `#![warn(missing_docs)]` to `src/lib.rs`** and documented all previously-undocumented public items across `config.rs`, `platform/{linux,macos,windows}/*`, `providers/*`, `speech.rs`, and `translator.rs` (51 warnings on the Linux build, all resolved). `CLAUDE.md` already claimed this lint was enabled; it wasn't — the claim is now accurate.
 
 ### Fixed
-- **`build.rs`'s version sync silently deleted the CHANGELOG's `## [Unreleased]` section** (`build.rs`): `update_version_in_file`'s pattern search for `"## [0.13.0+001] - "` matched the `## [Unreleased]` header first, then scanned forward for the next `"] - "`, which only occurs at the *next real* version header — replacing everything in between (the entire Unreleased section) with just the version string. Found by hitting it firsthand: a freshly-written Unreleased entry vanished after the next `cargo build`. The scan now recognizes and skips `"## [Unreleased]"` headers instead of treating them as a version to replace.
+- **`build.rs`'s version sync silently deleted the CHANGELOG's `## [Unreleased]` section** (`build.rs`): `update_version_in_file`'s pattern search for `"## [0.13.0+002] - "` matched the `## [Unreleased]` header first, then scanned forward for the next `"] - "`, which only occurs at the *next real* version header — replacing everything in between (the entire Unreleased section) with just the version string. Found by hitting it firsthand: a freshly-written Unreleased entry vanished after the next `cargo build`. The scan now recognizes and skips `"## [Unreleased]"` headers instead of treating them as a version to replace.
+
+## [0.13.0+002] - 2026-08-05
+
+### Fixed
+- **Hotkey-triggered translation split the `[Lang]:` label and its text onto separate lines** (`translator.rs`): `perform_translation` (and the single-word dictionary path) called `self.emit(&label)` followed by a separate `self.emit_line(&text)`, which became two independent `ExternalPrinter::print()` calls when the interactive prompt was active. rustyline's `State::external_print` unconditionally appends a newline to any message that doesn't already end with one, so the bare label — having no trailing `\n` — was always forced onto its own line, ahead of the text. Label and content are now built into a single string and emitted through one `emit_line` call, so they always travel through the same `print()` invocation. Added a regression test (`translator::tests::hotkey_translation_emits_label_and_text_in_one_printer_call`) using a mock `ExternalPrinter` that fails if a label is ever emitted as its own call.
 
 ## [0.13.0+001] - 2026-08-05
 

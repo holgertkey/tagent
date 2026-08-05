@@ -225,11 +225,11 @@ impl Translator {
                     // Show the original text (source word)
                     let source_display = Self::source_display(&source_code, &config);
                     let source_label = format!("[{}]: ", source_display);
-                    self.emit(&config::colorize(
-                        &source_label,
-                        &config.source_prompt_color,
+                    self.emit_line(format!(
+                        "{}{}",
+                        config::colorize(&source_label, &config.source_prompt_color),
+                        original_text
                     ));
-                    self.emit_line(&original_text);
 
                     // If a spelling correction was applied, notify the user
                     if config.spell_check {
@@ -241,12 +241,11 @@ impl Translator {
                     }
 
                     // Print colored dictionary label
-                    self.emit(&config::colorize(
-                        "[Word]: ",
-                        &config.dictionary_prompt_color,
+                    self.emit_line(format!(
+                        "{}{}\n",
+                        config::colorize("[Word]: ", &config.dictionary_prompt_color),
+                        dictionary_info
                     ));
-                    self.emit_line(&dictionary_info);
-                    self.emit_line("");
 
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
                         self.emit_line(format!("Dictionary clipboard write error: {}", e));
@@ -307,11 +306,11 @@ impl Translator {
         // Show source language info with colored prompt
         let source_display = Self::source_display(source_code, config);
         let source_label = format!("[{}]: ", source_display);
-        self.emit(&config::colorize(
-            &source_label,
-            &config.source_prompt_color,
+        self.emit_line(format!(
+            "{}{}",
+            config::colorize(&source_label, &config.source_prompt_color),
+            text
         ));
-        self.emit_line(text);
 
         // If source language is not Auto, check if text matches expected language
         if source_code != "auto" && !self.is_expected_language(text, source_code) {
@@ -330,9 +329,11 @@ impl Translator {
             Ok(translated_text) => {
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
-                self.emit(&config::colorize(&trans_label, &config.target_prompt_color));
-                self.emit_line(&translated_text);
-                self.emit_line("");
+                self.emit_line(format!(
+                    "{}{}\n",
+                    config::colorize(&trans_label, &config.target_prompt_color),
+                    translated_text
+                ));
 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
                     self.emit_line(format!("Translation clipboard write error: {}", e));
@@ -665,5 +666,146 @@ impl Translator {
         to: &str,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.provider.translate_text(text, from, to).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::DictionaryEntry;
+
+    struct MockProvider {
+        translation: String,
+    }
+
+    #[async_trait::async_trait]
+    impl TranslationProvider for MockProvider {
+        async fn translate_text(
+            &self,
+            _text: &str,
+            _from: &str,
+            _to: &str,
+        ) -> Result<String, Box<dyn Error + Send + Sync>> {
+            Ok(self.translation.clone())
+        }
+
+        async fn get_dictionary_entry(
+            &self,
+            _word: &str,
+            _from: &str,
+            _to: &str,
+        ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>> {
+            Ok(None)
+        }
+
+        async fn detect_language(
+            &self,
+            _text: &str,
+        ) -> Result<String, Box<dyn Error + Send + Sync>> {
+            Ok("en".to_string())
+        }
+
+        fn name(&self) -> &str {
+            "mock"
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct MockPrinter {
+        messages: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl ExternalPrinter for MockPrinter {
+        fn print(&mut self, msg: String) -> rustyline::Result<()> {
+            self.messages.lock().unwrap().push(msg);
+            Ok(())
+        }
+    }
+
+    fn test_config_manager(unique: &str) -> Arc<ConfigManager> {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_translator_{}_{}.conf",
+            unique,
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n\
+             [Interface]\nCopyToClipboard = false\n\
+             [History]\nSaveTranslationHistory = false\n",
+        )
+        .unwrap();
+        let manager = Arc::new(ConfigManager::new(path.to_str().unwrap()).unwrap());
+        let _ = std::fs::remove_file(&path);
+        manager
+    }
+
+    /// Regression test for a bug where hotkey-triggered translations showed the
+    /// `[Auto]: ` prompt label and the translated text on separate lines.
+    ///
+    /// Root cause: `perform_translation` used to call `self.emit(&label)` and
+    /// `self.emit_line(&text)` as two separate calls, which became two separate
+    /// `ExternalPrinter::print()` invocations. rustyline's `State::external_print`
+    /// unconditionally appends a newline to any message that doesn't already end
+    /// with one, so the bare label (no trailing `\n`) was always forced onto its
+    /// own line. The fix combines the label and the text into a single
+    /// `emit_line` call so they travel through exactly one `print()` invocation.
+    #[tokio::test]
+    async fn hotkey_translation_emits_label_and_text_in_one_printer_call() {
+        let config_manager = test_config_manager("label_line");
+        let provider: Arc<dyn TranslationProvider> = Arc::new(MockProvider {
+            translation: "Добавлена постоянная дедуплицированная история ввода".to_string(),
+        });
+        let translator = Translator {
+            provider,
+            clipboard: ClipboardManager::new(),
+            config_manager: config_manager.clone(),
+            window_manager: None,
+            stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
+            printer: Arc::new(Mutex::new(None)),
+        };
+
+        let printer = MockPrinter::default();
+        let captured = printer.messages.clone();
+        translator.set_external_printer(printer);
+
+        let config = config_manager.get_config();
+        let source_text = "Added persistent, deduplicated input history";
+        translator
+            .perform_translation(source_text, "auto", "ru", &config)
+            .await
+            .unwrap();
+
+        let messages = captured.lock().unwrap();
+
+        let source_line = messages
+            .iter()
+            .find(|m| m.contains(source_text))
+            .unwrap_or_else(|| panic!("no message contained the source text: {:?}", *messages));
+        assert!(
+            source_line.starts_with("[Auto]: "),
+            "label and source text must be emitted together, got: {:?}",
+            source_line
+        );
+
+        let target_line = messages
+            .iter()
+            .find(|m| m.contains(&config.target_language) && m.contains("дедуплицированная"))
+            .unwrap_or_else(|| panic!("no message contained the translated text: {:?}", *messages));
+        assert!(
+            target_line.starts_with(&format!("[{}]: ", config.target_language)),
+            "label and translated text must be emitted together, got: {:?}",
+            target_line
+        );
+
+        // No message should ever be just a bare "[...]: " label with nothing after it.
+        assert!(
+            !messages.iter().any(|m| {
+                let trimmed = m.trim_end_matches('\n');
+                trimmed.ends_with(": ") && trimmed.len() <= "[Russian]: ".len()
+            }),
+            "a label was emitted as its own print() call, split from its content: {:?}",
+            *messages
+        );
     }
 }
