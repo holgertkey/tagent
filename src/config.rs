@@ -639,7 +639,7 @@ EnableSpeechHotkey = {}
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
         println!("  /save                   - Save current configuration to file");
         println!("  /clear, /cls            - Clear screen");
-        println!("  /q, /quit, /exit        - Exit program");
+        println!("  /q, /quit, /e, /exit,   - Exit program");
         println!();
 
         println!("CONFIGURATION:");

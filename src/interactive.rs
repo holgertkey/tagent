@@ -23,7 +23,7 @@ const SLASH_COMMANDS: &[&str] = &[
     "/save",
     "/speech", "/s",
     "/clear", "/cls",
-    "/quit", "/q", "/exit",
+    "/quit", "/q", "/exit", "/e",
     "/version", "/v",
 ];
 
@@ -267,7 +267,7 @@ impl InteractiveMode {
                 "" => Ok(true), // Skip empty lines
 
                 // Exit commands (only with slash)
-                "/q" | "/quit" | "/exit" => {
+                "/q" | "/quit" | "/exit" | "/e" => {
                     println!();
                     println!("Goodbye!");
                     self.should_exit.store(true, Ordering::SeqCst);
