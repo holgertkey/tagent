@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "tagent-gui/src-tauri"]
+members = [".", "tagent-gui"]
 resolver = "2"
 
 [package]

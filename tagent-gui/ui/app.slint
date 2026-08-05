@@ -1,0 +1,57 @@
+import { Button, ComboBox, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Tagent";
+    preferred-width: 480px;
+    preferred-height: 360px;
+
+    in-out property <string> source-text: "";
+    in-out property <string> translated-text: "";
+    in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
+    in-out property <int> source-language-index: 0;
+    in-out property <int> target-language-index: 2;
+
+    callback translate-requested(string, string, string);
+    callback swap-requested();
+
+    VerticalBox {
+        HorizontalBox {
+            ComboBox {
+                model: languages;
+                current-index <=> source-language-index;
+            }
+
+            Button {
+                text: "⇄";
+                clicked => { swap-requested(); }
+            }
+
+            ComboBox {
+                model: languages;
+                current-index <=> target-language-index;
+            }
+        }
+
+        TextEdit {
+            text <=> source-text;
+            wrap: word-wrap;
+        }
+
+        Button {
+            text: "Translate";
+            clicked => {
+                translate-requested(
+                    source-text,
+                    languages[source-language-index],
+                    languages[target-language-index],
+                );
+            }
+        }
+
+        TextEdit {
+            text: translated-text;
+            wrap: word-wrap;
+            read-only: true;
+        }
+    }
+}

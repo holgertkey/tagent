@@ -1,0 +1,19 @@
+[package]
+name = "tagent-gui"
+version = "0.13.0"
+edition = "2021"
+description = "Tagent GUI — cross-platform text translator with Slint"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "tagent-gui"
+path = "src/main.rs"
+
+[dependencies]
+tagent = { path = "..", default-features = false }
+slint = "1"
+tokio = { version = "1", features = ["full"] }
+
+[build-dependencies]
+slint-build = "1"
