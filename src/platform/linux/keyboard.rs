@@ -1,7 +1,7 @@
+use super::keycodes::normalize_vk_code;
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
-use super::keycodes::normalize_vk_code;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -215,9 +215,7 @@ fn rdev_key_to_vk(key: &rdev::Key) -> Option<u32> {
 fn is_modifier_key(vk_code: u32) -> bool {
     matches!(
         normalize_vk_code(vk_code),
-        super::keycodes::KEY_CONTROL
-            | super::keycodes::KEY_SHIFT
-            | super::keycodes::KEY_ALT
+        super::keycodes::KEY_CONTROL | super::keycodes::KEY_SHIFT | super::keycodes::KEY_ALT
     ) || vk_code == super::keycodes::KEY_LWIN
         || vk_code == super::keycodes::KEY_RWIN
 }
@@ -261,7 +259,9 @@ impl KeyboardHook {
 
         if has_wayland && !has_x11 {
             // Pure Wayland without XWayland
-            eprintln!("Wayland detected without X11. Global hotkeys not yet supported on pure Wayland.");
+            eprintln!(
+                "Wayland detected without X11. Global hotkeys not yet supported on pure Wayland."
+            );
             eprintln!("Use interactive mode for translations.");
             self.wait_for_exit().await;
             return Ok(());
@@ -356,14 +356,20 @@ impl KeyboardHook {
                 let key_event = match event.event_type {
                     rdev::EventType::KeyPress(key) => {
                         if let Some(vk) = rdev_key_to_vk(&key) {
-                            Some(KeyEvent { vk_code: vk, is_key_down: true })
+                            Some(KeyEvent {
+                                vk_code: vk,
+                                is_key_down: true,
+                            })
                         } else {
                             None
                         }
                     }
                     rdev::EventType::KeyRelease(key) => {
                         if let Some(vk) = rdev_key_to_vk(&key) {
-                            Some(KeyEvent { vk_code: vk, is_key_down: false })
+                            Some(KeyEvent {
+                                vk_code: vk,
+                                is_key_down: false,
+                            })
                         } else {
                             None
                         }
@@ -488,10 +494,7 @@ impl KeyboardHook {
     }
 
     /// Trigger translation in a separate thread
-    fn trigger_translation(
-        translator: &Translator,
-        is_processing: &Arc<Mutex<bool>>,
-    ) {
+    fn trigger_translation(translator: &Translator, is_processing: &Arc<Mutex<bool>>) {
         if let Ok(mut processing) = is_processing.lock() {
             if *processing {
                 return;
@@ -539,9 +542,7 @@ impl KeyboardHook {
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) =
-                    speak_clipboard(&config_manager_clone, stop_flag_clone).await
-                {
+                if let Err(e) = speak_clipboard(&config_manager_clone, stop_flag_clone).await {
                     eprintln!("Speech error: {}", e);
                 }
                 if let Ok(mut speaking) = speaking_clone.lock() {
@@ -716,10 +717,7 @@ mod tests {
 
         // Physical left Alt pressed, stored normalized exactly as the real event loop does
         let mut mods = HashMap::new();
-        mods.insert(
-            normalize_vk_code(super::super::keycodes::KEY_LALT),
-            true,
-        );
+        mods.insert(normalize_vk_code(super::super::keycodes::KEY_LALT), true);
         assert!(state.handle('Q' as u32, true, &mods));
     }
 

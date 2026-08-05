@@ -51,7 +51,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     // Create interactive mode with shared translator
-    let interactive_mode = InteractiveMode::with_translator(translator.clone(), config_manager.clone());
+    let interactive_mode =
+        InteractiveMode::with_translator(translator.clone(), config_manager.clone());
 
     // Get shared exit flag
     let should_exit = interactive_mode.get_exit_flag();
@@ -60,13 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let should_exit_clone = should_exit.clone();
     let config_manager_clone = config_manager.clone();
     let keyboard_task = tokio::spawn(async move {
-        let mut keyboard_hook = match KeyboardHook::new(translator, should_exit_clone, config_manager_clone) {
-            Ok(hook) => hook,
-            Err(e) => {
-                println!("Failed to create keyboard hook: {}", e);
-                return;
-            }
-        };
+        let mut keyboard_hook =
+            match KeyboardHook::new(translator, should_exit_clone, config_manager_clone) {
+                Ok(hook) => hook,
+                Err(e) => {
+                    println!("Failed to create keyboard hook: {}", e);
+                    return;
+                }
+            };
 
         if let Err(e) = keyboard_hook.start().await {
             println!("Keyboard hook error: {}", e);
@@ -114,7 +116,6 @@ fn show_unified_mode_info() {
         r#"Commands:
   /h (help), /c (config), /s (speech),
   /l (lang), /save, /clear, /q (quit)"#
-
     );
     println!();
 }

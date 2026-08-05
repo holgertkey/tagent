@@ -111,10 +111,7 @@ fn update_version_in_file(
         let pattern_end = *suffix;
         let mut search_from = 0usize;
 
-        loop {
-            let Some(rel_start_pos) = updated_content[search_from..].find(pattern_start) else {
-                break;
-            };
+        while let Some(rel_start_pos) = updated_content[search_from..].find(pattern_start) {
             let start_pos = search_from + rel_start_pos;
             let search_start = start_pos + pattern_start.len();
 
@@ -176,9 +173,7 @@ fn sync_version_in_gui(version: &str) {
         "tagent-gui/ui/package.json",
         "tagent-gui/src-tauri/tauri.conf.json",
     ] {
-        if let Err(e) =
-            update_version_in_file(file_path, base, &[("\"version\": \"", "\"")])
-        {
+        if let Err(e) = update_version_in_file(file_path, base, &[("\"version\": \"", "\"")]) {
             println!(
                 "cargo:warning=Failed to sync version in {}: {}",
                 file_path, e
@@ -270,7 +265,11 @@ mod tests {
 
     fn write_temp_file(name: &str, content: &str) -> std::path::PathBuf {
         let mut path = std::env::temp_dir();
-        path.push(format!("tagent_build_rs_test_{}_{}", std::process::id(), name));
+        path.push(format!(
+            "tagent_build_rs_test_{}_{}",
+            std::process::id(),
+            name
+        ));
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(content.as_bytes()).unwrap();
         path
@@ -293,12 +292,7 @@ mod tests {
              - Old entry.\n",
         );
 
-        update_version_in_file(
-            path.to_str().unwrap(),
-            "0.13.0",
-            &[("## [", "] - ")],
-        )
-        .unwrap();
+        update_version_in_file(path.to_str().unwrap(), "0.13.0", &[("## [", "] - ")]).unwrap();
 
         let updated = fs::read_to_string(&path).unwrap();
         fs::remove_file(&path).ok();

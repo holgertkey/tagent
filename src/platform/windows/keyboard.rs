@@ -1,7 +1,7 @@
+use super::keycodes::normalize_vk_code;
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
-use super::keycodes::normalize_vk_code;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -117,11 +117,8 @@ impl HotkeyState {
                                     let elapsed = now.duration_since(last);
 
                                     // Check if sequence was interrupted
-                                    let was_interrupted = self
-                                        .last_key_interrupted
-                                        .lock()
-                                        .ok()
-                                        .is_some_and(|f| *f);
+                                    let was_interrupted =
+                                        self.last_key_interrupted.lock().ok().is_some_and(|f| *f);
 
                                     if !was_interrupted
                                         && elapsed >= Duration::from_millis(*min_interval_ms)
@@ -691,7 +688,10 @@ mod tests {
         // Even though the modifier press itself wasn't blocked, its state must still be
         // tracked so the combo can complete correctly.
         let triggered = state.handle('Q' as u32, true, test_trigger_fn);
-        assert!(triggered, "combo must still fire after an unblocked modifier press");
+        assert!(
+            triggered,
+            "combo must still fire after an unblocked modifier press"
+        );
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 
@@ -710,7 +710,10 @@ mod tests {
 
         state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
         let blocked = state.handle('Q' as u32, true, test_trigger_fn);
-        assert!(blocked, "the target key must still be blocked once the combo fires");
+        assert!(
+            blocked,
+            "the target key must still be blocked once the combo fires"
+        );
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 }

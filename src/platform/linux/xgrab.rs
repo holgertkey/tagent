@@ -63,7 +63,8 @@ impl XGrabManager {
                 // (not just detected) regardless of how the active layout maps
                 // the physical right-Alt key.
                 if modifiers_contain_alt(modifiers) {
-                    let altgr_mask = (mask & !(xlib::Mod1Mask as c_uint)) | (xlib::Mod5Mask as c_uint);
+                    let altgr_mask =
+                        (mask & !(xlib::Mod1Mask as c_uint)) | (xlib::Mod5Mask as c_uint);
                     self.grab_key(*key, altgr_mask);
                 }
             }
@@ -99,12 +100,8 @@ impl XGrabManager {
         let num_lock_mask = xlib::Mod2Mask as c_uint; // NumLock (typically Mod2)
 
         // Grab with all combinations of CapsLock and NumLock
-        let modifier_variants: [c_uint; 4] = [
-            0,
-            lock_mask,
-            num_lock_mask,
-            lock_mask | num_lock_mask,
-        ];
+        let modifier_variants: [c_uint; 4] =
+            [0, lock_mask, num_lock_mask, lock_mask | num_lock_mask];
 
         for extra in &modifier_variants {
             let mask = base_mask | extra;
@@ -146,7 +143,9 @@ impl Drop for XGrabManager {
 /// clarity/defensiveness).
 fn modifiers_contain_alt(modifiers: &[u32]) -> bool {
     use super::keycodes::*;
-    modifiers.iter().any(|m| matches!(*m, KEY_ALT | KEY_LALT | KEY_RALT))
+    modifiers
+        .iter()
+        .any(|m| matches!(*m, KEY_ALT | KEY_LALT | KEY_RALT))
 }
 
 /// X11 error handler installed process-wide by `XGrabManager::new()`. Replaces
@@ -199,23 +198,23 @@ fn vk_to_keysym(vk_code: u32) -> Option<c_ulong> {
         112..=123 => Some((0xFFBE + (vk_code - 112)) as c_ulong),
 
         // Special keys
-        32 => Some(0x0020),  // Space -> XK_space
-        9 => Some(0xFF09),   // Tab -> XK_Tab
-        13 => Some(0xFF0D),  // Return -> XK_Return
-        27 => Some(0xFF1B),  // Escape -> XK_Escape
-        8 => Some(0xFF08),   // Backspace -> XK_BackSpace
-        46 => Some(0xFFFF),  // Delete -> XK_Delete
-        45 => Some(0xFF63),  // Insert -> XK_Insert
-        36 => Some(0xFF50),  // Home -> XK_Home
-        35 => Some(0xFF57),  // End -> XK_End
-        33 => Some(0xFF55),  // PageUp -> XK_Page_Up
-        34 => Some(0xFF56),  // PageDown -> XK_Page_Down
+        32 => Some(0x0020), // Space -> XK_space
+        9 => Some(0xFF09),  // Tab -> XK_Tab
+        13 => Some(0xFF0D), // Return -> XK_Return
+        27 => Some(0xFF1B), // Escape -> XK_Escape
+        8 => Some(0xFF08),  // Backspace -> XK_BackSpace
+        46 => Some(0xFFFF), // Delete -> XK_Delete
+        45 => Some(0xFF63), // Insert -> XK_Insert
+        36 => Some(0xFF50), // Home -> XK_Home
+        35 => Some(0xFF57), // End -> XK_End
+        33 => Some(0xFF55), // PageUp -> XK_Page_Up
+        34 => Some(0xFF56), // PageDown -> XK_Page_Down
 
         // Arrow keys
-        37 => Some(0xFF51),  // Left -> XK_Left
-        39 => Some(0xFF53),  // Right -> XK_Right
-        38 => Some(0xFF52),  // Up -> XK_Up
-        40 => Some(0xFF54),  // Down -> XK_Down
+        37 => Some(0xFF51), // Left -> XK_Left
+        39 => Some(0xFF53), // Right -> XK_Right
+        38 => Some(0xFF52), // Up -> XK_Up
+        40 => Some(0xFF54), // Down -> XK_Down
 
         _ => None,
     }
@@ -240,16 +239,16 @@ mod tests {
 
     #[test]
     fn test_vk_to_keysym_function_keys() {
-        assert_eq!(vk_to_keysym(112), Some(0xFFBE));  // F1
-        assert_eq!(vk_to_keysym(120), Some(0xFFC6));  // F9
-        assert_eq!(vk_to_keysym(123), Some(0xFFC9));  // F12
+        assert_eq!(vk_to_keysym(112), Some(0xFFBE)); // F1
+        assert_eq!(vk_to_keysym(120), Some(0xFFC6)); // F9
+        assert_eq!(vk_to_keysym(123), Some(0xFFC9)); // F12
     }
 
     #[test]
     fn test_vk_to_keysym_special_keys() {
-        assert_eq!(vk_to_keysym(32), Some(0x0020));  // Space
-        assert_eq!(vk_to_keysym(27), Some(0xFF1B));  // Escape
-        assert_eq!(vk_to_keysym(13), Some(0xFF0D));  // Return
+        assert_eq!(vk_to_keysym(32), Some(0x0020)); // Space
+        assert_eq!(vk_to_keysym(27), Some(0xFF1B)); // Escape
+        assert_eq!(vk_to_keysym(13), Some(0xFF0D)); // Return
     }
 
     #[test]

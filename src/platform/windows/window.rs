@@ -58,7 +58,10 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground
-    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn set_foreground_window(
+        &self,
+        handle: WindowHandle,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             if IsIconic(handle.0).as_bool() {
                 ShowWindow(handle.0, SW_RESTORE);

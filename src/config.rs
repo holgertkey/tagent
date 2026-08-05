@@ -1,3 +1,4 @@
+use crate::platform::keycodes;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
 use std::collections::HashMap;
@@ -7,7 +8,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use crate::platform::keycodes;
 
 /// Runtime configuration loaded from `tagent.conf`.
 ///
@@ -78,14 +78,14 @@ impl Default for Config {
             copy_to_clipboard: true,
             save_translation_history: false,
             history_file: default_history,
-            target_prompt_color: "BrightYellow".to_string(),  // Default bright yellow for target
+            target_prompt_color: "BrightYellow".to_string(), // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
-            source_prompt_color: "None".to_string(),          // Default no color for source
-            translate_hotkey: "Alt+Q".to_string(),            // Default translation hotkey
-            enable_text_to_speech: true,                      // TTS enabled by default
-            speech_hotkey: "Alt+E".to_string(),               // Default speech hotkey
-            enable_speech_hotkey: true,                       // Enable speech hotkey by default
-            translate_provider: "google".to_string(),         // Default translation provider
+            source_prompt_color: "None".to_string(),             // Default no color for source
+            translate_hotkey: "Alt+Q".to_string(),               // Default translation hotkey
+            enable_text_to_speech: true,                         // TTS enabled by default
+            speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
+            enable_speech_hotkey: true,                          // Enable speech hotkey by default
+            translate_provider: "google".to_string(),            // Default translation provider
         }
     }
 }
@@ -418,7 +418,8 @@ EnableSpeechHotkey = {}
         let target_prompt_color = parsed_config
             .get("Colors")
             .and_then(|section| {
-                section.get("TargetPromptColor")
+                section
+                    .get("TargetPromptColor")
                     .or_else(|| section.get("TranslationPromptColor"))
             })
             .cloned()
@@ -433,7 +434,8 @@ EnableSpeechHotkey = {}
         let source_prompt_color = parsed_config
             .get("Colors")
             .and_then(|section| {
-                section.get("SourcePromptColor")
+                section
+                    .get("SourcePromptColor")
                     .or_else(|| section.get("AutoPromptColor"))
             })
             .cloned()
@@ -605,7 +607,9 @@ EnableSpeechHotkey = {}
         println!("  tagent \"Hello world\"             Translate phrase (CLI mode)");
         println!("  tagent -s \"Hello world\"          Speak text using TTS");
         println!("  tagent -l German hello               Translate 'hello' to German");
-        println!("  tagent -l English German hello        Translate 'hello' from English to German");
+        println!(
+            "  tagent -l English German hello        Translate 'hello' from English to German"
+        );
         println!("  tagent --config                  Show configuration");
         println!();
 
@@ -1294,8 +1298,11 @@ mod tests {
             "tagent_test_missing_speech_{}.conf",
             std::process::id()
         ));
-        fs::write(&path, "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n")
-            .unwrap();
+        fs::write(
+            &path,
+            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n",
+        )
+        .unwrap();
 
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
@@ -1344,7 +1351,10 @@ mod tests {
 
         let translation = &sections["Translation"];
         assert_eq!(translation.get("SourceLanguage"), Some(&"Auto".to_string()));
-        assert_eq!(translation.get("TargetLanguage"), Some(&"Russian".to_string()));
+        assert_eq!(
+            translation.get("TargetLanguage"),
+            Some(&"Russian".to_string())
+        );
         assert_eq!(sections["Other"].get("Foo"), Some(&"Bar".to_string()));
     }
 }

@@ -334,9 +334,11 @@ mod tests {
         // json[0][0][1] = "violent" (the word Google actually translated).
         let response = json!([
             [["жестокий", "violent", null, null, 10]],
-            [["adjective", null, [
-                ["жестокий", ["violent"], null, null, null, null, null, []]
-            ]]]
+            [[
+                "adjective",
+                null,
+                [["жестокий", ["violent"], null, null, null, null, null, []]]
+            ]]
         ]);
 
         let entry = provider.parse_dictionary_response(&response);
@@ -352,9 +354,11 @@ mod tests {
         // Response where json[0][0][1] is absent — corrected_word should be None
         let response = json!([
             [["жестокий"]],
-            [["adjective", null, [
-                ["жестокий", ["violent"], null, null, null, null, null, []]
-            ]]]
+            [[
+                "adjective",
+                null,
+                [["жестокий", ["violent"], null, null, null, null, null, []]]
+            ]]
         ]);
 
         let entry = provider.parse_dictionary_response(&response);
@@ -385,21 +389,42 @@ mod tests {
 
         // Scenario A: badly misspelled — no dict entries in primary response, json[7][1] has suggestion
         let result_a = provider.get_dictionary_entry("vialent", "en", "ru").await;
-        println!("Scenario A (vialent): {:?}", result_a.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+        println!(
+            "Scenario A (vialent): {:?}",
+            result_a
+                .as_ref()
+                .map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word)))
+        );
         if let Ok(Some(entry)) = &result_a {
-            assert_eq!(entry.corrected_word.as_deref().map(|s| s.to_lowercase()), Some("violent".to_string()));
+            assert_eq!(
+                entry.corrected_word.as_deref().map(|s| s.to_lowercase()),
+                Some("violent".to_string())
+            );
         }
 
         // Scenario B: slightly misspelled — Google auto-corrects, json[0][0][1] has the correction
         let result_b = provider.get_dictionary_entry("violnt", "en", "ru").await;
-        println!("Scenario B (violnt): {:?}", result_b.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+        println!(
+            "Scenario B (violnt): {:?}",
+            result_b
+                .as_ref()
+                .map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word)))
+        );
         if let Ok(Some(entry)) = &result_b {
-            assert_eq!(entry.corrected_word.as_deref().map(|s| s.to_lowercase()), Some("violent".to_string()));
+            assert_eq!(
+                entry.corrected_word.as_deref().map(|s| s.to_lowercase()),
+                Some("violent".to_string())
+            );
         }
 
         // Correctly spelled — corrected_word should equal the input (no notice will be shown)
         let result_c = provider.get_dictionary_entry("violent", "en", "ru").await;
-        println!("Scenario C (violent): {:?}", result_c.as_ref().map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word))));
+        println!(
+            "Scenario C (violent): {:?}",
+            result_c
+                .as_ref()
+                .map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word)))
+        );
     }
 
     /// Integration test: requires network access (points at a non-routable address so the
@@ -450,7 +475,9 @@ mod tests {
     #[ignore]
     async fn test_detect_language_german() {
         let provider = GoogleTranslateProvider::new();
-        let result = provider.detect_language("Guten Tag, wie geht es Ihnen?").await;
+        let result = provider
+            .detect_language("Guten Tag, wie geht es Ihnen?")
+            .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "de");
     }
@@ -461,7 +488,9 @@ mod tests {
     #[ignore]
     async fn test_detect_language_french() {
         let provider = GoogleTranslateProvider::new();
-        let result = provider.detect_language("Bonjour, comment allez-vous?").await;
+        let result = provider
+            .detect_language("Bonjour, comment allez-vous?")
+            .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "fr");
     }

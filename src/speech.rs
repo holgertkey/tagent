@@ -1,4 +1,5 @@
 use crate::config::ConfigManager;
+use crate::platform::keycodes;
 use crate::providers::create_provider;
 use colored::Colorize;
 use reqwest::Client;
@@ -8,7 +9,6 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use crate::platform::keycodes;
 
 const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
 const MAX_TEXT_LENGTH: usize = 100;
@@ -456,7 +456,8 @@ mod tests {
     #[test]
     fn test_split_text_mixed_ascii_multibyte() {
         let manager = SpeechManager::new();
-        let text = "Hello мир this is тест of mixed текст content здесь and more слов to pad it out";
+        let text =
+            "Hello мир this is тест of mixed текст content здесь and more слов to pad it out";
         let chunks = manager.split_text_for_tts(text);
 
         assert!(!chunks.is_empty());

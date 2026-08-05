@@ -93,7 +93,9 @@ pub trait TranslationProvider: Send + Sync {
 /// # Errors
 ///
 /// Returns an error if `provider_name` does not match any known provider.
-pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvider>, Box<dyn Error + Send + Sync>> {
+pub fn create_provider(
+    provider_name: &str,
+) -> Result<Box<dyn TranslationProvider>, Box<dyn Error + Send + Sync>> {
     match provider_name.to_lowercase().as_str() {
         "google" => Ok(Box::new(google::GoogleTranslateProvider::new())),
         _ => Err(format!("Unknown translation provider: {}", provider_name).into()),

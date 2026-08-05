@@ -27,9 +27,7 @@ impl ClipboardManager {
     fn with_clipboard<T>(
         f: impl FnOnce(&mut Clipboard) -> Result<T, arboard::Error>,
     ) -> Result<T, Box<dyn Error + Send + Sync>> {
-        let mut guard = CLIPBOARD
-            .lock()
-            .map_err(|_| "Clipboard lock poisoned")?;
+        let mut guard = CLIPBOARD.lock().map_err(|_| "Clipboard lock poisoned")?;
         if guard.is_none() {
             *guard = Some(Clipboard::new().map_err(|e| format!("Clipboard init error: {}", e))?);
         }
@@ -52,7 +50,10 @@ impl ClipboardManager {
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
             // Pure Wayland without XWayland: auto-copy not supported
-            return Err("Auto-copy not supported on Wayland. Copy text manually before pressing hotkey.".into());
+            return Err(
+                "Auto-copy not supported on Wayland. Copy text manually before pressing hotkey."
+                    .into(),
+            );
         }
 
         // Wait for user to release hotkey keys
@@ -63,8 +64,19 @@ impl ClipboardManager {
         // which causes "stuck" keys when the user has already physically released them.
         let release_result = std::process::Command::new("xdotool")
             .args([
-                "keyup", "alt", "Alt_L", "Alt_R", "super", "Super_L", "Super_R",
-                "ctrl", "Control_L", "Control_R", "shift", "Shift_L", "Shift_R",
+                "keyup",
+                "alt",
+                "Alt_L",
+                "Alt_R",
+                "super",
+                "Super_L",
+                "Super_R",
+                "ctrl",
+                "Control_L",
+                "Control_R",
+                "shift",
+                "Shift_L",
+                "Shift_R",
             ])
             .output();
 
@@ -78,7 +90,9 @@ impl ClipboardManager {
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    return Err("xdotool not found. Install it with: sudo apt-get install xdotool".into());
+                    return Err(
+                        "xdotool not found. Install it with: sudo apt-get install xdotool".into(),
+                    );
                 }
                 return Err(format!("Failed to run xdotool: {}", e).into());
             }

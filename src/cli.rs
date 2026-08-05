@@ -1,5 +1,5 @@
-use crate::platform::ClipboardManager;
 use crate::config::{self, ConfigManager};
+use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use std::error::Error;
@@ -43,7 +43,10 @@ impl CliHandler {
     }
 
     /// Process CLI arguments and determine action
-    pub async fn process_args(&self, args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn process_args(
+        &self,
+        args: Vec<String>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if args.len() < 2 {
             println!("Error: No arguments provided");
             println!("Use --help for usage information");
@@ -81,7 +84,8 @@ impl CliHandler {
                     let arg3 = &args[3];
                     let arg3_norm = ConfigManager::normalize_language(arg3);
                     let arg3_code = ConfigManager::language_to_code(&arg3_norm);
-                    let arg3_is_lang = arg3_code != arg3_norm.as_str() || arg3.to_lowercase() == "auto";
+                    let arg3_is_lang =
+                        arg3_code != arg3_norm.as_str() || arg3.to_lowercase() == "auto";
 
                     if arg2_is_lang && arg3_is_lang {
                         // -l Source Target [text...]
@@ -103,7 +107,10 @@ impl CliHandler {
                 } else {
                     let source_code = ConfigManager::language_to_code(&source);
                     let target_code = ConfigManager::language_to_code(&target);
-                    println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
+                    println!(
+                        "Languages set: {} ({}) -> {} ({})",
+                        source, source_code, target, target_code
+                    );
                     Ok(())
                 }
             }

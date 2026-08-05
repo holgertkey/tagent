@@ -50,12 +50,18 @@ impl Translator {
     /// showing/hiding the terminal. If window management fails to initialize (e.g. no
     /// display server), falls back to a translator without it rather than erroring out —
     /// use [`Translator::new_cli`] instead if window management is never needed.
-    pub fn new_with_config(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub fn new_with_config(
+        config_manager: Arc<ConfigManager>,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let window_manager = match WindowManager::new() {
             Ok(wm) => Some(Arc::new(wm)),
             Err(_) => {
-                eprintln!("Window management unavailable (show/hide terminal and hotkeys disabled).");
-                eprintln!("This is expected on Wayland or when running outside a graphical terminal.");
+                eprintln!(
+                    "Window management unavailable (show/hide terminal and hotkeys disabled)."
+                );
+                eprintln!(
+                    "This is expected on Wayland or when running outside a graphical terminal."
+                );
                 None
             }
         };
@@ -64,7 +70,9 @@ impl Translator {
     }
 
     /// Create Translator without window management (for CLI mode)
-    pub fn new_cli(config_manager: Arc<ConfigManager>) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub fn new_cli(
+        config_manager: Arc<ConfigManager>,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Self::build(config_manager, None)
     }
 
@@ -125,7 +133,9 @@ impl Translator {
         config: &crate::config::Config,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if config.copy_to_clipboard {
-            self.clipboard.set_text(text).map_err(|e| -> Box<dyn Error + Send + Sync> { e.to_string().into() })
+            self.clipboard
+                .set_text(text)
+                .map_err(|e| -> Box<dyn Error + Send + Sync> { e.to_string().into() })
         } else {
             Ok(())
         }
@@ -215,7 +225,10 @@ impl Translator {
                     // Show the original text (source word)
                     let source_display = Self::source_display(&source_code, &config);
                     let source_label = format!("[{}]: ", source_display);
-                    self.emit(&config::colorize(&source_label, &config.source_prompt_color));
+                    self.emit(&config::colorize(
+                        &source_label,
+                        &config.source_prompt_color,
+                    ));
                     self.emit_line(&original_text);
 
                     // If a spelling correction was applied, notify the user
@@ -228,7 +241,10 @@ impl Translator {
                     }
 
                     // Print colored dictionary label
-                    self.emit(&config::colorize("[Word]: ", &config.dictionary_prompt_color));
+                    self.emit(&config::colorize(
+                        "[Word]: ",
+                        &config.dictionary_prompt_color,
+                    ));
                     self.emit_line(&dictionary_info);
                     self.emit_line("");
 
@@ -263,7 +279,10 @@ impl Translator {
         }
 
         // Hide terminal and restore previous window after delay if configured
-        if config.show_terminal_on_translate && config.auto_hide_terminal_seconds > 0 && self.window_manager.is_some() {
+        if config.show_terminal_on_translate
+            && config.auto_hide_terminal_seconds > 0
+            && self.window_manager.is_some()
+        {
             self.hide_terminal_and_restore(config.auto_hide_terminal_seconds)
                 .await;
         }
@@ -288,7 +307,10 @@ impl Translator {
         // Show source language info with colored prompt
         let source_display = Self::source_display(source_code, config);
         let source_label = format!("[{}]: ", source_display);
-        self.emit(&config::colorize(&source_label, &config.source_prompt_color));
+        self.emit(&config::colorize(
+            &source_label,
+            &config.source_prompt_color,
+        ));
         self.emit_line(text);
 
         // If source language is not Auto, check if text matches expected language
@@ -359,12 +381,8 @@ impl Translator {
         match dict_result? {
             Some(entry) => {
                 let corrected_word = entry.corrected_word.clone();
-                let formatted = self.format_dictionary_entry(
-                    &entry,
-                    to,
-                    true,
-                    primary_translation.as_deref(),
-                );
+                let formatted =
+                    self.format_dictionary_entry(&entry, to, true, primary_translation.as_deref());
                 Ok((formatted, corrected_word))
             }
             None => Err("Limited dictionary information available".into()),
@@ -416,15 +434,13 @@ impl Translator {
         // In terminal mode use primary translation (from translate API) as the header,
         // falling back to the first dictionary definition if translation unavailable
         if cli_mode {
-            let header = primary_translation
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    entry
-                        .definitions
-                        .first()
-                        .and_then(|pos| pos.definitions.first())
-                        .map(|def| def.text.clone())
-                });
+            let header = primary_translation.map(|s| s.to_string()).or_else(|| {
+                entry
+                    .definitions
+                    .first()
+                    .and_then(|pos| pos.definitions.first())
+                    .map(|def| def.text.clone())
+            });
             if let Some(h) = header {
                 result.push(h);
             }

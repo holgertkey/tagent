@@ -1,6 +1,6 @@
 use crate::cli::CliHandler;
-use crate::platform::ClipboardManager;
 use crate::config::{self, ConfigManager};
+use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use rustyline::completion::Completer;
@@ -17,14 +17,8 @@ use std::sync::Arc;
 
 /// Slash-commands offered for Tab-completion at the interactive prompt.
 const SLASH_COMMANDS: &[&str] = &[
-    "/help", "/h", "/?",
-    "/config", "/c",
-    "/lang", "/l",
-    "/save",
-    "/speech", "/s",
-    "/clear", "/cls",
-    "/quit", "/q", "/exit", "/e",
-    "/version", "/v",
+    "/help", "/h", "/?", "/config", "/c", "/lang", "/l", "/save", "/speech", "/s", "/clear",
+    "/cls", "/quit", "/q", "/exit", "/e", "/version", "/v",
 ];
 
 /// Rustyline [`Helper`] that Tab-completes slash-commands. Hints, highlighting, and
@@ -184,8 +178,7 @@ impl InteractiveMode {
     /// Handle interactive commands, returns true if command was processed
     async fn handle_command(&self, text: &str) -> Result<bool, String> {
         // Check for language switch commands
-        if text == "/l" || text == "/lang"
-            || text.starts_with("/l ") || text.starts_with("/lang ")
+        if text == "/l" || text == "/lang" || text.starts_with("/l ") || text.starts_with("/lang ")
         {
             let lang_args = if text == "/l" || text == "/lang" {
                 ""
@@ -210,7 +203,10 @@ impl InteractiveMode {
                 self.config_manager.set_languages(&target, &source);
                 let new_source_code = ConfigManager::language_to_code(&target);
                 let new_target_code = ConfigManager::language_to_code(&source);
-                println!("Languages swapped: {} ({}) -> {} ({})", target, new_source_code, source, new_target_code);
+                println!(
+                    "Languages swapped: {} ({}) -> {} ({})",
+                    target, new_source_code, source, new_target_code
+                );
                 println!();
                 return Ok(true);
             }
@@ -230,14 +226,23 @@ impl InteractiveMode {
 
             // Warn if language is completely unknown
             if source.to_lowercase() != "auto" && source_code == source.as_str() {
-                println!("Warning: Unknown language '{}', using as language code", source);
+                println!(
+                    "Warning: Unknown language '{}', using as language code",
+                    source
+                );
             }
             if target_code == target.as_str() {
-                println!("Warning: Unknown language '{}', using as language code", target);
+                println!(
+                    "Warning: Unknown language '{}', using as language code",
+                    target
+                );
             }
 
             self.config_manager.set_languages(&source, &target);
-            println!("Languages set: {} ({}) -> {} ({})", source, source_code, target, target_code);
+            println!(
+                "Languages set: {} ({}) -> {} ({})",
+                source, source_code, target, target_code
+            );
             println!();
             return Ok(true);
         }

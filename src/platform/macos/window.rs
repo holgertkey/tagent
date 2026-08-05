@@ -30,7 +30,10 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground. No-op on macOS.
-    pub fn set_foreground_window(&self, _handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn set_foreground_window(
+        &self,
+        _handle: WindowHandle,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok(())
     }
 

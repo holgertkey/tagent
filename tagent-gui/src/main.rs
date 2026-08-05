@@ -28,9 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             slint::invoke_from_event_loop(move || {
                 if let Some(window) = weak.upgrade() {
                     let entry = match result {
-                        Ok(translated) => format!(
-                            "[{from_lang}]: {text}\n[{to_lang}]: {translated}\n\n"
-                        ),
+                        Ok(translated) => {
+                            format!("[{from_lang}]: {text}\n[{to_lang}]: {translated}\n\n")
+                        }
                         Err(err) => format!("[{from_lang}]: {text}\nError: {err}\n\n"),
                     };
                     let transcript = window.get_transcript();

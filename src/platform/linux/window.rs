@@ -32,11 +32,10 @@ impl WindowManager {
             let root = xlib::XDefaultRootWindow(display);
             let pid = std::process::id();
 
-            let terminal_window = find_window_by_pid(display, root, pid)
-                .unwrap_or_else(|| {
-                    // Fallback: use currently focused window at startup
-                    get_active_window(display, root).unwrap_or(0)
-                });
+            let terminal_window = find_window_by_pid(display, root, pid).unwrap_or_else(|| {
+                // Fallback: use currently focused window at startup
+                get_active_window(display, root).unwrap_or(0)
+            });
 
             if terminal_window == 0 {
                 xlib::XCloseDisplay(display);
@@ -88,7 +87,10 @@ impl WindowManager {
     }
 
     /// Set the specified window as foreground
-    pub fn set_foreground_window(&self, handle: WindowHandle) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn set_foreground_window(
+        &self,
+        handle: WindowHandle,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
             xlib::XMapRaised(self.display, handle.0);
             send_active_window_message(self.display, self.root, handle.0);
@@ -181,11 +183,7 @@ impl Drop for WindowManager {
 }
 
 /// Send _NET_ACTIVE_WINDOW client message to activate a window
-unsafe fn send_active_window_message(
-    display: *mut xlib::Display,
-    root: c_ulong,
-    window: c_ulong,
-) {
+unsafe fn send_active_window_message(display: *mut xlib::Display, root: c_ulong, window: c_ulong) {
     let net_active_window = xlib::XInternAtom(
         display,
         b"_NET_ACTIVE_WINDOW\0".as_ptr() as *const _,
@@ -262,11 +260,7 @@ unsafe fn find_window_by_pid(
     root: c_ulong,
     target_pid: u32,
 ) -> Option<c_ulong> {
-    let net_wm_pid = xlib::XInternAtom(
-        display,
-        b"_NET_WM_PID\0".as_ptr() as *const _,
-        xlib::True,
-    );
+    let net_wm_pid = xlib::XInternAtom(display, b"_NET_WM_PID\0".as_ptr() as *const _, xlib::True);
     if net_wm_pid == 0 {
         return None;
     }
