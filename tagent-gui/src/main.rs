@@ -8,25 +8,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let weak = window.as_weak();
     window.on_translate_requested(move |text, from_lang, to_lang| {
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+
         let weak = weak.clone();
         let from = ConfigManager::language_to_code(&from_lang).to_string();
         let to = ConfigManager::language_to_code(&to_lang).to_string();
 
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
+            let request_text = text.clone();
             let result = runtime.block_on(async move {
                 let provider = providers::create_provider("google")?;
-                provider.translate_text(text.trim(), &from, &to).await
+                provider.translate_text(&request_text, &from, &to).await
             });
-
-            let display = match result {
-                Ok(translated) => translated,
-                Err(err) => format!("Error: {err}"),
-            };
 
             slint::invoke_from_event_loop(move || {
                 if let Some(window) = weak.upgrade() {
-                    window.set_translated_text(display.into());
+                    let entry = match result {
+                        Ok(translated) => format!(
+                            "[{from_lang}]: {text}\n[{to_lang}]: {translated}\n\n"
+                        ),
+                        Err(err) => format!("[{from_lang}]: {text}\nError: {err}\n\n"),
+                    };
+                    let transcript = window.get_transcript();
+                    window.set_transcript(format!("{transcript}{entry}").into());
                 }
             })
             .ok();

@@ -1,12 +1,12 @@
-import { Button, ComboBox, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     title: "Tagent";
-    preferred-width: 480px;
-    preferred-height: 360px;
+    preferred-width: 560px;
+    preferred-height: 420px;
 
-    in-out property <string> source-text: "";
-    in-out property <string> translated-text: "";
+    in-out property <string> input-text: "";
+    in-out property <string> transcript: "=== Tagent ===\nType text and press Enter to translate.\n\n";
     in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 2;
@@ -32,26 +32,74 @@ export component AppWindow inherits Window {
             }
         }
 
-        TextEdit {
-            text <=> source-text;
-            wrap: word-wrap;
-        }
+        Rectangle {
+            background: #0c0c0c;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: #2a2a2a;
+            vertical-stretch: 1;
 
-        Button {
-            text: "Translate";
-            clicked => {
-                translate-requested(
-                    source-text,
-                    languages[source-language-index],
-                    languages[target-language-index],
-                );
+            ScrollView {
+                Text {
+                    text: transcript;
+                    font-family: "monospace";
+                    font-size: 13px;
+                    color: #d4d4d4;
+                    wrap: word-wrap;
+                    x: 8px;
+                    width: parent.width - 16px;
+                }
             }
         }
 
-        TextEdit {
-            text: translated-text;
-            wrap: word-wrap;
-            read-only: true;
+        Rectangle {
+            background: #0c0c0c;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: #2a2a2a;
+            height: 32px;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 4px;
+                alignment: stretch;
+
+                Text {
+                    text: "[" + languages[source-language-index] + "]:";
+                    font-family: "monospace";
+                    font-size: 13px;
+                    color: #e5c07b;
+                    vertical-alignment: center;
+                }
+
+                LineEdit {
+                    text <=> input-text;
+                    font-size: 13px;
+                    horizontal-stretch: 1;
+
+                    accepted(text) => {
+                        translate-requested(
+                            text,
+                            languages[source-language-index],
+                            languages[target-language-index],
+                        );
+                        input-text = "";
+                    }
+                }
+
+                Button {
+                    text: "Translate";
+                    clicked => {
+                        translate-requested(
+                            input-text,
+                            languages[source-language-index],
+                            languages[target-language-index],
+                        );
+                        input-text = "";
+                    }
+                }
+            }
         }
     }
 }
