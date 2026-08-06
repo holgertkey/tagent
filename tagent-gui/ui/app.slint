@@ -43,12 +43,16 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 height: parent.height;
 
-                Text {
+                TextInput {
                     text: transcript;
                     font-family: "monospace";
                     font-size: 13px;
                     color: #d4d4d4;
+                    selection-background-color: #264f78;
+                    selection-foreground-color: #d4d4d4;
                     wrap: word-wrap;
+                    single-line: false;
+                    read-only: true;
                     horizontal-alignment: left;
                     vertical-alignment: top;
                     x: 8px;
