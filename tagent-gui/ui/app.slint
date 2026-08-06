@@ -79,12 +79,12 @@ export component AppWindow inherits Window {
         }
 
         resize-handle := Rectangle {
-            height: 10px;
+            height: 6px;
 
             Rectangle {
                 width: 32px;
-                height: 4px;
-                border-radius: 2px;
+                height: 2px;
+                border-radius: 1px;
                 background: resize-touch.pressed ? #5a5a5a : resize-touch.has-hover ? #444444 : #2a2a2a;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
