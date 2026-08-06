@@ -85,11 +85,27 @@ that launches it.
   not a subprocess. `default-features = false` turns off the `binary-resources`
   feature so `tagent-gui`'s build doesn't trigger the Windows icon/version-resource
   embedding meant for `tagent.exe`.
-- **How translation works**: the `translate-requested` Slint callback spawns a plain OS
-  thread with its own fresh `tokio::runtime::Runtime`, calls
-  `providers::create_provider("google")` (**hardcoded** — see gap below), calls
-  `provider.translate_text(...)`, then marshals the result back onto the Slint UI
-  thread via `slint::invoke_from_event_loop`.
+- **How translation works**: `main()` reads `tagent.conf` once at startup via
+  `ConfigManager::get_default_config_path()` / `ConfigManager::new()` and captures
+  `translate_provider` from it. The `translate-requested` Slint callback spawns a plain
+  OS thread with its own fresh `tokio::runtime::Runtime`, calls
+  `providers::create_provider(&translate_provider)`, calls `provider.translate_text(...)`,
+  then marshals the result back onto the Slint UI thread via
+  `slint::invoke_from_event_loop`. A `to == "auto"` request is rejected before spawning
+  the thread (both the target `ComboBox` and the ⇄ swap button can otherwise produce
+  one), appending an in-transcript error instead of calling the provider.
+- **Transcript pane** (`transcript-scroll` / `transcript-text` in `app.slint`): a
+  read-only, multi-line `TextInput` (not a plain `Text`), so its content is
+  mouse-selectable and copyable. `scroll_transcript_to_bottom()` in `main.rs` sets
+  `transcript-viewport-y` to the negative overflow after every new entry so the pane
+  auto-scrolls to the latest translation.
+- **Input box** (`input-field` in `app.slint`): a multi-line `TextInput` inside its own
+  `ScrollView`, wrapped in a resizable container — a 6px drag handle above the box lets
+  the user set `input-user-height` between `input-min-height` (32px) and
+  `input-max-height` (220px); the box also grows automatically with wrapped content up
+  to that cap. `key-pressed` submits on Enter and inserts a newline on Shift+Enter.
+  `forward-focus: input-field` on the window root means the input field has focus as
+  soon as the window opens, so typing or pasting works without clicking into it first.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no clipboard integration, no hotkeys, no history
   logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German),
@@ -97,46 +113,44 @@ that launches it.
 
 ### Known gaps in `tagent-gui`
 
-- **Provider is hardcoded to `"google"`**, bypassing `config.rs`'s `TranslateProvider`
-  setting entirely. If a second provider is ever added (see `CLAUDE.md`'s "Adding a New
-  Translation Provider" section), the GUI will not pick it up without a separate change
-  in `tagent-gui/src/main.rs`.
-- **No `tagent.conf` integration** beyond reusing `ConfigManager::language_to_code()` as
-  a pure helper function — no config file is read or written by the GUI, so its language
-  list and provider choice can drift from what CLI/interactive mode use.
+- **`tagent.conf` is read once at startup, not live-reloaded.** Unlike the main
+  `tagent` binary (`ConfigManager::check_and_reload()`, called before every
+  translation), `tagent-gui` snapshots `translate_provider` in a local variable in
+  `main()` and never re-reads the file, so editing `tagent.conf` while the GUI is
+  running has no effect until restart.
+- **Everything else in `tagent.conf` is still ignored** — language list, hotkeys,
+  history logging, colors, TTS settings, dictionary/spell-check toggles. Only
+  `TranslateProvider` and the `language_to_code()` helper are consulted; the rest is
+  either hardcoded (6-language list) or simply unsupported (no history, no hotkeys).
 - **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
   directly rather than going through `Translator`'s richer orchestration and formatting.
 
-## `build.rs`: version sync and a stale Tauri leftover
+## `build.rs`: version sync
 
-The root `build.rs` runs on every `cargo build` and:
+The root `build.rs` runs on every `cargo build` (of the `tagent` binary/library; it does
+not run for `tagent-gui`, which has its own single-line `build.rs` that only compiles
+the Slint UI — see above) and:
 
 1. Reads the version from `Cargo.toml` (`CARGO_PKG_VERSION`, format `MAJOR.MINOR.PATCH[+BUILD]`).
 2. `sync_version_in_docs()`: pattern-matches and rewrites version strings in
    `README.md`, `CLAUDE.md`, and `CHANGELOG.md` (skips the write if the value is already
-   current, to avoid needless rebuilds/timestamp churn).
-3. `sync_version_in_gui()`: strips the `+BUILD` suffix (GUI tooling doesn't support it)
-   and syncs the base `MAJOR.MINOR.PATCH` into `tagent-gui/src-tauri/Cargo.toml`,
-   `tagent-gui/ui/package.json`, and `tagent-gui/src-tauri/tauri.conf.json`.
-4. On Windows only, when the `binary-resources` feature is active, embeds the app icon
+   current, to avoid needless rebuilds/timestamp churn). The `CHANGELOG.md` pattern
+   explicitly skips over a `## [Unreleased]` header — see `update_version_in_file`'s
+   `Unreleased]` guard — so it never overwrites that section's content when scanning
+   forward for the next `] - ` (regression-tested in `build.rs`'s own `#[cfg(test)]`
+   module).
+3. On Windows only, when the `binary-resources` feature is active, embeds the app icon
    and version resource via `winres`.
 
-**Step 3 targets a Tauri-based `tagent-gui` prototype that no longer exists.** The
-current `tagent-gui` is Slint-based (see above) and has no `src-tauri/` directory or
-`ui/package.json` at all — `git log -- tagent-gui` shows the Tauri prototype was
-replaced by the Slint implementation, but this build-script code was never cleaned up.
-It is harmless (`update_gui_cargo_version`/`update_version_in_file` both no-op via a
-`Path::exists()` guard when the target file is missing), but it can mislead a reader
-into thinking Tauri is involved in the current build. If you are touching `build.rs`
-version-sync logic, this is safe to delete; if you are just reading it, ignore the
-`sync_version_in_gui` function entirely.
+There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`
+prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it was
+removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
+`tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
+(currently `0.13.0`, unlinked from the workspace root's `0.13.0+002`) and is not synced
+by anything.
 
 ## Other known gaps worth knowing about
 
-- **`TranslationProvider::detect_language`** is implemented on `GoogleTranslateProvider`
-  (`src/providers/google.rs`) but has no call site in `translator.rs` — the orchestrator
-  does not currently use it. Confirm this is still true before removing or relying on it;
-  it may be wired up in a future change without a doc update here.
 - **`[Colors]` and `[Speech]` config sections** (`SourcePromptColor`, `TargetPromptColor`,
   `DictionaryPromptColor`, `EnableTextToSpeech`, `SpeechHotkey`, `EnableSpeechHotkey`)
   exist in `config.rs` and are used by CLI/interactive/keyboard-hook code, but have no
