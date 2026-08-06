@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     title: "Tagent";
@@ -10,6 +10,14 @@ export component AppWindow inherits Window {
     in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 2;
+
+    // Height the user picked by dragging the resize handle; clamped and
+    // combined with the wrapped text's natural height below.
+    in-out property <length> input-user-height: 32px;
+    property <length> input-min-height: 32px;
+    property <length> input-max-height: 220px;
+    property <length> input-box-height: max(input-min-height, min(input-max-height,
+        max(input-user-height, input-field.preferred-height + 16px)));
 
     out property <length> transcript-viewport-height <=> transcript-scroll.viewport-height;
     out property <length> transcript-visible-height <=> transcript-scroll.visible-height;
@@ -42,6 +50,7 @@ export component AppWindow inherits Window {
             border-width: 1px;
             border-color: #2a2a2a;
             vertical-stretch: 1;
+            min-height: 60px;
 
             transcript-scroll := ScrollView {
                 width: parent.width;
@@ -69,12 +78,38 @@ export component AppWindow inherits Window {
             }
         }
 
+        resize-handle := Rectangle {
+            height: 10px;
+
+            Rectangle {
+                width: 32px;
+                height: 4px;
+                border-radius: 2px;
+                background: resize-touch.pressed ? #5a5a5a : resize-touch.has-hover ? #444444 : #2a2a2a;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            resize-touch := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: ns-resize;
+
+                moved => {
+                    if (self.pressed) {
+                        input-user-height = max(input-min-height, min(input-max-height,
+                            input-user-height - (self.mouse-y - self.pressed-y)));
+                    }
+                }
+            }
+        }
+
         Rectangle {
             background: #0c0c0c;
             border-radius: 4px;
             border-width: 1px;
             border-color: #2a2a2a;
-            height: 32px;
+            height: input-box-height;
 
             HorizontalLayout {
                 padding-left: 8px;
@@ -90,18 +125,47 @@ export component AppWindow inherits Window {
                     vertical-alignment: center;
                 }
 
-                LineEdit {
-                    text <=> input-text;
-                    font-size: 13px;
+                Rectangle {
+                    background: #151515;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: #2a2a2a;
                     horizontal-stretch: 1;
 
-                    accepted(text) => {
-                        translate-requested(
-                            text,
-                            languages[source-language-index],
-                            languages[target-language-index],
-                        );
-                        input-text = "";
+                    ScrollView {
+                        width: parent.width;
+                        height: parent.height;
+                        viewport-width: self.width;
+                        viewport-height: input-field.preferred-height + 16px;
+
+                        input-field := TextInput {
+                            text <=> input-text;
+                            font-size: 13px;
+                            color: #d4d4d4;
+                            selection-background-color: #264f78;
+                            selection-foreground-color: #d4d4d4;
+                            wrap: word-wrap;
+                            single-line: false;
+                            horizontal-alignment: left;
+                            vertical-alignment: top;
+                            x: 8px;
+                            y: 8px;
+                            width: parent.width - 16px;
+                            height: self.preferred-height;
+
+                            key-pressed(event) => {
+                                if (event.text == Key.Return && !event.modifiers.shift) {
+                                    translate-requested(
+                                        input-text,
+                                        languages[source-language-index],
+                                        languages[target-language-index],
+                                    );
+                                    input-text = "";
+                                    return accept;
+                                }
+                                return reject;
+                            }
+                        }
                     }
                 }
 
