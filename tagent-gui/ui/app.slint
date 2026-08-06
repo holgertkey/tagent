@@ -11,6 +11,10 @@ export component AppWindow inherits Window {
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 2;
 
+    out property <length> transcript-viewport-height <=> transcript-scroll.viewport-height;
+    out property <length> transcript-visible-height <=> transcript-scroll.visible-height;
+    in-out property <length> transcript-viewport-y <=> transcript-scroll.viewport-y;
+
     callback translate-requested(string, string, string);
     callback swap-requested();
 
@@ -39,11 +43,13 @@ export component AppWindow inherits Window {
             border-color: #2a2a2a;
             vertical-stretch: 1;
 
-            ScrollView {
+            transcript-scroll := ScrollView {
                 width: parent.width;
                 height: parent.height;
+                viewport-width: self.width;
+                viewport-height: transcript-text.preferred-height + 16px;
 
-                TextInput {
+                transcript-text := TextInput {
                     text: transcript;
                     font-family: "monospace";
                     font-size: 13px;
@@ -58,6 +64,7 @@ export component AppWindow inherits Window {
                     x: 8px;
                     y: 8px;
                     width: parent.width - 16px;
+                    height: self.preferred-height;
                 }
             }
         }

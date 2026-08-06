@@ -3,6 +3,11 @@ use tagent::{config::ConfigManager, providers};
 
 slint::include_modules!();
 
+fn scroll_transcript_to_bottom(window: &AppWindow) {
+    let overflow = window.get_transcript_viewport_height() - window.get_transcript_visible_height();
+    window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window = AppWindow::new()?;
 
@@ -26,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
                 let transcript = window.get_transcript();
                 window.set_transcript(format!("{transcript}{entry}").into());
+                scroll_transcript_to_bottom(&window);
             }
             return;
         }
@@ -51,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     };
                     let transcript = window.get_transcript();
                     window.set_transcript(format!("{transcript}{entry}").into());
+                    scroll_transcript_to_bottom(&window);
                 }
             })
             .ok();
