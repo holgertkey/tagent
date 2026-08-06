@@ -4,6 +4,7 @@ export component AppWindow inherits Window {
     title: "Tagent";
     preferred-width: 560px;
     preferred-height: 420px;
+    forward-focus: input-field;
 
     in-out property <string> input-text: "";
     in-out property <string> transcript: "=== Tagent ===\nType text and press Enter to translate.\n\n";
