@@ -1,5 +1,5 @@
 use slint::ComponentHandle;
-use tagent::{config::ConfigManager, providers};
+use tagent::{languages, providers};
 
 slint::include_modules!();
 
@@ -8,12 +8,51 @@ fn scroll_transcript_to_bottom(window: &AppWindow) {
     window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
 }
 
+/// Reads `TranslateProvider` from `[Provider]` in `tagent.conf`, defaulting to `"google"`.
+///
+/// This is a small, deliberate exception to reusing tagent-cli's `ConfigManager`: depending
+/// on tagent-cli here would pull in rustyline, rdev, x11, arboard, and the whole platform/
+/// tree just to read one string. It is not a full INI parser — just this one key.
+fn read_translate_provider() -> String {
+    const DEFAULT_PROVIDER: &str = "google";
+
+    let Some(config_dir) = dirs::config_dir() else {
+        return DEFAULT_PROVIDER.to_string();
+    };
+    let path = config_dir.join("Tagent").join("tagent.conf");
+
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return DEFAULT_PROVIDER.to_string();
+    };
+
+    let mut in_provider_section = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            in_provider_section = &line[1..line.len() - 1] == "Provider";
+            continue;
+        }
+        if in_provider_section {
+            if let Some(eq_pos) = line.find('=') {
+                let key = line[..eq_pos].trim();
+                let value = line[eq_pos + 1..].trim();
+                if key == "TranslateProvider" && !value.is_empty() {
+                    return value.to_string();
+                }
+            }
+        }
+    }
+
+    DEFAULT_PROVIDER.to_string()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window = AppWindow::new()?;
 
-    let config_path = ConfigManager::get_default_config_path()?;
-    let config_manager = ConfigManager::new(config_path.to_string_lossy().as_ref())?;
-    let translate_provider = config_manager.get_config().translate_provider;
+    let translate_provider = read_translate_provider();
 
     let weak = window.as_weak();
     window.on_translate_requested(move |text, from_lang, to_lang| {
@@ -22,8 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return;
         }
 
-        let from = ConfigManager::language_to_code(&from_lang).to_string();
-        let to = ConfigManager::language_to_code(&to_lang).to_string();
+        let from = languages::name_to_code(&from_lang).to_string();
+        let to = languages::name_to_code(&to_lang).to_string();
         if to == "auto" {
             if let Some(window) = weak.upgrade() {
                 let entry = format!(

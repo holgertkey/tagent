@@ -5457,9 +5457,10 @@ dependencies = [
 name = "tagent-gui"
 version = "0.13.0"
 dependencies = [
+ "dirs",
  "slint",
  "slint-build",
- "tagent-cli",
+ "tagent",
  "tokio",
 ]
 
