@@ -15,7 +15,7 @@ button swaps source and target.
 
 ## What it does and doesn't do
 
-- Reads `TranslateProvider` from `tagent.conf` at startup (via a small inline reader,
+- Reads `TranslateProvider` from `tagent-cli.conf` at startup (via a small inline reader,
   not the full config system — see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)),
   defaulting to `"google"`. Not live-reloaded — restart to pick up a config change.
 - Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German), smaller

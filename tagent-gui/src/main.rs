@@ -8,7 +8,7 @@ fn scroll_transcript_to_bottom(window: &AppWindow) {
     window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
 }
 
-/// Reads `TranslateProvider` from `[Provider]` in `tagent.conf`, defaulting to `"google"`.
+/// Reads `TranslateProvider` from `[Provider]` in `tagent-cli.conf`, defaulting to `"google"`.
 ///
 /// This is a small, deliberate exception to reusing tagent-cli's `ConfigManager`: depending
 /// on tagent-cli here would pull in rustyline, rdev, x11, arboard, and the whole platform/
@@ -19,7 +19,7 @@ fn read_translate_provider() -> String {
     let Some(config_dir) = dirs::config_dir() else {
         return DEFAULT_PROVIDER.to_string();
     };
-    let path = config_dir.join("Tagent").join("tagent.conf");
+    let path = config_dir.join("tagent-cli").join("tagent-cli.conf");
 
     let Ok(content) = std::fs::read_to_string(&path) else {
         return DEFAULT_PROVIDER.to_string();

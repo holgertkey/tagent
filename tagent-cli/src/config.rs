@@ -9,15 +9,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-/// Runtime configuration loaded from `tagent.conf`.
+/// Runtime configuration loaded from `tagent-cli.conf`.
 ///
 /// All fields correspond directly to INI keys documented inside the generated
 /// configuration file. The [`Default`] impl reflects the same defaults that are
 /// written when a new configuration file is created.
 ///
 /// The config file is located at:
-/// - **Windows**: `%APPDATA%\Tagent\tagent.conf`
-/// - **Linux/macOS**: `~/.config/Tagent/tagent.conf`
+/// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf`
+/// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
 #[derive(Debug, Clone)]
 pub struct Config {
     /// BCP-47 language code for the source language, or `"Auto"` for auto-detection.
@@ -59,10 +59,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         // Try to get data directory path for history file, fallback to current directory
-        // On Linux: ~/.local/share/Tagent/translation_history.txt
-        // On Windows: %APPDATA%/Tagent/translation_history.txt
+        // On Linux: ~/.local/share/tagent-cli/translation_history.txt
+        // On Windows: %APPDATA%/tagent-cli/translation_history.txt
         let default_history = if let Some(data_dir) = dirs::data_dir() {
-            let history_path = data_dir.join("Tagent").join("translation_history.txt");
+            let history_path = data_dir.join("tagent-cli").join("translation_history.txt");
             history_path.to_string_lossy().to_string()
         } else {
             "translation_history.txt".to_string()
@@ -92,7 +92,7 @@ impl Default for Config {
 
 /// Thread-safe configuration manager with live-reload support.
 ///
-/// `ConfigManager` loads `tagent.conf` on construction and can reload it at
+/// `ConfigManager` loads `tagent-cli.conf` on construction and can reload it at
 /// runtime without restarting the application. Use [`ConfigManager::new`] with
 /// the path returned by [`ConfigManager::get_default_config_path`].
 ///
@@ -111,21 +111,21 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-    /// Returns the platform-default path for `tagent.conf`, creating parent directories as needed.
+    /// Returns the platform-default path for `tagent-cli.conf`, creating parent directories as needed.
     ///
-    /// - **Windows**: `%APPDATA%\Tagent\tagent.conf`
-    /// - **Linux/macOS**: `~/.config/Tagent/tagent.conf`
+    /// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf`
+    /// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
     pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
-            .join("Tagent");
+            .join("tagent-cli");
 
         // Create directory if it doesn't exist
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)?;
         }
 
-        Ok(config_dir.join("tagent.conf"))
+        Ok(config_dir.join("tagent-cli.conf"))
     }
 
     /// Returns the platform-default path for the interactive-mode line-editing history file,
@@ -134,12 +134,12 @@ impl ConfigManager {
     /// This is separate from [`Config::history_file`], which logs translation *results* for
     /// the user to read; this file stores rustyline's input-line history instead.
     ///
-    /// - **Windows**: `%APPDATA%\Tagent\interactive_history.txt`
-    /// - **Linux/macOS**: `~/.config/Tagent/interactive_history.txt`
+    /// - **Windows**: `%APPDATA%\tagent-cli\interactive_history.txt`
+    /// - **Linux/macOS**: `~/.config/tagent-cli/interactive_history.txt`
     pub fn get_default_interactive_history_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
-            .join("Tagent");
+            .join("tagent-cli");
 
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)?;
@@ -625,7 +625,7 @@ EnableSpeechHotkey = {}
         println!("   - Select text anywhere in Windows");
         println!("   - Press configured hotkey (default: Alt+Q)");
         println!("   - Result copied to clipboard automatically");
-        println!("   - Configure hotkeys in tagent.conf [Hotkeys] section");
+        println!("   - Configure hotkeys in tagent-cli.conf [Hotkeys] section");
         println!();
 
         println!("INTERACTIVE COMMANDS (must start with slash):");
@@ -647,10 +647,10 @@ EnableSpeechHotkey = {}
         if let Ok(config_path) = ConfigManager::get_default_config_path() {
             println!("  Config file: {}", config_path.display());
         } else {
-            println!("  Config file: tagent.conf (typically in %APPDATA%\\Tagent\\)");
+            println!("  Config file: tagent-cli.conf (typically in %APPDATA%\\tagent-cli\\)");
         }
         println!();
-        println!("  Edit 'tagent.conf' to change translation settings:");
+        println!("  Edit 'tagent-cli.conf' to change translation settings:");
         println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
@@ -761,7 +761,7 @@ EnableSpeechHotkey = {}
         if let Ok(config_path) = ConfigManager::get_default_config_path() {
             println!("Config file: {}", config_path.display());
         } else {
-            println!("Config file: tagent.conf");
+            println!("Config file: tagent-cli.conf");
         }
         println!("Edit this file to change settings (changes take effect immediately)");
         println!("============================");

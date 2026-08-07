@@ -150,7 +150,7 @@ tagent instead of leaking through. Notable details:
   nothing Windows-resource-related to guard against.
 - **Reading `TranslateProvider` without `ConfigManager`**: since `tagent` has no config
   module, `tagent-gui/src/main.rs` has its own small `read_translate_provider()`
-  function — opens `tagent.conf` via `dirs::config_dir()`, scans for `[Provider]` /
+  function — opens `tagent-cli.conf` via `dirs::config_dir()`, scans for `[Provider]` /
   `TranslateProvider = ...`, defaults to `"google"` on any miss. This is a deliberate,
   narrowly-scoped exception to reusing `tagent-cli`'s logic: pulling in `ConfigManager`
   would mean pulling in all of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the
@@ -183,11 +183,11 @@ tagent instead of leaking through. Notable details:
 
 ### Known gaps in `tagent-gui`
 
-- **`tagent.conf` is read once at startup, not live-reloaded.** Unlike `tagent-cli`
+- **`tagent-cli.conf` is read once at startup, not live-reloaded.** Unlike `tagent-cli`
   (`ConfigManager::check_and_reload()`, called before every translation), `tagent-gui`
   snapshots `translate_provider` in a local variable in `main()` and never re-reads the
-  file, so editing `tagent.conf` while the GUI is running has no effect until restart.
-- **Everything else in `tagent.conf` is still ignored** — language list, hotkeys,
+  file, so editing `tagent-cli.conf` while the GUI is running has no effect until restart.
+- **Everything else in `tagent-cli.conf` is still ignored** — language list, hotkeys,
   history logging, colors, TTS settings, dictionary/spell-check toggles. Only
   `TranslateProvider` (via the inline reader above) and `tagent::languages` are
   consulted; the rest is either hardcoded (6-language list) or simply unsupported (no

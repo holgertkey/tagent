@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.15.0
+# Tagent Text Translator v0.16.0
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -86,7 +86,7 @@ All releases: https://github.com/holgertkey/tagent/releases
 1. Download the latest release
 2. Extract to your preferred directory
 3. Run `tagent-cli.exe` to start unified mode
-4. Configuration file will be created automatically in `%APPDATA%\Tagent\tagent.conf`
+4. Configuration file will be created automatically in `%APPDATA%\tagent-cli\tagent-cli.conf`
 
 ## Quick Start
 
@@ -169,7 +169,7 @@ Language names (`English`, `German`) and codes (`en`, `de`) are both accepted.
 
 ## Configuration
 
-Configuration is stored in `%APPDATA%\Tagent\tagent.conf` (typically `C:\Users\<YourName>\AppData\Roaming\Tagent\tagent.conf`) and reloads automatically:
+Configuration is stored in `%APPDATA%\tagent-cli\tagent-cli.conf` (typically `C:\Users\<YourName>\AppData\Roaming\tagent-cli\tagent-cli.conf`) and reloads automatically:
 
 ```ini
 [Translation]
@@ -205,8 +205,8 @@ AutoPromptColor = Yellow
 ; Save all translations to file with timestamps
 SaveTranslationHistory = false
 
-; History file path (defaults to AppData\Tagent folder)
-HistoryFile = C:\Users\<YourName>\AppData\Roaming\Tagent\translation_history.txt
+; History file path (defaults to AppData\tagent-cli folder)
+HistoryFile = C:\Users\<YourName>\AppData\Roaming\tagent-cli\translation_history.txt
 
 [Hotkeys]
 ; Translation hotkey (configurable)
@@ -387,7 +387,7 @@ tagent-cli --config
 ## Advanced Usage
 
 ### Custom Language Pairs
-Edit `%APPDATA%\Tagent\tagent.conf`:
+Edit `%APPDATA%\tagent-cli\tagent-cli.conf`:
 ```ini
 [Translation]
 SourceLanguage = English
@@ -452,7 +452,7 @@ AutoPromptColor = Yellow
 - Google Translate service may be temporarily unavailable
 
 **"Config reload error"**
-- Check config file syntax at `%APPDATA%\Tagent\tagent.conf`
+- Check config file syntax at `%APPDATA%\tagent-cli\tagent-cli.conf`
 - Ensure file is not locked by another application
 - Delete config file from AppData folder to regenerate default settings
 
@@ -546,7 +546,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](../CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.15.0
+**Current Version**: v0.16.0
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -579,4 +579,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.15.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
