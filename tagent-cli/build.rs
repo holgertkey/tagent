@@ -28,7 +28,7 @@ fn build_windows_resources(version: &str) {
 
     WindowsResource::new()
         // Set the main icon (shows in file explorer, taskbar, etc.)
-        .set_icon("assets/icons/taa_256.ico")
+        .set_icon("../assets/icons/taa_256.ico")
         // Set application information
         .set("ProductName", "Text Agent Translator")
         .set(
@@ -62,16 +62,16 @@ fn sync_version_in_docs(version: &str) {
     // Files to update with version patterns
     let files = vec![
         (
-            "README.md",
+            "../README.md",
             vec![
                 ("# Tagent Text Translator v", "\n"),
                 ("**Current Version**: v", "\n"),
                 ("**Tagent Text Translator v", "** - Fast, reliable"),
             ],
         ),
-        ("CLAUDE.md", vec![("(v", ") built in Rust")]),
+        ("../CLAUDE.md", vec![("(v", ") built in Rust")]),
         (
-            "CHANGELOG.md",
+            "../CHANGELOG.md",
             vec![
                 ("## [", "] - "), // Changelog section header: ## [VERSION] - DATE
             ],

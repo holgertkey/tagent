@@ -1,0 +1,61 @@
+[package]
+name = "tagent-cli"
+version = "0.13.0+002"
+edition = "2021"
+description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
+authors = ["Holgert K"]
+license = "MIT"
+repository = "https://github.com/holgertkey/tagent"
+homepage = "https://github.com/holgertkey/tagent"
+readme = "../README.md"
+keywords = ["translation", "translate", "cli", "dictionary", "tts"]
+categories = ["command-line-utilities", "internationalization"]
+
+[features]
+default = ["binary-resources"]
+binary-resources = []
+
+[lib]
+name = "tagent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tagent"
+path = "src/main.rs"
+
+[dependencies]
+# Cross-platform dependencies
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.4"
+dirs = "5.0"
+colored = "2.1"
+rodio = { version = "0.21", features = ["symphonia-mp3"] }
+urlencoding = "2.1"
+arboard = "3.4"
+ctrlc = "3.4"
+rustyline = "18.0.1"
+
+# Windows-only dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+clipboard-win = "5.0"
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Console"
+] }
+
+# Linux-only dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+rdev = "0.5"
+x11 = { version = "2.21", features = ["xlib"] }
+
+# Windows-only build dependencies
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winres = "0.1"

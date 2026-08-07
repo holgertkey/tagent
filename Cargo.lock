@@ -5419,7 +5419,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tagent"
+name = "tagent-cli"
 version = "0.13.0+002"
 dependencies = [
  "arboard",
@@ -5449,7 +5449,7 @@ version = "0.13.0"
 dependencies = [
  "slint",
  "slint-build",
- "tagent",
+ "tagent-cli",
  "tokio",
 ]
 
