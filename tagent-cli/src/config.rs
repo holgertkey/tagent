@@ -599,7 +599,9 @@ EnableSpeechHotkey = {}
         println!();
 
         println!("EXAMPLES:");
-        println!("  tagent-cli                           Start unified mode (interactive + hotkeys)");
+        println!(
+            "  tagent-cli                           Start unified mode (interactive + hotkeys)"
+        );
         println!("  tagent-cli hello                     Translate 'hello' (CLI mode)");
         println!("  tagent-cli \"Hello world\"             Translate phrase (CLI mode)");
         println!("  tagent-cli -s \"Hello world\"          Speak text using TTS");

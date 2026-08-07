@@ -1,10 +1,10 @@
 use crate::config::{self, ConfigManager};
 use crate::platform::{ClipboardManager, WindowHandle, WindowManager};
 use rustyline::ExternalPrinter;
-use tagent::providers::{self, TranslationProvider};
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
+use tagent::providers::{self, TranslationProvider};
 
 /// Shared slot for the rustyline external printer used to route hotkey-triggered
 /// translation output safely while the interactive prompt may be mid-read on another
@@ -689,7 +689,11 @@ mod tests {
             vec![text.to_string()]
         }
 
-        async fn speak_chunk(&self, _text: &str, _lang: &str) -> Result<Vec<u8>, tagent::error::Error> {
+        async fn speak_chunk(
+            &self,
+            _text: &str,
+            _lang: &str,
+        ) -> Result<Vec<u8>, tagent::error::Error> {
             Ok(Vec::new())
         }
 
