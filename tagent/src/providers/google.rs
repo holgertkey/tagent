@@ -515,6 +515,17 @@ mod tests {
     }
 
     #[test]
+    fn test_split_text_short_preserves_trailing_punctuation() {
+        // Text within MAX_TTS_TEXT_LENGTH hits the early-return in split_for_speech and
+        // must be sent verbatim, not run through sentence-splitting (which trims/rejoins
+        // and would otherwise drop the period).
+        let provider = GoogleTranslateProvider::new();
+        let text = "Hello world.";
+        let chunks = provider.split_for_speech(text);
+        assert_eq!(chunks, vec!["Hello world.".to_string()]);
+    }
+
+    #[test]
     fn test_split_text_long() {
         let provider = GoogleTranslateProvider::new();
         let text = "a".repeat(250);
@@ -528,9 +539,17 @@ mod tests {
     #[test]
     fn test_split_text_sentences() {
         let provider = GoogleTranslateProvider::new();
-        let text = "First sentence. Second sentence. Third sentence.";
+        // Long enough to exceed MAX_TTS_TEXT_LENGTH (100 bytes) so this actually exercises
+        // sentence-splitting instead of the short-text verbatim early-return.
+        let text = "First sentence is here. Second sentence follows along. \
+                     Third sentence wraps it up nicely. Fourth sentence for good measure.";
+        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
         let chunks = provider.split_for_speech(text);
-        assert!(!chunks.is_empty());
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {:?}",
+            chunks
+        );
         for chunk in chunks {
             assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
         }
@@ -577,11 +596,16 @@ mod tests {
     #[test]
     fn test_split_text_mixed_ascii_multibyte() {
         let provider = GoogleTranslateProvider::new();
-        let text =
-            "Hello мир this is тест of mixed текст content здесь and more слов to pad it out";
+        let text = "Hello мир this is тест of mixed текст content здесь and more слов \
+                     to pad it out well past the single-chunk limit for this test to mean anything";
+        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
         let chunks = provider.split_for_speech(text);
 
-        assert!(!chunks.is_empty());
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {:?}",
+            chunks
+        );
         for chunk in &chunks {
             assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
         }

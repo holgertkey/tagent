@@ -48,10 +48,10 @@ fn build_windows_resources(version: &str) {
         .compile()
         .expect("Failed to compile Windows resources");
 
-    // When the crate has both [lib] and [[bin]] targets, Cargo applies
-    // cargo:rustc-link-lib only to the lib target. Windows resources must be
-    // linked directly into the final executable, so we pass resource.lib
-    // explicitly via cargo:rustc-link-arg which targets bin/test targets.
+    // cargo:rustc-link-lib only applies to a [lib] target (this crate has none).
+    // Windows resources must be linked directly into the final executable, so we
+    // pass resource.lib explicitly via cargo:rustc-link-arg-bins, which targets
+    // [[bin]] targets specifically.
     let out_dir = std::env::var("OUT_DIR").unwrap();
     println!("cargo:rustc-link-arg-bins={}/resource.lib", out_dir);
 }
