@@ -32,8 +32,12 @@ impl ClipboardManager {
     /// Automatically copy selected text (simulate Ctrl+C)
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
-            // Wait a bit to allow user to release modifier keys
-            // This is important for Alt+ combinations which are blocked in the hook
+            // Wait a bit to allow the user to physically release modifier keys. Modifier
+            // combos (e.g. Alt+Q) are registered via RegisterHotKey (see
+            // platform/windows/keyboard.rs), which keeps the triggering key from reaching
+            // the foreground window, but the physical modifier (e.g. Alt) can still be held
+            // down here, and its own keydown was already delivered to the foreground window
+            // before RegisterHotKey could know a combo was coming.
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Create input array for SendInput

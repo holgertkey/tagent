@@ -21,6 +21,10 @@ static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new(
 static TRANSLATE_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
 static SPEECH_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
 
+/// Ids passed to `RegisterHotKey`/delivered back in `WM_HOTKEY`'s `wParam`.
+const TRANSLATE_HOTKEY_ID: i32 = 1;
+const SPEECH_HOTKEY_ID: i32 = 2;
+
 // Speech-specific state
 static SPEECH_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static SPEECH_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
@@ -35,6 +39,11 @@ struct HotkeyState {
     last_key_time: Arc<Mutex<Option<Instant>>>,
     last_key_pressed: Arc<Mutex<bool>>,
     last_key_interrupted: Arc<Mutex<bool>>,
+    /// Set once a `ModifierCombo` config has been handed off to `RegisterHotKey`
+    /// (see `KeyboardHook::start`). While set, the low-level-hook-based combo
+    /// detection in `handle` below is skipped so the combo isn't triggered twice
+    /// — once by `WM_HOTKEY` and once by the hook.
+    registered_with_os: AtomicBool,
 }
 
 impl HotkeyState {
@@ -44,6 +53,7 @@ impl HotkeyState {
             last_key_time: Arc::new(Mutex::new(None)),
             last_key_pressed: Arc::new(Mutex::new(false)),
             last_key_interrupted: Arc::new(Mutex::new(false)),
+            registered_with_os: AtomicBool::new(false),
         }
     }
 
@@ -70,6 +80,12 @@ impl HotkeyState {
             }
 
             HotkeyType::ModifierCombo { modifiers, key } => {
+                // RegisterHotKey (see `KeyboardHook::start`) already owns this combo end to
+                // end via WM_HOTKEY; detecting it again here would fire the translation twice.
+                if self.registered_with_os.load(Ordering::Relaxed) {
+                    return false;
+                }
+
                 if let Some(modifier_state) = MODIFIER_STATE.get() {
                     if let Ok(mut state) = modifier_state.lock() {
                         let normalized_vk = normalize_vk_code(vk_code);
@@ -157,6 +173,37 @@ impl HotkeyState {
         }
 
         false
+    }
+
+    /// If this state holds a `ModifierCombo`, attempt to register it with the OS via
+    /// `RegisterHotKey` and, on success, mark it so `handle`'s hook-based detection steps
+    /// aside. Returns whether registration happened (i.e. whether the caller must
+    /// eventually call `UnregisterHotKey` with `id`). No-op for other hotkey types.
+    unsafe fn try_register_with_os(&self, id: i32) -> bool {
+        let hotkey_opt = match self.config.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return false,
+        };
+
+        let (modifiers, key) = match hotkey_opt {
+            Some(HotkeyType::ModifierCombo { modifiers, key }) => (modifiers, key),
+            _ => return false,
+        };
+
+        let flags = modifiers_to_hotkey_flags(&modifiers);
+        match RegisterHotKey(HWND::default(), id, flags, key) {
+            Ok(()) => {
+                self.registered_with_os.store(true, Ordering::Relaxed);
+                true
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to register hotkey with the system ({}), falling back to key-hook detection",
+                    e
+                );
+                false
+            }
+        }
     }
 
     /// Mark double-press sequence as interrupted if another key was pressed
@@ -308,6 +355,21 @@ impl KeyboardHook {
                 return Err("Failed to set keyboard hook".into());
             }
 
+            // Register modifier-combo hotkeys (e.g. Alt+Q) with the OS instead of only
+            // detecting them in the low-level hook above. RegisterHotKey delivers WM_HOTKEY
+            // straight to this thread and guarantees the triggering keystroke (Q) is not
+            // also delivered to the foreground window as WM_SYSKEYDOWN/WM_SYSCHAR — that's
+            // what produced the "no matching menu accelerator" system beep. It does NOT
+            // guarantee anything about the preceding modifier keydown (Alt) itself; if the
+            // foreground app still enters menu-mode focus on bare Alt-down and that ends up
+            // swallowing the simulated Ctrl+C in `ClipboardManager::copy_selected_text`,
+            // that needs a separate, verified-on-hardware fix in copy_selected_text (e.g.
+            // waiting for the physical Alt release via GetAsyncKeyState instead of sending a
+            // synthetic Alt-up). Registered here (not in `new`) because RegisterHotKey with
+            // a NULL hwnd is thread-affine to whichever thread later pumps messages for it,
+            // i.e. this one.
+            let registered_ids = Self::register_modifier_combo_hotkeys();
+
             loop {
                 // Check if we should exit
                 if let Some(should_exit) = SHOULD_EXIT.get() {
@@ -333,6 +395,9 @@ impl KeyboardHook {
                             println!("WM_QUIT received, exiting");
                             break;
                         }
+                        WM_HOTKEY => {
+                            handle_registered_hotkey(msg.wParam.0 as i32);
+                        }
                         _ => {
                             TranslateMessage(&msg);
                             DispatchMessageW(&msg);
@@ -344,10 +409,75 @@ impl KeyboardHook {
                 }
             }
 
+            for id in registered_ids {
+                let _ = UnregisterHotKey(HWND::default(), id);
+            }
+
             UnhookWindowsHookEx(hook)?;
         }
 
         Ok(())
+    }
+
+    /// Register `RegisterHotKey`-eligible (`ModifierCombo`) hotkeys with the OS and mark
+    /// the corresponding `HotkeyState` so the low-level hook stops also detecting them.
+    /// Falls back to hook-only detection (leaving the state unmarked) for a given hotkey
+    /// if `RegisterHotKey` fails, e.g. because another application already owns that combo.
+    unsafe fn register_modifier_combo_hotkeys() -> Vec<i32> {
+        let mut registered_ids = Vec::new();
+
+        if let Some(state) = TRANSLATE_HOTKEY.get() {
+            if state.try_register_with_os(TRANSLATE_HOTKEY_ID) {
+                registered_ids.push(TRANSLATE_HOTKEY_ID);
+            }
+        }
+
+        if let Some(state) = SPEECH_HOTKEY.get() {
+            if state.try_register_with_os(SPEECH_HOTKEY_ID) {
+                registered_ids.push(SPEECH_HOTKEY_ID);
+            }
+        }
+
+        registered_ids
+    }
+}
+
+/// Convert a parsed `ModifierCombo`'s modifier vk codes into `RegisterHotKey`'s
+/// `HOT_KEY_MODIFIERS` flags. Unrecognized codes are silently ignored, matching the
+/// existing validation happening earlier in `HotkeyParser`.
+fn modifiers_to_hotkey_flags(modifiers: &[u32]) -> HOT_KEY_MODIFIERS {
+    let mut flags = MOD_NOREPEAT;
+    for &m in modifiers {
+        flags |= if m == super::keycodes::KEY_CONTROL {
+            MOD_CONTROL
+        } else if m == super::keycodes::KEY_ALT {
+            MOD_ALT
+        } else if m == super::keycodes::KEY_SHIFT {
+            MOD_SHIFT
+        } else if m == super::keycodes::KEY_LWIN || m == super::keycodes::KEY_RWIN {
+            MOD_WIN
+        } else {
+            HOT_KEY_MODIFIERS(0)
+        };
+    }
+    flags
+}
+
+/// Dispatch a `WM_HOTKEY` message (`wParam` is the id passed to `RegisterHotKey`) to the
+/// matching trigger, applying the same speech-enabled gating as the hook-based path.
+fn handle_registered_hotkey(id: i32) {
+    if id == TRANSLATE_HOTKEY_ID {
+        unsafe { trigger_translation() };
+    } else if id == SPEECH_HOTKEY_ID {
+        if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
+            if speech_enabled.load(Ordering::Relaxed) {
+                if let Some(tts_enabled) = SPEECH_ENABLED.get() {
+                    if tts_enabled.load(Ordering::Relaxed) {
+                        unsafe { trigger_speech() };
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -715,5 +845,64 @@ mod tests {
             "the target key must still be blocked once the combo fires"
         );
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    // Regression tests for the RegisterHotKey handoff: once a ModifierCombo has been
+    // registered with the OS (see `KeyboardHook::register_modifier_combo_hotkeys`), the
+    // hook-based `handle` path must stay out of the way entirely, or WM_HOTKEY and the
+    // hook would both fire the same combo.
+
+    #[test]
+    fn test_registered_combo_is_never_detected_by_the_hook() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state
+            .lock()
+            .unwrap()
+            .insert(super::super::keycodes::KEY_ALT, false);
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+        state.registered_with_os.store(true, AtomicOrdering::SeqCst);
+
+        // Same sequence that fires the combo in `test_combo_completion_still_blocks_target_key`
+        // above -- but since RegisterHotKey now owns this combo, the hook must not trigger it
+        // (that would double-fire the translation: once via WM_HOTKEY, once via the hook).
+        let blocked_alt = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
+        let blocked_q = state.handle('Q' as u32, true, test_trigger_fn);
+        assert!(!blocked_alt);
+        assert!(
+            !blocked_q,
+            "a combo handed off to RegisterHotKey must not also be detected by the hook"
+        );
+        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    #[test]
+    fn test_modifiers_to_hotkey_flags_maps_each_modifier() {
+        assert_eq!(
+            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_ALT]),
+            MOD_ALT | MOD_NOREPEAT
+        );
+        assert_eq!(
+            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_CONTROL]),
+            MOD_CONTROL | MOD_NOREPEAT
+        );
+        assert_eq!(
+            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_SHIFT]),
+            MOD_SHIFT | MOD_NOREPEAT
+        );
+        assert_eq!(
+            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_LWIN]),
+            MOD_WIN | MOD_NOREPEAT
+        );
+        assert_eq!(
+            modifiers_to_hotkey_flags(&[
+                super::super::keycodes::KEY_CONTROL,
+                super::super::keycodes::KEY_SHIFT
+            ]),
+            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+        );
     }
 }
