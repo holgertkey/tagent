@@ -1,6 +1,6 @@
 [package]
 name = "tagent-cli"
-version = "0.13.0+003"
+version = "0.14.0"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]

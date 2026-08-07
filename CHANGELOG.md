@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-07
+
 ### Added
 - **`tagent-gui` transcript pane is now selectable/copyable** (`tagent-gui/ui/app.slint`): the transcript display was a plain, non-interactive `Text` element; it is now a read-only, multi-line `TextInput` so translated text can be selected with the mouse and copied.
 - **`tagent-gui` transcript auto-scrolls to the newest entry** (`tagent-gui/src/main.rs`, `tagent-gui/ui/app.slint`): appending a translation (or the "Auto" target error) now calls `scroll_transcript_to_bottom()`, which reads the new `transcript-viewport-height`/`transcript-visible-height` properties and sets `transcript-viewport-y` to the overflow, so long transcripts no longer require manually scrolling down after each translation.
