@@ -579,11 +579,11 @@ EnableSpeechHotkey = {}
         println!("   - Interactive prompt in terminal + GUI hotkeys");
         println!("   - Both methods work simultaneously");
         println!();
-        println!("2. CLI Mode: Run 'tagent <text>' for one-time translation");
+        println!("2. CLI Mode: Run 'tagent-cli <text>' for one-time translation");
         println!();
 
         println!("USAGE:");
-        println!("  tagent [OPTIONS] [text]");
+        println!("  tagent-cli [OPTIONS] [text]");
         println!();
 
         println!("ARGUMENTS:");
@@ -599,15 +599,15 @@ EnableSpeechHotkey = {}
         println!();
 
         println!("EXAMPLES:");
-        println!("  tagent                           Start unified mode (interactive + hotkeys)");
-        println!("  tagent hello                     Translate 'hello' (CLI mode)");
-        println!("  tagent \"Hello world\"             Translate phrase (CLI mode)");
-        println!("  tagent -s \"Hello world\"          Speak text using TTS");
-        println!("  tagent -l German hello               Translate 'hello' to German");
+        println!("  tagent-cli                           Start unified mode (interactive + hotkeys)");
+        println!("  tagent-cli hello                     Translate 'hello' (CLI mode)");
+        println!("  tagent-cli \"Hello world\"             Translate phrase (CLI mode)");
+        println!("  tagent-cli -s \"Hello world\"          Speak text using TTS");
+        println!("  tagent-cli -l German hello               Translate 'hello' to German");
         println!(
-            "  tagent -l English German hello        Translate 'hello' from English to German"
+            "  tagent-cli -l English German hello        Translate 'hello' from English to German"
         );
-        println!("  tagent --config                  Show configuration");
+        println!("  tagent-cli --config                  Show configuration");
         println!();
 
         println!("UNIFIED MODE - TRANSLATION METHODS:");
@@ -669,7 +669,7 @@ EnableSpeechHotkey = {}
         println!("- Translation history logging");
         println!("- Clipboard integration");
         println!();
-        println!("Run 'tagent --config' to see current settings.");
+        println!("Run 'tagent-cli --config' to see current settings.");
         println!("===============================================");
         println!();
     }

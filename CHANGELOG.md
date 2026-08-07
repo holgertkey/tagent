@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-07
+
+### Changed
+- **BREAKING: the `tagent-cli` package's binary is now named `tagent-cli`** (was `tagent`). Installed as `target/release/tagent-cli` (`tagent-cli.exe` on Windows) instead of `target/release/tagent`. Existing shortcuts, PATH entries, and scripts invoking `tagent`/`tagent.exe` need updating to `tagent-cli`/`tagent-cli.exe`. All in-app usage text (`--help`, error messages, examples) and documentation updated to match; Windows resource metadata (`OriginalFilename`, `InternalName`) updated accordingly.
+
 ## [0.14.0] - 2026-08-07
 
 ### Added

@@ -22,8 +22,8 @@ cd tagent
 cargo build --release
 ```
 
-Builds all three crates. The `tagent-cli` package's binary is still named `tagent`, so
-it lands at `target/release/tagent` (`target/release/tagent.exe` on Windows).
+Builds all three crates. The `tagent-cli` package's binary is named `tagent-cli`, so
+it lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe` on Windows).
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and [LICENSE](LICENSE) for
 license terms (MIT).

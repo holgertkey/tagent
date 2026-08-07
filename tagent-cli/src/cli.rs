@@ -69,8 +69,8 @@ impl CliHandler {
                 // Set languages and optionally translate
                 if args.len() < 3 {
                     eprintln!("Error: No language provided");
-                    eprintln!("Usage: tagent -l <target> [text]");
-                    eprintln!("       tagent -l <source> <target> [text]");
+                    eprintln!("Usage: tagent-cli -l <target> [text]");
+                    eprintln!("       tagent-cli -l <source> <target> [text]");
                     return Ok(());
                 }
 
@@ -118,7 +118,7 @@ impl CliHandler {
                 // Speak the following text
                 if args.len() < 3 {
                     eprintln!("Error: No text provided for speech");
-                    eprintln!("Usage: tagent -s \"text to speak\"");
+                    eprintln!("Usage: tagent-cli -s \"text to speak\"");
                     return Ok(());
                 }
                 let text_to_speak = args[2..].join(" ");
@@ -140,7 +140,7 @@ impl CliHandler {
     pub async fn translate_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
-            eprintln!("Usage: tagent <text to translate>");
+            eprintln!("Usage: tagent-cli <text to translate>");
             return Ok(());
         }
 
@@ -251,7 +251,7 @@ impl CliHandler {
     async fn speak_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         if text.trim().is_empty() {
             eprintln!("Error: Empty text provided");
-            eprintln!("Usage: tagent -s \"text to speak\"");
+            eprintln!("Usage: tagent-cli -s \"text to speak\"");
             return Ok(());
         }
 

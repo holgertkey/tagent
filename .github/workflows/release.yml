@@ -15,10 +15,10 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: tagent.exe
+            artifact: tagent-cli.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: tagent
+            artifact: tagent-cli
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -41,13 +41,13 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
-          Compress-Archive -Path target/release/tagent.exe -DestinationPath "tagent-${version}-windows-x86_64.zip"
+          Compress-Archive -Path target/release/tagent-cli.exe -DestinationPath "tagent-${version}-windows-x86_64.zip"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           version="${{ github.ref_name }}"
-          tar -czf "tagent-${version}-linux-x86_64.tar.gz" -C target/release tagent
+          tar -czf "tagent-${version}-linux-x86_64.tar.gz" -C target/release tagent-cli
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

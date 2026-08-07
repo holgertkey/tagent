@@ -20,11 +20,10 @@ tagent          (library)   -- providers (trait + Google Translate impl), langua
                                 of its own.
 tagent-cli      (binary)    -- today's application: hotkeys, interactive terminal, CLI,
                                 config file, history, clipboard, platform integration.
-                                Package name "tagent-cli"; the built executable is
-                                still named "tagent" ([[bin]] name = "tagent" in
-                                tagent-cli/Cargo.toml), so target/release/tagent and
-                                existing docs/install instructions are unaffected.
-                                Depends on tagent = { path = "../tagent" }.
+                                Package name and [[bin]] name both "tagent-cli"
+                                (tagent-cli/Cargo.toml), so the built executable lands
+                                at target/release/tagent-cli. Depends on
+                                tagent = { path = "../tagent" }.
 tagent-gui      (binary)    -- Slint desktop GUI prototype. Depends on tagent only —
                                 deliberately not on tagent-cli, to avoid pulling in
                                 rustyline/rdev/x11/arboard/ctrlc and the whole

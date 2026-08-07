@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.14.0
+# Tagent Text Translator v0.15.0
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -78,14 +78,14 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 
 ## Download
 
-**Latest Release**: [Download tagent.exe](https://github.com/holgertkey/tagent/releases/latest)
+**Latest Release**: [Download tagent-cli.exe](https://github.com/holgertkey/tagent/releases/latest)
 
 All releases: https://github.com/holgertkey/tagent/releases
 
 ### Download & Setup
 1. Download the latest release
 2. Extract to your preferred directory
-3. Run `tagent.exe` to start unified mode
+3. Run `tagent-cli.exe` to start unified mode
 4. Configuration file will be created automatically in `%APPDATA%\Tagent\tagent.conf`
 
 ## Quick Start
@@ -93,7 +93,7 @@ All releases: https://github.com/holgertkey/tagent/releases
 ### Unified Mode (Recommended)
 ```bash
 # Start unified mode (no arguments)
-tagent.exe
+tagent-cli.exe
 ```
 This starts both:
 - **Interactive prompt** in the terminal
@@ -102,24 +102,24 @@ This starts both:
 ### CLI Mode
 ```bash
 # Translate a single word
-tagent hello
+tagent-cli hello
 
 # Translate a phrase
-tagent "Hello world"
+tagent-cli "Hello world"
 
 # Text-to-speech (speaks the text)
-tagent -s "Hello world"
-tagent --speech "Привет мир"
+tagent-cli -s "Hello world"
+tagent-cli --speech "Привет мир"
 
 # Translate with specific languages (names or codes)
-tagent -l German hello
-tagent -l en de "Hello world"
+tagent-cli -l German hello
+tagent-cli -l en de "Hello world"
 
 # Show help
-tagent --help
+tagent-cli --help
 
 # Show current configuration
-tagent --config
+tagent-cli --config
 ```
 
 ## Usage Guide
@@ -297,7 +297,7 @@ OUT: [Word]: кот
 ### Basic Translation
 ```bash
 # CLI
-tagent "How are you?"
+tagent-cli "How are you?"
 # Output: Как дела?
 
 # Interactive
@@ -308,7 +308,7 @@ tagent "How are you?"
 ### Dictionary Lookup
 ```bash
 # CLI
-tagent beautiful
+tagent-cli beautiful
 # Output:
 # Прилагательное
 #   красивый [прекрасный, красивая]
@@ -346,8 +346,8 @@ The notice is shown in the target language. Works with both minor typos ("violnt
 
 **CLI Mode**
 ```bash
-tagent -s "Hello, how are you?"
-tagent --speech "Привет, как дела?"
+tagent-cli -s "Hello, how are you?"
+tagent-cli --speech "Привет, как дела?"
 ```
 
 **Interactive Mode**
@@ -369,7 +369,7 @@ tagent --speech "Привет, как дела?"
 ### Configuration Management
 ```bash
 # Show current settings
-tagent --config
+tagent-cli --config
 
 # Output:
 # === Current Configuration ===
@@ -546,7 +546,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](../CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.14.0
+**Current Version**: v0.15.0
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -579,4 +579,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.14.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.15.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

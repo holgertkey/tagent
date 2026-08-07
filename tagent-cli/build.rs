@@ -42,8 +42,8 @@ fn build_windows_resources(version: &str) {
         )
         .set("FileVersion", &windows_version)
         .set("ProductVersion", &windows_version)
-        .set("OriginalFilename", "tagent.exe")
-        .set("InternalName", "tagent")
+        .set("OriginalFilename", "tagent-cli.exe")
+        .set("InternalName", "tagent-cli")
         // Compile the resource
         .compile()
         .expect("Failed to compile Windows resources");
