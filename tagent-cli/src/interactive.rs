@@ -201,8 +201,8 @@ impl InteractiveMode {
                 }
 
                 self.config_manager.set_languages(&target, &source);
-                let new_source_code = ConfigManager::language_to_code(&target);
-                let new_target_code = ConfigManager::language_to_code(&source);
+                let new_source_code = tagent::languages::name_to_code(&target);
+                let new_target_code = tagent::languages::name_to_code(&source);
                 println!(
                     "Languages swapped: {} ({}) -> {} ({})",
                     target, new_source_code, source, new_target_code
@@ -221,8 +221,8 @@ impl InteractiveMode {
             let source = ConfigManager::normalize_language(raw_source);
             let target = ConfigManager::normalize_language(raw_target);
 
-            let source_code = ConfigManager::language_to_code(&source);
-            let target_code = ConfigManager::language_to_code(&target);
+            let source_code = tagent::languages::name_to_code(&source);
+            let target_code = tagent::languages::name_to_code(&target);
 
             // Warn if language is completely unknown
             if source.to_lowercase() != "auto" && source_code == source.as_str() {

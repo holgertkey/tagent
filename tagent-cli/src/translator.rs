@@ -1,7 +1,7 @@
 use crate::config::{self, ConfigManager};
 use crate::platform::{ClipboardManager, WindowHandle, WindowManager};
-use crate::providers::{self, TranslationProvider};
 use rustyline::ExternalPrinter;
+use tagent::providers::{self, TranslationProvider};
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
@@ -14,27 +14,10 @@ type SharedPrinter = Arc<Mutex<Option<Box<dyn ExternalPrinter + Send>>>>;
 
 /// High-level translation orchestrator.
 ///
-/// `Translator` ties together a [`TranslationProvider`], the system clipboard,
-/// and optional window management to provide the full Tagent translation
-/// experience. For embedding in other applications, prefer [`Translator::new_cli`]
-/// which skips window management.
-///
-/// # Example
-///
-/// ```no_run
-/// use std::sync::Arc;
-/// use tagent::config::ConfigManager;
-/// use tagent::translator::Translator;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-///     let path = ConfigManager::get_default_config_path()?;
-///     let cm = Arc::new(ConfigManager::new(path.to_str().unwrap())?);
-///     let t = Translator::new_cli(cm)?;
-///     t.translate_text_public("Hello world", "auto", "en").await?;
-///     Ok(())
-/// }
-/// ```
+/// `Translator` ties together a [`TranslationProvider`] (from the [`tagent`] library
+/// crate), the system clipboard, and optional window management to provide the full
+/// Tagent translation experience. Use [`Translator::new_cli`] when window management
+/// is not needed (e.g. one-off CLI translations).
 #[derive(Clone)]
 pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
@@ -420,7 +403,7 @@ impl Translator {
     /// primary_translation: result from regular translate API, used as header in terminal mode
     fn format_dictionary_entry(
         &self,
-        entry: &crate::providers::DictionaryEntry,
+        entry: &tagent::providers::DictionaryEntry,
         target_lang: &str,
         cli_mode: bool,
         primary_translation: Option<&str>,
@@ -665,14 +648,14 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
-        self.provider.translate_text(text, from, to).await
+        Ok(self.provider.translate_text(text, from, to).await?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::DictionaryEntry;
+    use tagent::providers::DictionaryEntry;
 
     struct MockProvider {
         translation: String,
@@ -685,7 +668,7 @@ mod tests {
             _text: &str,
             _from: &str,
             _to: &str,
-        ) -> Result<String, Box<dyn Error + Send + Sync>> {
+        ) -> Result<String, tagent::error::Error> {
             Ok(self.translation.clone())
         }
 
@@ -694,20 +677,37 @@ mod tests {
             _word: &str,
             _from: &str,
             _to: &str,
-        ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>> {
+        ) -> Result<Option<DictionaryEntry>, tagent::error::Error> {
             Ok(None)
         }
 
-        async fn detect_language(
-            &self,
-            _text: &str,
-        ) -> Result<String, Box<dyn Error + Send + Sync>> {
+        async fn detect_language(&self, _text: &str) -> Result<String, tagent::error::Error> {
             Ok("en".to_string())
+        }
+
+        fn split_for_speech(&self, text: &str) -> Vec<String> {
+            vec![text.to_string()]
+        }
+
+        async fn speak_chunk(&self, _text: &str, _lang: &str) -> Result<Vec<u8>, tagent::error::Error> {
+            Ok(Vec::new())
         }
 
         fn name(&self) -> &str {
             "mock"
         }
+    }
+
+    #[test]
+    fn test_correction_notice_russian() {
+        let notice = Translator::correction_notice("violent", "ru");
+        assert_eq!(notice, "Показан перевод слова violent");
+    }
+
+    #[test]
+    fn test_correction_notice_english() {
+        let notice = Translator::correction_notice("violent", "en");
+        assert_eq!(notice, "Showing translation for word violent");
     }
 
     #[derive(Clone, Default)]

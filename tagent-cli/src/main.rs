@@ -2,7 +2,6 @@ mod cli;
 mod config;
 mod interactive;
 mod platform;
-mod providers;
 mod speech;
 mod translator;
 

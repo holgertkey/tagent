@@ -77,13 +77,13 @@ impl CliHandler {
                 // Determine if second arg is a known language (name or code)
                 let arg2 = &args[2];
                 let arg2_norm = ConfigManager::normalize_language(arg2);
-                let arg2_code = ConfigManager::language_to_code(&arg2_norm);
+                let arg2_code = tagent::languages::name_to_code(&arg2_norm);
                 let arg2_is_lang = arg2_code != arg2_norm.as_str() || arg2.to_lowercase() == "auto";
 
                 let (source, target, text_start_idx) = if args.len() >= 4 {
                     let arg3 = &args[3];
                     let arg3_norm = ConfigManager::normalize_language(arg3);
-                    let arg3_code = ConfigManager::language_to_code(&arg3_norm);
+                    let arg3_code = tagent::languages::name_to_code(&arg3_norm);
                     let arg3_is_lang =
                         arg3_code != arg3_norm.as_str() || arg3.to_lowercase() == "auto";
 
@@ -105,8 +105,8 @@ impl CliHandler {
                     let text_to_translate = args[text_start_idx..].join(" ");
                     self.translate_text(&text_to_translate).await
                 } else {
-                    let source_code = ConfigManager::language_to_code(&source);
-                    let target_code = ConfigManager::language_to_code(&target);
+                    let source_code = tagent::languages::name_to_code(&source);
+                    let target_code = tagent::languages::name_to_code(&target);
                     println!(
                         "Languages set: {} ({}) -> {} ({})",
                         source, source_code, target, target_code

@@ -1,5 +1,5 @@
+use crate::error::Error;
 use async_trait::async_trait;
-use std::error::Error;
 
 /// Google Translate provider implementation.
 pub mod google;
@@ -53,12 +53,7 @@ pub trait TranslationProvider: Send + Sync {
     ///
     /// `from` and `to` are BCP-47 language codes (e.g. `"en"`, `"ru"`).
     /// Pass `"auto"` for `from` to request automatic language detection.
-    async fn translate_text(
-        &self,
-        text: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<String, Box<dyn Error + Send + Sync>>;
+    async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Error>;
 
     /// Look up a single word in the provider's dictionary.
     ///
@@ -70,15 +65,28 @@ pub trait TranslationProvider: Send + Sync {
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Option<DictionaryEntry>, Error>;
 
     /// Detect the language of `text`.
     ///
     /// Returns a BCP-47 language code, e.g. `"en"`, `"ru"`, `"de"`.
-    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error + Send + Sync>>;
+    async fn detect_language(&self, text: &str) -> Result<String, Error>;
+
+    /// Split `text` into chunks small enough for a single [`speak_chunk`](Self::speak_chunk)
+    /// request, in playback order.
+    ///
+    /// Splitting is a pure, non-network operation so callers can fetch and play chunks
+    /// one at a time (e.g. to start audio playback before later chunks are fetched, or
+    /// to check a cancellation flag between chunks) rather than waiting on every chunk
+    /// up front.
+    fn split_for_speech(&self, text: &str) -> Vec<String>;
+
+    /// Synthesizes speech for a single chunk of `text` (as produced by
+    /// [`split_for_speech`](Self::split_for_speech)) in language `lang`, returning one
+    /// independently decodable audio clip.
+    async fn speak_chunk(&self, text: &str, lang: &str) -> Result<Vec<u8>, Error>;
 
     /// Human-readable provider name for display purposes (e.g. `"Google Translate"`).
-    #[allow(dead_code)]
     fn name(&self) -> &str;
 }
 
@@ -92,12 +100,34 @@ pub trait TranslationProvider: Send + Sync {
 ///
 /// # Errors
 ///
-/// Returns an error if `provider_name` does not match any known provider.
-pub fn create_provider(
-    provider_name: &str,
-) -> Result<Box<dyn TranslationProvider>, Box<dyn Error + Send + Sync>> {
+/// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider.
+pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvider>, Error> {
     match provider_name.to_lowercase().as_str() {
         "google" => Ok(Box::new(google::GoogleTranslateProvider::new())),
-        _ => Err(format!("Unknown translation provider: {}", provider_name).into()),
+        _ => Err(Error::UnknownProvider(provider_name.to_string())),
+    }
+}
+
+/// Resolves `from` to a concrete BCP-47 language code, calling
+/// [`TranslationProvider::detect_language`] when `from == "auto"`.
+///
+/// On detection failure, logs a warning to stderr and falls back to `"en"` rather
+/// than propagating the error, matching the best-effort behavior expected of
+/// language auto-detection in interactive contexts (e.g. before TTS playback).
+pub async fn resolve_source_language(
+    provider: &dyn TranslationProvider,
+    text: &str,
+    from: &str,
+) -> String {
+    if from == "auto" {
+        match provider.detect_language(text).await {
+            Ok(detected) => detected,
+            Err(e) => {
+                eprintln!("Language detection failed: {}, using 'en'", e);
+                "en".to_string()
+            }
+        }
+    } else {
+        from.to_string()
     }
 }

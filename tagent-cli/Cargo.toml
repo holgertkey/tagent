@@ -15,30 +15,24 @@ categories = ["command-line-utilities", "internationalization"]
 default = ["binary-resources"]
 binary-resources = []
 
-[lib]
-name = "tagent"
-path = "src/lib.rs"
-
 [[bin]]
 name = "tagent"
 path = "src/main.rs"
 
 [dependencies]
+tagent = { path = "../tagent" }
 # Cross-platform dependencies
-async-trait = "0.1"
 tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-url = "2.4"
 dirs = "5.0"
 colored = "2.1"
 rodio = { version = "0.21", features = ["symphonia-mp3"] }
-urlencoding = "2.1"
 arboard = "3.4"
 ctrlc = "3.4"
 rustyline = "18.0.1"
+
+[dev-dependencies]
+async-trait = "0.1"
 
 # Windows-only dependencies
 [target.'cfg(target_os = "windows")'.dependencies]

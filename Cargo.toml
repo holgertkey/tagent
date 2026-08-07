@@ -1,5 +1,5 @@
 [workspace]
-members = ["tagent-cli", "tagent-gui"]
+members = ["tagent", "tagent-cli", "tagent-gui"]
 resolver = "2"
 
 [profile.release]

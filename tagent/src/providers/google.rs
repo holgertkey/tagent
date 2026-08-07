@@ -1,24 +1,36 @@
 use super::{Definition, DictionaryEntry, PartOfSpeechEntry, TranslationProvider};
+use crate::error::Error;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
-use std::error::Error;
 use std::time::Duration;
 use url::form_urlencoded;
 
-/// Turns a timed-out request into a clear message instead of raw `reqwest::Error` text.
-/// reqwest's configured timeout spans the whole request (including body read), so this
-/// is applied at both the `.send()` and the following `.text()` call at each request site.
-fn map_request_error(e: reqwest::Error) -> Box<dyn Error + Send + Sync> {
-    if e.is_timeout() {
-        "Translation request timed out. Check your internet connection.".into()
-    } else {
-        Box::new(e)
+/// Base URL for Google's unofficial text-to-speech endpoint.
+const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
+/// Maximum characters accepted per TTS request; longer text must be split first
+/// via [`GoogleTranslateProvider::split_for_speech`].
+const MAX_TTS_TEXT_LENGTH: usize = 100;
+/// Shared User-Agent sent with every request to Google's translate/TTS endpoints.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+/// Rounds `index` down to the nearest UTF-8 character boundary in `s`.
+///
+/// Clamps to `s.len()` when `index` is out of range, so callers can pass an
+/// unclamped `start + MAX_TTS_TEXT_LENGTH` directly.
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
     }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
 }
 
 /// [`TranslationProvider`] implementation backed by the unofficial Google Translate
-/// web API (`translate.googleapis.com/translate_a/single`).
+/// web API (`translate.googleapis.com/translate_a/single`) and Google's unofficial
+/// text-to-speech endpoint (`translate.google.com/translate_tts`).
 pub struct GoogleTranslateProvider {
     client: Client,
 }
@@ -135,12 +147,7 @@ impl GoogleTranslateProvider {
 
 #[async_trait]
 impl TranslationProvider for GoogleTranslateProvider {
-    async fn translate_text(
-        &self,
-        text: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Error> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
@@ -157,19 +164,15 @@ impl TranslationProvider for GoogleTranslateProvider {
         let response = self
             .client
             .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
+            .header("User-Agent", USER_AGENT)
             .send()
-            .await
-            .map_err(map_request_error)?;
+            .await?;
 
         if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
+            return Err(Error::Api(format!("HTTP error: {}", response.status())));
         }
 
-        let body = response.text().await.map_err(map_request_error)?;
+        let body = response.text().await?;
 
         let json: Value = serde_json::from_str(&body)?;
 
@@ -183,12 +186,16 @@ impl TranslationProvider for GoogleTranslateProvider {
             }
 
             if result.is_empty() {
-                return Err("Failed to extract translation from response".into());
+                return Err(Error::Decode(
+                    "failed to extract translation from response".to_string(),
+                ));
             }
 
             Ok(result)
         } else {
-            Err("Invalid response format from Google Translate".into())
+            Err(Error::Decode(
+                "invalid response format from Google Translate".to_string(),
+            ))
         }
     }
 
@@ -197,7 +204,7 @@ impl TranslationProvider for GoogleTranslateProvider {
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<Option<DictionaryEntry>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<DictionaryEntry>, Error> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
@@ -214,19 +221,15 @@ impl TranslationProvider for GoogleTranslateProvider {
         let response = self
             .client
             .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
+            .header("User-Agent", USER_AGENT)
             .send()
-            .await
-            .map_err(map_request_error)?;
+            .await?;
 
         if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
+            return Err(Error::Api(format!("HTTP error: {}", response.status())));
         }
 
-        let body = response.text().await.map_err(map_request_error)?;
+        let body = response.text().await?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Try parsing dictionary from the primary response.
@@ -259,16 +262,12 @@ impl TranslationProvider for GoogleTranslateProvider {
             let retry_response = self
                 .client
                 .get(&retry_url)
-                .header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                )
+                .header("User-Agent", USER_AGENT)
                 .send()
-                .await
-                .map_err(map_request_error)?;
+                .await?;
 
             if retry_response.status().is_success() {
-                let retry_body = retry_response.text().await.map_err(map_request_error)?;
+                let retry_body = retry_response.text().await?;
                 let retry_json: Value = serde_json::from_str(&retry_body)?;
                 if let Some(mut entry) = self.parse_dictionary_response(&retry_json) {
                     // Override corrected_word with the explicit suggestion (more reliable
@@ -279,14 +278,17 @@ impl TranslationProvider for GoogleTranslateProvider {
                 // Retry succeeded but still no dictionary entries for the corrected
                 // word — a genuine "not found", not an error.
             } else {
-                return Err(format!("HTTP error on retry: {}", retry_response.status()).into());
+                return Err(Error::Api(format!(
+                    "HTTP error on retry: {}",
+                    retry_response.status()
+                )));
             }
         }
 
         Ok(None)
     }
 
-    async fn detect_language(&self, text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn detect_language(&self, text: &str) -> Result<String, Error> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
@@ -299,19 +301,15 @@ impl TranslationProvider for GoogleTranslateProvider {
         let response = self
             .client
             .get(&full_url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
+            .header("User-Agent", USER_AGENT)
             .send()
-            .await
-            .map_err(map_request_error)?;
+            .await?;
 
         if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()).into());
+            return Err(Error::Api(format!("HTTP error: {}", response.status())));
         }
 
-        let body = response.text().await.map_err(map_request_error)?;
+        let body = response.text().await?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Detected language is at index 2 in the response
@@ -321,6 +319,141 @@ impl TranslationProvider for GoogleTranslateProvider {
             eprintln!("Language detection: unexpected response shape, defaulting to 'en'");
             Ok("en".to_string())
         }
+    }
+
+    fn split_for_speech(&self, text: &str) -> Vec<String> {
+        // Text within the per-request limit is sent verbatim (preserving punctuation
+        // exactly as given) rather than run through sentence-splitting below, which
+        // trims and rejoins sentences and would otherwise alter short input.
+        if text.len() <= MAX_TTS_TEXT_LENGTH {
+            return vec![text.to_string()];
+        }
+
+        let mut chunks = Vec::new();
+        let mut current_chunk = String::new();
+
+        // Split by sentences first (by . ! ?)
+        let sentences: Vec<&str> = text
+            .split(['.', '!', '?'])
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+
+        for sentence in sentences {
+            let sentence = sentence.trim();
+
+            // If single sentence is too long, split by words
+            if sentence.len() > MAX_TTS_TEXT_LENGTH {
+                let words: Vec<&str> = sentence.split_whitespace().collect();
+                for word in words {
+                    // If word itself is too long, split it by character chunks
+                    if word.len() > MAX_TTS_TEXT_LENGTH {
+                        let mut word_start = 0;
+                        while word_start < word.len() {
+                            // A UTF-8 char is at most 4 bytes, so floor_char_boundary can only
+                            // roll back a few bytes from word_start + MAX_TTS_TEXT_LENGTH (100),
+                            // guaranteeing forward progress.
+                            let word_end =
+                                floor_char_boundary(word, word_start + MAX_TTS_TEXT_LENGTH);
+                            debug_assert!(word_end > word_start);
+                            let word_chunk = &word[word_start..word_end];
+
+                            if current_chunk.len() + word_chunk.len() + 1 > MAX_TTS_TEXT_LENGTH
+                                && !current_chunk.is_empty()
+                            {
+                                chunks.push(current_chunk.clone());
+                                current_chunk.clear();
+                            }
+                            if !current_chunk.is_empty() {
+                                current_chunk.push(' ');
+                            }
+                            current_chunk.push_str(word_chunk);
+                            word_start = word_end;
+                        }
+                    } else {
+                        if current_chunk.len() + word.len() + 1 > MAX_TTS_TEXT_LENGTH
+                            && !current_chunk.is_empty()
+                        {
+                            chunks.push(current_chunk.clone());
+                            current_chunk.clear();
+                        }
+                        if !current_chunk.is_empty() {
+                            current_chunk.push(' ');
+                        }
+                        current_chunk.push_str(word);
+                    }
+                }
+            } else {
+                // Check if adding this sentence would exceed limit
+                if current_chunk.len() + sentence.len() + 2 > MAX_TTS_TEXT_LENGTH
+                    && !current_chunk.is_empty()
+                {
+                    chunks.push(current_chunk.clone());
+                    current_chunk.clear();
+                }
+
+                if !current_chunk.is_empty() {
+                    current_chunk.push_str(". ");
+                }
+                current_chunk.push_str(sentence);
+            }
+        }
+
+        if !current_chunk.is_empty() {
+            chunks.push(current_chunk);
+        }
+
+        // If no chunks created, just split by max length
+        if chunks.is_empty() && !text.is_empty() {
+            let mut start = 0;
+            while start < text.len() {
+                // Same forward-progress guarantee as above: char boundaries are at most
+                // 3 bytes back from start + MAX_TTS_TEXT_LENGTH.
+                let end = floor_char_boundary(text, start + MAX_TTS_TEXT_LENGTH);
+                debug_assert!(end > start);
+                chunks.push(text[start..end].to_string());
+                start = end;
+            }
+        }
+
+        chunks
+    }
+
+    async fn speak_chunk(&self, text: &str, lang: &str) -> Result<Vec<u8>, Error> {
+        if text.is_empty() {
+            return Err(Error::EmptyText);
+        }
+
+        if text.len() > MAX_TTS_TEXT_LENGTH {
+            return Err(Error::TextTooLong {
+                len: text.len(),
+                max: MAX_TTS_TEXT_LENGTH,
+            });
+        }
+
+        let url = format!(
+            "{}?ie=UTF-8&client=tw-ob&q={}&tl={}",
+            TTS_API_URL,
+            urlencoding::encode(text),
+            lang
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api(format!(
+                "Google TTS API returned status: {}",
+                response.status()
+            )));
+        }
+
+        let audio_bytes = response.bytes().await?;
+
+        Ok(audio_bytes.to_vec())
     }
 
     fn name(&self) -> &str {
@@ -373,17 +506,85 @@ mod tests {
     }
 
     #[test]
-    fn test_correction_notice_russian() {
-        use crate::translator::Translator;
-        let notice = Translator::correction_notice("violent", "ru");
-        assert_eq!(notice, "Показан перевод слова violent");
+    fn test_split_text_short() {
+        let provider = GoogleTranslateProvider::new();
+        let text = "Hello world";
+        let chunks = provider.split_for_speech(text);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "Hello world");
     }
 
     #[test]
-    fn test_correction_notice_english() {
-        use crate::translator::Translator;
-        let notice = Translator::correction_notice("violent", "en");
-        assert_eq!(notice, "Showing translation for word violent");
+    fn test_split_text_long() {
+        let provider = GoogleTranslateProvider::new();
+        let text = "a".repeat(250);
+        let chunks = provider.split_for_speech(&text);
+        assert!(chunks.len() >= 3);
+        for chunk in chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn test_split_text_sentences() {
+        let provider = GoogleTranslateProvider::new();
+        let text = "First sentence. Second sentence. Third sentence.";
+        let chunks = provider.split_for_speech(text);
+        assert!(!chunks.is_empty());
+        for chunk in chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn test_floor_char_boundary_ascii() {
+        let s = "Hello world";
+        assert_eq!(floor_char_boundary(s, 5), 5);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        // "д" (Cyrillic) is a 2-byte character starting at byte offset 0.
+        let s = "дом";
+        // Index 1 is in the middle of "д" (bytes 0..2), so it must round down to 0.
+        assert_eq!(floor_char_boundary(s, 1), 0);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_out_of_range() {
+        let s = "hello";
+        assert_eq!(floor_char_boundary(s, 100), s.len());
+    }
+
+    #[test]
+    fn test_split_text_multibyte_no_whitespace() {
+        let provider = GoogleTranslateProvider::new();
+        // Cyrillic text longer than MAX_TTS_TEXT_LENGTH bytes with no whitespace/punctuation.
+        let text = "слово".repeat(30);
+        let chunks = provider.split_for_speech(&text);
+
+        assert!(!chunks.is_empty());
+        let mut rebuilt = String::new();
+        for chunk in &chunks {
+            assert!(!chunk.is_empty());
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+            rebuilt.push_str(chunk);
+        }
+        assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn test_split_text_mixed_ascii_multibyte() {
+        let provider = GoogleTranslateProvider::new();
+        let text =
+            "Hello мир this is тест of mixed текст content здесь and more слов to pad it out";
+        let chunks = provider.split_for_speech(text);
+
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
     }
 
     /// Integration test: checks that both spell-correction scenarios work end-to-end.
@@ -449,7 +650,7 @@ mod tests {
         let err = result.expect_err("request to a non-routable address should fail");
         assert!(err.is_timeout(), "expected a timeout error, got: {:?}", err);
 
-        let mapped = map_request_error(err);
+        let mapped: Error = err.into();
         assert!(mapped.to_string().contains("timed out"));
     }
 
@@ -499,5 +700,21 @@ mod tests {
             .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "fr");
+    }
+
+    #[test]
+    fn test_speak_chunk_rejects_text_over_limit() {
+        let provider = GoogleTranslateProvider::new();
+        let text = "a".repeat(MAX_TTS_TEXT_LENGTH + 1);
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(provider.speak_chunk(&text, "en"));
+        match result {
+            Err(Error::TextTooLong { len, max }) => {
+                assert_eq!(len, text.len());
+                assert_eq!(max, MAX_TTS_TEXT_LENGTH);
+            }
+            other => panic!("expected TextTooLong, got {:?}", other),
+        }
     }
 }

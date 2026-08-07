@@ -595,9 +595,9 @@ async fn speak_clipboard(
 
     let (source_code, _) = config_manager.get_language_codes();
     let speech_manager = SpeechManager::new();
-    let lang_code = speech_manager
-        .detect_speech_language(&text, &source_code, &config.translate_provider)
-        .await;
+    let provider = tagent::providers::create_provider(&config.translate_provider)?;
+    let lang_code =
+        tagent::providers::resolve_source_language(provider.as_ref(), &text, &source_code).await;
 
     print!("\r");
     io::stdout().flush().ok();
@@ -605,7 +605,7 @@ async fn speak_clipboard(
     SpeechManager::print_speech_label(&text, Some(&config.target_prompt_color));
 
     if let Err(e) = speech_manager
-        .speak_text_with_cancel(&text, &lang_code, stop_flag)
+        .speak_text_with_cancel(provider.as_ref(), &text, &lang_code, stop_flag)
         .await
     {
         eprintln!("Speech error: {}", e);
