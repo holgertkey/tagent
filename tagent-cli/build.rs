@@ -48,12 +48,14 @@ fn build_windows_resources(version: &str) {
         .compile()
         .expect("Failed to compile Windows resources");
 
-    // cargo:rustc-link-lib only applies to a [lib] target (this crate has none).
-    // Windows resources must be linked directly into the final executable, so we
-    // pass resource.lib explicitly via cargo:rustc-link-arg-bins, which targets
-    // [[bin]] targets specifically.
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    println!("cargo:rustc-link-arg-bins={}/resource.lib", out_dir);
+    // No manual link step needed here: `.compile()` already emits
+    // `cargo:rustc-link-lib=static=resource` + `cargo:rustc-link-search=native=...`.
+    // Cargo scopes those to the package's [lib] target only when one exists; this
+    // crate has none (the translation logic lives in the separate `tagent` library
+    // crate), so Cargo falls back to applying them directly to the [[bin]] target.
+    // Adding an explicit `cargo:rustc-link-arg-bins=.../resource.lib` on top of that
+    // linked resource.lib twice and caused CVTRES error CVT1100 (duplicate VERSION
+    // resource) at link time.
 }
 
 /// Synchronize version in documentation files (README.md, CLAUDE.md, CHANGELOG.md)
@@ -199,6 +201,30 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(content.as_bytes()).unwrap();
         path
+    }
+
+    #[test]
+    fn windows_resource_link_is_not_manually_duplicated() {
+        // Regression test: winres's `.compile()` already emits
+        // `cargo:rustc-link-lib=static=resource` + `cargo:rustc-link-search=native=...`.
+        // Since this crate has no [lib] target, Cargo applies those directly to the
+        // [[bin]] target automatically (see the Cargo book: link directives are scoped
+        // to the [lib] target only when one exists). A manual
+        // `cargo:rustc-link-arg-bins=.../resource.lib` (or the older, pre-library-split
+        // `cargo:rustc-link-arg=.../resource.lib`) on top of that linked resource.lib
+        // twice and broke the Windows link step with
+        // `CVTRES : fatal error CVT1100: duplicate resource. type:VERSION`.
+        // Built from pieces (rather than one literal) so this check doesn't trip on its
+        // own doc comments above, which quote the forbidden directive as prose; the
+        // split point is chosen so it matches both the `-bins` and non-`-bins` forms.
+        let forbidden_call = ["println!(\"cargo:rustc-link-", "arg"].concat();
+        let source = include_str!("build.rs");
+        assert!(
+            !source.contains(&forbidden_call),
+            "a manual rustc-link-arg(-bins) directive for resource.lib duplicates \
+             winres's own automatic link directives now that this crate has no [lib] \
+             target, and breaks the Windows link step (CVT1100)"
+        );
     }
 
     #[test]
