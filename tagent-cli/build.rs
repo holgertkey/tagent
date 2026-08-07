@@ -62,7 +62,7 @@ fn sync_version_in_docs(version: &str) {
     // Files to update with version patterns
     let files = vec![
         (
-            "../README.md",
+            "README.md",
             vec![
                 ("# Tagent Text Translator v", "\n"),
                 ("**Current Version**: v", "\n"),

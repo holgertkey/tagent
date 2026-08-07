@@ -4,6 +4,7 @@ version = "0.13.0"
 edition = "2021"
 description = "Tagent GUI — cross-platform text translator with Slint"
 publish = false
+readme = "README.md"
 build = "build.rs"
 
 [[bin]]

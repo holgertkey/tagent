@@ -7,7 +7,7 @@ authors = ["Holgert K"]
 license = "MIT"
 repository = "https://github.com/holgertkey/tagent"
 homepage = "https://github.com/holgertkey/tagent"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["translation", "translate", "dictionary", "tts"]
 categories = ["internationalization"]
 

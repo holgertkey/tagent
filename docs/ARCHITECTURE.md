@@ -206,18 +206,22 @@ and:
 1. Reads the version from `tagent-cli/Cargo.toml` (`CARGO_PKG_VERSION`, format
    `MAJOR.MINOR.PATCH[+BUILD]`).
 2. `sync_version_in_docs()`: pattern-matches and rewrites version strings in
-   `../README.md`, `../CLAUDE.md`, and `../CHANGELOG.md` — paths are relative to
-   `tagent-cli/` (the package's manifest dir, where `build.rs` actually runs from),
-   *not* the workspace root, since these three files live at the workspace root, one
-   level up from the package. Skips the write if the value is already current, to avoid
-   needless rebuilds/timestamp churn. The `CHANGELOG.md` pattern explicitly skips over
-   a `## [Unreleased]` header — see `update_version_in_file`'s `Unreleased]` guard — so
-   it never overwrites that section's content when scanning forward for the next
-   `] - ` (regression-tested in `build.rs`'s own `#[cfg(test)]` module). **Silent
-   failure mode**: if any of these three relative paths is wrong, `update_version_in_file`
-   just returns `Ok(())` and skips that file — no build error, no warning. Verify a
-   version-bump build actually touched the docs by diffing them, not by the build
-   succeeding.
+   `tagent-cli/README.md` (its own package-local README, since the move to a
+   three-crate workspace — see "Workspace layout" above), `../CLAUDE.md`, and
+   `../CHANGELOG.md` — the latter two paths are relative to `tagent-cli/` (the
+   package's manifest dir, where `build.rs` actually runs from), *not* the workspace
+   root, since those two files live at the workspace root, one level up from the
+   package. (The thin root `README.md` and the new `tagent/README.md` /
+   `tagent-gui/README.md` are version-agnostic signposts — none of them contain a
+   version string, so none are build.rs sync targets.) Skips the write if the value is
+   already current, to avoid needless rebuilds/timestamp churn. The `CHANGELOG.md`
+   pattern explicitly skips over a `## [Unreleased]` header — see
+   `update_version_in_file`'s `Unreleased]` guard — so it never overwrites that
+   section's content when scanning forward for the next `] - ` (regression-tested in
+   `build.rs`'s own `#[cfg(test)]` module). **Silent failure mode**: if any of these
+   relative paths is wrong, `update_version_in_file` just returns `Ok(())` and skips
+   that file — no build error, no warning. Verify a version-bump build actually touched
+   the docs by diffing them, not by the build succeeding.
 3. On Windows only, when the `binary-resources` feature is active, embeds the app icon
    (`../assets/icons/taa_256.ico`, also relative to `tagent-cli/`) and version resource
    via `winres`.
