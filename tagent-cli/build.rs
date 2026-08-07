@@ -28,7 +28,7 @@ fn build_windows_resources(version: &str) {
 
     WindowsResource::new()
         // Set the main icon (shows in file explorer, taskbar, etc.)
-        .set_icon("../assets/icons/taa_256.ico")
+        .set_icon("assets/icons/taa_256.ico")
         // Set application information
         .set("ProductName", "Text Agent Translator")
         .set(

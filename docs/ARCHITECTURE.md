@@ -222,7 +222,7 @@ and:
    that file — no build error, no warning. Verify a version-bump build actually touched
    the docs by diffing them, not by the build succeeding.
 3. On Windows only, when the `binary-resources` feature is active, embeds the app icon
-   (`../assets/icons/taa_256.ico`, also relative to `tagent-cli/`) and version resource
+   (`assets/icons/taa_256.ico`, inside the `tagent-cli/` package itself) and version resource
    via `winres`.
 
 There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`

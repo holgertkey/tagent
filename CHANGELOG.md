@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0] - 2026-08-07
+## [0.16.0+001] - 2026-08-07
 
 ### Changed
 - **BREAKING: config/history directory and config file renamed from `Tagent`/`tagent.conf` to `tagent-cli`/`tagent-cli.conf`.** New paths: `%APPDATA%\tagent-cli\tagent-cli.conf` on Windows, `~/.config/tagent-cli/tagent-cli.conf` on Linux/macOS (history at the equivalent data dir, e.g. `~/.local/share/tagent-cli/translation_history.txt`). No automatic migration — the app will not find an existing config/history at the old `Tagent` location and will create fresh defaults at the new path. Users who want to keep existing settings/history must manually copy the old directory's contents to the new location. `tagent-gui`'s inline config reader updated to match the new path so it keeps reading the same shared config file as `tagent-cli`.
+- **Moved `assets/` into `tagent-cli/`** (`tagent-cli/assets/icons/taa_256.ico`): the Windows icon asset lived at the workspace root even though only `tagent-cli/build.rs` uses it. `build.rs`'s `set_icon` path updated from `../assets/...` to `assets/...` accordingly. No functional change — the icon is still embedded the same way in Windows builds.
 
 ## [0.15.0] - 2026-08-07
 
