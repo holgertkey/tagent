@@ -131,11 +131,16 @@ fn update_version_in_file(
             if old_version != new_version {
                 updated_content.replace_range(search_start..full_end_pos, new_version);
                 changed = true;
-                search_from = search_start + new_version.len();
-            } else {
-                // Break to avoid infinite loop when version matches
-                break;
             }
+
+            // This is the current (topmost, non-Unreleased) match for this pattern —
+            // stop here regardless of whether it needed updating. Every other
+            // occurrence further down the file (e.g. older CHANGELOG headers) is
+            // historical and must never be touched by a version sync. Previously this
+            // only broke on the "already current" branch and kept scanning after an
+            // actual replacement, which cascaded through the entire file rewriting
+            // every historical version header to the new version.
+            break;
         }
     }
 
@@ -233,6 +238,74 @@ mod tests {
             "the real version header must still get updated, got:\n{}",
             updated
         );
+    }
+
+    #[test]
+    fn changelog_historical_headers_below_the_current_one_are_not_touched() {
+        // Regression test for the cascade-corruption bug: after updating the topmost
+        // (non-Unreleased) header, the loop used to keep scanning and rewrite every
+        // subsequent "## [OLD_VERSION] - DATE" header to the new version too, since
+        // each one's old version also didn't match new_version. Reproduced live
+        // multiple times against the real CHANGELOG.md before this fix.
+        let path = write_temp_file(
+            "cascade",
+            "# Changelog\n\n\
+             ## [Unreleased]\n\n\
+             ## [0.14.0] - 2026-08-07\n\n\
+             ### Changed\n\
+             - Current release notes.\n\n\
+             ## [0.13.0+003] - 2026-08-05\n\n\
+             ### Fixed\n\
+             - Old fix from a previous release.\n\n\
+             ## [0.13.0+001] - 2026-01-06\n\n\
+             ### Added\n\
+             - Even older entry.\n",
+        );
+
+        update_version_in_file(path.to_str().unwrap(), "0.15.0", &[("## [", "] - ")]).unwrap();
+
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert!(
+            updated.contains("## [0.15.0] - 2026-08-07"),
+            "topmost real header must be updated to the new version, got:\n{}",
+            updated
+        );
+        assert!(
+            updated.contains("## [0.13.0+003] - 2026-08-05"),
+            "older historical header must survive untouched, got:\n{}",
+            updated
+        );
+        assert!(
+            updated.contains("## [0.13.0+001] - 2026-01-06"),
+            "oldest historical header must survive untouched, got:\n{}",
+            updated
+        );
+    }
+
+    #[test]
+    fn changelog_historical_headers_survive_when_topmost_already_current() {
+        // The round-trip variant of the cascade bug: even when the topmost header
+        // already matches new_version (so the "already current" branch breaks
+        // immediately), a stale build could still have left older headers rewritten
+        // from a *previous* buggy run. This just confirms the no-op path never
+        // touches anything below the topmost match.
+        let path = write_temp_file(
+            "cascade_nochange",
+            "## [Unreleased]\n\n\
+             ## [0.15.0] - 2026-08-07\n\n\
+             ## [0.13.0+003] - 2026-08-05\n\n\
+             ## [0.13.0+001] - 2026-01-06\n",
+        );
+
+        update_version_in_file(path.to_str().unwrap(), "0.15.0", &[("## [", "] - ")]).unwrap();
+
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+
+        assert!(updated.contains("## [0.13.0+003] - 2026-08-05"));
+        assert!(updated.contains("## [0.13.0+001] - 2026-01-06"));
     }
 
     #[test]

@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0+001] - 2026-08-07
+## [0.16.0+002] - 2026-08-07
 
 ### Changed
 - **BREAKING: config/history directory and config file renamed from `Tagent`/`tagent.conf` to `tagent-cli`/`tagent-cli.conf`.** New paths: `%APPDATA%\tagent-cli\tagent-cli.conf` on Windows, `~/.config/tagent-cli/tagent-cli.conf` on Linux/macOS (history at the equivalent data dir, e.g. `~/.local/share/tagent-cli/translation_history.txt`). No automatic migration — the app will not find an existing config/history at the old `Tagent` location and will create fresh defaults at the new path. Users who want to keep existing settings/history must manually copy the old directory's contents to the new location. `tagent-gui`'s inline config reader updated to match the new path so it keeps reading the same shared config file as `tagent-cli`.
 - **Moved `assets/` into `tagent-cli/`** (`tagent-cli/assets/icons/taa_256.ico`): the Windows icon asset lived at the workspace root even though only `tagent-cli/build.rs` uses it. `build.rs`'s `set_icon` path updated from `../assets/...` to `assets/...` accordingly. No functional change — the icon is still embedded the same way in Windows builds.
+
+### Fixed
+- **`build.rs`'s version sync mass-corrupted historical CHANGELOG headers on a version change** (`tagent-cli/build.rs`): `update_version_in_file`'s scan loop only stopped (`break`) when it found a header whose version already matched the new one; after an actual replacement it kept scanning forward instead of stopping, so every historical `## [OLD_VERSION] - DATE` header below the topmost one got silently overwritten with the new version too — cascading through the entire file's history in one build. Reproduced live several times this session (each version bump required manually pre-syncing the topmost header to dodge it). Fixed by always breaking after handling the first non-`Unreleased` match, regardless of whether it needed updating — every synced pattern (in `README.md`, `CLAUDE.md`, `CHANGELOG.md`) only has one "current" location; anything further down is historical and must never be touched. Added two regression tests (`changelog_historical_headers_below_the_current_one_are_not_touched`, `changelog_historical_headers_survive_when_topmost_already_current`) to `build.rs`'s own test module, and verified with a live round-trip (bump → build → revert → build) against the real CHANGELOG.md producing a byte-for-byte clean diff.
 
 ## [0.15.0] - 2026-08-07
 
