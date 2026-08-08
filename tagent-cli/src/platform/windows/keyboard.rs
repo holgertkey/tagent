@@ -18,16 +18,20 @@ static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
 
 /// The set of (normalized) modifier vk codes used by any currently-configured
-/// `ModifierCombo` hotkey (translate and/or speech). Computed once in
-/// `KeyboardHook::new` -- hotkey configuration is fixed for the process lifetime (see
-/// module docs: "restart required" for hotkey changes), so this never needs to change
-/// afterwards. Drives the swallow-and-replay handling in `keyboard_hook_proc`: a keydown
-/// for a vk in this set is intercepted centrally instead of reaching `HotkeyState::handle`.
+/// `ModifierCombo` hotkey (translate and/or speech), of *any* modifier family (Alt, Ctrl,
+/// Shift, Win). Computed once in `KeyboardHook::new` -- hotkey configuration is fixed for
+/// the process lifetime (see module docs: "restart required" for hotkey changes), so this
+/// never needs to change afterwards. Drives which keydowns/keyups are intercepted
+/// centrally (`handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup`) instead of
+/// reaching `HotkeyState::handle`, so `MODIFIER_STATE` stays accurate for every combo
+/// modifier -- not just the ones that additionally get swallow-and-replay (see
+/// `needs_swallow_and_replay`, which narrows that down to `Alt` alone).
 static COMBO_MODIFIER_VKS: OnceLock<HashSet<u32>> = OnceLock::new();
 
 /// Per-modifier bookkeeping for the swallow-and-replay mechanism (see module docs on
-/// `keyboard_hook_proc` for the full state machine). Keyed by normalized vk code, shared
-/// across translate and speech hotkeys since both may swallow the same physical Alt.
+/// `keyboard_hook_proc` for the full state machine). Keyed by normalized vk code. In
+/// practice only ever holds `Alt` entries -- see `needs_swallow_and_replay` -- but keyed
+/// generically rather than hardcoded to one constant in case that ever needs to widen.
 static MODIFIER_REPLAY: OnceLock<Arc<Mutex<HashMap<u32, ModifierReplay>>>> = OnceLock::new();
 
 // Hotkey state instances for translate and speech
@@ -248,18 +252,28 @@ impl HotkeyState {
 /// a Win32 message loop. All state is process-global (`OnceLock` statics) because the
 /// hook callback is a plain `extern "system" fn` with no user-data pointer.
 ///
-/// `ModifierCombo` hotkeys (e.g. `Alt+Q`) are detected entirely within the hook itself,
-/// via a swallow-and-replay mechanism (see `keyboard_hook_proc`, `handle_combo_modifier_keydown`,
-/// `resolve_combo_modifier_keyup`): a combo's modifier keys are blocked from reaching the
-/// foreground app the instant they're pressed, and either consumed (if the combo
-/// completes) or transparently replayed as synthetic input (if it doesn't -- a bare tap,
-/// or some other shortcut like Alt-Tab/Alt+F4). This intentionally does not use
-/// `RegisterHotKey`: that API only suppresses the final trigger key, never the modifier
-/// itself, so the modifier's raw keydown always reached the foreground window first --
-/// which is what put apps like Word/Chrome/Notepad into a menu-tracking mode that ate the
-/// simulated Ctrl+C in `ClipboardManager::copy_selected_text` no matter what was done to
-/// clean up afterwards. Blocking the modifier at the source avoids that class of problem
-/// entirely, at the cost of needing to replay it convincingly when it wasn't ours.
+/// `ModifierCombo` hotkeys (e.g. `Alt+Q`) are detected entirely within the hook itself.
+/// Every combo modifier's keydown/keyup is intercepted centrally to keep `MODIFIER_STATE`
+/// accurate (see `handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup`), but only
+/// `Alt` additionally gets swallow-and-replay treatment (`needs_swallow_and_replay`): its
+/// keydown is blocked from reaching the foreground app the instant it's pressed, and
+/// either consumed (if the combo completes) or transparently replayed as synthetic input
+/// (if it doesn't -- a bare tap, or some other shortcut like Alt-Tab/Alt+F4). Ctrl/Shift/
+/// Win are tracked the same way but never blocked -- they don't share Alt's Win32-level
+/// side effect (see below), so blocking them would only add risk for no benefit; confirmed
+/// by comparison with QTranslate, which simulates Ctrl+C with zero interception and has no
+/// equivalent bug reports.
+///
+/// This intentionally does not use `RegisterHotKey` for the modifier: that API only
+/// suppresses the final trigger key, never the modifier itself, so the modifier's raw
+/// keydown always reached the foreground window first -- which is what put apps like
+/// Word/Chrome/Notepad into a menu-tracking mode that ate the simulated Ctrl+C in
+/// `ClipboardManager::copy_selected_text` no matter what was done to clean up afterwards.
+/// That menu-tracking mode is specifically an `Alt` (and `F10`, never used as a
+/// `ModifierCombo` modifier here) thing in Win32 -- holding Alt is what routes the next
+/// key through `WM_SYSKEYDOWN` handling; `Ctrl`/`Shift`/`Win` have no equivalent. Blocking
+/// Alt at the source avoids that class of problem entirely, at the cost of needing to
+/// replay it convincingly when it wasn't ours.
 ///
 /// **Confirmed working end-to-end (v0.16.0+007)**: Word/Chrome/Notepad copy correctly via
 /// `Alt+Q`, and Alt-Tab/Alt+F4/the system menu are unaffected. Getting here took five
@@ -272,6 +286,10 @@ impl HotkeyState {
 /// - **Never go back to unconditionally blocking a modifier for as long as it's held**
 ///   (i.e. no replay). That's what `0.12.0+004` fixed -- it broke Alt-Tab/Alt+F4/the
 ///   system menu system-wide for the whole time tagent was running.
+/// - **Don't widen `needs_swallow_and_replay` beyond `Alt` without a concrete, reproduced
+///   bug report for a specific other modifier.** Ctrl/Shift/Win have no known Win32 side
+///   effect that swallow-and-replay would fix; widening "to be safe" only adds untested
+///   risk.
 /// - **The `LLKHF_INJECTED` early-return at the top of `keyboard_hook_proc` must stay
 ///   the very first check**, before any combo/modifier logic. It's what makes this
 ///   module's own `SendInput` replays (`replay_key`/`replay_keydown_only`) safe against
@@ -464,8 +482,9 @@ impl KeyboardHook {
 }
 
 /// Returns whether `normalized_vk` is a modifier used by any active `ModifierCombo`
-/// hotkey -- i.e. whether its keydown/keyup should go through the central
-/// swallow-and-replay path instead of `HotkeyState::handle`.
+/// hotkey -- i.e. whether its keydown/keyup should go through the central bookkeeping
+/// path (`handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup`) instead of
+/// `HotkeyState::handle`, to keep `MODIFIER_STATE` up to date.
 fn is_combo_modifier(normalized_vk: u32) -> bool {
     COMBO_MODIFIER_VKS
         .get()
@@ -473,10 +492,24 @@ fn is_combo_modifier(normalized_vk: u32) -> bool {
         .unwrap_or(false)
 }
 
-/// Central bookkeeping for a combo-modifier keydown. Updates `MODIFIER_STATE` (so
-/// `HotkeyState::handle`'s `ModifierCombo` check sees it as pressed) and starts
-/// swallowing it if this is a fresh press. Returns true if the event should be blocked
-/// from reaching the foreground app.
+/// Returns whether `normalized_vk` needs the swallow-and-replay treatment at all, as
+/// opposed to plain state tracking. Only `Alt` gets it: per Win32, holding Alt (or
+/// pressing F10, never usable as a `ModifierCombo` modifier here) is what routes the
+/// *next* key through `WM_SYSKEYDOWN`/menu-tracking handling and can leave the foreground
+/// window in a state that swallows a simulated Ctrl+C -- see the `KeyboardHook` doc
+/// comment for the full history. `Ctrl`/`Shift`/`Win` have no such side effect (confirmed
+/// by comparison with QTranslate, which simulates Ctrl+C with zero interception and has
+/// no equivalent bug reports), so swallowing them too would only add risk -- extra
+/// `SendInput` replays, extra state-machine edges -- for a problem they don't have.
+fn needs_swallow_and_replay(normalized_vk: u32) -> bool {
+    normalized_vk == super::keycodes::KEY_ALT
+}
+
+/// Central bookkeeping for a combo-modifier keydown. Always updates `MODIFIER_STATE` (so
+/// `HotkeyState::handle`'s `ModifierCombo` check sees it as pressed). For `Alt`
+/// specifically (see `needs_swallow_and_replay`), also starts swallowing it if this is a
+/// fresh press. Returns true if the event should be blocked from reaching the foreground
+/// app.
 ///
 /// `normalized_vk` is used as the tracking key (matching `HotkeyParser`'s normalized
 /// modifier codes); `raw_vk` is the specific L/R vk code actually observed, kept around
@@ -495,6 +528,11 @@ fn handle_combo_modifier_keydown(normalized_vk: u32, raw_vk: u32) -> bool {
         if let Ok(mut state) = modifier_state.lock() {
             state.insert(normalized_vk, true);
         }
+    }
+
+    if !needs_swallow_and_replay(normalized_vk) {
+        // Ctrl/Shift/Win: tracked above for combo completion, never blocked.
+        return false;
     }
 
     if !was_down {
@@ -577,15 +615,21 @@ unsafe fn replay_pending_swallowed_modifiers() {
     }
 }
 
-/// Central bookkeeping for a combo-modifier keyup. Updates `MODIFIER_STATE` and resolves
-/// whatever `ModifierReplay` state this hold ended up in, without performing the actual
-/// `SendInput` replay -- see `apply_combo_modifier_keyup_action` for that, kept separate
-/// so this decision can be unit-tested without side effects on the real system.
+/// Central bookkeeping for a combo-modifier keyup. Always updates `MODIFIER_STATE`; for
+/// `Alt` (see `needs_swallow_and_replay`) also resolves whatever `ModifierReplay` state
+/// this hold ended up in, without performing the actual `SendInput` replay -- see
+/// `apply_combo_modifier_keyup_action` for that, kept separate so this decision can be
+/// unit-tested without side effects on the real system. Ctrl/Shift/Win always resolve to
+/// `PassThrough` since they were never blocked in the first place.
 fn resolve_combo_modifier_keyup(normalized_vk: u32) -> ModifierKeyupAction {
     if let Some(modifier_state) = MODIFIER_STATE.get() {
         if let Ok(mut state) = modifier_state.lock() {
             state.insert(normalized_vk, false);
         }
+    }
+
+    if !needs_swallow_and_replay(normalized_vk) {
+        return ModifierKeyupAction::PassThrough;
     }
 
     let resolved = MODIFIER_REPLAY
@@ -1091,5 +1135,83 @@ mod tests {
 
         assert!(is_combo_modifier(super::super::keycodes::KEY_ALT));
         assert!(!is_combo_modifier(super::super::keycodes::KEY_CONTROL));
+    }
+
+    // Regression tests for the Alt-only scoping of swallow-and-replay: Ctrl/Shift/Win
+    // don't share Alt's Win32 menu-tracking side effect, so a combo using them (e.g.
+    // Ctrl+Shift+T) must never have its modifiers blocked -- only tracked, exactly like
+    // before this mechanism existed.
+
+    #[test]
+    fn test_needs_swallow_and_replay_is_true_only_for_alt() {
+        assert!(needs_swallow_and_replay(super::super::keycodes::KEY_ALT));
+        assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_CONTROL));
+        assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_SHIFT));
+        assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_LWIN));
+    }
+
+    #[test]
+    fn test_non_alt_modifier_keydown_is_never_blocked() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
+
+        let ctrl = super::super::keycodes::KEY_CONTROL;
+        let fresh_press_blocked = handle_combo_modifier_keydown(ctrl, ctrl);
+        assert!(
+            !fresh_press_blocked,
+            "Ctrl has no menu-tracking side effect and must pass through unblocked"
+        );
+        // Auto-repeat while held must also stay unblocked.
+        let repeat_blocked = handle_combo_modifier_keydown(ctrl, ctrl);
+        assert!(!repeat_blocked);
+
+        // State tracking must still work, so a Ctrl+Shift+T-style combo can complete.
+        let is_down = MODIFIER_STATE
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .get(&ctrl)
+            .copied();
+        assert_eq!(is_down, Some(true));
+    }
+
+    #[test]
+    fn test_non_alt_modifier_keyup_is_always_passthrough() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
+
+        let shift = super::super::keycodes::KEY_SHIFT;
+        handle_combo_modifier_keydown(shift, shift);
+
+        let action = resolve_combo_modifier_keyup(shift);
+        assert_eq!(
+            action,
+            ModifierKeyupAction::PassThrough,
+            "a bare Shift tap must never trigger a synthetic replay"
+        );
+
+        // Nothing should have been left behind in MODIFIER_REPLAY for a non-Alt modifier.
+        let replay = MODIFIER_REPLAY.get().unwrap().lock().unwrap();
+        assert!(!replay.contains_key(&shift));
+    }
+
+    #[test]
+    fn test_multi_modifier_combo_with_non_alt_modifiers_still_fires() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
+        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let ctrl = super::super::keycodes::KEY_CONTROL;
+        let shift = super::super::keycodes::KEY_SHIFT;
+        handle_combo_modifier_keydown(ctrl, ctrl);
+        handle_combo_modifier_keydown(shift, shift);
+
+        let hotkey = HotkeyParser::parse("Ctrl+Shift+T").unwrap();
+        let state = HotkeyState::new(Some(hotkey));
+
+        let triggered = state.handle('T' as u32, true, test_trigger_fn);
+        assert!(triggered, "Ctrl+Shift+T must still fire via plain state tracking");
+        assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 }
