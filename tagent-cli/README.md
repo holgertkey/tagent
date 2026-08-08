@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+009
+# Tagent Text Translator v0.16.0+010
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -180,7 +180,7 @@ SourceLanguage = Auto
 TargetLanguage = Russian
 
 ; Copy results to clipboard automatically
-CopyToClipboard = true
+CopyToClipboard = false
 
 [Dictionary]
 ; Show detailed word information for single words
@@ -546,7 +546,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](../CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+009
+**Current Version**: v0.16.0+010
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -579,4 +579,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+009** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+010** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

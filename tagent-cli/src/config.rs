@@ -75,7 +75,7 @@ impl Default for Config {
             auto_hide_terminal_seconds: 3,
             show_dictionary: true,
             spell_check: true,
-            copy_to_clipboard: true,
+            copy_to_clipboard: false,
             save_translation_history: false,
             history_file: default_history,
             target_prompt_color: "BrightYellow".to_string(), // Default bright yellow for target
@@ -197,7 +197,7 @@ impl ConfigManager {
 ; Usage:
 ; 1. Select text in any application
 ; 2. Press the translation hotkey (default: Alt+Q)
-; 3. Translation will be copied to clipboard
+; 3. Translation will be shown (enable CopyToClipboard below to also copy it)
 ; 4. Type /q or /e in the interactive prompt to exit the program
 ;
 ; Configuration changes take effect immediately (no restart required)
@@ -396,7 +396,7 @@ EnableSpeechHotkey = {}
                     .and_then(|section| section.get("CopyToClipboard"))
             })
             .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
+            .unwrap_or(false);
 
         let save_translation_history = parsed_config
             .get("History")

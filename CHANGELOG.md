@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0+009] - 2026-08-08
+## [0.16.0+010] - 2026-08-08
 
 ### Changed
+- **`CopyToClipboard` now defaults to `false`** (`config.rs`): both `Config::default()` and the fallback used when an existing config file omits the key now default to not copying translations to the clipboard automatically; users who want the old behavior can set `CopyToClipboard = true` under `[Interface]`.
 - **Swallow-and-replay (`0.16.0+007` below) now only applies to `Alt`** (`platform/windows/keyboard.rs`): `ModifierCombo` keydown/keyup for every modifier family was being routed through the swallow-and-replay state machine, even though only `Alt` has the underlying Win32 side effect (menu-tracking via `WM_SYSKEYDOWN`) that mechanism exists to work around -- confirmed by comparing against QTranslate, whose default hotkeys are Ctrl-based and which simulates Ctrl+C with zero interception, no equivalent bug reports. A `Ctrl+Shift+T`-style combo was paying the same blocking/replay cost as `Alt+Q` for no benefit, and carrying the same (small but real) risk of a state-machine bug. Added `needs_swallow_and_replay()`, checked in `handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup` right after the (still-universal) `MODIFIER_STATE` update: `Alt` gets the full swallow/consume/replay treatment as before; `Ctrl`/`Shift`/`Win` fall back to plain state tracking with no blocking at all, matching their pre-swallow-and-replay behavior. No functional change for `Alt+Q`/`Alt+E`.
 
 ## [0.16.0+007] - 2026-08-08
