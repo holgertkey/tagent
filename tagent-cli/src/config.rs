@@ -1039,12 +1039,13 @@ impl HotkeyParser {
     /// Validate that the hotkey doesn't conflict with critical system shortcuts
     pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
         match hotkey {
-            HotkeyType::SingleKey { vk_code } => {
-                // Only allow F1-F12 as single keys
-                if *vk_code < keycodes::KEY_F1 || *vk_code > keycodes::KEY_F12 {
-                    return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
-                }
+            // Only allow F1-F12 as single keys
+            HotkeyType::SingleKey { vk_code }
+                if *vk_code < keycodes::KEY_F1 || *vk_code > keycodes::KEY_F12 =>
+            {
+                return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
             }
+            HotkeyType::SingleKey { .. } => {}
             HotkeyType::ModifierCombo { modifiers, key } => {
                 // Forbid Shift-only combinations (Shift+Key interferes with text input)
                 // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)

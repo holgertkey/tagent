@@ -668,7 +668,10 @@ unsafe fn apply_combo_modifier_keyup_action(action: ModifierKeyupAction) -> bool
 
 /// Injects a synthetic keydown+keyup pair for `vk` via `SendInput`.
 unsafe fn replay_key(vk: u32) {
-    let inputs = [create_key_input(vk as u16, false), create_key_input(vk as u16, true)];
+    let inputs = [
+        create_key_input(vk as u16, false),
+        create_key_input(vk as u16, true),
+    ];
     SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
 }
 
@@ -1145,7 +1148,9 @@ mod tests {
     #[test]
     fn test_needs_swallow_and_replay_is_true_only_for_alt() {
         assert!(needs_swallow_and_replay(super::super::keycodes::KEY_ALT));
-        assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_CONTROL));
+        assert!(!needs_swallow_and_replay(
+            super::super::keycodes::KEY_CONTROL
+        ));
         assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_SHIFT));
         assert!(!needs_swallow_and_replay(super::super::keycodes::KEY_LWIN));
     }
@@ -1211,7 +1216,10 @@ mod tests {
         let state = HotkeyState::new(Some(hotkey));
 
         let triggered = state.handle('T' as u32, true, test_trigger_fn);
-        assert!(triggered, "Ctrl+Shift+T must still fire via plain state tracking");
+        assert!(
+            triggered,
+            "Ctrl+Shift+T must still fire via plain state tracking"
+        );
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 }

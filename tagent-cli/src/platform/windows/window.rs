@@ -112,9 +112,7 @@ mod tests {
     fn test_window_manager_creation() {
         let result = WindowManager::new();
         match result {
-            Ok(_) => {
-                assert!(true);
-            }
+            Ok(_) => {}
             Err(e) => {
                 assert!(
                     e.to_string().contains("console"),
@@ -130,7 +128,6 @@ mod tests {
         let wm = WindowManager::new();
         if let Ok(window_manager) = wm {
             let _ = window_manager.is_mouse_over_terminal();
-            assert!(true);
         }
     }
 }
