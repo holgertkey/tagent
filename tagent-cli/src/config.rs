@@ -598,6 +598,15 @@ EnableSpeechHotkey = {}
         println!("  -l, --lang     Set languages: -l <target> or -l <source> <target>");
         println!();
 
+        println!("SUPPORTED LANGUAGES (name or code, e.g. -l German or -l de):");
+        println!("  Auto (auto)        English (en)       Russian (ru)");
+        println!("  Spanish (es)       French (fr)        German (de)");
+        println!("  Chinese (zh)       Japanese (ja)      Korean (ko)");
+        println!("  Italian (it)       Portuguese (pt)    Dutch (nl)");
+        println!("  Polish (pl)        Turkish (tr)       Arabic (ar)");
+        println!("  Hindi (hi)");
+        println!();
+
         println!("EXAMPLES:");
         println!(
             "  tagent-cli                           Start unified mode (interactive + hotkeys)"
