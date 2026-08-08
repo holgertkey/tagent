@@ -1,6 +1,11 @@
+use super::keycodes;
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_CANCELMODE,
+};
 
 /// Windows clipboard access, backed by `clipboard-win` (get/set) and `SendInput`
 /// (simulating Ctrl+C to copy the current text selection).
@@ -32,22 +37,60 @@ impl ClipboardManager {
     /// Automatically copy selected text (simulate Ctrl+C)
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         unsafe {
-            // Wait a bit to allow the user to physically release modifier keys. Modifier
-            // combos (e.g. Alt+Q) are registered via RegisterHotKey (see
-            // platform/windows/keyboard.rs), which keeps the triggering key from reaching
-            // the foreground window, but the physical modifier (e.g. Alt) can still be held
-            // down here, and its own keydown was already delivered to the foreground window
-            // before RegisterHotKey could know a combo was coming.
+            // Capture the foreground window as the very first thing, before any sleep or
+            // simulated input -- by the time those run, focus may already have moved (e.g.
+            // this app's own terminal popping up per ShowTerminalOnTranslate).
+            let foreground = GetForegroundWindow();
+
+            // Wait a bit before touching anything, to let the initial hotkey keystroke
+            // settle.
             std::thread::sleep(std::time::Duration::from_millis(100));
 
-            // Create input array for SendInput
-            // Release any pressed modifiers first (Alt, Shift, Win)
-            // This ensures Ctrl+C is recognized correctly when triggered by hotkeys like Alt+Space
+            // Wait for a physically-held Alt to actually be released, instead of injecting
+            // a synthetic Alt-up below. Alt-based hotkeys (e.g. Alt+Q) are registered via
+            // RegisterHotKey (see platform/windows/keyboard.rs), which keeps the triggering
+            // key from reaching the foreground window, but Alt's own keydown was already
+            // delivered there before RegisterHotKey could know a combo was coming. Bounded
+            // so a stuck key can't hang this call forever. Physical release is necessary but
+            // not sufficient -- the foreground window's own message queue may not have
+            // finished processing the matching keyup yet, which is what the WM_CANCELMODE
+            // step below is for.
+            let alt_release_deadline =
+                std::time::Instant::now() + std::time::Duration::from_millis(600);
+            while keycodes::is_key_pressed(VK_MENU.0 as i32)
+                && std::time::Instant::now() < alt_release_deadline
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+
+            // Settle delay so the foreground window's message queue has a chance to catch
+            // up on the Alt keyup before we touch it again.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Explicitly cancel any menu-tracking/modal loop the real Alt keydown may have
+            // put the foreground window into (see CHANGELOG). WM_CANCELMODE is the
+            // documented API for exactly this ("cancel modal (system) modes, such as ...
+            // tracking the menu"). SendMessageTimeoutW instead of bare SendMessageW so a
+            // busy/hung target window can't block this thread, which is also the thread
+            // pumping this process's own hotkey message loop.
+            if foreground.0 != 0 {
+                let mut result: usize = 0;
+                SendMessageTimeoutW(
+                    foreground,
+                    WM_CANCELMODE,
+                    WPARAM(0),
+                    LPARAM(0),
+                    SMTO_ABORTIFHUNG,
+                    150,
+                    Some(&mut result),
+                );
+            }
+
+            // Release Shift/Win if still held (unlike Alt, these don't put the foreground
+            // window into a menu-mode gesture on their own, so a synthetic up is safe here)
+            // — this ensures Ctrl+C is recognized correctly when triggered by hotkeys like
+            // Shift-based or Win-based combos.
             let inputs: Vec<INPUT> = vec![
-                // Release Alt (both left and right)
-                Self::create_key_input(VK_MENU.0, true),
-                Self::create_key_input(VK_LMENU.0, true),
-                Self::create_key_input(VK_RMENU.0, true),
                 // Release Shift (both left and right)
                 Self::create_key_input(VK_SHIFT.0, true),
                 Self::create_key_input(VK_LSHIFT.0, true),
@@ -57,10 +100,7 @@ impl ClipboardManager {
                 Self::create_key_input(VK_RWIN.0, true),
             ];
 
-            // Send all key releases at once
-            if !inputs.is_empty() {
-                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-            }
+            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
 
             // Delay to ensure modifiers are processed
             std::thread::sleep(std::time::Duration::from_millis(100));
