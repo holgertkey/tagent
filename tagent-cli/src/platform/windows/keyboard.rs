@@ -2,7 +2,7 @@ use super::keycodes::normalize_vk_code;
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -17,13 +17,22 @@ static IS_PROCESSING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_EXIT: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static MODIFIER_STATE: OnceLock<Arc<Mutex<HashMap<u32, bool>>>> = OnceLock::new();
 
+/// The set of (normalized) modifier vk codes used by any currently-configured
+/// `ModifierCombo` hotkey (translate and/or speech). Computed once in
+/// `KeyboardHook::new` -- hotkey configuration is fixed for the process lifetime (see
+/// module docs: "restart required" for hotkey changes), so this never needs to change
+/// afterwards. Drives the swallow-and-replay handling in `keyboard_hook_proc`: a keydown
+/// for a vk in this set is intercepted centrally instead of reaching `HotkeyState::handle`.
+static COMBO_MODIFIER_VKS: OnceLock<HashSet<u32>> = OnceLock::new();
+
+/// Per-modifier bookkeeping for the swallow-and-replay mechanism (see module docs on
+/// `keyboard_hook_proc` for the full state machine). Keyed by normalized vk code, shared
+/// across translate and speech hotkeys since both may swallow the same physical Alt.
+static MODIFIER_REPLAY: OnceLock<Arc<Mutex<HashMap<u32, ModifierReplay>>>> = OnceLock::new();
+
 // Hotkey state instances for translate and speech
 static TRANSLATE_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
 static SPEECH_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
-
-/// Ids passed to `RegisterHotKey`/delivered back in `WM_HOTKEY`'s `wParam`.
-const TRANSLATE_HOTKEY_ID: i32 = 1;
-const SPEECH_HOTKEY_ID: i32 = 2;
 
 // Speech-specific state
 static SPEECH_HOTKEY_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
@@ -32,6 +41,43 @@ static IS_SPEAKING: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 static SHOULD_STOP_SPEECH: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 static CONFIG_MANAGER: OnceLock<Arc<ConfigManager>> = OnceLock::new();
 
+/// State of a single modifier hold, for the swallow-and-replay mechanism.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModifierReplayState {
+    /// Its keydown was blocked from reaching the foreground app; not yet resolved.
+    Swallowed,
+    /// A `ModifierCombo` fired while this modifier was held. Its matching keyup must
+    /// also be blocked so the app never observes an unpaired keyup.
+    ConsumedByCombo,
+    /// A synthetic keydown has already been replayed for this hold (because some other,
+    /// non-trigger key arrived while it was swallowed). The real keyup must be let
+    /// through normally to balance the synthetic press.
+    PassedThrough,
+}
+
+/// Bookkeeping entry for one swallowed modifier hold.
+#[derive(Debug, Clone, Copy)]
+struct ModifierReplay {
+    state: ModifierReplayState,
+    /// The specific (non-normalized) vk code observed at keydown (e.g. `VK_LMENU`, not
+    /// the generic `VK_MENU`), used so any replay matches the actual physical key.
+    raw_vk: u32,
+}
+
+/// Outcome of resolving a combo-modifier keyup, split from its execution
+/// (`apply_combo_modifier_keyup_action`) so the decision logic can be unit-tested without
+/// triggering a real `SendInput` call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModifierKeyupAction {
+    /// Nothing was swallowed (or it was already replayed) -- let the real keyup through.
+    PassThrough,
+    /// A combo consumed this modifier; block the real keyup, nothing to replay.
+    Block,
+    /// A bare tap (never resolved by a combo or another key) -- block the real keyup and
+    /// replay a synthetic down+up pair instead.
+    ReplayPair { raw_vk: u32 },
+}
+
 /// Encapsulates hotkey detection state for a single hotkey.
 /// Eliminates duplication between translate and speech hotkey handlers.
 struct HotkeyState {
@@ -39,11 +85,6 @@ struct HotkeyState {
     last_key_time: Arc<Mutex<Option<Instant>>>,
     last_key_pressed: Arc<Mutex<bool>>,
     last_key_interrupted: Arc<Mutex<bool>>,
-    /// Set once a `ModifierCombo` config has been handed off to `RegisterHotKey`
-    /// (see `KeyboardHook::start`). While set, the low-level-hook-based combo
-    /// detection in `handle` below is skipped so the combo isn't triggered twice
-    /// — once by `WM_HOTKEY` and once by the hook.
-    registered_with_os: AtomicBool,
 }
 
 impl HotkeyState {
@@ -53,13 +94,18 @@ impl HotkeyState {
             last_key_time: Arc::new(Mutex::new(None)),
             last_key_pressed: Arc::new(Mutex::new(false)),
             last_key_interrupted: Arc::new(Mutex::new(false)),
-            registered_with_os: AtomicBool::new(false),
         }
     }
 
     /// Handle hotkey detection for key events.
     /// Returns true if the event was consumed (should be blocked).
     /// Calls `trigger_fn` when the hotkey combination is activated.
+    ///
+    /// For `ModifierCombo`, this is only ever meaningfully invoked with the trigger key
+    /// (e.g. `Q`), not the modifier itself -- the modifier's own keydown/keyup is
+    /// intercepted earlier in `keyboard_hook_proc` by the central swallow-and-replay
+    /// path (see `handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup`), which
+    /// is also what keeps `MODIFIER_STATE` up to date for the check below.
     fn handle(&self, vk_code: u32, is_key_down: bool, trigger_fn: unsafe fn()) -> bool {
         let hotkey_opt = match self.config.lock() {
             Ok(guard) => guard.clone(),
@@ -80,20 +126,9 @@ impl HotkeyState {
             }
 
             HotkeyType::ModifierCombo { modifiers, key } => {
-                // RegisterHotKey (see `KeyboardHook::start`) already owns this combo end to
-                // end via WM_HOTKEY; detecting it again here would fire the translation twice.
-                if self.registered_with_os.load(Ordering::Relaxed) {
-                    return false;
-                }
-
-                if let Some(modifier_state) = MODIFIER_STATE.get() {
-                    if let Ok(mut state) = modifier_state.lock() {
-                        let normalized_vk = normalize_vk_code(vk_code);
-
-                        if modifiers.contains(&normalized_vk) {
-                            // Track state only; modifiers must still reach other apps (Alt-Tab, menus).
-                            state.insert(normalized_vk, is_key_down);
-                        } else if is_key_down && vk_code == *key {
+                if is_key_down && vk_code == *key {
+                    if let Some(modifier_state) = MODIFIER_STATE.get() {
+                        if let Ok(state) = modifier_state.lock() {
                             let all_modifiers_pressed = modifiers
                                 .iter()
                                 .all(|m| state.get(m).copied().unwrap_or(false));
@@ -102,8 +137,6 @@ impl HotkeyState {
                                 unsafe { trigger_fn() };
                                 return true;
                             }
-                        } else if !is_key_down {
-                            state.insert(normalized_vk, false);
                         }
                     }
                 }
@@ -175,34 +208,14 @@ impl HotkeyState {
         false
     }
 
-    /// If this state holds a `ModifierCombo`, attempt to register it with the OS via
-    /// `RegisterHotKey` and, on success, mark it so `handle`'s hook-based detection steps
-    /// aside. Returns whether registration happened (i.e. whether the caller must
-    /// eventually call `UnregisterHotKey` with `id`). No-op for other hotkey types.
-    unsafe fn try_register_with_os(&self, id: i32) -> bool {
-        let hotkey_opt = match self.config.lock() {
-            Ok(guard) => guard.clone(),
-            Err(_) => return false,
-        };
-
-        let (modifiers, key) = match hotkey_opt {
-            Some(HotkeyType::ModifierCombo { modifiers, key }) => (modifiers, key),
-            _ => return false,
-        };
-
-        let flags = modifiers_to_hotkey_flags(&modifiers);
-        match RegisterHotKey(HWND::default(), id, flags, key) {
-            Ok(()) => {
-                self.registered_with_os.store(true, Ordering::Relaxed);
-                true
-            }
-            Err(e) => {
-                eprintln!(
-                    "Warning: failed to register hotkey with the system ({}), falling back to key-hook detection",
-                    e
-                );
-                false
-            }
+    /// If this holds a `ModifierCombo`, returns its modifier vk codes (already normalized
+    /// by `HotkeyParser::parse`). Used after `handle` reports a combo fired, to mark
+    /// exactly those modifiers `ConsumedByCombo` (see `mark_swallowed_modifiers_consumed_by_combo`).
+    fn combo_modifiers(&self) -> Option<Vec<u32>> {
+        let hotkey_opt = self.config.lock().ok()?.clone();
+        match hotkey_opt {
+            Some(HotkeyType::ModifierCombo { modifiers, .. }) => Some(modifiers),
+            _ => None,
         }
     }
 
@@ -234,6 +247,39 @@ impl HotkeyState {
 /// Global hotkey listener for Windows, driven by a low-level `WH_KEYBOARD_LL` hook and
 /// a Win32 message loop. All state is process-global (`OnceLock` statics) because the
 /// hook callback is a plain `extern "system" fn` with no user-data pointer.
+///
+/// `ModifierCombo` hotkeys (e.g. `Alt+Q`) are detected entirely within the hook itself,
+/// via a swallow-and-replay mechanism (see `keyboard_hook_proc`, `handle_combo_modifier_keydown`,
+/// `resolve_combo_modifier_keyup`): a combo's modifier keys are blocked from reaching the
+/// foreground app the instant they're pressed, and either consumed (if the combo
+/// completes) or transparently replayed as synthetic input (if it doesn't -- a bare tap,
+/// or some other shortcut like Alt-Tab/Alt+F4). This intentionally does not use
+/// `RegisterHotKey`: that API only suppresses the final trigger key, never the modifier
+/// itself, so the modifier's raw keydown always reached the foreground window first --
+/// which is what put apps like Word/Chrome/Notepad into a menu-tracking mode that ate the
+/// simulated Ctrl+C in `ClipboardManager::copy_selected_text` no matter what was done to
+/// clean up afterwards. Blocking the modifier at the source avoids that class of problem
+/// entirely, at the cost of needing to replay it convincingly when it wasn't ours.
+///
+/// **Confirmed working end-to-end (v0.16.0+007)**: Word/Chrome/Notepad copy correctly via
+/// `Alt+Q`, and Alt-Tab/Alt+F4/the system menu are unaffected. Getting here took five
+/// prior attempts across several versions (`RegisterHotKey`+`WM_HOTKEY`, `WM_CANCELMODE`,
+/// `wScan`, `WM_COPY`, retry-with-verification -- see CHANGELOG `0.16.0+004` through
+/// `+007`), so before refactoring anything in this module, preserve these invariants:
+/// - **Never reintroduce `RegisterHotKey` for `ModifierCombo` hotkeys.** It structurally
+///   cannot suppress the modifier's own keydown, only the trigger key -- that's the exact
+///   defect this design replaced, not an oversight to "fix" by adding it back.
+/// - **Never go back to unconditionally blocking a modifier for as long as it's held**
+///   (i.e. no replay). That's what `0.12.0+004` fixed -- it broke Alt-Tab/Alt+F4/the
+///   system menu system-wide for the whole time tagent was running.
+/// - **The `LLKHF_INJECTED` early-return at the top of `keyboard_hook_proc` must stay
+///   the very first check**, before any combo/modifier logic. It's what makes this
+///   module's own `SendInput` replays (`replay_key`/`replay_keydown_only`) safe against
+///   re-entering the hook and being swallowed a second time.
+/// - **Every `ModifierReplay` entry must be resolved on the matching keyup or combo
+///   completion** (see `ModifierReplayState`'s three variants). A modifier left dangling
+///   in `Swallowed` after its keyup is missed would stay permanently blocked for the rest
+///   of the process, silently reintroducing the exact bug this design fixes.
 pub struct KeyboardHook;
 
 impl KeyboardHook {
@@ -265,6 +311,10 @@ impl KeyboardHook {
             .set(Arc::new(Mutex::new(HashMap::new())))
             .map_err(|_| "ModifierState already initialized")?;
 
+        MODIFIER_REPLAY
+            .set(Arc::new(Mutex::new(HashMap::new())))
+            .map_err(|_| "ModifierReplay already initialized")?;
+
         // Initialize translation hotkey
         let config = config_manager.get_config();
 
@@ -289,10 +339,6 @@ impl KeyboardHook {
                 None
             }
         };
-
-        TRANSLATE_HOTKEY
-            .set(HotkeyState::new(translate_hotkey))
-            .map_err(|_| "TranslateHotkey already initialized")?;
 
         // Initialize speech hotkey
         let speech_hotkey = if config.enable_speech_hotkey && config.enable_text_to_speech {
@@ -320,6 +366,25 @@ impl KeyboardHook {
         } else {
             None
         };
+
+        // Collect every modifier used by either hotkey's ModifierCombo, before the
+        // configs are moved into their HotkeyStates below -- this is what routes their
+        // keydown/keyup through the central swallow-and-replay path in keyboard_hook_proc
+        // instead of HotkeyState::handle.
+        let mut combo_modifiers = HashSet::new();
+        if let Some(HotkeyType::ModifierCombo { modifiers, .. }) = &translate_hotkey {
+            combo_modifiers.extend(modifiers.iter().copied());
+        }
+        if let Some(HotkeyType::ModifierCombo { modifiers, .. }) = &speech_hotkey {
+            combo_modifiers.extend(modifiers.iter().copied());
+        }
+        COMBO_MODIFIER_VKS
+            .set(combo_modifiers)
+            .map_err(|_| "ComboModifierVks already initialized")?;
+
+        TRANSLATE_HOTKEY
+            .set(HotkeyState::new(translate_hotkey))
+            .map_err(|_| "TranslateHotkey already initialized")?;
 
         SPEECH_HOTKEY
             .set(HotkeyState::new(speech_hotkey))
@@ -355,21 +420,6 @@ impl KeyboardHook {
                 return Err("Failed to set keyboard hook".into());
             }
 
-            // Register modifier-combo hotkeys (e.g. Alt+Q) with the OS instead of only
-            // detecting them in the low-level hook above. RegisterHotKey delivers WM_HOTKEY
-            // straight to this thread and guarantees the triggering keystroke (Q) is not
-            // also delivered to the foreground window as WM_SYSKEYDOWN/WM_SYSCHAR — that's
-            // what produced the "no matching menu accelerator" system beep. It does NOT
-            // guarantee anything about the preceding modifier keydown (Alt) itself; if the
-            // foreground app still enters menu-mode focus on bare Alt-down and that ends up
-            // swallowing the simulated Ctrl+C in `ClipboardManager::copy_selected_text`,
-            // that needs a separate, verified-on-hardware fix in copy_selected_text (e.g.
-            // waiting for the physical Alt release via GetAsyncKeyState instead of sending a
-            // synthetic Alt-up). Registered here (not in `new`) because RegisterHotKey with
-            // a NULL hwnd is thread-affine to whichever thread later pumps messages for it,
-            // i.e. this one.
-            let registered_ids = Self::register_modifier_combo_hotkeys();
-
             loop {
                 // Check if we should exit
                 if let Some(should_exit) = SHOULD_EXIT.get() {
@@ -395,9 +445,6 @@ impl KeyboardHook {
                             println!("WM_QUIT received, exiting");
                             break;
                         }
-                        WM_HOTKEY => {
-                            handle_registered_hotkey(msg.wParam.0 as i32);
-                        }
                         _ => {
                             TranslateMessage(&msg);
                             DispatchMessageW(&msg);
@@ -409,75 +456,220 @@ impl KeyboardHook {
                 }
             }
 
-            for id in registered_ids {
-                let _ = UnregisterHotKey(HWND::default(), id);
-            }
-
             UnhookWindowsHookEx(hook)?;
         }
 
         Ok(())
     }
-
-    /// Register `RegisterHotKey`-eligible (`ModifierCombo`) hotkeys with the OS and mark
-    /// the corresponding `HotkeyState` so the low-level hook stops also detecting them.
-    /// Falls back to hook-only detection (leaving the state unmarked) for a given hotkey
-    /// if `RegisterHotKey` fails, e.g. because another application already owns that combo.
-    unsafe fn register_modifier_combo_hotkeys() -> Vec<i32> {
-        let mut registered_ids = Vec::new();
-
-        if let Some(state) = TRANSLATE_HOTKEY.get() {
-            if state.try_register_with_os(TRANSLATE_HOTKEY_ID) {
-                registered_ids.push(TRANSLATE_HOTKEY_ID);
-            }
-        }
-
-        if let Some(state) = SPEECH_HOTKEY.get() {
-            if state.try_register_with_os(SPEECH_HOTKEY_ID) {
-                registered_ids.push(SPEECH_HOTKEY_ID);
-            }
-        }
-
-        registered_ids
-    }
 }
 
-/// Convert a parsed `ModifierCombo`'s modifier vk codes into `RegisterHotKey`'s
-/// `HOT_KEY_MODIFIERS` flags. Unrecognized codes are silently ignored, matching the
-/// existing validation happening earlier in `HotkeyParser`.
-fn modifiers_to_hotkey_flags(modifiers: &[u32]) -> HOT_KEY_MODIFIERS {
-    let mut flags = MOD_NOREPEAT;
-    for &m in modifiers {
-        flags |= if m == super::keycodes::KEY_CONTROL {
-            MOD_CONTROL
-        } else if m == super::keycodes::KEY_ALT {
-            MOD_ALT
-        } else if m == super::keycodes::KEY_SHIFT {
-            MOD_SHIFT
-        } else if m == super::keycodes::KEY_LWIN || m == super::keycodes::KEY_RWIN {
-            MOD_WIN
-        } else {
-            HOT_KEY_MODIFIERS(0)
-        };
-    }
-    flags
+/// Returns whether `normalized_vk` is a modifier used by any active `ModifierCombo`
+/// hotkey -- i.e. whether its keydown/keyup should go through the central
+/// swallow-and-replay path instead of `HotkeyState::handle`.
+fn is_combo_modifier(normalized_vk: u32) -> bool {
+    COMBO_MODIFIER_VKS
+        .get()
+        .map(|set| set.contains(&normalized_vk))
+        .unwrap_or(false)
 }
 
-/// Dispatch a `WM_HOTKEY` message (`wParam` is the id passed to `RegisterHotKey`) to the
-/// matching trigger, applying the same speech-enabled gating as the hook-based path.
-fn handle_registered_hotkey(id: i32) {
-    if id == TRANSLATE_HOTKEY_ID {
-        unsafe { trigger_translation() };
-    } else if id == SPEECH_HOTKEY_ID {
-        if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
-            if speech_enabled.load(Ordering::Relaxed) {
-                if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                    if tts_enabled.load(Ordering::Relaxed) {
-                        unsafe { trigger_speech() };
+/// Central bookkeeping for a combo-modifier keydown. Updates `MODIFIER_STATE` (so
+/// `HotkeyState::handle`'s `ModifierCombo` check sees it as pressed) and starts
+/// swallowing it if this is a fresh press. Returns true if the event should be blocked
+/// from reaching the foreground app.
+///
+/// `normalized_vk` is used as the tracking key (matching `HotkeyParser`'s normalized
+/// modifier codes); `raw_vk` is the specific L/R vk code actually observed, kept around
+/// so any later replay uses the same physical key.
+fn handle_combo_modifier_keydown(normalized_vk: u32, raw_vk: u32) -> bool {
+    let was_down = MODIFIER_STATE
+        .get()
+        .and_then(|m| {
+            m.lock()
+                .ok()
+                .map(|s| s.get(&normalized_vk).copied().unwrap_or(false))
+        })
+        .unwrap_or(false);
+
+    if let Some(modifier_state) = MODIFIER_STATE.get() {
+        if let Ok(mut state) = modifier_state.lock() {
+            state.insert(normalized_vk, true);
+        }
+    }
+
+    if !was_down {
+        // Fresh press: start swallowing it until we learn whether it's part of our
+        // combo (trigger key follows), some other shortcut (Tab, F4, ...), or a bare tap
+        // (released alone) -- resolved in resolve_combo_modifier_keyup / the non-modifier
+        // keydown branch of keyboard_hook_proc.
+        if let Some(replay) = MODIFIER_REPLAY.get() {
+            if let Ok(mut map) = replay.lock() {
+                map.insert(
+                    normalized_vk,
+                    ModifierReplay {
+                        state: ModifierReplayState::Swallowed,
+                        raw_vk,
+                    },
+                );
+            }
+        }
+        return true;
+    }
+
+    // Auto-repeat while held: keep blocking unless this hold has already been replayed
+    // (in which case the repeats should flow through normally too, like real input would).
+    MODIFIER_REPLAY
+        .get()
+        .and_then(|r| {
+            r.lock().ok().map(|map| {
+                !matches!(
+                    map.get(&normalized_vk).map(|e| e.state),
+                    Some(ModifierReplayState::PassedThrough)
+                )
+            })
+        })
+        .unwrap_or(true)
+}
+
+/// Mark every one of `modifiers` that's currently `Swallowed` as `ConsumedByCombo`,
+/// called right after a `ModifierCombo` fires so their eventual real keyup is blocked too
+/// instead of being replayed as a bare tap.
+fn mark_swallowed_modifiers_consumed_by_combo(modifiers: &[u32]) {
+    if let Some(replay) = MODIFIER_REPLAY.get() {
+        if let Ok(mut map) = replay.lock() {
+            for m in modifiers {
+                if let Some(entry) = map.get_mut(m) {
+                    if entry.state == ModifierReplayState::Swallowed {
+                        entry.state = ModifierReplayState::ConsumedByCombo;
                     }
                 }
             }
         }
+    }
+}
+
+/// Drains every currently-`Swallowed` modifier's raw vk code, transitioning each to
+/// `PassedThrough`. Called when some other, non-trigger key arrives while a modifier is
+/// held, so the caller can replay the modifier's keydown before letting that other key
+/// through -- exactly the order the OS/foreground app would see without the hook in the
+/// way. Split from the actual `SendInput` call (see `replay_pending_swallowed_modifiers`)
+/// so the pure state transition can be unit-tested.
+fn take_pending_replay_vks() -> Vec<u32> {
+    let mut result = Vec::new();
+    if let Some(replay) = MODIFIER_REPLAY.get() {
+        if let Ok(mut map) = replay.lock() {
+            for entry in map.values_mut() {
+                if entry.state == ModifierReplayState::Swallowed {
+                    result.push(entry.raw_vk);
+                    entry.state = ModifierReplayState::PassedThrough;
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Replays a synthetic keydown (no matching keyup -- the real one is let through later to
+/// balance it) for every currently-swallowed modifier. See `take_pending_replay_vks`.
+unsafe fn replay_pending_swallowed_modifiers() {
+    for raw_vk in take_pending_replay_vks() {
+        replay_keydown_only(raw_vk);
+    }
+}
+
+/// Central bookkeeping for a combo-modifier keyup. Updates `MODIFIER_STATE` and resolves
+/// whatever `ModifierReplay` state this hold ended up in, without performing the actual
+/// `SendInput` replay -- see `apply_combo_modifier_keyup_action` for that, kept separate
+/// so this decision can be unit-tested without side effects on the real system.
+fn resolve_combo_modifier_keyup(normalized_vk: u32) -> ModifierKeyupAction {
+    if let Some(modifier_state) = MODIFIER_STATE.get() {
+        if let Ok(mut state) = modifier_state.lock() {
+            state.insert(normalized_vk, false);
+        }
+    }
+
+    let resolved = MODIFIER_REPLAY
+        .get()
+        .and_then(|r| r.lock().ok().and_then(|mut map| map.remove(&normalized_vk)));
+
+    match resolved {
+        Some(entry) if entry.state == ModifierReplayState::Swallowed => {
+            // Bare tap: nothing else happened between down and up. Replay the whole pair
+            // now so Alt-Tab/menu activation/etc. still see a normal, complete press.
+            ModifierKeyupAction::ReplayPair {
+                raw_vk: entry.raw_vk,
+            }
+        }
+        Some(entry) if entry.state == ModifierReplayState::ConsumedByCombo => {
+            ModifierKeyupAction::Block
+        }
+        // PassedThrough (already replayed a down earlier in this hold) or nothing tracked
+        // at all -- either way, let the real keyup through to balance things.
+        _ => ModifierKeyupAction::PassThrough,
+    }
+}
+
+/// Executes `action`'s `SendInput` side effect (if any) and reports whether the real
+/// keyup should be blocked.
+unsafe fn apply_combo_modifier_keyup_action(action: ModifierKeyupAction) -> bool {
+    match action {
+        ModifierKeyupAction::PassThrough => false,
+        ModifierKeyupAction::Block => true,
+        ModifierKeyupAction::ReplayPair { raw_vk } => {
+            replay_key(raw_vk);
+            true
+        }
+    }
+}
+
+/// Injects a synthetic keydown+keyup pair for `vk` via `SendInput`.
+unsafe fn replay_key(vk: u32) {
+    let inputs = [create_key_input(vk as u16, false), create_key_input(vk as u16, true)];
+    SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
+/// Injects a synthetic keydown only (no matching keyup) for `vk` via `SendInput`. Used
+/// when some other key arrives while `vk` is swallowed and still physically held; the
+/// real keyup is let through later to balance this synthetic down (see
+/// `ModifierReplayState::PassedThrough`).
+unsafe fn replay_keydown_only(vk: u32) {
+    let inputs = [create_key_input(vk as u16, false)];
+    SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
+/// Builds a `KEYBDINPUT`/`INPUT` for `SendInput`. Uses `KEYEVENTF_SCANCODE` (scan code
+/// from `MapVirtualKeyW`) instead of a bare `wVk` event, mirroring
+/// `ClipboardManager::create_key_input` -- this routes the injected event through the
+/// same scan-code-to-virtual-key translation path real hardware keystrokes take, which
+/// some apps require to act on simulated input at all. `KEYEVENTF_EXTENDEDKEY` is added
+/// for the AT-101 extended set (here: Right Ctrl/Alt and the Windows keys).
+unsafe fn create_key_input(vk_code: u16, is_keyup: bool) -> INPUT {
+    let scan_code = MapVirtualKeyW(vk_code as u32, MAPVK_VK_TO_VSC) as u16;
+
+    let is_extended = matches!(
+        vk_code,
+        v if v == VK_RCONTROL.0 || v == VK_RMENU.0 || v == VK_LWIN.0 || v == VK_RWIN.0
+    );
+
+    let mut flags = KEYEVENTF_SCANCODE;
+    if is_keyup {
+        flags |= KEYEVENTF_KEYUP;
+    }
+    if is_extended {
+        flags |= KEYEVENTF_EXTENDEDKEY;
+    }
+
+    let ki = KEYBDINPUT {
+        wVk: VIRTUAL_KEY(vk_code),
+        wScan: scan_code,
+        dwFlags: flags,
+        dwExtraInfo: GetMessageExtraInfo().0 as usize,
+        ..Default::default()
+    };
+
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 { ki },
     }
 }
 
@@ -636,23 +828,28 @@ unsafe extern "system" fn keyboard_hook_proc(
     if n_code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
 
-        // Ignore injected events (simulated by keybd_event, SendInput, etc.)
+        // Ignore injected events (simulated by keybd_event, SendInput, etc.) -- this is
+        // what makes the synthetic replays below safe: they re-enter this same hook, and
+        // must fall straight through instead of being swallowed again.
         const LLKHF_INJECTED: u32 = 0x10;
         if (kbd_struct.flags.0 & LLKHF_INJECTED) != 0 {
             return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
         }
 
+        let vk = kbd_struct.vkCode;
+        let normalized = normalize_vk_code(vk);
+
         if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
             // Mark double-press sequences as interrupted if another key was pressed
             if let Some(state) = TRANSLATE_HOTKEY.get() {
-                state.mark_interrupted_if_needed(kbd_struct.vkCode);
+                state.mark_interrupted_if_needed(vk);
             }
             if let Some(state) = SPEECH_HOTKEY.get() {
-                state.mark_interrupted_if_needed(kbd_struct.vkCode);
+                state.mark_interrupted_if_needed(vk);
             }
 
             // Handle Esc key to stop speech
-            if kbd_struct.vkCode == VK_ESCAPE.0 as u32 {
+            if vk == VK_ESCAPE.0 as u32 {
                 if let Some(is_speaking) = IS_SPEAKING.get() {
                     if let Ok(speaking) = is_speaking.lock() {
                         if *speaking {
@@ -666,43 +863,73 @@ unsafe extern "system" fn keyboard_hook_proc(
                 }
             }
 
-            // Handle translation hotkey
-            if let Some(state) = TRANSLATE_HOTKEY.get() {
-                if state.handle(kbd_struct.vkCode, true, trigger_translation) {
+            if is_combo_modifier(normalized) {
+                // Swallow-and-replay: block this modifier's keydown until we learn what
+                // follows it (see handle_combo_modifier_keydown's doc comment).
+                if handle_combo_modifier_keydown(normalized, vk) {
                     return LRESULT(1);
                 }
-            }
+                // Already PassedThrough for this hold (a repeat after replay) -- fall
+                // through to CallNextHookEx below like real input would.
+            } else {
+                let mut combo_fired = false;
+                let mut fired_modifiers: Option<Vec<u32>> = None;
 
-            // Handle speech hotkey if enabled
-            if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
-                if speech_enabled.load(Ordering::Relaxed) {
-                    if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed) {
-                            if let Some(state) = SPEECH_HOTKEY.get() {
-                                if state.handle(kbd_struct.vkCode, true, trigger_speech) {
-                                    return LRESULT(1);
+                if let Some(state) = TRANSLATE_HOTKEY.get() {
+                    if state.handle(vk, true, trigger_translation) {
+                        combo_fired = true;
+                        fired_modifiers = state.combo_modifiers();
+                    }
+                }
+
+                if !combo_fired {
+                    if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
+                        if speech_enabled.load(Ordering::Relaxed) {
+                            if let Some(tts_enabled) = SPEECH_ENABLED.get() {
+                                if tts_enabled.load(Ordering::Relaxed) {
+                                    if let Some(state) = SPEECH_HOTKEY.get() {
+                                        if state.handle(vk, true, trigger_speech) {
+                                            combo_fired = true;
+                                            fired_modifiers = state.combo_modifiers();
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
-            // Handle translation hotkey key up (for modifier state tracking)
-            if let Some(state) = TRANSLATE_HOTKEY.get() {
-                if state.handle(kbd_struct.vkCode, false, trigger_translation) {
+
+                if combo_fired {
+                    if let Some(modifiers) = fired_modifiers {
+                        mark_swallowed_modifiers_consumed_by_combo(&modifiers);
+                    }
                     return LRESULT(1);
                 }
-            }
 
-            // Handle speech hotkey key up (for modifier state tracking)
-            if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
-                if speech_enabled.load(Ordering::Relaxed) {
-                    if let Some(tts_enabled) = SPEECH_ENABLED.get() {
-                        if tts_enabled.load(Ordering::Relaxed) {
-                            if let Some(state) = SPEECH_HOTKEY.get() {
-                                if state.handle(kbd_struct.vkCode, false, trigger_speech) {
-                                    return LRESULT(1);
+                // Not our trigger key: if any modifier is still swallowed, replay it now
+                // so the OS/foreground app see it go down before this key, exactly as
+                // they would without the hook in the way (e.g. Alt then Tab).
+                replay_pending_swallowed_modifiers();
+            }
+        } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
+            if is_combo_modifier(normalized) {
+                let action = resolve_combo_modifier_keyup(normalized);
+                if apply_combo_modifier_keyup_action(action) {
+                    return LRESULT(1);
+                }
+            } else {
+                // Handle translation hotkey key up (for DoublePress repeat tracking)
+                if let Some(state) = TRANSLATE_HOTKEY.get() {
+                    state.handle(vk, false, trigger_translation);
+                }
+
+                // Handle speech hotkey key up (for DoublePress repeat tracking)
+                if let Some(speech_enabled) = SPEECH_HOTKEY_ENABLED.get() {
+                    if speech_enabled.load(Ordering::Relaxed) {
+                        if let Some(tts_enabled) = SPEECH_ENABLED.get() {
+                            if tts_enabled.load(Ordering::Relaxed) {
+                                if let Some(state) = SPEECH_HOTKEY.get() {
+                                    state.handle(vk, false, trigger_speech);
                                 }
                             }
                         }
@@ -726,183 +953,143 @@ mod tests {
 
     static TEST_TRIGGERED: AtomicBool = AtomicBool::new(false);
 
-    // TEST_TRIGGERED and MODIFIER_STATE are process-global, and Rust runs tests in the same
-    // binary on parallel threads by default, so every test in this module must serialize on
-    // this lock before touching either one.
+    // TEST_TRIGGERED, MODIFIER_STATE and MODIFIER_REPLAY are process-global, and Rust
+    // runs tests in the same binary on parallel threads by default, so every test in this
+    // module must serialize on this lock before touching any of them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     unsafe fn test_trigger_fn() {
         TEST_TRIGGERED.store(true, AtomicOrdering::SeqCst);
     }
 
+    /// Clears MODIFIER_STATE/MODIFIER_REPLAY (initializing them if this is the first test
+    /// to run) so tests don't see leftover state from each other.
+    fn reset_modifier_globals() {
+        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_state.lock().unwrap().clear();
+        let modifier_replay = MODIFIER_REPLAY.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        modifier_replay.lock().unwrap().clear();
+    }
+
     #[test]
     fn test_hotkey_state_triggers_on_lr_specific_modifier() {
         let _guard = TEST_LOCK.lock().unwrap();
-        // Regression test for a parsed "LAlt+Q" config: modifier state is tracked keyed by
-        // the normalized code (see `normalize_vk_code(vk_code)` in the ModifierCombo arm of
-        // `HotkeyState::handle`), so `HotkeyParser::parse` must normalize the configured
-        // modifier too, or this never triggers.
-        MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+        // Regression test for a parsed "LAlt+Q" config: MODIFIER_STATE is tracked keyed by
+        // the normalized code (see handle_combo_modifier_keydown), so HotkeyParser::parse
+        // must normalize the configured modifier too, or this never triggers.
+        reset_modifier_globals();
         TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
 
         let hotkey = HotkeyParser::parse("LAlt+Q").unwrap();
         let state = HotkeyState::new(Some(hotkey));
 
-        // Physical left Alt down - tracked, not yet triggered.
-        state.handle(super::super::keycodes::KEY_LALT, true, test_trigger_fn);
+        let lalt = super::super::keycodes::KEY_LALT;
+        let normalized = normalize_vk_code(lalt);
+
+        // Physical left Alt down goes through the central swallow path first in the real
+        // hook, keyed by the normalized code.
+        handle_combo_modifier_keydown(normalized, lalt);
         assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
 
         // Q down while left Alt held - combo should trigger.
-        state.handle('Q' as u32, true, test_trigger_fn);
-        assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
-    }
-
-    // Regression tests for item 1.3: a bare modifier press/release must never be blocked
-    // (must return `false`), only the combo's target key blocks, and only once the full
-    // combo actually fires. MODIFIER_STATE is a shared global, so each test resets the
-    // specific keys it touches before asserting to avoid cross-test interference.
-
-    #[test]
-    fn test_modifier_press_alone_is_not_blocked() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-        modifier_state
-            .lock()
-            .unwrap()
-            .insert(super::super::keycodes::KEY_ALT, false);
-        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
-
-        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
-        let state = HotkeyState::new(Some(hotkey));
-
-        let blocked = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
-        assert!(!blocked, "a bare modifier press must not be blocked");
-        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
-    }
-
-    #[test]
-    fn test_modifier_release_alone_is_not_blocked() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-        modifier_state
-            .lock()
-            .unwrap()
-            .insert(super::super::keycodes::KEY_ALT, false);
-        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
-
-        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
-        let state = HotkeyState::new(Some(hotkey));
-
-        state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
-        let blocked_up = state.handle(super::super::keycodes::KEY_ALT, false, test_trigger_fn);
-        assert!(!blocked_up, "a bare modifier release must not be blocked");
-        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
-    }
-
-    #[test]
-    fn test_modifier_state_is_still_tracked_without_blocking() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-        modifier_state
-            .lock()
-            .unwrap()
-            .insert(super::super::keycodes::KEY_ALT, false);
-        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
-
-        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
-        let state = HotkeyState::new(Some(hotkey));
-
-        let blocked_down = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
-        assert!(!blocked_down);
-
-        // Even though the modifier press itself wasn't blocked, its state must still be
-        // tracked so the combo can complete correctly.
         let triggered = state.handle('Q' as u32, true, test_trigger_fn);
-        assert!(
-            triggered,
-            "combo must still fire after an unblocked modifier press"
-        );
+        assert!(triggered);
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
     }
 
     #[test]
-    fn test_combo_completion_still_blocks_target_key() {
+    fn test_fresh_modifier_press_is_swallowed() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-        modifier_state
-            .lock()
-            .unwrap()
-            .insert(super::super::keycodes::KEY_ALT, false);
+        reset_modifier_globals();
+
+        let alt = super::super::keycodes::KEY_ALT;
+        let blocked = handle_combo_modifier_keydown(alt, alt);
+        assert!(
+            blocked,
+            "a fresh combo-modifier press must be swallowed until resolved"
+        );
+    }
+
+    #[test]
+    fn test_modifier_auto_repeat_stays_swallowed_until_resolved() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
+
+        let alt = super::super::keycodes::KEY_ALT;
+        handle_combo_modifier_keydown(alt, alt);
+        // OS-generated auto-repeat keydown while still held and unresolved.
+        let still_blocked = handle_combo_modifier_keydown(alt, alt);
+        assert!(still_blocked);
+    }
+
+    #[test]
+    fn test_bare_modifier_tap_replays_pair_and_blocks_real_keyup() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
+
+        let alt = super::super::keycodes::KEY_ALT;
+        handle_combo_modifier_keydown(alt, alt);
+
+        // Nothing else happened before release: this must replay a full down+up pair.
+        let action = resolve_combo_modifier_keyup(alt);
+        assert_eq!(action, ModifierKeyupAction::ReplayPair { raw_vk: alt });
+    }
+
+    #[test]
+    fn test_combo_completion_still_blocks_target_key_and_consumes_modifier() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_modifier_globals();
         TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+
+        let alt = super::super::keycodes::KEY_ALT;
+        handle_combo_modifier_keydown(alt, alt);
 
         let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
         let state = HotkeyState::new(Some(hotkey));
 
-        state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
         let blocked = state.handle('Q' as u32, true, test_trigger_fn);
         assert!(
             blocked,
             "the target key must still be blocked once the combo fires"
         );
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+
+        mark_swallowed_modifiers_consumed_by_combo(&state.combo_modifiers().unwrap());
+
+        // The modifier's matching keyup must also be blocked now (no replay -- it was
+        // legitimately used by the combo, not a bare tap).
+        let action = resolve_combo_modifier_keyup(alt);
+        assert_eq!(action, ModifierKeyupAction::Block);
     }
 
-    // Regression tests for the RegisterHotKey handoff: once a ModifierCombo has been
-    // registered with the OS (see `KeyboardHook::register_modifier_combo_hotkeys`), the
-    // hook-based `handle` path must stay out of the way entirely, or WM_HOTKEY and the
-    // hook would both fire the same combo.
-
     #[test]
-    fn test_registered_combo_is_never_detected_by_the_hook() {
+    fn test_other_key_while_modifier_held_replays_before_passthrough() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let modifier_state = MODIFIER_STATE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-        modifier_state
-            .lock()
-            .unwrap()
-            .insert(super::super::keycodes::KEY_ALT, false);
-        TEST_TRIGGERED.store(false, AtomicOrdering::SeqCst);
+        reset_modifier_globals();
 
-        let hotkey = HotkeyParser::parse("Alt+Q").unwrap();
-        let state = HotkeyState::new(Some(hotkey));
-        state.registered_with_os.store(true, AtomicOrdering::SeqCst);
+        let alt = super::super::keycodes::KEY_ALT;
+        handle_combo_modifier_keydown(alt, alt);
 
-        // Same sequence that fires the combo in `test_combo_completion_still_blocks_target_key`
-        // above -- but since RegisterHotKey now owns this combo, the hook must not trigger it
-        // (that would double-fire the translation: once via WM_HOTKEY, once via the hook).
-        let blocked_alt = state.handle(super::super::keycodes::KEY_ALT, true, test_trigger_fn);
-        let blocked_q = state.handle('Q' as u32, true, test_trigger_fn);
-        assert!(!blocked_alt);
-        assert!(
-            !blocked_q,
-            "a combo handed off to RegisterHotKey must not also be detected by the hook"
-        );
-        assert!(!TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+        // Some other key (e.g. Tab) arrives -- not our combo's trigger, so the pending
+        // Alt press must be replayed before it, exactly like Alt-Tab would expect.
+        let pending = take_pending_replay_vks();
+        assert_eq!(pending, vec![alt]);
+
+        // A second, unrelated key while still held must not re-trigger a replay.
+        let pending_again = take_pending_replay_vks();
+        assert!(pending_again.is_empty());
+
+        // Once replayed, the real keyup must be let through normally to balance it.
+        let action = resolve_combo_modifier_keyup(alt);
+        assert_eq!(action, ModifierKeyupAction::PassThrough);
     }
 
     #[test]
-    fn test_modifiers_to_hotkey_flags_maps_each_modifier() {
-        assert_eq!(
-            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_ALT]),
-            MOD_ALT | MOD_NOREPEAT
-        );
-        assert_eq!(
-            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_CONTROL]),
-            MOD_CONTROL | MOD_NOREPEAT
-        );
-        assert_eq!(
-            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_SHIFT]),
-            MOD_SHIFT | MOD_NOREPEAT
-        );
-        assert_eq!(
-            modifiers_to_hotkey_flags(&[super::super::keycodes::KEY_LWIN]),
-            MOD_WIN | MOD_NOREPEAT
-        );
-        assert_eq!(
-            modifiers_to_hotkey_flags(&[
-                super::super::keycodes::KEY_CONTROL,
-                super::super::keycodes::KEY_SHIFT
-            ]),
-            MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
-        );
+    fn test_is_combo_modifier_reflects_registered_set() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let _ = COMBO_MODIFIER_VKS.set(HashSet::from([super::super::keycodes::KEY_ALT]));
+
+        assert!(is_combo_modifier(super::super::keycodes::KEY_ALT));
+        assert!(!is_combo_modifier(super::super::keycodes::KEY_CONTROL));
     }
 }
