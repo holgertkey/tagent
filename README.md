@@ -6,10 +6,15 @@ Cross-platform text translation, split across three Cargo workspace crates:
 |---|---|---|
 | **`tagent`** | Translation/dictionary/TTS library (Google Translate provider, no app code) | [tagent/README.md](tagent/README.md) |
 | **`tagent-cli`** | The Tagent application — global hotkeys, interactive terminal, CLI mode | [tagent-cli/README.md](tagent-cli/README.md) |
-| **`tagent-gui`** | Slint desktop GUI prototype, translate-only | [tagent-gui/README.md](tagent-gui/README.md) |
+| **`tagent-gui`** | Slint desktop GUI prototype, translate-only, fully independent app | [tagent-gui/README.md](tagent-gui/README.md) |
 
 Both `tagent-cli` and `tagent-gui` depend on the `tagent` library; `tagent` depends on
 neither. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full breakdown.
+
+`tagent-gui` is a fully independent application from `tagent-cli` — its own interface,
+configuration, feature set, versioning, and [changelog](tagent-gui/CHANGELOG.md); the
+`tagent` library is the only thing the two share. This root `CHANGELOG.md` tracks
+`tagent-cli` only.
 
 **Most users want [`tagent-cli`](tagent-cli/README.md)** — that's the actual
 translator application, including installation and usage instructions.

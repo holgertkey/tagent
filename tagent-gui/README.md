@@ -1,8 +1,14 @@
 # tagent-gui
 
-A [Slint](https://slint.dev/) desktop GUI for [Tagent](../tagent-cli/README.md),
-built directly on the [`tagent`](../tagent/README.md) library. Currently a
-**translate-only prototype**.
+A [Slint](https://slint.dev/) desktop GUI translator, built directly on the
+[`tagent`](../tagent/README.md) library. Currently a **translate-only prototype**.
+
+`tagent-gui` is a fully independent application from
+[`tagent-cli`](../tagent-cli/README.md) — its own interface, its own configuration
+(roadmap; see below), its own feature set, and its own versioning and
+[CHANGELOG.md](CHANGELOG.md). The only thing the two share is the `tagent` library
+underneath. See [`tagent-gui development plan.md`](../.debug/tagent-gui%20development%20plan.md)
+for the reasoning and roadmap.
 
 ## Running
 
@@ -17,13 +23,18 @@ button swaps source and target.
 
 - Reads `TranslateProvider` from `tagent-cli.conf` at startup (via a small inline reader,
   not the full config system — see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)),
-  defaulting to `"google"`. Not live-reloaded — restart to pick up a config change.
-- Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German), smaller
-  than the ~16 languages `tagent-cli` supports.
+  defaulting to `"google"`. This is a temporary bootstrap shortcut, not the intended
+  end state — `tagent-gui` is meant to have its own config file eventually (see the
+  development plan). Not live-reloaded — restart to pick up a config change.
+- Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German). Not
+  required to match `tagent-cli`'s ~16 — `tagent-gui` sets its own feature roadmap.
 - No dictionary/spell-check display, no text-to-speech, no clipboard integration, no
-  global hotkeys, no history logging. For the full feature set, use `tagent-cli`
-  (the `tagent` binary).
+  global hotkeys, no history logging yet. These are independent roadmap items, not a
+  parity checklist against `tagent-cli` — see the development plan for what's
+  actually planned.
 
 ## Status
 
-Prototype — not linked from `tagent-cli`, no shared launch path between the two.
+Prototype — not linked from `tagent-cli`, no shared launch path between the two, and
+no obligation to reach feature parity with it. See
+[CHANGELOG.md](CHANGELOG.md) for its own version history.

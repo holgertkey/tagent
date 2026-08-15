@@ -140,6 +140,16 @@ tagent instead of leaking through. Notable details:
 `tagent-cli` binary. There is no flag or code path in `tagent-cli`'s own
 `main.rs`/`cli.rs` that launches it.
 
+**Concept (decided 2026-08-15, see [`.debug/tagent-gui development
+plan.md`](../.debug/tagent-gui%20development%20plan.md)): `tagent-gui` is a fully
+independent application from `tagent-cli`** — own interface, own configuration
+(target design; see "Reading `TranslateProvider`" below for the current bootstrap
+shortcut), own feature set (no obligation to reach parity with `tagent-cli`), and own
+versioning/changelog (`tagent-gui/CHANGELOG.md`, independent of the root
+`CHANGELOG.md` which belongs to `tagent-cli`). The only thing the two share is the
+`tagent` library. This sharpens, rather than changes, the dependency rule already in
+place below (`tagent-gui` depends on `tagent` only, never on `tagent-cli`).
+
 - **UI framework**: [Slint](https://slint.dev/), via `tagent-gui/ui/app.slint` and the
   `slint`/`slint-build` crates. `tagent-gui/build.rs` is a single line:
   `slint_build::compile("ui/app.slint").unwrap();`.
@@ -151,10 +161,13 @@ tagent instead of leaking through. Notable details:
 - **Reading `TranslateProvider` without `ConfigManager`**: since `tagent` has no config
   module, `tagent-gui/src/main.rs` has its own small `read_translate_provider()`
   function — opens `tagent-cli.conf` via `dirs::config_dir()`, scans for `[Provider]` /
-  `TranslateProvider = ...`, defaults to `"google"` on any miss. This is a deliberate,
-  narrowly-scoped exception to reusing `tagent-cli`'s logic: pulling in `ConfigManager`
-  would mean pulling in all of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the
-  whole `platform/` tree), just to read one string.
+  `TranslateProvider = ...`, defaults to `"google"` on any miss. This avoids reusing
+  `tagent-cli`'s logic directly: pulling in `ConfigManager` would mean pulling in all
+  of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the whole `platform/` tree),
+  just to read one string. **This is a temporary bootstrap shortcut, not the target
+  design** — per the "own configuration" concept decided 2026-08-15 (see the
+  development plan's Stage 1), `tagent-gui` is meant to eventually read its own config
+  file (e.g. `tagent-gui.conf`) instead of reaching into `tagent-cli.conf` at all.
 - **How translation works**: `main()` calls `read_translate_provider()` once at startup
   and captures the result. The `translate-requested` Slint callback spawns a plain OS
   thread with its own fresh `tokio::runtime::Runtime`, calls
@@ -230,12 +243,18 @@ prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it 
 removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
 `tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
 (currently `0.13.0`, unlinked from `tagent-cli`'s `0.13.0+003`) and is not synced by
-anything. The `tagent` library crate's version (`1.0.0`) is likewise standalone, plain
-semver with no `+BUILD` suffix — that convention is specific to `tagent-cli`'s
-dev-iteration tracking. `1.0.0` was chosen deliberately: it needs to sort above
-whatever version the old single-crate `tagent` application last published to
-crates.io, so that `cargo install tagent` / `cargo add tagent` resolve to the library
-once it is actually published (not done as part of this restructuring), not the old app.
+anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
+`tagent-gui` section above), this is deliberate rather than merely unaddressed:
+`tagent-gui` versions on its own plain-semver track — no `+BUILD` suffix, since that
+convention is specific to `tagent-cli`'s dev-iteration tracking — and logs its history
+in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from the
+root `CHANGELOG.md` that `tagent-cli/build.rs` syncs into (which is `tagent-cli`'s
+changelog, not the workspace's). The `tagent` library crate's version (`1.0.0`) is
+likewise standalone, plain semver with no `+BUILD` suffix. `1.0.0` was chosen
+deliberately: it needs to sort above whatever version the old single-crate `tagent`
+application last published to crates.io, so that `cargo install tagent` / `cargo add
+tagent` resolve to the library once it is actually published (not done as part of this
+restructuring), not the old app.
 
 ## Other known gaps worth knowing about
 
