@@ -12,6 +12,23 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+003] - 2026-09-11
+
+### Added
+- Theme setting: a new `View` tab in the Settings dialog with `Auto`/`Light`/`Dark`,
+  persisted as `theme` in `tagent-gui.json` (default `"auto"`, following the
+  system setting). Applied live on save — no restart needed — to both the main
+  window and any Settings dialog opened afterward.
+- Full theme support, not just widget chrome: the transcript and input panels
+  (previously hardcoded near-black regardless of system theme) now derive their
+  colors from `Palette`'s semantic roles (`background`, `alternate-background`,
+  `border`, `foreground`, `selection-*`, `control-*`), so `Light` actually looks
+  light, not just the buttons/dropdowns/dialog frame.
+
+### Changed
+- `GuiConfig` gained a `theme` field (`#[serde(default)]`, so existing
+  `tagent-gui.json` files without it still load fine, defaulting to `"auto"`).
+
 ## [0.14.0+002] - 2026-09-11
 
 ### Fixed

@@ -18,6 +18,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
+    window.invoke_apply_theme(config_manager.lock().unwrap().config().theme.clone().into());
+
     let config_manager_for_settings = config_manager.clone();
     let weak = window.as_weak();
     window.on_translate_requested(move |text, from_lang, to_lang| {
@@ -85,30 +87,44 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
+    let window_weak_for_settings = window.as_weak();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
 
-        let current_provider = config_manager_for_settings
-            .lock()
-            .unwrap()
-            .config()
-            .translate_provider
-            .clone();
+        let current_config = config_manager_for_settings.lock().unwrap().config().clone();
+
         let providers = dialog.get_providers();
-        let index = providers
+        let provider_index = providers
             .iter()
-            .position(|p| p.as_str() == current_provider)
+            .position(|p| p.as_str() == current_config.translate_provider)
             .unwrap_or(0);
-        dialog.set_provider_index(index as i32);
+        dialog.set_provider_index(provider_index as i32);
+
+        let themes = dialog.get_themes();
+        let theme_index = themes
+            .iter()
+            .position(|t| t.as_str().to_lowercase() == current_config.theme)
+            .unwrap_or(0);
+        dialog.set_theme_index(theme_index as i32);
+        // The dialog gets its own Palette instance (globals aren't shared
+        // between windows) — apply the currently-active theme to it too, or
+        // it would render in the system default regardless of what's saved.
+        dialog.invoke_apply_theme(current_config.theme.clone().into());
 
         let dialog_weak = dialog.as_weak();
         let config_manager_for_save = config_manager_for_settings.clone();
-        dialog.on_save_requested(move |provider| {
+        let window_weak_for_save = window_weak_for_settings.clone();
+        dialog.on_save_requested(move |provider, theme| {
+            let theme = theme.to_lowercase();
             let new_config = config::GuiConfig {
                 translate_provider: provider.to_string(),
+                theme: theme.clone(),
             };
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config) {
                 eprintln!("Warning: failed to save tagent-gui.json: {err}");
+            }
+            if let Some(window) = window_weak_for_save.upgrade() {
+                window.invoke_apply_theme(theme.clone().into());
             }
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.hide().ok();

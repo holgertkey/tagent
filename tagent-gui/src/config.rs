@@ -8,6 +8,10 @@ fn default_translate_provider() -> String {
     "google".to_string()
 }
 
+fn default_theme() -> String {
+    "auto".to_string()
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -16,12 +20,16 @@ fn default_translate_provider() -> String {
 pub struct GuiConfig {
     #[serde(default = "default_translate_provider")]
     pub translate_provider: String,
+    /// One of `"auto"`, `"light"`, `"dark"`. `"auto"` follows the system setting.
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for GuiConfig {
     fn default() -> Self {
         Self {
             translate_provider: default_translate_provider(),
+            theme: default_theme(),
         }
     }
 }
@@ -218,10 +226,23 @@ mod tests {
         let path = temp_config_path(&dir);
         let config = GuiConfig {
             translate_provider: "deepl".to_string(),
+            theme: default_theme(),
         };
         save_to_path(&path, &config).unwrap();
 
         assert_eq!(load_from_path(&path), config);
+    }
+
+    #[test]
+    fn old_file_without_theme_field_defaults_to_auto() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.translate_provider, "google");
+        assert_eq!(config.theme, "auto");
     }
 
     #[test]
@@ -242,6 +263,7 @@ mod tests {
         let path = temp_config_path(&dir);
         let config = GuiConfig {
             translate_provider: "yandex".to_string(),
+            theme: default_theme(),
         };
 
         save_to_path(&path, &config).unwrap();
@@ -257,6 +279,7 @@ mod tests {
             &path,
             &GuiConfig {
                 translate_provider: "google".to_string(),
+                theme: default_theme(),
             },
         )
         .unwrap();
@@ -275,6 +298,7 @@ mod tests {
             &path,
             &GuiConfig {
                 translate_provider: "google".to_string(),
+                theme: default_theme(),
             },
         )
         .unwrap();
@@ -283,6 +307,7 @@ mod tests {
         manager
             .update(GuiConfig {
                 translate_provider: "deepl".to_string(),
+                theme: default_theme(),
             })
             .unwrap();
 
@@ -295,6 +320,32 @@ mod tests {
     }
 
     #[test]
+    fn update_persists_theme() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        save_to_path(
+            &path,
+            &GuiConfig {
+                translate_provider: "google".to_string(),
+                theme: default_theme(),
+            },
+        )
+        .unwrap();
+        let mut manager = GuiConfigManager::new_for_test(path.clone());
+
+        manager
+            .update(GuiConfig {
+                translate_provider: "google".to_string(),
+                theme: "dark".to_string(),
+            })
+            .unwrap();
+
+        assert_eq!(manager.config().theme, "dark");
+        let on_disk: GuiConfig = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(on_disk.theme, "dark");
+    }
+
+    #[test]
     fn reload_picks_up_valid_change() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
@@ -302,6 +353,7 @@ mod tests {
             &path,
             &GuiConfig {
                 translate_provider: "google".to_string(),
+                theme: default_theme(),
             },
         )
         .unwrap();
@@ -312,6 +364,7 @@ mod tests {
             &path,
             &GuiConfig {
                 translate_provider: "deepl".to_string(),
+                theme: default_theme(),
             },
         )
         .unwrap();
@@ -328,6 +381,7 @@ mod tests {
             &path,
             &GuiConfig {
                 translate_provider: "google".to_string(),
+                theme: default_theme(),
             },
         )
         .unwrap();

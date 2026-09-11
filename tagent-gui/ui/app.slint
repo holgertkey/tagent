@@ -1,10 +1,37 @@
-import { Button, ComboBox, ScrollView, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, ComboBox, Palette, ScrollView, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     title: "Tagent";
     preferred-width: 560px;
     preferred-height: 420px;
     forward-focus: input-field;
+
+    // Applies a theme string ("auto"/"light"/"dark") to this window's own
+    // Palette instance (globals aren't shared between windows, so both
+    // AppWindow and SettingsDialog need their own copy of this function).
+    // A plain-string `public function` — rather than exposing `Palette` and
+    // `ColorScheme` to Rust and calling `.set_color_scheme()` there directly —
+    // keeps Rust off Slint's `private_unstable_api` path that
+    // `slint::ColorScheme` otherwise resolves through.
+    public function apply-theme(theme: string) {
+        Palette.color-scheme = theme == "light" ? ColorScheme.light
+            : theme == "dark" ? ColorScheme.dark
+            : ColorScheme.unknown;
+    }
+
+    // Theme-adaptive tokens for the custom-drawn panels below (transcript,
+    // input box). Palette's role properties already resolve correctly for
+    // ColorScheme.dark/light/unknown(auto) — no manual branching needed here.
+    // prompt-accent is the one exception: it's a decorative highlight with no
+    // matching Palette role, so it branches on color-scheme directly.
+    property <brush> panel-background: Palette.alternate-background;
+    property <brush> panel-border: Palette.border;
+    property <brush> panel-foreground: Palette.alternate-foreground;
+    property <brush> field-background: Palette.control-background;
+    property <brush> field-foreground: Palette.control-foreground;
+    property <brush> selection-bg: Palette.selection-background;
+    property <brush> selection-fg: Palette.selection-foreground;
+    property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
 
     in-out property <string> input-text: "";
     in-out property <string> transcript: "=== Tagent ===\nType text and press Enter to translate.\n\n";
@@ -54,10 +81,10 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            background: #0c0c0c;
+            background: panel-background;
             border-radius: 4px;
             border-width: 1px;
-            border-color: #2a2a2a;
+            border-color: panel-border;
             vertical-stretch: 1;
             min-height: 60px;
 
@@ -71,9 +98,9 @@ export component AppWindow inherits Window {
                     text: transcript;
                     font-family: "monospace";
                     font-size: 13px;
-                    color: #d4d4d4;
-                    selection-background-color: #264f78;
-                    selection-foreground-color: #d4d4d4;
+                    color: panel-foreground;
+                    selection-background-color: selection-bg;
+                    selection-foreground-color: selection-fg;
                     wrap: word-wrap;
                     single-line: false;
                     read-only: true;
@@ -94,7 +121,7 @@ export component AppWindow inherits Window {
                 width: 32px;
                 height: 2px;
                 border-radius: 1px;
-                background: resize-touch.pressed ? #5a5a5a : resize-touch.has-hover ? #444444 : #2a2a2a;
+                background: resize-touch.pressed ? panel-border.brighter(1.0) : resize-touch.has-hover ? panel-border.brighter(0.5) : panel-border;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
             }
@@ -114,10 +141,10 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            background: #0c0c0c;
+            background: panel-background;
             border-radius: 4px;
             border-width: 1px;
-            border-color: #2a2a2a;
+            border-color: panel-border;
             height: input-box-height;
 
             HorizontalLayout {
@@ -130,15 +157,15 @@ export component AppWindow inherits Window {
                     text: "[" + languages[source-language-index] + "]:";
                     font-family: "monospace";
                     font-size: 13px;
-                    color: #e5c07b;
+                    color: prompt-accent;
                     vertical-alignment: center;
                 }
 
                 Rectangle {
-                    background: #151515;
+                    background: field-background;
                     border-radius: 3px;
                     border-width: 1px;
-                    border-color: #2a2a2a;
+                    border-color: panel-border;
                     horizontal-stretch: 1;
 
                     ScrollView {
@@ -150,9 +177,9 @@ export component AppWindow inherits Window {
                         input-field := TextInput {
                             text <=> input-text;
                             font-size: 13px;
-                            color: #d4d4d4;
-                            selection-background-color: #264f78;
-                            selection-foreground-color: #d4d4d4;
+                            color: field-foreground;
+                            selection-background-color: selection-bg;
+                            selection-foreground-color: selection-fg;
                             wrap: word-wrap;
                             single-line: false;
                             horizontal-alignment: left;
@@ -199,15 +226,26 @@ export component SettingsDialog inherits Dialog {
     preferred-width: 420px;
     preferred-height: 300px;
 
+    // Same helper as AppWindow's — see its doc comment. This dialog has its
+    // own separate Palette instance, so it needs its own call to this too.
+    public function apply-theme(theme: string) {
+        Palette.color-scheme = theme == "light" ? ColorScheme.light
+            : theme == "dark" ? ColorScheme.dark
+            : ColorScheme.unknown;
+    }
+
     in-out property <[string]> providers: ["google"];
     in-out property <int> provider-index: 0;
+    in-out property <[string]> themes: ["Auto", "Light", "Dark"];
+    in-out property <int> theme-index: 0;
 
-    callback save-requested(string);
+    callback save-requested(string /* provider */, string /* theme */);
 
     // Tabbed layout, laid out now for settings that don't exist yet: "General"
-    // holds everything shipped today, "Hotkeys & Tray" is a placeholder for the
-    // hotkey/start-minimized/popup-delay fields Stage 8 adds. Adding a category
-    // later means adding another `Tab { ... }` here, not restructuring the dialog.
+    // holds the provider, "View" holds the theme, "Hotkeys & Tray" is a
+    // placeholder for the hotkey/start-minimized/popup-delay fields Stage 8
+    // adds. Adding a category later means adding another `Tab { ... }` here,
+    // not restructuring the dialog.
     TabWidget {
         Tab {
             title: "General";
@@ -219,6 +257,20 @@ export component SettingsDialog inherits Dialog {
                 ComboBox {
                     model: providers;
                     current-index <=> provider-index;
+                }
+            }
+        }
+
+        Tab {
+            title: "View";
+
+            VerticalBox {
+                alignment: start;
+
+                Text { text: "Theme:"; }
+                ComboBox {
+                    model: themes;
+                    current-index <=> theme-index;
                 }
             }
         }
@@ -239,7 +291,7 @@ export component SettingsDialog inherits Dialog {
 
     StandardButton {
         kind: ok;
-        clicked => { save-requested(providers[provider-index]); }
+        clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
     StandardButton { kind: cancel; }
 }

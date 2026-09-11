@@ -244,6 +244,38 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `translate_provider` isn't one of `providers` (e.g. a hand-edited, not-yet-listed
   value), the dialog falls back to preselecting index 0 rather than erroring —
   accepted, since only `"google"` is a supported value today.
+- **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
+  `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
+  (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling
+  `.global::<Palette>()` from Rust — that would require naming Slint's
+  `ColorScheme` type in Rust, and the only path that resolves to
+  (`slint::private_unstable_api::re_exports::ColorScheme`, confirmed by grepping
+  the macro-generated `app.rs` in `target/`) is exactly what its name says: not a
+  stable public API to depend on. Instead, both `AppWindow` and `SettingsDialog`
+  each define their own `public function apply-theme(theme: string)` that does the
+  `Palette.color-scheme = theme == "light" ? ColorScheme.light : ...` assignment
+  *inside* `.slint`, generating a plain Rust method (`invoke_apply_theme(&self,
+  theme: SharedString)`) with no enum type crossing the language boundary at all.
+  Each window needs its *own* call: globals aren't shared between top-level
+  components (confirmed via Slint's own docs/discussions — same reason
+  `GuiConfigManager` is passed to both the `translate-requested` and
+  `settings-requested` closures rather than read off one shared Slint global), so
+  `main.rs` calls `invoke_apply_theme` three times: once on `AppWindow` at
+  startup, once on each freshly-created `SettingsDialog` (so it opens already
+  matching the active theme instead of the system default), and once more on
+  `AppWindow` from inside `on_save_requested` to apply a newly-picked theme live.
+  The custom-drawn transcript/input panels (previously fixed hex colors —
+  `#0c0c0c`/`#2a2a2a`/`#d4d4d4`/`#151515`/`#264f78`) now read `Palette`'s semantic
+  role properties instead (`background`/`alternate-background`/`border`/
+  `foreground`/`alternate-foreground`/`selection-background`/
+  `selection-foreground`/`control-background`/`control-foreground`), which already
+  resolve correctly for all three `color-scheme` values with no manual branching —
+  Palette's role properties are *resolved* colors, not raw scheme flags, unlike
+  `color-scheme` itself. The one exception is the `"[Lang]:"` prompt highlight
+  (`prompt-accent`), a decorative color with no matching Palette role: it branches
+  directly on `Palette.color-scheme == ColorScheme.light`, which means it can't
+  distinguish "explicitly auto, system is light" from "explicitly dark" — an
+  accepted minor limitation, not worth a bigger fix for one decorative color.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no clipboard integration, no hotkeys, no history
   logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German),
