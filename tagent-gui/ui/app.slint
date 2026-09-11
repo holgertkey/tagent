@@ -1,4 +1,4 @@
-import { Button, ComboBox, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView, StandardButton, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     title: "Tagent";
@@ -26,6 +26,7 @@ export component AppWindow inherits Window {
 
     callback translate-requested(string, string, string);
     callback swap-requested();
+    callback settings-requested();
 
     VerticalBox {
         HorizontalBox {
@@ -42,6 +43,13 @@ export component AppWindow inherits Window {
             ComboBox {
                 model: languages;
                 current-index <=> target-language-index;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "⚙";
+                clicked => { settings-requested(); }
             }
         }
 
@@ -184,4 +192,27 @@ export component AppWindow inherits Window {
             }
         }
     }
+}
+
+export component SettingsDialog inherits Dialog {
+    title: "Settings";
+
+    in-out property <[string]> providers: ["google"];
+    in-out property <int> provider-index: 0;
+
+    callback save-requested(string);
+
+    VerticalBox {
+        Text { text: "Translate provider:"; }
+        ComboBox {
+            model: providers;
+            current-index <=> provider-index;
+        }
+    }
+
+    StandardButton {
+        kind: ok;
+        clicked => { save-requested(providers[provider-index]); }
+    }
+    StandardButton { kind: cancel; }
 }

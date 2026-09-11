@@ -116,6 +116,23 @@ impl GuiConfigManager {
         &self.config
     }
 
+    /// Applies `config` in memory immediately and persists it to disk.
+    ///
+    /// The in-memory config is updated regardless of whether the write succeeds —
+    /// a user-initiated change (e.g. from a Settings dialog) shouldn't be silently
+    /// dropped just because the disk write failed. On a successful write,
+    /// `last_modified` is refreshed to the file's new mtime so the next
+    /// [`Self::check_and_reload`] doesn't immediately re-read what was just
+    /// written here.
+    pub fn update(&mut self, config: GuiConfig) -> io::Result<()> {
+        self.config = config;
+        let result = save_to_path(&self.path, &self.config);
+        if result.is_ok() {
+            self.last_modified = mtime(&self.path);
+        }
+        result
+    }
+
     /// Reloads from disk if the file's mtime has advanced since the last load.
     ///
     /// Returns `true` if the in-memory config changed. On a parse failure the
@@ -248,6 +265,33 @@ mod tests {
 
         assert!(!manager.check_and_reload());
         assert_eq!(manager.config().translate_provider, "google");
+    }
+
+    #[test]
+    fn update_applies_in_memory_persists_and_refreshes_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        save_to_path(
+            &path,
+            &GuiConfig {
+                translate_provider: "google".to_string(),
+            },
+        )
+        .unwrap();
+        let mut manager = GuiConfigManager::new_for_test(path.clone());
+
+        manager
+            .update(GuiConfig {
+                translate_provider: "deepl".to_string(),
+            })
+            .unwrap();
+
+        assert_eq!(manager.config().translate_provider, "deepl");
+        let on_disk: GuiConfig = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(on_disk.translate_provider, "deepl");
+        // last_modified was refreshed by update() itself, so a reload right after
+        // finds nothing new to pick up.
+        assert!(!manager.check_and_reload());
     }
 
     #[test]

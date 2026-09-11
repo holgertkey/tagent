@@ -12,6 +12,19 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+001] - 2026-09-11
+
+### Added
+- Settings dialog: a ⚙ button (top-right of the main window) opens a dialog to
+  change `translate_provider` from a dropdown of known providers (currently just
+  `"google"`), instead of hand-editing `tagent-gui.json`. OK saves and closes;
+  Cancel (or the dialog's own close button) discards the change. The file stays
+  hand-editable to any provider string regardless — the dropdown is a convenience,
+  not a validation gate.
+- `GuiConfigManager::update()`: applies a config change in memory immediately and
+  persists it to disk, refreshing the tracked modification time so the write
+  doesn't trigger a redundant reload on the next translation.
+
 ## [0.14.0+000] - 2026-09-11
 
 ### Added

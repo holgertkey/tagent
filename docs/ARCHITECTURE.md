@@ -179,8 +179,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   last-known-good in-memory config rather than reverting to the default (the
   default-on-corruption behavior is specific to the very first load).
 - **How translation works**: `main()` creates one `GuiConfigManager` (`GuiConfig` +
-  its file's last-seen mtime), wrapped in `Arc<Mutex<_>>` so future callbacks (e.g. a
-  Settings window) can share it. The `translate-requested` Slint callback calls
+  its file's last-seen mtime), wrapped in `Arc<Mutex<_>>` so both the
+  `translate-requested` and `settings-requested` callbacks can share it (via
+  separate `.clone()`s of the `Arc`, one moved into each closure — see the
+  Settings dialog bullet below). The `translate-requested` Slint callback calls
   `check_and_reload()` and clones the current `translate_provider` synchronously (on
   the UI thread, before spawning any work) — so a hand-edited config file is picked up
   on the *next* translation, no restart needed — then spawns a plain OS thread with its
@@ -203,6 +205,35 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   to that cap. `key-pressed` submits on Enter and inserts a newline on Shift+Enter.
   `forward-focus: input-field` on the window root means the input field has focus as
   soon as the window opens, so typing or pasting works without clicking into it first.
+- **Settings dialog** (`SettingsDialog` in `app.slint`, gear `⚙` button at the right
+  edge of `AppWindow`'s top row): a second `export component ... inherits Dialog`
+  in the *same* `app.slint` file — supported since Slint 1.7, no second `build.rs`
+  entry needed. Uses `std-widgets`' built-in `Dialog`/`StandardButton { kind: ok /
+  cancel; }` rather than a hand-rolled `Window`, so button layout/ordering follows
+  the platform convention for free. Its `providers` array property (default
+  `["google"]`) is the *only* place the known-provider list is defined — mirroring
+  `AppWindow`'s `languages` array — and `main.rs` reads it back via
+  `dialog.get_providers()` to resolve the current `translate_provider` to a
+  `ComboBox` index rather than hard-coding its own copy of the list. `main()`
+  creates a fresh `SettingsDialog` instance each time the gear is clicked (not a
+  long-lived one re-shown), matching the upstream multi-window example; Slint keeps
+  a shown window alive internally once `.show()` is called, so only a `Weak`
+  handle needs to survive inside the `on_save_requested` closure to call `.hide()`
+  after saving (same pattern `AppWindow`'s own callbacks already use). The `ok`
+  `StandardButton` gets an explicit `clicked` handler that resolves
+  `providers[provider-index]` to a string *inside Slint* and passes it to Rust via
+  a custom `save-requested(string)` callback — mirroring how `translate-requested`
+  already receives resolved language strings rather than indices — so Rust never
+  needs its own copy of the provider list to interpret the callback argument. The
+  `cancel` `StandardButton` has no Rust-side handler at all: `Dialog`'s documented
+  default ("the cancel button rejects a Dialog and closes it when clicked") is
+  sufficient. Saving goes through `GuiConfigManager::update()` (`config.rs`), which
+  applies the change in memory immediately (regardless of whether the disk write
+  succeeds) and refreshes the tracked mtime so the write doesn't trigger a
+  self-inflicted reload on the next `check_and_reload()`. If the current
+  `translate_provider` isn't one of `providers` (e.g. a hand-edited, not-yet-listed
+  value), the dialog falls back to preselecting index 0 rather than erroring —
+  accepted, since only `"google"` is a supported value today.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no clipboard integration, no hotkeys, no history
   logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German),
@@ -210,15 +241,12 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 
 ### Known gaps in `tagent-gui`
 
-- **No Settings window yet** — `tagent-gui.json` can only be changed by hand-editing
-  the file (picked up live, see above) or deleting it to get the default back; there's
-  no in-app UI to change `translate_provider` (planned as Stage 3 in the development
-  plan).
-- **`tagent-gui.json` only has one field** — language list, hotkeys, history logging,
-  colors, TTS settings, dictionary/spell-check toggles aren't configurable at all yet
-  (either hardcoded, like the 6-language list, or simply unsupported, like history/
-  hotkeys). `tagent-cli.conf` is not read at all any more (no migration path — see the
-  "own configuration" concept in the development plan).
+- **`tagent-gui.json` only has one settable field** (`translate_provider`, via the
+  Settings dialog above) — language list, hotkeys, history logging, colors, TTS
+  settings, dictionary/spell-check toggles aren't configurable at all yet (either
+  hardcoded, like the 6-language list, or simply unsupported, like history/
+  hotkeys). `tagent-cli.conf` is not read at all any more (no migration path — see
+  the "own configuration" concept in the development plan).
 - **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
   directly rather than going through `Translator`'s richer orchestration and formatting.
 

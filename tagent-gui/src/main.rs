@@ -1,4 +1,4 @@
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
+    let config_manager_for_settings = config_manager.clone();
     let weak = window.as_weak();
     window.on_translate_requested(move |text, from_lang, to_lang| {
         let text = text.trim().to_string();
@@ -82,6 +83,39 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // "English" (index 1) rather than making it the new target.
             window.set_target_language_index(if source == 0 { 1 } else { source });
         }
+    });
+
+    window.on_settings_requested(move || {
+        let dialog = SettingsDialog::new().unwrap();
+
+        let current_provider = config_manager_for_settings
+            .lock()
+            .unwrap()
+            .config()
+            .translate_provider
+            .clone();
+        let providers = dialog.get_providers();
+        let index = providers
+            .iter()
+            .position(|p| p.as_str() == current_provider)
+            .unwrap_or(0);
+        dialog.set_provider_index(index as i32);
+
+        let dialog_weak = dialog.as_weak();
+        let config_manager_for_save = config_manager_for_settings.clone();
+        dialog.on_save_requested(move |provider| {
+            let new_config = config::GuiConfig {
+                translate_provider: provider.to_string(),
+            };
+            if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config) {
+                eprintln!("Warning: failed to save tagent-gui.json: {err}");
+            }
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.hide().ok();
+            }
+        });
+
+        dialog.show().unwrap();
     });
 
     window.run()?;
