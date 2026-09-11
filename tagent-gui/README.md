@@ -42,7 +42,10 @@ button swaps source and target. The ⚙ button (top-right) opens a Settings dial
 - **Theme**: `Light`/`Dark` apply to the whole UI, not just buttons and dropdowns —
   the transcript and input panels re-color too, since they're built from `Palette`'s
   semantic color roles rather than fixed hex values. `Auto` follows the system
-  setting.
+  setting — on Linux, a fresh window may briefly flash light before settling into
+  dark; this is an upstream Slint/winit limitation
+  ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392)), not
+  specific to `tagent-gui`. Pick `Light`/`Dark` explicitly to avoid it.
 - Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German). Not
   required to match `tagent-cli`'s ~16 — `tagent-gui` sets its own feature roadmap.
 - No dictionary/spell-check display, no text-to-speech, no clipboard integration, no

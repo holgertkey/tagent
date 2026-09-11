@@ -276,6 +276,15 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   directly on `Palette.color-scheme == ColorScheme.light`, which means it can't
   distinguish "explicitly auto, system is light" from "explicitly dark" — an
   accepted minor limitation, not worth a bigger fix for one decorative color.
+  **Known limitation with `Auto` specifically**: on Linux, a freshly created
+  window (at app startup, and each time a `SettingsDialog` opens) briefly paints
+  in a light scheme before repainting in the correct one — an upstream Slint/
+  winit limitation ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392):
+  winit doesn't deliver Linux theme detection synchronously), not something
+  fixable in `apply-theme` itself. Explicit `Light`/`Dark` need no detection and
+  aren't expected to flash. Accepted as-is (see the development plan's theme
+  section for the full reasoning) rather than worked around with extra persisted
+  state for a cosmetic, single-frame issue.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no clipboard integration, no hotkeys, no history
   logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German),
