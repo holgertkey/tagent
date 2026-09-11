@@ -210,8 +210,18 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   in the *same* `app.slint` file — supported since Slint 1.7, no second `build.rs`
   entry needed. Uses `std-widgets`' built-in `Dialog`/`StandardButton { kind: ok /
   cancel; }` rather than a hand-rolled `Window`, so button layout/ordering follows
-  the platform convention for free. Its `providers` array property (default
-  `["google"]`) is the *only* place the known-provider list is defined — mirroring
+  the platform convention for free — sets `preferred-width`/`preferred-height`
+  explicitly (420×300); without it the dialog fell back to Slint's default window
+  size, an early Stage 3 bug fixed the same day it shipped. Its content sits inside
+  a `TabWidget` (`General`, holding everything that exists today; `Hotkeys & Tray`,
+  a placeholder `Text` pending the fields Stage 8 adds) rather than a flat panel —
+  laid out ahead of need since Settings is expected to grow more categories over
+  future stages, so a new category is a new `Tab { }` block, not a redesign.
+  `TabWidget`'s `Tab` children, like `Dialog` itself, are core-language-adjacent:
+  importing `Tab` from `std-widgets.slint` explicitly is rejected the same way
+  importing `Dialog` is — only `TabWidget` itself is imported. Its `providers`
+  array property (default `["google"]`) is the *only* place the known-provider
+  list is defined — mirroring
   `AppWindow`'s `languages` array — and `main.rs` reads it back via
   `dialog.get_providers()` to resolve the current `translate_provider` to a
   `ComboBox` index rather than hard-coding its own copy of the list. `main()`

@@ -1,4 +1,4 @@
-import { Button, ComboBox, ScrollView, StandardButton, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     title: "Tagent";
@@ -196,17 +196,44 @@ export component AppWindow inherits Window {
 
 export component SettingsDialog inherits Dialog {
     title: "Settings";
+    preferred-width: 420px;
+    preferred-height: 300px;
 
     in-out property <[string]> providers: ["google"];
     in-out property <int> provider-index: 0;
 
     callback save-requested(string);
 
-    VerticalBox {
-        Text { text: "Translate provider:"; }
-        ComboBox {
-            model: providers;
-            current-index <=> provider-index;
+    // Tabbed layout, laid out now for settings that don't exist yet: "General"
+    // holds everything shipped today, "Hotkeys & Tray" is a placeholder for the
+    // hotkey/start-minimized/popup-delay fields Stage 8 adds. Adding a category
+    // later means adding another `Tab { ... }` here, not restructuring the dialog.
+    TabWidget {
+        Tab {
+            title: "General";
+
+            VerticalBox {
+                alignment: start;
+
+                Text { text: "Translate provider:"; }
+                ComboBox {
+                    model: providers;
+                    current-index <=> provider-index;
+                }
+            }
+        }
+
+        Tab {
+            title: "Hotkeys & Tray";
+
+            VerticalBox {
+                alignment: start;
+
+                Text {
+                    text: "Hotkey and system tray settings are coming soon.";
+                    wrap: word-wrap;
+                }
+            }
         }
     }
 

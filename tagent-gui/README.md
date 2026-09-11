@@ -30,11 +30,13 @@ button swaps source and target. The ⚙ button (top-right) opens a Settings dial
   using its last valid config in memory. Location:
   `~/.config/tagent-gui/tagent-gui.json` on Linux/macOS,
   `%APPDATA%\tagent-gui\tagent-gui.json` on Windows.
-- The ⚙ Settings dialog currently offers one field — `translate_provider` — as a
-  dropdown of known providers, defaulting to `"google"` (the only one
-  `tagent::providers::create_provider()` currently supports). The dropdown is a
-  convenience, not a validation gate: `tagent-gui.json` still accepts any string by
-  hand, even one not listed in the dialog. OK saves and closes; Cancel (or the
+- The ⚙ Settings dialog is organized into tabs — `General` (currently the only one
+  with real content: `translate_provider`, as a dropdown of known providers,
+  defaulting to `"google"`, the only one `tagent::providers::create_provider()`
+  currently supports) and `Hotkeys & Tray` (a placeholder for settings a later
+  stage will add). The dropdown is a convenience, not a validation gate:
+  `tagent-gui.json` still accepts any string by hand, even one not listed in the
+  dialog. OK saves and closes; Cancel (or the
   window's own close button) discards the change and closes without saving.
 - Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German). Not
   required to match `tagent-cli`'s ~16 — `tagent-gui` sets its own feature roadmap.

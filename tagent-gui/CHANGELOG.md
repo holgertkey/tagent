@@ -12,6 +12,23 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+002] - 2026-09-11
+
+### Fixed
+- Settings dialog no longer opens at an oversized default size with its OK/Cancel
+  buttons stretched into full-height vertical bars — it had no explicit
+  `preferred-width`/`preferred-height`, so it fell back to Slint's default window
+  size with the small amount of real content pinned in a corner. Now sized
+  explicitly (420×300) with OK/Cancel laid out as a normal row at the bottom.
+
+### Added
+- Settings dialog content is now organized into tabs (`General`, `Hotkeys & Tray`)
+  instead of a single flat panel — laid out ahead of the settings that will
+  populate the second tab in a later stage (hotkey string, start-minimized-to-tray,
+  popup auto-hide delay), so adding a new settings category later is a new `Tab {
+  }` block, not a redesign. `General` holds the one setting that exists today
+  (`translate_provider`); `Hotkeys & Tray` is a placeholder pending that stage.
+
 ## [0.14.0+001] - 2026-09-11
 
 ### Added
