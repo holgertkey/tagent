@@ -12,11 +12,34 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+000] - 2026-09-11
+
+### Added
+- Own configuration file, `tagent-gui.json` (`~/.config/tagent-gui/tagent-gui.json`
+  on Linux/macOS, `%APPDATA%\tagent-gui\tagent-gui.json` on Windows), holding
+  `translate_provider`. Plain, pretty-printed JSON meant to be hand-editable — there
+  is no Settings window yet. A missing file gets a fresh default written
+  (`"google"`); a present-but-invalid file is left untouched on disk and the app
+  falls back to its last valid in-memory config, logging a warning.
+- Live-reload: the config file's modification time is checked before each
+  translation, so a hand-edit takes effect on the next translation without
+  restarting the app — no separate reload action needed.
+
 ### Changed
 - Established `tagent-gui` as a fully independent application from `tagent-cli`:
-  own interface, own configuration (roadmap), own feature set, own versioning —
-  built only on the `tagent` library. This file starts tracking notable changes
-  from this point forward.
+  own interface, own configuration, own feature set, own versioning — built only
+  on the `tagent` library. This file starts tracking notable changes from this
+  point forward.
+- Versioning now uses the same `MAJOR.MINOR.PATCH+BUILD` format and increment
+  rules as `tagent-cli`, with its own independent counter (no shared version
+  number, no `build.rs` auto-sync).
+
+### Removed
+- The inline `tagent-cli.conf` reader for `TranslateProvider`. **No migration
+  path**: an existing `TranslateProvider` setting in `tagent-cli.conf` is no
+  longer read by `tagent-gui` — set `translate_provider` in the new
+  `tagent-gui.json` instead (it's created with the `"google"` default on first
+  run if missing).
 
 ## [0.13.0] - 2026-08-05
 

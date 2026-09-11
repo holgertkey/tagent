@@ -21,11 +21,15 @@ button swaps source and target.
 
 ## What it does and doesn't do
 
-- Reads `TranslateProvider` from `tagent-cli.conf` at startup (via a small inline reader,
-  not the full config system — see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)),
-  defaulting to `"google"`. This is a temporary bootstrap shortcut, not the intended
-  end state — `tagent-gui` is meant to have its own config file eventually (see the
-  development plan). Not live-reloaded — restart to pick up a config change.
+- Reads `translate_provider` from its own `tagent-gui.json` config file (see
+  [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)), defaulting to `"google"` and
+  creating the file with that default on first run. Plain, pretty-printed JSON,
+  meant to be hand-editable — there's no Settings window yet. Changes are
+  live-reloaded (checked before each translation), no restart needed. A missing
+  file gets a fresh default written; a present-but-invalid file is left untouched
+  and the app logs a warning and keeps using its last valid config in memory.
+  Location: `~/.config/tagent-gui/tagent-gui.json` on Linux/macOS,
+  `%APPDATA%\tagent-gui\tagent-gui.json` on Windows.
 - Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German). Not
   required to match `tagent-cli`'s ~16 — `tagent-gui` sets its own feature roadmap.
 - No dictionary/spell-check display, no text-to-speech, no clipboard integration, no

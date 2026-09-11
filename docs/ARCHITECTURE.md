@@ -142,13 +142,15 @@ tagent instead of leaking through. Notable details:
 
 **Concept (decided 2026-08-15, see [`.debug/tagent-gui development
 plan.md`](../.debug/tagent-gui%20development%20plan.md)): `tagent-gui` is a fully
-independent application from `tagent-cli`** — own interface, own configuration
-(target design; see "Reading `TranslateProvider`" below for the current bootstrap
-shortcut), own feature set (no obligation to reach parity with `tagent-cli`), and own
-versioning/changelog (`tagent-gui/CHANGELOG.md`, independent of the root
-`CHANGELOG.md` which belongs to `tagent-cli`). The only thing the two share is the
-`tagent` library. This sharpens, rather than changes, the dependency rule already in
-place below (`tagent-gui` depends on `tagent` only, never on `tagent-cli`).
+independent application from `tagent-cli`** — own interface, own configuration (its
+own `tagent-gui.json`; see "Reading `translate_provider`" below), own feature set (no
+obligation to reach parity with `tagent-cli`), and own versioning/changelog
+(`tagent-gui/CHANGELOG.md`, independent of the root `CHANGELOG.md` which belongs to
+`tagent-cli`, and using the same `MAJOR.MINOR.PATCH+BUILD` format/increment rules as
+`tagent-cli` but its own independent counter — decided 2026-09-11). The only thing the
+two share is the `tagent` library. This sharpens, rather than changes, the dependency
+rule already in place below (`tagent-gui` depends on `tagent` only, never on
+`tagent-cli`).
 
 - **UI framework**: [Slint](https://slint.dev/), via `tagent-gui/ui/app.slint` and the
   `slint`/`slint-build` crates. `tagent-gui/build.rs` is a single line:
@@ -158,23 +160,35 @@ place below (`tagent-gui` depends on `tagent` only, never on `tagent-cli`).
   above), not `tagent-cli`. Unlike before this crate existed, there is no
   `binary-resources` feature to disable here: `tagent` never runs `winres`, so there's
   nothing Windows-resource-related to guard against.
-- **Reading `TranslateProvider` without `ConfigManager`**: since `tagent` has no config
-  module, `tagent-gui/src/main.rs` has its own small `read_translate_provider()`
-  function — opens `tagent-cli.conf` via `dirs::config_dir()`, scans for `[Provider]` /
-  `TranslateProvider = ...`, defaults to `"google"` on any miss. This avoids reusing
-  `tagent-cli`'s logic directly: pulling in `ConfigManager` would mean pulling in all
-  of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the whole `platform/` tree),
-  just to read one string. **This is a temporary bootstrap shortcut, not the target
-  design** — per the "own configuration" concept decided 2026-08-15 (see the
-  development plan's Stage 1), `tagent-gui` is meant to eventually read its own config
-  file (e.g. `tagent-gui.conf`) instead of reaching into `tagent-cli.conf` at all.
-- **How translation works**: `main()` calls `read_translate_provider()` once at startup
-  and captures the result. The `translate-requested` Slint callback spawns a plain OS
-  thread with its own fresh `tokio::runtime::Runtime`, calls
+- **Reading `translate_provider` from its own config file**: since `tagent` has no
+  config module, `tagent-gui/src/config.rs` implements a small, independent JSON
+  config of its own — `GuiConfig { translate_provider: String }`, serialized with
+  `serde`/`serde_json` to `tagent-gui.json` at `dirs::config_dir().join("tagent-gui")`.
+  This avoids reusing `tagent-cli`'s `ConfigManager` directly: pulling that in would
+  mean pulling in all of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the whole
+  `platform/` tree), just to read one string. Unlike `tagent-cli.conf`'s INI format
+  (commented, meant to be self-documenting), `tagent-gui.json` is plain JSON with no
+  comment support — but it's still meant to be hand-editable (there's no Settings
+  window yet), not just a machine-written cache: `load_from_path()` leaves an existing
+  but unparseable file untouched on disk rather than overwriting it, logging a warning
+  and falling back to defaults in memory for that run instead. A missing file gets a
+  freshly written default (`{"translate_provider": "google"}`, pretty-printed).
+  `GuiConfigManager` wraps this with mtime-based live-reload
+  (`check_and_reload()`), mirroring `tagent-cli`'s
+  `ConfigManager::check_and_reload()`: a reload that fails to parse keeps the
+  last-known-good in-memory config rather than reverting to the default (the
+  default-on-corruption behavior is specific to the very first load).
+- **How translation works**: `main()` creates one `GuiConfigManager` (`GuiConfig` +
+  its file's last-seen mtime), wrapped in `Arc<Mutex<_>>` so future callbacks (e.g. a
+  Settings window) can share it. The `translate-requested` Slint callback calls
+  `check_and_reload()` and clones the current `translate_provider` synchronously (on
+  the UI thread, before spawning any work) — so a hand-edited config file is picked up
+  on the *next* translation, no restart needed — then spawns a plain OS thread with its
+  own fresh `tokio::runtime::Runtime`, calls
   `tagent::providers::create_provider(&translate_provider)`, calls
   `provider.translate_text(...)`, then marshals the result back onto the Slint UI thread
   via `slint::invoke_from_event_loop`. A `to == "auto"` request is rejected before
-  spawning the thread (both the target `ComboBox` and the ⇄ swap button can otherwise
+  the reload/spawn (both the target `ComboBox` and the ⇄ swap button can otherwise
   produce one), appending an in-transcript error instead of calling the provider.
   Language names from the UI are resolved to codes via `tagent::languages::name_to_code`.
 - **Transcript pane** (`transcript-scroll` / `transcript-text` in `app.slint`): a
@@ -196,15 +210,15 @@ place below (`tagent-gui` depends on `tagent` only, never on `tagent-cli`).
 
 ### Known gaps in `tagent-gui`
 
-- **`tagent-cli.conf` is read once at startup, not live-reloaded.** Unlike `tagent-cli`
-  (`ConfigManager::check_and_reload()`, called before every translation), `tagent-gui`
-  snapshots `translate_provider` in a local variable in `main()` and never re-reads the
-  file, so editing `tagent-cli.conf` while the GUI is running has no effect until restart.
-- **Everything else in `tagent-cli.conf` is still ignored** — language list, hotkeys,
-  history logging, colors, TTS settings, dictionary/spell-check toggles. Only
-  `TranslateProvider` (via the inline reader above) and `tagent::languages` are
-  consulted; the rest is either hardcoded (6-language list) or simply unsupported (no
-  history, no hotkeys).
+- **No Settings window yet** — `tagent-gui.json` can only be changed by hand-editing
+  the file (picked up live, see above) or deleting it to get the default back; there's
+  no in-app UI to change `translate_provider` (planned as Stage 3 in the development
+  plan).
+- **`tagent-gui.json` only has one field** — language list, hotkeys, history logging,
+  colors, TTS settings, dictionary/spell-check toggles aren't configurable at all yet
+  (either hardcoded, like the 6-language list, or simply unsupported, like history/
+  hotkeys). `tagent-cli.conf` is not read at all any more (no migration path — see the
+  "own configuration" concept in the development plan).
 - **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
   directly rather than going through `Translator`'s richer orchestration and formatting.
 
