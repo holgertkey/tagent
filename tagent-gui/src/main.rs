@@ -73,6 +73,8 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_translation_size(config.translation_size);
     window.set_translation_color(resolve_color(&config.translation_color, default_fg));
     window.set_translation_background(resolve_color(&config.translation_background, default_bg));
+
+    window.set_block_spacing_px(config.block_spacing_px);
 }
 
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
@@ -256,6 +258,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // it would render in the system default regardless of what's saved.
         dialog.invoke_apply_theme(current_config.theme.clone().into());
 
+        dialog.set_block_spacing_px(current_config.block_spacing_px);
+
         dialog.set_phrase_font_index(font_index_for(&current_config.phrase_font));
         dialog.set_phrase_size(current_config.phrase_size);
         dialog.set_translation_font_index(font_index_for(&current_config.translation_font));
@@ -409,6 +413,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_translation_bg_green(),
                     dialog.get_translation_bg_blue(),
                 ),
+                block_spacing_px: dialog.get_block_spacing_px(),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {

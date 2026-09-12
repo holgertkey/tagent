@@ -158,6 +158,9 @@ export component AppWindow inherits Window {
     in-out property <color> translation-color: #000000;
     in-out property <color> translation-background: #00000000;
 
+    // Vertical gap (px) between one phrase/translation pair and the next.
+    in-out property <int> block-spacing-px: 20;
+
     // Height the user picked by dragging the resize handle; clamped and
     // combined with the wrapped text's natural height below.
     in-out property <length> input-user-height: 32px;
@@ -217,7 +220,7 @@ export component AppWindow inherits Window {
                     x: 8px;
                     y: 8px;
                     width: parent.width - 16px;
-                    spacing: 8px;
+                    spacing: block-spacing-px * 1px;
                     alignment: start;
 
                     Text {
@@ -409,6 +412,10 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
 
+    // Vertical gap (px) between transcript blocks — mirrors AppWindow's
+    // block-spacing-px.
+    in-out property <int> block-spacing-px: 20;
+
     // Font choices shared by the phrase and translation style pickers below;
     // main.rs maps index 0/1/2 to the "monospace"/"sans-serif"/"serif"
     // font-family strings actually applied on AppWindow.
@@ -484,6 +491,12 @@ export component SettingsDialog inherits Dialog {
                     ComboBox {
                         model: themes;
                         current-index <=> theme-index;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Blocks spacing (px):"; vertical-alignment: center; }
+                        SpinBox { minimum: 0; maximum: 200; value <=> block-spacing-px; }
                     }
 
                     Text { text: "Phrase"; font-weight: 700; }

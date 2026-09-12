@@ -12,6 +12,13 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+008] - 2026-09-12
+
+### Added
+- "Blocks spacing (px)" setting in Settings > View: controls the vertical gap
+  between one phrase/translation pair and the next in the transcript, in
+  pixels (default 20). Persisted as `block_spacing_px` in `tagent-gui.json`.
+
 ## [0.14.0+007] - 2026-09-12
 
 ### Fixed

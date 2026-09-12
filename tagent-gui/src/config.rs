@@ -28,6 +28,11 @@ fn default_style_color() -> String {
     String::new()
 }
 
+/// Default vertical gap (px) between transcript blocks.
+fn default_block_spacing_px() -> i32 {
+    20
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -63,6 +68,9 @@ pub struct GuiConfig {
     /// Background color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub translation_background: String,
+    /// Vertical gap (px) between one phrase/translation pair and the next.
+    #[serde(default = "default_block_spacing_px")]
+    pub block_spacing_px: i32,
 }
 
 impl Default for GuiConfig {
@@ -78,6 +86,7 @@ impl Default for GuiConfig {
             translation_size: default_style_size(),
             translation_color: default_style_color(),
             translation_background: default_style_color(),
+            block_spacing_px: default_block_spacing_px(),
         }
     }
 }
@@ -310,6 +319,7 @@ mod tests {
         assert_eq!(config.translation_size, 13);
         assert_eq!(config.translation_color, "");
         assert_eq!(config.translation_background, "");
+        assert_eq!(config.block_spacing_px, 20);
     }
 
     #[test]
