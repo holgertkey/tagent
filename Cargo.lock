@@ -5455,7 +5455,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+005"
+version = "0.14.0+006"
 dependencies = [
  "dirs",
  "serde",

@@ -12,6 +12,15 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+006] - 2026-09-12
+
+### Fixed
+- The phrase/translation color-picker popup (Settings > View) closed itself on
+  every slider drag instead of staying open, because `PopupWindow`'s default
+  `close-policy` is `close-on-click` — any click, including one on a slider
+  inside the popup, counted as "close". Set explicitly to
+  `close-on-click-outside` so the popup only closes when clicking elsewhere.
+
 ## [0.14.0+005] - 2026-09-12
 
 ### Added

@@ -60,6 +60,11 @@ component ColorPickerField {
                     y: parent.height + 4px;
                     width: 160px;
                     height: 116px;
+                    // Default close-policy is close-on-click, which would close
+                    // the popup on every slider drag (a click on the slider's
+                    // own track/thumb counts). Only auto-close on a click
+                    // outside the popup, e.g. elsewhere in the dialog.
+                    close-policy: PopupClosePolicy.close-on-click-outside;
 
                     Rectangle {
                         background: Palette.background;
