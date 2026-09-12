@@ -33,6 +33,11 @@ fn default_block_spacing_px() -> i32 {
     20
 }
 
+/// Default vertical gap (px) between a phrase and its own translation.
+fn default_phrase_translation_spacing_px() -> i32 {
+    2
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -71,6 +76,9 @@ pub struct GuiConfig {
     /// Vertical gap (px) between one phrase/translation pair and the next.
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
+    /// Vertical gap (px) between a phrase and its own translation, within one pair.
+    #[serde(default = "default_phrase_translation_spacing_px")]
+    pub phrase_translation_spacing_px: i32,
 }
 
 impl Default for GuiConfig {
@@ -87,6 +95,7 @@ impl Default for GuiConfig {
             translation_color: default_style_color(),
             translation_background: default_style_color(),
             block_spacing_px: default_block_spacing_px(),
+            phrase_translation_spacing_px: default_phrase_translation_spacing_px(),
         }
     }
 }
@@ -320,6 +329,7 @@ mod tests {
         assert_eq!(config.translation_color, "");
         assert_eq!(config.translation_background, "");
         assert_eq!(config.block_spacing_px, 20);
+        assert_eq!(config.phrase_translation_spacing_px, 2);
     }
 
     #[test]

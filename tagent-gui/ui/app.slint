@@ -160,6 +160,8 @@ export component AppWindow inherits Window {
 
     // Vertical gap (px) between one phrase/translation pair and the next.
     in-out property <int> block-spacing-px: 20;
+    // Vertical gap (px) between a phrase and its own translation, within one pair.
+    in-out property <int> phrase-translation-spacing-px: 2;
 
     // Height the user picked by dragging the resize handle; clamped and
     // combined with the wrapped text's natural height below.
@@ -232,7 +234,7 @@ export component AppWindow inherits Window {
                     }
 
                     for entry in transcript-entries: VerticalLayout {
-                        spacing: 2px;
+                        spacing: phrase-translation-spacing-px * 1px;
 
                         Rectangle {
                             background: phrase-background;
@@ -412,9 +414,10 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
 
-    // Vertical gap (px) between transcript blocks — mirrors AppWindow's
-    // block-spacing-px.
+    // Vertical gaps (px) in the transcript — mirror AppWindow's
+    // block-spacing-px/phrase-translation-spacing-px.
     in-out property <int> block-spacing-px: 20;
+    in-out property <int> phrase-translation-spacing-px: 2;
 
     // Font choices shared by the phrase and translation style pickers below;
     // main.rs maps index 0/1/2 to the "monospace"/"sans-serif"/"serif"
@@ -497,6 +500,11 @@ export component SettingsDialog inherits Dialog {
                         spacing: 8px;
                         Text { text: "Blocks spacing (px):"; vertical-alignment: center; }
                         SpinBox { minimum: 0; maximum: 200; value <=> block-spacing-px; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Phrase/translation spacing (px):"; vertical-alignment: center; }
+                        SpinBox { minimum: 0; maximum: 100; value <=> phrase-translation-spacing-px; }
                     }
 
                     Text { text: "Phrase"; font-weight: 700; }
