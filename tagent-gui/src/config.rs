@@ -12,6 +12,22 @@ fn default_theme() -> String {
     "auto".to_string()
 }
 
+/// Default font family for transcript style fields: `"monospace"`,
+/// `"sans-serif"`, or `"serif"`.
+fn default_style_font() -> String {
+    "monospace".to_string()
+}
+
+/// Default font size (px) for transcript style fields.
+fn default_style_size() -> i32 {
+    13
+}
+
+/// Default color for transcript style fields: empty means "follow the theme".
+fn default_style_color() -> String {
+    String::new()
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -23,6 +39,30 @@ pub struct GuiConfig {
     /// One of `"auto"`, `"light"`, `"dark"`. `"auto"` follows the system setting.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Font family for the original-phrase lines in the transcript.
+    #[serde(default = "default_style_font")]
+    pub phrase_font: String,
+    /// Font size (px) for the original-phrase lines in the transcript.
+    #[serde(default = "default_style_size")]
+    pub phrase_size: i32,
+    /// Text color for the original-phrase lines, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub phrase_color: String,
+    /// Background color for the original-phrase lines, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub phrase_background: String,
+    /// Font family for the translation lines in the transcript.
+    #[serde(default = "default_style_font")]
+    pub translation_font: String,
+    /// Font size (px) for the translation lines in the transcript.
+    #[serde(default = "default_style_size")]
+    pub translation_size: i32,
+    /// Text color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub translation_color: String,
+    /// Background color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub translation_background: String,
 }
 
 impl Default for GuiConfig {
@@ -30,6 +70,14 @@ impl Default for GuiConfig {
         Self {
             translate_provider: default_translate_provider(),
             theme: default_theme(),
+            phrase_font: default_style_font(),
+            phrase_size: default_style_size(),
+            phrase_color: default_style_color(),
+            phrase_background: default_style_color(),
+            translation_font: default_style_font(),
+            translation_size: default_style_size(),
+            translation_color: default_style_color(),
+            translation_background: default_style_color(),
         }
     }
 }
@@ -227,6 +275,7 @@ mod tests {
         let config = GuiConfig {
             translate_provider: "deepl".to_string(),
             theme: default_theme(),
+            ..Default::default()
         };
         save_to_path(&path, &config).unwrap();
 
@@ -243,6 +292,24 @@ mod tests {
 
         assert_eq!(config.translate_provider, "google");
         assert_eq!(config.theme, "auto");
+    }
+
+    #[test]
+    fn old_file_without_style_fields_defaults_to_monospace_and_theme_colors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.phrase_font, "monospace");
+        assert_eq!(config.phrase_size, 13);
+        assert_eq!(config.phrase_color, "");
+        assert_eq!(config.phrase_background, "");
+        assert_eq!(config.translation_font, "monospace");
+        assert_eq!(config.translation_size, 13);
+        assert_eq!(config.translation_color, "");
+        assert_eq!(config.translation_background, "");
     }
 
     #[test]
@@ -264,6 +331,7 @@ mod tests {
         let config = GuiConfig {
             translate_provider: "yandex".to_string(),
             theme: default_theme(),
+            ..Default::default()
         };
 
         save_to_path(&path, &config).unwrap();
@@ -280,6 +348,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -299,6 +368,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -308,6 +378,7 @@ mod tests {
             .update(GuiConfig {
                 translate_provider: "deepl".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             })
             .unwrap();
 
@@ -328,6 +399,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -337,6 +409,7 @@ mod tests {
             .update(GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: "dark".to_string(),
+                ..Default::default()
             })
             .unwrap();
 
@@ -354,6 +427,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -365,6 +439,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "deepl".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -382,6 +457,7 @@ mod tests {
             &GuiConfig {
                 translate_provider: "google".to_string(),
                 theme: default_theme(),
+                ..Default::default()
             },
         )
         .unwrap();

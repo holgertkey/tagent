@@ -1,4 +1,96 @@
-import { Button, ComboBox, Palette, ScrollView, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, SpinBox, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+// One translation round-trip in the transcript: the original phrase and its
+// translation (or an error message), each rendered with its own independently
+// configurable font/size/color/background — see AppWindow's phrase-*/translation-*
+// style properties below.
+export struct TranscriptEntry {
+    phrase: string,
+    translation: string,
+}
+
+// Reusable "theme default, or pick a color" field used four times in
+// SettingsDialog's View tab (phrase text/background, translation
+// text/background). Combines a HEX text field (for typing an exact value)
+// with a swatch button that opens a small RGB-slider popup — Slint's
+// std-widgets has no built-in color picker, so this is a minimal in-app one.
+//
+// Hex-text <-> RGB conversion needs actual string/number formatting, which
+// isn't available in the Slint language itself, so it's done on the Rust
+// side: typing a hex value and pressing Enter fires `hex-committed`, which
+// tagent-gui's main.rs parses and reflects back into `red`/`green`/`blue`.
+component ColorPickerField {
+    in property <string> label;
+    in-out property <bool> use-default: true;
+    in-out property <float> red: 0;
+    in-out property <float> green: 0;
+    in-out property <float> blue: 0;
+    in-out property <string> hex-text: "";
+
+    callback hex-committed(string);
+
+    property <color> preview: rgb(red, green, blue);
+
+    VerticalLayout {
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: label; vertical-alignment: center; min-width: 90px; }
+            CheckBox { text: "Theme default"; checked <=> use-default; }
+        }
+
+        if !use-default: HorizontalLayout {
+            spacing: 6px;
+
+            swatch := Rectangle {
+                width: 24px;
+                height: 24px;
+                border-width: 1px;
+                border-color: Palette.border;
+                border-radius: 4px;
+                background: preview;
+
+                TouchArea {
+                    clicked => { popup.show(); }
+                }
+
+                popup := PopupWindow {
+                    x: 0px;
+                    y: parent.height + 4px;
+                    width: 160px;
+                    height: 116px;
+
+                    Rectangle {
+                        background: Palette.background;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        border-radius: 4px;
+
+                        VerticalBox {
+                            padding: 8px;
+                            spacing: 2px;
+
+                            Text { text: "R"; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 255; value <=> red; }
+                            Text { text: "G"; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 255; value <=> green; }
+                            Text { text: "B"; font-size: 10px; }
+                            Slider { minimum: 0; maximum: 255; value <=> blue; }
+                        }
+                    }
+                }
+            }
+
+            LineEdit {
+                text <=> hex-text;
+                width: 100px;
+                placeholder-text: "#RRGGBB";
+                accepted(text) => { hex-committed(text); }
+            }
+        }
+    }
+}
 
 export component AppWindow inherits Window {
     title: "Tagent";
@@ -24,9 +116,14 @@ export component AppWindow inherits Window {
     // ColorScheme.dark/light/unknown(auto) — no manual branching needed here.
     // prompt-accent is the one exception: it's a decorative highlight with no
     // matching Palette role, so it branches on color-scheme directly.
-    property <brush> panel-background: Palette.alternate-background;
+    //
+    // panel-foreground/panel-background are also read from Rust (as `out`
+    // properties) as the "theme default" fallback for phrase-color/
+    // phrase-background/translation-color/translation-background below, when
+    // the user hasn't picked a custom value in Settings.
     property <brush> panel-border: Palette.border;
-    property <brush> panel-foreground: Palette.alternate-foreground;
+    out property <brush> panel-background: Palette.alternate-background;
+    out property <brush> panel-foreground: Palette.alternate-foreground;
     property <brush> field-background: Palette.control-background;
     property <brush> field-foreground: Palette.control-foreground;
     property <brush> selection-bg: Palette.selection-background;
@@ -34,10 +131,22 @@ export component AppWindow inherits Window {
     property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
 
     in-out property <string> input-text: "";
-    in-out property <string> transcript: "=== Tagent ===\nType text and press Enter to translate.\n\n";
+    in-out property <[TranscriptEntry]> transcript-entries: [];
     in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 2;
+
+    // Independent display style for the phrase (original text) and
+    // translation lines in the transcript — set from Rust based on
+    // `tagent-gui.json`'s phrase-*/translation-* fields (see config.rs).
+    in-out property <string> phrase-font: "monospace";
+    in-out property <int> phrase-size: 13;
+    in-out property <color> phrase-color: #000000;
+    in-out property <color> phrase-background: #00000000;
+    in-out property <string> translation-font: "monospace";
+    in-out property <int> translation-size: 13;
+    in-out property <color> translation-color: #000000;
+    in-out property <color> translation-background: #00000000;
 
     // Height the user picked by dragging the resize handle; clamped and
     // combined with the wrapped text's natural height below.
@@ -92,24 +201,74 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 height: parent.height;
                 viewport-width: self.width;
-                viewport-height: transcript-text.preferred-height + 16px;
+                viewport-height: transcript-content.preferred-height + 16px;
 
-                transcript-text := TextInput {
-                    text: transcript;
-                    font-family: "monospace";
-                    font-size: 13px;
-                    color: panel-foreground;
-                    selection-background-color: selection-bg;
-                    selection-foreground-color: selection-fg;
-                    wrap: word-wrap;
-                    single-line: false;
-                    read-only: true;
-                    horizontal-alignment: left;
-                    vertical-alignment: top;
+                transcript-content := VerticalLayout {
                     x: 8px;
                     y: 8px;
                     width: parent.width - 16px;
-                    height: self.preferred-height;
+                    spacing: 8px;
+                    alignment: start;
+
+                    Text {
+                        text: "=== Tagent ===\nType text and press Enter to translate.\n\n";
+                        font-family: "monospace";
+                        font-size: 13px;
+                        color: panel-foreground;
+                        wrap: word-wrap;
+                    }
+
+                    for entry in transcript-entries: VerticalLayout {
+                        spacing: 2px;
+
+                        Rectangle {
+                            background: phrase-background;
+                            border-radius: 3px;
+                            height: phrase-line.preferred-height + 8px;
+
+                            phrase-line := TextInput {
+                                text: entry.phrase;
+                                font-family: phrase-font;
+                                font-size: phrase-size * 1px;
+                                color: phrase-color;
+                                selection-background-color: selection-bg;
+                                selection-foreground-color: selection-fg;
+                                wrap: word-wrap;
+                                single-line: false;
+                                read-only: true;
+                                horizontal-alignment: left;
+                                vertical-alignment: top;
+                                x: 4px;
+                                y: 4px;
+                                width: parent.width - 8px;
+                                height: self.preferred-height;
+                            }
+                        }
+
+                        Rectangle {
+                            background: translation-background;
+                            border-radius: 3px;
+                            height: translation-line.preferred-height + 8px;
+
+                            translation-line := TextInput {
+                                text: entry.translation;
+                                font-family: translation-font;
+                                font-size: translation-size * 1px;
+                                color: translation-color;
+                                selection-background-color: selection-bg;
+                                selection-foreground-color: selection-fg;
+                                wrap: word-wrap;
+                                single-line: false;
+                                read-only: true;
+                                horizontal-alignment: left;
+                                vertical-alignment: top;
+                                x: 4px;
+                                y: 4px;
+                                width: parent.width - 8px;
+                                height: self.preferred-height;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -223,8 +382,8 @@ export component AppWindow inherits Window {
 
 export component SettingsDialog inherits Dialog {
     title: "Settings";
-    preferred-width: 420px;
-    preferred-height: 300px;
+    preferred-width: 460px;
+    preferred-height: 460px;
 
     // Same helper as AppWindow's — see its doc comment. This dialog has its
     // own separate Palette instance, so it needs its own call to this too.
@@ -240,13 +399,51 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
 
+    // Font choices shared by the phrase and translation style pickers below;
+    // main.rs maps index 0/1/2 to the "monospace"/"sans-serif"/"serif"
+    // font-family strings actually applied on AppWindow.
+    in-out property <[string]> font-options: ["Monospace", "Sans Serif", "Serif"];
+    in-out property <int> phrase-font-index: 0;
+    in-out property <int> phrase-size: 13;
+    in-out property <int> translation-font-index: 0;
+    in-out property <int> translation-size: 13;
+
+    in-out property <bool> phrase-color-use-default <=> phrase-text-color-field.use-default;
+    in-out property <float> phrase-color-red <=> phrase-text-color-field.red;
+    in-out property <float> phrase-color-green <=> phrase-text-color-field.green;
+    in-out property <float> phrase-color-blue <=> phrase-text-color-field.blue;
+    in-out property <string> phrase-color-hex <=> phrase-text-color-field.hex-text;
+    callback phrase-color-hex-committed <=> phrase-text-color-field.hex-committed;
+
+    in-out property <bool> phrase-bg-use-default <=> phrase-bg-color-field.use-default;
+    in-out property <float> phrase-bg-red <=> phrase-bg-color-field.red;
+    in-out property <float> phrase-bg-green <=> phrase-bg-color-field.green;
+    in-out property <float> phrase-bg-blue <=> phrase-bg-color-field.blue;
+    in-out property <string> phrase-bg-hex <=> phrase-bg-color-field.hex-text;
+    callback phrase-bg-hex-committed <=> phrase-bg-color-field.hex-committed;
+
+    in-out property <bool> translation-color-use-default <=> translation-text-color-field.use-default;
+    in-out property <float> translation-color-red <=> translation-text-color-field.red;
+    in-out property <float> translation-color-green <=> translation-text-color-field.green;
+    in-out property <float> translation-color-blue <=> translation-text-color-field.blue;
+    in-out property <string> translation-color-hex <=> translation-text-color-field.hex-text;
+    callback translation-color-hex-committed <=> translation-text-color-field.hex-committed;
+
+    in-out property <bool> translation-bg-use-default <=> translation-bg-color-field.use-default;
+    in-out property <float> translation-bg-red <=> translation-bg-color-field.red;
+    in-out property <float> translation-bg-green <=> translation-bg-color-field.green;
+    in-out property <float> translation-bg-blue <=> translation-bg-color-field.blue;
+    in-out property <string> translation-bg-hex <=> translation-bg-color-field.hex-text;
+    callback translation-bg-hex-committed <=> translation-bg-color-field.hex-committed;
+
     callback save-requested(string /* provider */, string /* theme */);
 
     // Tabbed layout, laid out now for settings that don't exist yet: "General"
-    // holds the provider, "View" holds the theme, "Hotkeys & Tray" is a
-    // placeholder for the hotkey/start-minimized/popup-delay fields Stage 8
-    // adds. Adding a category later means adding another `Tab { ... }` here,
-    // not restructuring the dialog.
+    // holds the provider, "View" holds the theme plus the phrase/translation
+    // display style, "Hotkeys & Tray" is a placeholder for the hotkey/
+    // start-minimized/popup-delay fields Stage 8 adds. Adding a category
+    // later means adding another `Tab { ... }` here, not restructuring the
+    // dialog.
     TabWidget {
         Tab {
             title: "General";
@@ -265,13 +462,37 @@ export component SettingsDialog inherits Dialog {
         Tab {
             title: "View";
 
-            VerticalBox {
-                alignment: start;
+            ScrollView {
+                VerticalBox {
+                    alignment: start;
 
-                Text { text: "Theme:"; }
-                ComboBox {
-                    model: themes;
-                    current-index <=> theme-index;
+                    Text { text: "Theme:"; }
+                    ComboBox {
+                        model: themes;
+                        current-index <=> theme-index;
+                    }
+
+                    Text { text: "Phrase"; font-weight: 700; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Font:"; vertical-alignment: center; }
+                        ComboBox { model: font-options; current-index <=> phrase-font-index; }
+                        Text { text: "Size:"; vertical-alignment: center; }
+                        SpinBox { minimum: 8; maximum: 48; value <=> phrase-size; }
+                    }
+                    phrase-text-color-field := ColorPickerField { label: "Text color:"; }
+                    phrase-bg-color-field := ColorPickerField { label: "Background:"; }
+
+                    Text { text: "Translation"; font-weight: 700; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Font:"; vertical-alignment: center; }
+                        ComboBox { model: font-options; current-index <=> translation-font-index; }
+                        Text { text: "Size:"; vertical-alignment: center; }
+                        SpinBox { minimum: 8; maximum: 48; value <=> translation-size; }
+                    }
+                    translation-text-color-field := ColorPickerField { label: "Text color:"; }
+                    translation-bg-color-field := ColorPickerField { label: "Background:"; }
                 }
             }
         }

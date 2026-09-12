@@ -12,6 +12,26 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+005] - 2026-09-12
+
+### Added
+- Independent transcript styling for the phrase (original text) and its
+  translation in the `View` tab: font family (Monospace/Sans Serif/Serif),
+  font size, text color, and background color, each configurable separately
+  for the two roles. Colors default to "Theme default" (follows the active
+  theme) or can be set via a HEX field plus an in-app RGB-slider color
+  picker. Persisted as `phrase_font`/`phrase_size`/`phrase_color`/
+  `phrase_background` and the matching `translation_*` fields in
+  `tagent-gui.json` (empty color string = theme default).
+
+### Changed
+- The transcript is now rendered from a structured list of entries (one
+  phrase/translation pair each) instead of a single flat text blob, so the
+  two lines can carry independent styling. Each line remains its own
+  read-only, selectable/copyable text field; selecting text no longer spans
+  across entries in one continuous drag the way the old single-blob
+  transcript did.
+
 ## [0.14.0+004] - 2026-09-12
 
 ### Added
