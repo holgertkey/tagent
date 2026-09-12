@@ -28,6 +28,11 @@ component ColorPickerField {
     in-out property <string> hex-text: "";
 
     callback hex-committed(string);
+    // Fired whenever a slider moves. Formatting red/green/blue as a "#RRGGBB"
+    // string needs actual number formatting, which isn't available in the
+    // Slint language, so main.rs handles it and writes the result back into
+    // `hex-text` — otherwise the field would go stale while dragging sliders.
+    callback rgb-changed();
 
     property <color> preview: rgb(red, green, blue);
 
@@ -77,11 +82,11 @@ component ColorPickerField {
                             spacing: 2px;
 
                             Text { text: "R"; font-size: 10px; }
-                            Slider { minimum: 0; maximum: 255; value <=> red; }
+                            Slider { minimum: 0; maximum: 255; value <=> red; changed => { rgb-changed(); } }
                             Text { text: "G"; font-size: 10px; }
-                            Slider { minimum: 0; maximum: 255; value <=> green; }
+                            Slider { minimum: 0; maximum: 255; value <=> green; changed => { rgb-changed(); } }
                             Text { text: "B"; font-size: 10px; }
-                            Slider { minimum: 0; maximum: 255; value <=> blue; }
+                            Slider { minimum: 0; maximum: 255; value <=> blue; changed => { rgb-changed(); } }
                         }
                     }
                 }
@@ -419,6 +424,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <float> phrase-color-blue <=> phrase-text-color-field.blue;
     in-out property <string> phrase-color-hex <=> phrase-text-color-field.hex-text;
     callback phrase-color-hex-committed <=> phrase-text-color-field.hex-committed;
+    callback phrase-color-rgb-changed <=> phrase-text-color-field.rgb-changed;
 
     in-out property <bool> phrase-bg-use-default <=> phrase-bg-color-field.use-default;
     in-out property <float> phrase-bg-red <=> phrase-bg-color-field.red;
@@ -426,6 +432,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <float> phrase-bg-blue <=> phrase-bg-color-field.blue;
     in-out property <string> phrase-bg-hex <=> phrase-bg-color-field.hex-text;
     callback phrase-bg-hex-committed <=> phrase-bg-color-field.hex-committed;
+    callback phrase-bg-rgb-changed <=> phrase-bg-color-field.rgb-changed;
 
     in-out property <bool> translation-color-use-default <=> translation-text-color-field.use-default;
     in-out property <float> translation-color-red <=> translation-text-color-field.red;
@@ -433,6 +440,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <float> translation-color-blue <=> translation-text-color-field.blue;
     in-out property <string> translation-color-hex <=> translation-text-color-field.hex-text;
     callback translation-color-hex-committed <=> translation-text-color-field.hex-committed;
+    callback translation-color-rgb-changed <=> translation-text-color-field.rgb-changed;
 
     in-out property <bool> translation-bg-use-default <=> translation-bg-color-field.use-default;
     in-out property <float> translation-bg-red <=> translation-bg-color-field.red;
@@ -440,6 +448,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <float> translation-bg-blue <=> translation-bg-color-field.blue;
     in-out property <string> translation-bg-hex <=> translation-bg-color-field.hex-text;
     callback translation-bg-hex-committed <=> translation-bg-color-field.hex-committed;
+    callback translation-bg-rgb-changed <=> translation-bg-color-field.rgb-changed;
 
     callback save-requested(string /* provider */, string /* theme */);
 

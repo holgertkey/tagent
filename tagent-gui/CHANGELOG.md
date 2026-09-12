@@ -12,6 +12,16 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+007] - 2026-09-12
+
+### Fixed
+- The HEX field in the phrase/translation color picker (Settings > View)
+  didn't update while dragging the R/G/B sliders — it only reflected typed
+  input, since Slint has no built-in way to format numbers as hex. Each
+  slider now fires a `rgb-changed` callback that `main.rs` uses to reformat
+  the field's current color into `"#RRGGBB"` and write it back into the HEX
+  text as you drag.
+
 ## [0.14.0+006] - 2026-09-12
 
 ### Fixed

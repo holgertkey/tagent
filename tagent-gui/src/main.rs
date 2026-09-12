@@ -114,6 +114,26 @@ macro_rules! wire_hex_committed {
     }};
 }
 
+/// Wires one `ColorPickerField`'s `rgb-changed` callback (fired on every
+/// slider drag): reformats the field's current red/green/blue into
+/// `"#RRGGBB"` and writes it back into the hex text, so the hex field doesn't
+/// go stale while dragging sliders. Used four times.
+macro_rules! wire_rgb_changed {
+    ($dialog:expr, $on_changed:ident, $get_r:ident, $get_g:ident, $get_b:ident, $set_hex:ident) => {{
+        let dialog_weak = $dialog.as_weak();
+        $dialog.$on_changed(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                let hex = format_hex(
+                    dialog.$get_r().round() as u8,
+                    dialog.$get_g().round() as u8,
+                    dialog.$get_b().round() as u8,
+                );
+                dialog.$set_hex(hex.into());
+            }
+        });
+    }};
+}
+
 fn scroll_transcript_to_bottom(window: &AppWindow) {
     let overflow = window.get_transcript_viewport_height() - window.get_transcript_visible_height();
     window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
@@ -309,6 +329,39 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_green,
             set_translation_bg_blue,
             set_translation_bg_use_default
+        );
+
+        wire_rgb_changed!(
+            dialog,
+            on_phrase_color_rgb_changed,
+            get_phrase_color_red,
+            get_phrase_color_green,
+            get_phrase_color_blue,
+            set_phrase_color_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_phrase_bg_rgb_changed,
+            get_phrase_bg_red,
+            get_phrase_bg_green,
+            get_phrase_bg_blue,
+            set_phrase_bg_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_translation_color_rgb_changed,
+            get_translation_color_red,
+            get_translation_color_green,
+            get_translation_color_blue,
+            set_translation_color_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_translation_bg_rgb_changed,
+            get_translation_bg_red,
+            get_translation_bg_green,
+            get_translation_bg_blue,
+            set_translation_bg_hex
         );
 
         let dialog_weak = dialog.as_weak();
