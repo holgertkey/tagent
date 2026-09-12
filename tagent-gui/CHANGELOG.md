@@ -12,6 +12,12 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+004] - 2026-09-12
+
+### Added
+- `About` tab in the Settings dialog, showing the application name and current
+  version (`env!("CARGO_PKG_VERSION")`).
+
 ## [0.14.0+003] - 2026-09-11
 
 ### Added

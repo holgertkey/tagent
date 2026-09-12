@@ -238,6 +238,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> provider-index: 0;
     in-out property <[string]> themes: ["Auto", "Light", "Dark"];
     in-out property <int> theme-index: 0;
+    in-out property <string> app-version: "";
 
     callback save-requested(string /* provider */, string /* theme */);
 
@@ -285,6 +286,17 @@ export component SettingsDialog inherits Dialog {
                     text: "Hotkey and system tray settings are coming soon.";
                     wrap: word-wrap;
                 }
+            }
+        }
+
+        Tab {
+            title: "About";
+
+            VerticalBox {
+                alignment: start;
+
+                Text { text: "Tagent"; font-weight: 700; }
+                Text { text: "Version " + app-version; }
             }
         }
     }

@@ -90,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window_weak_for_settings = window.as_weak();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
+        dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
 
         let current_config = config_manager_for_settings.lock().unwrap().config().clone();
 
