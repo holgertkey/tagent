@@ -3,10 +3,15 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 // One translation round-trip in the transcript: the original phrase and its
 // translation (or an error message), each rendered with its own independently
 // configurable font/size/color/background — see AppWindow's phrase-*/translation-*
-// style properties below.
+// style properties below. The prompt ("[Auto]:") is split out from the text so
+// it can be shown/hidden and styled (size/color) independently of the text
+// itself; an empty prompt (e.g. on an error line) never renders regardless of
+// the show-prompt setting.
 export struct TranscriptEntry {
-    phrase: string,
-    translation: string,
+    phrase-prompt: string,
+    phrase-text: string,
+    translation-prompt: string,
+    translation-text: string,
 }
 
 // Reusable "theme default, or pick a color" field used four times in
@@ -127,10 +132,10 @@ export component AppWindow inherits Window {
     // prompt-accent is the one exception: it's a decorative highlight with no
     // matching Palette role, so it branches on color-scheme directly.
     //
-    // panel-foreground/panel-background are also read from Rust (as `out`
-    // properties) as the "theme default" fallback for phrase-color/
-    // phrase-background/translation-color/translation-background below, when
-    // the user hasn't picked a custom value in Settings.
+    // panel-foreground/panel-background/prompt-accent are also read from Rust
+    // (as `out` properties) as the "theme default" fallback for
+    // phrase-color/phrase-background/phrase-prompt-color/... below, when the
+    // user hasn't picked a custom value in Settings.
     property <brush> panel-border: Palette.border;
     out property <brush> panel-background: Palette.alternate-background;
     out property <brush> panel-foreground: Palette.alternate-foreground;
@@ -138,7 +143,7 @@ export component AppWindow inherits Window {
     property <brush> field-foreground: Palette.control-foreground;
     property <brush> selection-bg: Palette.selection-background;
     property <brush> selection-fg: Palette.selection-foreground;
-    property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
+    out property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
 
     in-out property <string> input-text: "";
     in-out property <[TranscriptEntry]> transcript-entries: [];
@@ -157,6 +162,17 @@ export component AppWindow inherits Window {
     in-out property <int> translation-size: 13;
     in-out property <color> translation-color: #000000;
     in-out property <color> translation-background: #00000000;
+
+    // Whether to show the "[Auto]:"/"[Russian]:" prompt in front of the
+    // phrase/translation text, and its own independent size/color. A prompt
+    // is still hidden even when this is true if the entry's own prompt string
+    // is empty (error lines have no prompt).
+    in-out property <bool> phrase-show-prompt: true;
+    in-out property <int> phrase-prompt-size: 13;
+    in-out property <color> phrase-prompt-color: #000000;
+    in-out property <bool> translation-show-prompt: true;
+    in-out property <int> translation-prompt-size: 13;
+    in-out property <color> translation-prompt-color: #000000;
 
     // Vertical gap (px) between one phrase/translation pair and the next.
     in-out property <int> block-spacing-px: 20;
@@ -243,48 +259,76 @@ export component AppWindow inherits Window {
                         Rectangle {
                             background: phrase-background;
                             border-radius: 3px;
-                            height: phrase-line.preferred-height;
+                            height: phrase-row.preferred-height;
 
-                            phrase-line := TextInput {
-                                text: entry.phrase;
-                                font-family: phrase-font;
-                                font-size: phrase-size * 1px;
-                                color: phrase-color;
-                                selection-background-color: selection-bg;
-                                selection-foreground-color: selection-fg;
-                                wrap: word-wrap;
-                                single-line: false;
-                                read-only: true;
-                                horizontal-alignment: left;
-                                vertical-alignment: top;
+                            phrase-row := HorizontalLayout {
                                 x: 4px;
                                 y: 0px;
                                 width: parent.width - 8px;
-                                height: self.preferred-height;
+                                spacing: 6px;
+                                alignment: start;
+
+                                if phrase-show-prompt && entry.phrase-prompt != "": Text {
+                                    text: entry.phrase-prompt;
+                                    font-family: phrase-font;
+                                    font-size: phrase-prompt-size * 1px;
+                                    color: phrase-prompt-color;
+                                    vertical-alignment: top;
+                                }
+
+                                phrase-line := TextInput {
+                                    text: entry.phrase-text;
+                                    font-family: phrase-font;
+                                    font-size: phrase-size * 1px;
+                                    color: phrase-color;
+                                    selection-background-color: selection-bg;
+                                    selection-foreground-color: selection-fg;
+                                    wrap: word-wrap;
+                                    single-line: false;
+                                    read-only: true;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    horizontal-stretch: 1;
+                                    height: self.preferred-height;
+                                }
                             }
                         }
 
                         Rectangle {
                             background: translation-background;
                             border-radius: 3px;
-                            height: translation-line.preferred-height;
+                            height: translation-row.preferred-height;
 
-                            translation-line := TextInput {
-                                text: entry.translation;
-                                font-family: translation-font;
-                                font-size: translation-size * 1px;
-                                color: translation-color;
-                                selection-background-color: selection-bg;
-                                selection-foreground-color: selection-fg;
-                                wrap: word-wrap;
-                                single-line: false;
-                                read-only: true;
-                                horizontal-alignment: left;
-                                vertical-alignment: top;
+                            translation-row := HorizontalLayout {
                                 x: 4px;
                                 y: 0px;
                                 width: parent.width - 8px;
-                                height: self.preferred-height;
+                                spacing: 6px;
+                                alignment: start;
+
+                                if translation-show-prompt && entry.translation-prompt != "": Text {
+                                    text: entry.translation-prompt;
+                                    font-family: translation-font;
+                                    font-size: translation-prompt-size * 1px;
+                                    color: translation-prompt-color;
+                                    vertical-alignment: top;
+                                }
+
+                                translation-line := TextInput {
+                                    text: entry.translation-text;
+                                    font-family: translation-font;
+                                    font-size: translation-size * 1px;
+                                    color: translation-color;
+                                    selection-background-color: selection-bg;
+                                    selection-foreground-color: selection-fg;
+                                    wrap: word-wrap;
+                                    single-line: false;
+                                    read-only: true;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    horizontal-stretch: 1;
+                                    height: self.preferred-height;
+                                }
                             }
                         }
                     }
@@ -464,6 +508,26 @@ export component SettingsDialog inherits Dialog {
     callback translation-bg-hex-committed <=> translation-bg-color-field.hex-committed;
     callback translation-bg-rgb-changed <=> translation-bg-color-field.rgb-changed;
 
+    in-out property <bool> phrase-show-prompt: true;
+    in-out property <int> phrase-prompt-size: 13;
+    in-out property <bool> phrase-prompt-use-default <=> phrase-prompt-color-field.use-default;
+    in-out property <float> phrase-prompt-red <=> phrase-prompt-color-field.red;
+    in-out property <float> phrase-prompt-green <=> phrase-prompt-color-field.green;
+    in-out property <float> phrase-prompt-blue <=> phrase-prompt-color-field.blue;
+    in-out property <string> phrase-prompt-hex <=> phrase-prompt-color-field.hex-text;
+    callback phrase-prompt-hex-committed <=> phrase-prompt-color-field.hex-committed;
+    callback phrase-prompt-rgb-changed <=> phrase-prompt-color-field.rgb-changed;
+
+    in-out property <bool> translation-show-prompt: true;
+    in-out property <int> translation-prompt-size: 13;
+    in-out property <bool> translation-prompt-use-default <=> translation-prompt-color-field.use-default;
+    in-out property <float> translation-prompt-red <=> translation-prompt-color-field.red;
+    in-out property <float> translation-prompt-green <=> translation-prompt-color-field.green;
+    in-out property <float> translation-prompt-blue <=> translation-prompt-color-field.blue;
+    in-out property <string> translation-prompt-hex <=> translation-prompt-color-field.hex-text;
+    callback translation-prompt-hex-committed <=> translation-prompt-color-field.hex-committed;
+    callback translation-prompt-rgb-changed <=> translation-prompt-color-field.rgb-changed;
+
     callback save-requested(string /* provider */, string /* theme */);
 
     // Tabbed layout, laid out now for settings that don't exist yet: "General"
@@ -521,6 +585,13 @@ export component SettingsDialog inherits Dialog {
                     }
                     phrase-text-color-field := ColorPickerField { label: "Text color:"; }
                     phrase-bg-color-field := ColorPickerField { label: "Background:"; }
+                    CheckBox { text: "Show prompt (e.g. \"[Auto]:\")"; checked <=> phrase-show-prompt; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Prompt size:"; vertical-alignment: center; }
+                        SpinBox { minimum: 8; maximum: 48; value <=> phrase-prompt-size; }
+                    }
+                    phrase-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
 
                     Text { text: "Translation"; font-weight: 700; }
                     HorizontalLayout {
@@ -532,6 +603,13 @@ export component SettingsDialog inherits Dialog {
                     }
                     translation-text-color-field := ColorPickerField { label: "Text color:"; }
                     translation-bg-color-field := ColorPickerField { label: "Background:"; }
+                    CheckBox { text: "Show prompt (e.g. \"[Russian]:\")"; checked <=> translation-show-prompt; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Prompt size:"; vertical-alignment: center; }
+                        SpinBox { minimum: 8; maximum: 48; value <=> translation-prompt-size; }
+                    }
+                    translation-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
                 }
             }
         }

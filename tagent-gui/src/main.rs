@@ -76,11 +76,22 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 
     window.set_block_spacing_px(config.block_spacing_px);
     window.set_phrases_spacing_px(config.phrases_spacing_px);
+
+    let default_accent = window.get_prompt_accent().color();
+
+    window.set_phrase_show_prompt(config.phrase_show_prompt);
+    window.set_phrase_prompt_size(config.phrase_prompt_size);
+    window.set_phrase_prompt_color(resolve_color(&config.phrase_prompt_color, default_accent));
+
+    window.set_translation_show_prompt(config.translation_show_prompt);
+    window.set_translation_prompt_size(config.translation_prompt_size);
+    window.set_translation_prompt_color(resolve_color(&config.translation_prompt_color, default_accent));
 }
 
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
-/// empty, for "theme default") config value. Used four times (phrase/
-/// translation × text/background) — see the matching macro call sites below.
+/// empty, for "theme default") config value. Used six times (phrase/
+/// translation × text/background/prompt) — see the matching macro call sites
+/// below.
 macro_rules! init_color_field {
     ($dialog:expr, $hex:expr, $set_default:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_hex:ident) => {{
         let hex_value = $hex;
@@ -100,7 +111,7 @@ macro_rules! init_color_field {
 }
 
 /// Wires one `ColorPickerField`'s `hex-committed` callback: parses the typed
-/// hex text and reflects it into the field's RGB sliders. Used four times.
+/// hex text and reflects it into the field's RGB sliders. Used six times.
 macro_rules! wire_hex_committed {
     ($dialog:expr, $on_committed:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_default:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -120,7 +131,7 @@ macro_rules! wire_hex_committed {
 /// Wires one `ColorPickerField`'s `rgb-changed` callback (fired on every
 /// slider drag): reformats the field's current red/green/blue into
 /// `"#RRGGBB"` and writes it back into the hex text, so the hex field doesn't
-/// go stale while dragging sliders. Used four times.
+/// go stale while dragging sliders. Used six times.
 macro_rules! wire_rgb_changed {
     ($dialog:expr, $on_changed:ident, $get_r:ident, $get_g:ident, $get_b:ident, $set_hex:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -179,8 +190,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 push_transcript_entry(
                     &window,
                     TranscriptEntry {
-                        phrase: format!("[{from_lang}]: {text}").into(),
-                        translation: "Error: \"Auto\" is not a valid target language".into(),
+                        phrase_prompt: format!("[{from_lang}]:").into(),
+                        phrase_text: text.clone().into(),
+                        translation_prompt: "".into(),
+                        translation_text: "Error: \"Auto\" is not a valid target language".into(),
                     },
                 );
             }
@@ -207,12 +220,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if let Some(window) = weak.upgrade() {
                     let entry = match result {
                         Ok(translated) => TranscriptEntry {
-                            phrase: format!("[{from_lang}]: {text}").into(),
-                            translation: format!("[{to_lang}]: {translated}").into(),
+                            phrase_prompt: format!("[{from_lang}]:").into(),
+                            phrase_text: text.clone().into(),
+                            translation_prompt: format!("[{to_lang}]:").into(),
+                            translation_text: translated.into(),
                         },
                         Err(err) => TranscriptEntry {
-                            phrase: format!("[{from_lang}]: {text}").into(),
-                            translation: format!("Error: {err}").into(),
+                            phrase_prompt: format!("[{from_lang}]:").into(),
+                            phrase_text: text.clone().into(),
+                            translation_prompt: "".into(),
+                            translation_text: format!("Error: {err}").into(),
                         },
                     };
                     push_transcript_entry(&window, entry);
@@ -267,6 +284,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.set_translation_font_index(font_index_for(&current_config.translation_font));
         dialog.set_translation_size(current_config.translation_size);
 
+        dialog.set_phrase_show_prompt(current_config.phrase_show_prompt);
+        dialog.set_phrase_prompt_size(current_config.phrase_prompt_size);
+        dialog.set_translation_show_prompt(current_config.translation_show_prompt);
+        dialog.set_translation_prompt_size(current_config.translation_prompt_size);
+
         init_color_field!(
             dialog,
             current_config.phrase_color.as_str(),
@@ -303,6 +325,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_blue,
             set_translation_bg_hex
         );
+        init_color_field!(
+            dialog,
+            current_config.phrase_prompt_color.as_str(),
+            set_phrase_prompt_use_default,
+            set_phrase_prompt_red,
+            set_phrase_prompt_green,
+            set_phrase_prompt_blue,
+            set_phrase_prompt_hex
+        );
+        init_color_field!(
+            dialog,
+            current_config.translation_prompt_color.as_str(),
+            set_translation_prompt_use_default,
+            set_translation_prompt_red,
+            set_translation_prompt_green,
+            set_translation_prompt_blue,
+            set_translation_prompt_hex
+        );
 
         wire_hex_committed!(
             dialog,
@@ -336,6 +376,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_blue,
             set_translation_bg_use_default
         );
+        wire_hex_committed!(
+            dialog,
+            on_phrase_prompt_hex_committed,
+            set_phrase_prompt_red,
+            set_phrase_prompt_green,
+            set_phrase_prompt_blue,
+            set_phrase_prompt_use_default
+        );
+        wire_hex_committed!(
+            dialog,
+            on_translation_prompt_hex_committed,
+            set_translation_prompt_red,
+            set_translation_prompt_green,
+            set_translation_prompt_blue,
+            set_translation_prompt_use_default
+        );
 
         wire_rgb_changed!(
             dialog,
@@ -368,6 +424,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             get_translation_bg_green,
             get_translation_bg_blue,
             set_translation_bg_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_phrase_prompt_rgb_changed,
+            get_phrase_prompt_red,
+            get_phrase_prompt_green,
+            get_phrase_prompt_blue,
+            set_phrase_prompt_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_translation_prompt_rgb_changed,
+            get_translation_prompt_red,
+            get_translation_prompt_green,
+            get_translation_prompt_blue,
+            set_translation_prompt_hex
         );
 
         let dialog_weak = dialog.as_weak();
@@ -417,6 +489,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ),
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
+                phrase_show_prompt: dialog.get_phrase_show_prompt(),
+                phrase_prompt_size: dialog.get_phrase_prompt_size(),
+                phrase_prompt_color: color_field_hex(
+                    dialog.get_phrase_prompt_use_default(),
+                    dialog.get_phrase_prompt_red(),
+                    dialog.get_phrase_prompt_green(),
+                    dialog.get_phrase_prompt_blue(),
+                ),
+                translation_show_prompt: dialog.get_translation_show_prompt(),
+                translation_prompt_size: dialog.get_translation_prompt_size(),
+                translation_prompt_color: color_field_hex(
+                    dialog.get_translation_prompt_use_default(),
+                    dialog.get_translation_prompt_red(),
+                    dialog.get_translation_prompt_green(),
+                    dialog.get_translation_prompt_blue(),
+                ),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {

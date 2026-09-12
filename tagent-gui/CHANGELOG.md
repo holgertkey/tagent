@@ -12,6 +12,27 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+009] - 2026-09-12
+
+### Added
+- "Show prompt" checkbox, prompt size, and prompt color settings in
+  Settings > View, separately for the phrase and the translation. Controls
+  whether the `[Auto]:`/`[Russian]:`-style label in front of each line is
+  shown at all, and its own font size/color independent of the text that
+  follows it (default: shown, size 13, theme-default color). Persisted as
+  `phrase_show_prompt`/`phrase_prompt_size`/`phrase_prompt_color` and the
+  matching `translation_*` fields in `tagent-gui.json`. An entry with no
+  prompt of its own (an error line) never shows one, regardless of this
+  setting.
+
+### Changed
+- `TranscriptEntry` now carries the prompt and text of each line as separate
+  fields (`phrase-prompt`/`phrase-text`/`translation-prompt`/
+  `translation-text`) instead of one pre-formatted string per line, so the
+  prompt can be toggled and styled independently. On wrap, the text no longer
+  lines up under the prompt on continuation lines (no hanging indent) — it
+  wraps within the width remaining after the prompt.
+
 ## [0.14.0+008] - 2026-09-12
 
 ### Added
