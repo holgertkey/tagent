@@ -34,7 +34,7 @@ fn default_block_spacing_px() -> i32 {
 }
 
 /// Default vertical gap (px) between a phrase and its own translation.
-fn default_phrase_translation_spacing_px() -> i32 {
+fn default_phrases_spacing_px() -> i32 {
     2
 }
 
@@ -77,8 +77,8 @@ pub struct GuiConfig {
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
     /// Vertical gap (px) between a phrase and its own translation, within one pair.
-    #[serde(default = "default_phrase_translation_spacing_px")]
-    pub phrase_translation_spacing_px: i32,
+    #[serde(default = "default_phrases_spacing_px")]
+    pub phrases_spacing_px: i32,
 }
 
 impl Default for GuiConfig {
@@ -95,7 +95,7 @@ impl Default for GuiConfig {
             translation_color: default_style_color(),
             translation_background: default_style_color(),
             block_spacing_px: default_block_spacing_px(),
-            phrase_translation_spacing_px: default_phrase_translation_spacing_px(),
+            phrases_spacing_px: default_phrases_spacing_px(),
         }
     }
 }
@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(config.translation_color, "");
         assert_eq!(config.translation_background, "");
         assert_eq!(config.block_spacing_px, 20);
-        assert_eq!(config.phrase_translation_spacing_px, 2);
+        assert_eq!(config.phrases_spacing_px, 2);
     }
 
     #[test]

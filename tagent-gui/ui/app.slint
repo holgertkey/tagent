@@ -161,7 +161,7 @@ export component AppWindow inherits Window {
     // Vertical gap (px) between one phrase/translation pair and the next.
     in-out property <int> block-spacing-px: 20;
     // Vertical gap (px) between a phrase and its own translation, within one pair.
-    in-out property <int> phrase-translation-spacing-px: 2;
+    in-out property <int> phrases-spacing-px: 2;
 
     // Height the user picked by dragging the resize handle; clamped and
     // combined with the wrapped text's natural height below.
@@ -234,12 +234,16 @@ export component AppWindow inherits Window {
                     }
 
                     for entry in transcript-entries: VerticalLayout {
-                        spacing: phrase-translation-spacing-px * 1px;
+                        spacing: phrases-spacing-px * 1px;
 
+                        // No vertical padding anywhere in this pair — the gap
+                        // between the phrase's last line and the
+                        // translation's first line is entirely controlled by
+                        // phrases-spacing-px, down to 0.
                         Rectangle {
                             background: phrase-background;
                             border-radius: 3px;
-                            height: phrase-line.preferred-height + 8px;
+                            height: phrase-line.preferred-height;
 
                             phrase-line := TextInput {
                                 text: entry.phrase;
@@ -254,7 +258,7 @@ export component AppWindow inherits Window {
                                 horizontal-alignment: left;
                                 vertical-alignment: top;
                                 x: 4px;
-                                y: 4px;
+                                y: 0px;
                                 width: parent.width - 8px;
                                 height: self.preferred-height;
                             }
@@ -263,7 +267,7 @@ export component AppWindow inherits Window {
                         Rectangle {
                             background: translation-background;
                             border-radius: 3px;
-                            height: translation-line.preferred-height + 8px;
+                            height: translation-line.preferred-height;
 
                             translation-line := TextInput {
                                 text: entry.translation;
@@ -278,7 +282,7 @@ export component AppWindow inherits Window {
                                 horizontal-alignment: left;
                                 vertical-alignment: top;
                                 x: 4px;
-                                y: 4px;
+                                y: 0px;
                                 width: parent.width - 8px;
                                 height: self.preferred-height;
                             }
@@ -415,9 +419,9 @@ export component SettingsDialog inherits Dialog {
     in-out property <string> app-version: "";
 
     // Vertical gaps (px) in the transcript — mirror AppWindow's
-    // block-spacing-px/phrase-translation-spacing-px.
+    // block-spacing-px/phrases-spacing-px.
     in-out property <int> block-spacing-px: 20;
-    in-out property <int> phrase-translation-spacing-px: 2;
+    in-out property <int> phrases-spacing-px: 2;
 
     // Font choices shared by the phrase and translation style pickers below;
     // main.rs maps index 0/1/2 to the "monospace"/"sans-serif"/"serif"
@@ -503,8 +507,8 @@ export component SettingsDialog inherits Dialog {
                     }
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: "Phrase/translation spacing (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 0; maximum: 100; value <=> phrase-translation-spacing-px; }
+                        Text { text: "Phrases spacing (px):"; vertical-alignment: center; }
+                        SpinBox { minimum: 0; maximum: 100; value <=> phrases-spacing-px; }
                     }
 
                     Text { text: "Phrase"; font-weight: 700; }

@@ -18,10 +18,18 @@ for the roadmap and design decisions behind this project.
 - "Blocks spacing (px)" setting in Settings > View: controls the vertical gap
   between one phrase/translation pair and the next in the transcript, in
   pixels (default 20). Persisted as `block_spacing_px` in `tagent-gui.json`.
-- "Phrase/translation spacing (px)" setting in Settings > View: controls the
-  vertical gap between a phrase and its own translation, within one pair
-  (default 2). Persisted as `phrase_translation_spacing_px` in
-  `tagent-gui.json`.
+- "Phrases spacing (px)" setting in Settings > View: controls the vertical
+  gap between a phrase and its own translation, within one pair (default 2).
+  Persisted as `phrases_spacing_px` in `tagent-gui.json`.
+
+### Fixed
+- A phrase and its translation still had a visible gap between their text at
+  `phrases_spacing_px: 0`, reading as a stray blank line. Cause:
+  each row carried its own fixed vertical padding regardless of the spacing
+  setting, so that padding put a floor under the gap no setting could remove.
+  All vertical padding on the phrase/translation rows is now removed, so the
+  spacing setting is the sole contributor to that gap and 0 means visually
+  flush, whether the two rows share a background or not.
 
 ## [0.14.0+007] - 2026-09-12
 

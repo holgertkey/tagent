@@ -75,7 +75,7 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_translation_background(resolve_color(&config.translation_background, default_bg));
 
     window.set_block_spacing_px(config.block_spacing_px);
-    window.set_phrase_translation_spacing_px(config.phrase_translation_spacing_px);
+    window.set_phrases_spacing_px(config.phrases_spacing_px);
 }
 
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
@@ -260,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.invoke_apply_theme(current_config.theme.clone().into());
 
         dialog.set_block_spacing_px(current_config.block_spacing_px);
-        dialog.set_phrase_translation_spacing_px(current_config.phrase_translation_spacing_px);
+        dialog.set_phrases_spacing_px(current_config.phrases_spacing_px);
 
         dialog.set_phrase_font_index(font_index_for(&current_config.phrase_font));
         dialog.set_phrase_size(current_config.phrase_size);
@@ -416,7 +416,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_translation_bg_blue(),
                 ),
                 block_spacing_px: dialog.get_block_spacing_px(),
-                phrase_translation_spacing_px: dialog.get_phrase_translation_spacing_px(),
+                phrases_spacing_px: dialog.get_phrases_spacing_px(),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
