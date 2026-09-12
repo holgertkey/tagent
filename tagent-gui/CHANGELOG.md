@@ -12,6 +12,18 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+012] - 2026-09-12
+
+### Added
+- "Color scheme" preset picker in Settings > View: seven popular schemes
+  (Solarized Dark, Solarized Light, Dracula, Nord, Gruvbox Dark, Monokai, One
+  Dark). Picking one immediately fills in Background color, phrase text/
+  background, and translation text/background to that scheme's colors and
+  switches Theme to match (dark or light), so the window chrome and the
+  transcript stay consistent. It's a one-shot bulk-fill, not a persisted
+  setting of its own — the five color fields it sets remain individually
+  editable afterward, same as if set by hand.
+
 ## [0.14.0+011] - 2026-09-12
 
 ### Added

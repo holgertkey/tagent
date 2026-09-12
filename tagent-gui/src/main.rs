@@ -19,6 +19,86 @@ fn font_index_for(family: &str) -> i32 {
         .unwrap_or(0) as i32
 }
 
+/// One preset entry for the "Color scheme" picker in Settings > View: a
+/// one-shot bulk-fill for background/phrase/translation colors (plus the
+/// matching Theme), not a persisted setting of its own — see
+/// `SettingsDialog.color-scheme-options` in app.slint.
+struct ColorScheme {
+    name: &'static str,
+    dark: bool,
+    background: &'static str,
+    phrase_color: &'static str,
+    phrase_background: &'static str,
+    translation_color: &'static str,
+    translation_background: &'static str,
+}
+
+const COLOR_SCHEMES: &[ColorScheme] = &[
+    ColorScheme {
+        name: "Solarized Dark",
+        dark: true,
+        background: "#002B36",
+        phrase_color: "#839496",
+        phrase_background: "#073642",
+        translation_color: "#268BD2",
+        translation_background: "#073642",
+    },
+    ColorScheme {
+        name: "Solarized Light",
+        dark: false,
+        background: "#FDF6E3",
+        phrase_color: "#657B83",
+        phrase_background: "#EEE8D5",
+        translation_color: "#268BD2",
+        translation_background: "#EEE8D5",
+    },
+    ColorScheme {
+        name: "Dracula",
+        dark: true,
+        background: "#282A36",
+        phrase_color: "#F8F8F2",
+        phrase_background: "#44475A",
+        translation_color: "#BD93F9",
+        translation_background: "#44475A",
+    },
+    ColorScheme {
+        name: "Nord",
+        dark: true,
+        background: "#2E3440",
+        phrase_color: "#D8DEE9",
+        phrase_background: "#3B4252",
+        translation_color: "#88C0D0",
+        translation_background: "#3B4252",
+    },
+    ColorScheme {
+        name: "Gruvbox Dark",
+        dark: true,
+        background: "#282828",
+        phrase_color: "#EBDBB2",
+        phrase_background: "#3C3836",
+        translation_color: "#FE8019",
+        translation_background: "#3C3836",
+    },
+    ColorScheme {
+        name: "Monokai",
+        dark: true,
+        background: "#272822",
+        phrase_color: "#F8F8F2",
+        phrase_background: "#3E3D32",
+        translation_color: "#A6E22E",
+        translation_background: "#3E3D32",
+    },
+    ColorScheme {
+        name: "One Dark",
+        dark: true,
+        background: "#282C34",
+        phrase_color: "#ABB2BF",
+        phrase_background: "#2C313C",
+        translation_color: "#61AFEF",
+        translation_background: "#2C313C",
+    },
+];
+
 /// Parses a `"#RRGGBB"` (or `"RRGGBB"`) string into 0-255 components.
 fn parse_hex_color(text: &str) -> Option<(u8, u8, u8)> {
     let text = text.trim();
@@ -425,6 +505,70 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             get_translation_bg_blue,
             set_translation_bg_hex
         );
+
+        let dialog_weak = dialog.as_weak();
+        dialog.on_color_scheme_selected(move |name| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let Some(scheme) = COLOR_SCHEMES.iter().find(|s| s.name == name.as_str()) else {
+                return;
+            };
+
+            init_color_field!(
+                dialog,
+                scheme.background,
+                set_background_use_default,
+                set_background_red,
+                set_background_green,
+                set_background_blue,
+                set_background_hex
+            );
+            init_color_field!(
+                dialog,
+                scheme.phrase_color,
+                set_phrase_color_use_default,
+                set_phrase_color_red,
+                set_phrase_color_green,
+                set_phrase_color_blue,
+                set_phrase_color_hex
+            );
+            init_color_field!(
+                dialog,
+                scheme.phrase_background,
+                set_phrase_bg_use_default,
+                set_phrase_bg_red,
+                set_phrase_bg_green,
+                set_phrase_bg_blue,
+                set_phrase_bg_hex
+            );
+            init_color_field!(
+                dialog,
+                scheme.translation_color,
+                set_translation_color_use_default,
+                set_translation_color_red,
+                set_translation_color_green,
+                set_translation_color_blue,
+                set_translation_color_hex
+            );
+            init_color_field!(
+                dialog,
+                scheme.translation_background,
+                set_translation_bg_use_default,
+                set_translation_bg_red,
+                set_translation_bg_green,
+                set_translation_bg_blue,
+                set_translation_bg_hex
+            );
+
+            let target_theme = if scheme.dark { "dark" } else { "light" };
+            let themes = dialog.get_themes();
+            if let Some(index) = themes.iter().position(|t| t.as_str().to_lowercase() == target_theme) {
+                dialog.set_theme_index(index as i32);
+            }
+            dialog.invoke_apply_theme(target_theme.into());
+        });
+
         let dialog_weak = dialog.as_weak();
         let config_manager_for_save = config_manager_for_settings.clone();
         let window_weak_for_save = window_weak_for_settings.clone();

@@ -440,6 +440,18 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
 
+    // One-shot preset picker: selecting an entry (main.rs looks it up by
+    // name) immediately fills in the background/phrase/translation color
+    // fields below and switches Theme to match — it isn't itself a
+    // persisted setting, just a bulk-fill shortcut for the individual color
+    // pickers, which stay fully editable afterward.
+    in-out property <[string]> color-scheme-options: [
+        "Presets…", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
+        "Gruvbox Dark", "Monokai", "One Dark"
+    ];
+    in-out property <int> color-scheme-index: 0;
+    callback color-scheme-selected <=> color-scheme-combo.selected;
+
     // Vertical gaps (px) in the transcript — mirror AppWindow's
     // block-spacing-px/phrases-spacing-px.
     in-out property <int> block-spacing-px: 20;
@@ -531,6 +543,13 @@ export component SettingsDialog inherits Dialog {
                         model: themes;
                         current-index <=> theme-index;
                     }
+
+                    Text { text: "Color scheme:"; }
+                    color-scheme-combo := ComboBox {
+                        model: color-scheme-options;
+                        current-index <=> color-scheme-index;
+                    }
+
                     background-color-field := ColorPickerField { label: "Background color:"; }
 
                     HorizontalLayout {
