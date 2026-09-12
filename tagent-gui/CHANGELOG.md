@@ -12,6 +12,27 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+011] - 2026-09-12
+
+### Added
+- "Background color" setting in Settings > View: sets the shared background
+  for both main panels (the transcript log and the input box), via the same
+  "theme default or pick a color" field used for the phrase/translation
+  colors. Persisted as `background_color` in `tagent-gui.json` (empty =
+  follow the theme). Phrase/translation backgrounds left at "theme default"
+  now follow this color too (custom or theme), so a custom app background
+  and per-line "theme default" backgrounds always stay visually consistent
+  instead of the latter secretly meaning "the raw, un-customized theme
+  color".
+
+### Fixed
+- The input bar's own frame (behind the "[Auto]:" language prompt, the
+  typing field, and the Translate button) shared the same `panel-background`
+  property as the transcript log, so a custom "Background color" bled into
+  the gaps around those controls and looked like they'd been recolored too.
+  That frame now always uses the raw theme color instead; only the
+  transcript log's reading area picks up the custom background.
+
 ## [0.14.0+010] - 2026-09-12
 
 ### Changed

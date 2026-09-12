@@ -133,18 +133,27 @@ export component AppWindow inherits Window {
     // prompt-accent is the one exception: it's a decorative highlight with no
     // matching Palette role, so it branches on color-scheme directly.
     //
-    // panel-foreground/panel-background are also read from Rust (as `out`
-    // properties) as the "theme default" fallback for phrase-color/
-    // phrase-background/translation-color/translation-background below, when
-    // the user hasn't picked a custom value in Settings.
+    // panel-background-theme-default/panel-foreground are read from Rust (as
+    // `out` properties): the former to resolve panel-background itself (see
+    // below), the input bar's own frame (which deliberately stays on the raw
+    // theme value, never the customizable color — see its usage below), and
+    // phrase-background/translation-background's "theme default" when the
+    // user hasn't picked a custom value in Settings; panel-foreground for
+    // phrase-color/translation-color's "theme default".
     property <brush> panel-border: Palette.border;
-    out property <brush> panel-background: Palette.alternate-background;
+    out property <brush> panel-background-theme-default: Palette.alternate-background;
     out property <brush> panel-foreground: Palette.alternate-foreground;
     property <brush> field-background: Palette.control-background;
     property <brush> field-foreground: Palette.control-foreground;
     property <brush> selection-bg: Palette.selection-background;
     property <brush> selection-fg: Palette.selection-foreground;
     property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
+
+    // The transcript log's background — "Background color" in Settings >
+    // View. Empty config means "follow the theme"
+    // (panel-background-theme-default); set from Rust, same resolution
+    // pattern as phrase-background/translation-background.
+    in-out property <color> panel-background: #000000;
 
     in-out property <string> input-text: "";
     in-out property <[TranscriptEntry]> transcript-entries: [];
@@ -325,7 +334,14 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            background: panel-background;
+            // Deliberately the raw theme default, not the customizable
+            // panel-background: this frame just holds the language prompt,
+            // input field, and Translate button, and a custom "Background
+            // color" bleeding through the gaps around them (behind the
+            // prompt, behind the button) looked like the controls themselves
+            // had been recolored. Only the transcript log's reading area
+            // uses the customizable color.
+            background: panel-background-theme-default;
             border-radius: 4px;
             border-width: 1px;
             border-color: panel-border;
@@ -438,6 +454,14 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> translation-font-index: 0;
     in-out property <int> translation-size: 13;
 
+    in-out property <bool> background-use-default <=> background-color-field.use-default;
+    in-out property <float> background-red <=> background-color-field.red;
+    in-out property <float> background-green <=> background-color-field.green;
+    in-out property <float> background-blue <=> background-color-field.blue;
+    in-out property <string> background-hex <=> background-color-field.hex-text;
+    callback background-hex-committed <=> background-color-field.hex-committed;
+    callback background-rgb-changed <=> background-color-field.rgb-changed;
+
     in-out property <bool> phrase-color-use-default <=> phrase-text-color-field.use-default;
     in-out property <float> phrase-color-red <=> phrase-text-color-field.red;
     in-out property <float> phrase-color-green <=> phrase-text-color-field.green;
@@ -507,6 +531,7 @@ export component SettingsDialog inherits Dialog {
                         model: themes;
                         current-index <=> theme-index;
                     }
+                    background-color-field := ColorPickerField { label: "Background color:"; }
 
                     HorizontalLayout {
                         spacing: 8px;

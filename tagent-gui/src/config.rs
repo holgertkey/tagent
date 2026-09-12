@@ -54,6 +54,10 @@ pub struct GuiConfig {
     /// One of `"auto"`, `"light"`, `"dark"`. `"auto"` follows the system setting.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Shared background color for both main panels (transcript log and
+    /// input box), as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub background_color: String,
     /// Font family for the original-phrase lines in the transcript.
     #[serde(default = "default_style_font")]
     pub phrase_font: String,
@@ -95,6 +99,7 @@ impl Default for GuiConfig {
         Self {
             translate_provider: default_translate_provider(),
             theme: default_theme(),
+            background_color: default_style_color(),
             phrase_font: default_style_font(),
             phrase_size: default_style_size(),
             phrase_color: default_style_color(),
@@ -330,6 +335,7 @@ mod tests {
 
         let config = load_from_path(&path);
 
+        assert_eq!(config.background_color, "");
         assert_eq!(config.phrase_font, "monospace");
         assert_eq!(config.phrase_size, 13);
         assert_eq!(config.phrase_color, "");

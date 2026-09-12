@@ -58,11 +58,23 @@ fn color_field_hex(use_default: bool, r: f32, g: f32, b: f32) -> String {
 /// resolved against the window's own theme-driven `panel-foreground`/
 /// `panel-background`, read back *after* the theme is applied so an "auto"
 /// theme resolves to whatever the system's current dark/light preference is.
+///
+/// `panel-background` itself is resolved first (against the raw theme value,
+/// `panel-background-theme-default`) since it's now also user-customizable —
+/// phrase-background/translation-background's own "theme default" then
+/// follows whatever `panel-background` ends up being, custom or not, so the
+/// three stay visually consistent.
 fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.invoke_apply_theme(config.theme.clone().into());
 
+    let panel_background_theme_default = window.get_panel_background_theme_default().color();
+    window.set_panel_background(resolve_color(
+        &config.background_color,
+        panel_background_theme_default,
+    ));
+
     let default_fg = window.get_panel_foreground().color();
-    let default_bg = window.get_panel_background().color();
+    let default_bg = window.get_panel_background();
 
     window.set_phrase_font(config.phrase_font.clone().into());
     window.set_phrase_size(config.phrase_size);
@@ -95,8 +107,9 @@ fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
 }
 
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
-/// empty, for "theme default") config value. Used four times (phrase/
-/// translation × text/background) — see the matching macro call sites below.
+/// empty, for "theme default") config value. Used five times (the shared
+/// panel background, plus phrase/translation × text/background) — see the
+/// matching macro call sites below.
 macro_rules! init_color_field {
     ($dialog:expr, $hex:expr, $set_default:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_hex:ident) => {{
         let hex_value = $hex;
@@ -116,7 +129,7 @@ macro_rules! init_color_field {
 }
 
 /// Wires one `ColorPickerField`'s `hex-committed` callback: parses the typed
-/// hex text and reflects it into the field's RGB sliders. Used four times.
+/// hex text and reflects it into the field's RGB sliders. Used five times.
 macro_rules! wire_hex_committed {
     ($dialog:expr, $on_committed:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_default:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -136,7 +149,7 @@ macro_rules! wire_hex_committed {
 /// Wires one `ColorPickerField`'s `rgb-changed` callback (fired on every
 /// slider drag): reformats the field's current red/green/blue into
 /// `"#RRGGBB"` and writes it back into the hex text, so the hex field doesn't
-/// go stale while dragging sliders. Used four times.
+/// go stale while dragging sliders. Used five times.
 macro_rules! wire_rgb_changed {
     ($dialog:expr, $on_changed:ident, $get_r:ident, $get_g:ident, $get_b:ident, $set_hex:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -289,6 +302,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         init_color_field!(
             dialog,
+            current_config.background_color.as_str(),
+            set_background_use_default,
+            set_background_red,
+            set_background_green,
+            set_background_blue,
+            set_background_hex
+        );
+        init_color_field!(
+            dialog,
             current_config.phrase_color.as_str(),
             set_phrase_color_use_default,
             set_phrase_color_red,
@@ -325,6 +347,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
         wire_hex_committed!(
             dialog,
+            on_background_hex_committed,
+            set_background_red,
+            set_background_green,
+            set_background_blue,
+            set_background_use_default
+        );
+        wire_hex_committed!(
+            dialog,
             on_phrase_color_hex_committed,
             set_phrase_color_red,
             set_phrase_color_green,
@@ -354,6 +384,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_green,
             set_translation_bg_blue,
             set_translation_bg_use_default
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_background_rgb_changed,
+            get_background_red,
+            get_background_green,
+            get_background_blue,
+            set_background_hex
         );
         wire_rgb_changed!(
             dialog,
@@ -398,6 +436,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let new_config = config::GuiConfig {
                 translate_provider: provider.to_string(),
                 theme: theme.to_lowercase(),
+                background_color: color_field_hex(
+                    dialog.get_background_use_default(),
+                    dialog.get_background_red(),
+                    dialog.get_background_green(),
+                    dialog.get_background_blue(),
+                ),
                 phrase_font: FONT_FAMILIES
                     [dialog.get_phrase_font_index().clamp(0, FONT_FAMILIES.len() as i32 - 1) as usize]
                     .to_string(),
