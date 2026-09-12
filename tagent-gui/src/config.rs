@@ -43,11 +43,6 @@ fn default_show_prompt() -> bool {
     true
 }
 
-/// Default font size (px) for the prompt.
-fn default_prompt_size() -> i32 {
-    13
-}
-
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -89,24 +84,10 @@ pub struct GuiConfig {
     /// Vertical gap (px) between a phrase and its own translation, within one pair.
     #[serde(default = "default_phrases_spacing_px")]
     pub phrases_spacing_px: i32,
-    /// Whether to show the "[Auto]:"-style prompt before the original-phrase text.
+    /// Whether to show the "[Auto]:"/"[Russian]:"-style prompt before the
+    /// phrase and translation text.
     #[serde(default = "default_show_prompt")]
-    pub phrase_show_prompt: bool,
-    /// Font size (px) for the phrase prompt.
-    #[serde(default = "default_prompt_size")]
-    pub phrase_prompt_size: i32,
-    /// Color for the phrase prompt, as `"#RRGGBB"`, or `""` to follow the theme.
-    #[serde(default = "default_style_color")]
-    pub phrase_prompt_color: String,
-    /// Whether to show the "[Russian]:"-style prompt before the translation text.
-    #[serde(default = "default_show_prompt")]
-    pub translation_show_prompt: bool,
-    /// Font size (px) for the translation prompt.
-    #[serde(default = "default_prompt_size")]
-    pub translation_prompt_size: i32,
-    /// Color for the translation prompt, as `"#RRGGBB"`, or `""` to follow the theme.
-    #[serde(default = "default_style_color")]
-    pub translation_prompt_color: String,
+    pub show_prompt: bool,
 }
 
 impl Default for GuiConfig {
@@ -124,12 +105,7 @@ impl Default for GuiConfig {
             translation_background: default_style_color(),
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
-            phrase_show_prompt: default_show_prompt(),
-            phrase_prompt_size: default_prompt_size(),
-            phrase_prompt_color: default_style_color(),
-            translation_show_prompt: default_show_prompt(),
-            translation_prompt_size: default_prompt_size(),
-            translation_prompt_color: default_style_color(),
+            show_prompt: default_show_prompt(),
         }
     }
 }
@@ -364,12 +340,7 @@ mod tests {
         assert_eq!(config.translation_background, "");
         assert_eq!(config.block_spacing_px, 20);
         assert_eq!(config.phrases_spacing_px, 2);
-        assert!(config.phrase_show_prompt);
-        assert_eq!(config.phrase_prompt_size, 13);
-        assert_eq!(config.phrase_prompt_color, "");
-        assert!(config.translation_show_prompt);
-        assert_eq!(config.translation_prompt_size, 13);
-        assert_eq!(config.translation_prompt_color, "");
+        assert!(config.show_prompt);
     }
 
     #[test]

@@ -12,26 +12,36 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+010] - 2026-09-12
+
+### Changed
+- Reworked "Show prompt" (Settings > View, phrase/translation) back down to
+  just a visibility toggle, dropping the separate prompt size/color settings
+  added in +009. Slint's plain `Text`/`TextInput` can't mix two styles within
+  one wrapped paragraph, so giving the prompt its own size/color required
+  splitting it into a separately positioned element next to the text — which
+  then either hanging-indented wrapped continuation lines under the text
+  (rather than wrapping flush from the row's left margin like a normal
+  paragraph) or, when top-aligned to fix a vertical mismatch at differing
+  sizes, still didn't read as "one line" the way a single-style line does.
+  The prompt is back to being part of the same string as the text (one
+  font/color for the whole line, prompt included), toggled on/off by baking
+  it into the string when the entry is created rather than rendered as its
+  own styled element. `phrase_prompt_size`/`phrase_prompt_color` and the
+  matching `translation_*` fields are gone from `tagent-gui.json`;
+  `phrase_show_prompt`/`translation_show_prompt` remain.
+- `TranscriptEntry` is back to one `phrase`/`translation` string per line
+  (was briefly split into separate prompt/text fields in +009).
+
 ## [0.14.0+009] - 2026-09-12
 
 ### Added
-- "Show prompt" checkbox, prompt size, and prompt color settings in
-  Settings > View, separately for the phrase and the translation. Controls
-  whether the `[Auto]:`/`[Russian]:`-style label in front of each line is
-  shown at all, and its own font size/color independent of the text that
-  follows it (default: shown, size 13, theme-default color). Persisted as
-  `phrase_show_prompt`/`phrase_prompt_size`/`phrase_prompt_color` and the
-  matching `translation_*` fields in `tagent-gui.json`. An entry with no
-  prompt of its own (an error line) never shows one, regardless of this
-  setting.
-
-### Changed
-- `TranscriptEntry` now carries the prompt and text of each line as separate
-  fields (`phrase-prompt`/`phrase-text`/`translation-prompt`/
-  `translation-text`) instead of one pre-formatted string per line, so the
-  prompt can be toggled and styled independently. On wrap, the text no longer
-  lines up under the prompt on continuation lines (no hanging indent) — it
-  wraps within the width remaining after the prompt.
+- "Show prompt" setting in Settings > View, separately for the phrase and the
+  translation: whether the `[Auto]:`/`[Russian]:`-style label in front of
+  each line is shown at all (default: shown). Persisted as
+  `phrase_show_prompt`/`translation_show_prompt` in `tagent-gui.json`. An
+  entry with no prompt of its own (an error line) never shows one, regardless
+  of this setting.
 
 ## [0.14.0+008] - 2026-09-12
 

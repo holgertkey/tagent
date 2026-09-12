@@ -76,22 +76,27 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 
     window.set_block_spacing_px(config.block_spacing_px);
     window.set_phrases_spacing_px(config.phrases_spacing_px);
+}
 
-    let default_accent = window.get_prompt_accent().color();
-
-    window.set_phrase_show_prompt(config.phrase_show_prompt);
-    window.set_phrase_prompt_size(config.phrase_prompt_size);
-    window.set_phrase_prompt_color(resolve_color(&config.phrase_prompt_color, default_accent));
-
-    window.set_translation_show_prompt(config.translation_show_prompt);
-    window.set_translation_prompt_size(config.translation_prompt_size);
-    window.set_translation_prompt_color(resolve_color(&config.translation_prompt_color, default_accent));
+/// Formats one transcript line, with or without its "[Auto]:"-style prompt.
+///
+/// The prompt is baked directly into the string (rather than kept as a
+/// separately styled element) because Slint's plain `Text`/`TextInput` can't
+/// mix two styles within one wrapped paragraph — an earlier attempt at a
+/// separately colored/sized prompt element made the text wrap flush under the
+/// prompt (hanging indent) instead of flush from the row's left margin like a
+/// normal paragraph, which didn't match the desired look.
+fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
+    if show_prompt {
+        format!("[{lang}]: {text}")
+    } else {
+        text.to_string()
+    }
 }
 
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
-/// empty, for "theme default") config value. Used six times (phrase/
-/// translation × text/background/prompt) — see the matching macro call sites
-/// below.
+/// empty, for "theme default") config value. Used four times (phrase/
+/// translation × text/background) — see the matching macro call sites below.
 macro_rules! init_color_field {
     ($dialog:expr, $hex:expr, $set_default:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_hex:ident) => {{
         let hex_value = $hex;
@@ -111,7 +116,7 @@ macro_rules! init_color_field {
 }
 
 /// Wires one `ColorPickerField`'s `hex-committed` callback: parses the typed
-/// hex text and reflects it into the field's RGB sliders. Used six times.
+/// hex text and reflects it into the field's RGB sliders. Used four times.
 macro_rules! wire_hex_committed {
     ($dialog:expr, $on_committed:ident, $set_r:ident, $set_g:ident, $set_b:ident, $set_default:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -131,7 +136,7 @@ macro_rules! wire_hex_committed {
 /// Wires one `ColorPickerField`'s `rgb-changed` callback (fired on every
 /// slider drag): reformats the field's current red/green/blue into
 /// `"#RRGGBB"` and writes it back into the hex text, so the hex field doesn't
-/// go stale while dragging sliders. Used six times.
+/// go stale while dragging sliders. Used four times.
 macro_rules! wire_rgb_changed {
     ($dialog:expr, $on_changed:ident, $get_r:ident, $get_g:ident, $get_b:ident, $set_hex:ident) => {{
         let dialog_weak = $dialog.as_weak();
@@ -185,26 +190,26 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let from = languages::name_to_code(&from_lang).to_string();
         let to = languages::name_to_code(&to_lang).to_string();
+
+        let (translate_provider, show_prompt) = {
+            let mut manager = config_manager.lock().unwrap();
+            manager.check_and_reload();
+            let cfg = manager.config();
+            (cfg.translate_provider.clone(), cfg.show_prompt)
+        };
+
         if to == "auto" {
             if let Some(window) = weak.upgrade() {
                 push_transcript_entry(
                     &window,
                     TranscriptEntry {
-                        phrase_prompt: format!("[{from_lang}]:").into(),
-                        phrase_text: text.clone().into(),
-                        translation_prompt: "".into(),
-                        translation_text: "Error: \"Auto\" is not a valid target language".into(),
+                        phrase: format_line(show_prompt, &from_lang, &text).into(),
+                        translation: "Error: \"Auto\" is not a valid target language".into(),
                     },
                 );
             }
             return;
         }
-
-        let translate_provider = {
-            let mut manager = config_manager.lock().unwrap();
-            manager.check_and_reload();
-            manager.config().translate_provider.clone()
-        };
 
         let weak = weak.clone();
 
@@ -220,16 +225,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if let Some(window) = weak.upgrade() {
                     let entry = match result {
                         Ok(translated) => TranscriptEntry {
-                            phrase_prompt: format!("[{from_lang}]:").into(),
-                            phrase_text: text.clone().into(),
-                            translation_prompt: format!("[{to_lang}]:").into(),
-                            translation_text: translated.into(),
+                            phrase: format_line(show_prompt, &from_lang, &text).into(),
+                            translation: format_line(show_prompt, &to_lang, &translated).into(),
                         },
                         Err(err) => TranscriptEntry {
-                            phrase_prompt: format!("[{from_lang}]:").into(),
-                            phrase_text: text.clone().into(),
-                            translation_prompt: "".into(),
-                            translation_text: format!("Error: {err}").into(),
+                            phrase: format_line(show_prompt, &from_lang, &text).into(),
+                            translation: format!("Error: {err}").into(),
                         },
                     };
                     push_transcript_entry(&window, entry);
@@ -284,10 +285,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.set_translation_font_index(font_index_for(&current_config.translation_font));
         dialog.set_translation_size(current_config.translation_size);
 
-        dialog.set_phrase_show_prompt(current_config.phrase_show_prompt);
-        dialog.set_phrase_prompt_size(current_config.phrase_prompt_size);
-        dialog.set_translation_show_prompt(current_config.translation_show_prompt);
-        dialog.set_translation_prompt_size(current_config.translation_prompt_size);
+        dialog.set_show_prompt(current_config.show_prompt);
 
         init_color_field!(
             dialog,
@@ -325,25 +323,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_blue,
             set_translation_bg_hex
         );
-        init_color_field!(
-            dialog,
-            current_config.phrase_prompt_color.as_str(),
-            set_phrase_prompt_use_default,
-            set_phrase_prompt_red,
-            set_phrase_prompt_green,
-            set_phrase_prompt_blue,
-            set_phrase_prompt_hex
-        );
-        init_color_field!(
-            dialog,
-            current_config.translation_prompt_color.as_str(),
-            set_translation_prompt_use_default,
-            set_translation_prompt_red,
-            set_translation_prompt_green,
-            set_translation_prompt_blue,
-            set_translation_prompt_hex
-        );
-
         wire_hex_committed!(
             dialog,
             on_phrase_color_hex_committed,
@@ -376,23 +355,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_blue,
             set_translation_bg_use_default
         );
-        wire_hex_committed!(
-            dialog,
-            on_phrase_prompt_hex_committed,
-            set_phrase_prompt_red,
-            set_phrase_prompt_green,
-            set_phrase_prompt_blue,
-            set_phrase_prompt_use_default
-        );
-        wire_hex_committed!(
-            dialog,
-            on_translation_prompt_hex_committed,
-            set_translation_prompt_red,
-            set_translation_prompt_green,
-            set_translation_prompt_blue,
-            set_translation_prompt_use_default
-        );
-
         wire_rgb_changed!(
             dialog,
             on_phrase_color_rgb_changed,
@@ -425,23 +387,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             get_translation_bg_blue,
             set_translation_bg_hex
         );
-        wire_rgb_changed!(
-            dialog,
-            on_phrase_prompt_rgb_changed,
-            get_phrase_prompt_red,
-            get_phrase_prompt_green,
-            get_phrase_prompt_blue,
-            set_phrase_prompt_hex
-        );
-        wire_rgb_changed!(
-            dialog,
-            on_translation_prompt_rgb_changed,
-            get_translation_prompt_red,
-            get_translation_prompt_green,
-            get_translation_prompt_blue,
-            set_translation_prompt_hex
-        );
-
         let dialog_weak = dialog.as_weak();
         let config_manager_for_save = config_manager_for_settings.clone();
         let window_weak_for_save = window_weak_for_settings.clone();
@@ -489,22 +434,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ),
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
-                phrase_show_prompt: dialog.get_phrase_show_prompt(),
-                phrase_prompt_size: dialog.get_phrase_prompt_size(),
-                phrase_prompt_color: color_field_hex(
-                    dialog.get_phrase_prompt_use_default(),
-                    dialog.get_phrase_prompt_red(),
-                    dialog.get_phrase_prompt_green(),
-                    dialog.get_phrase_prompt_blue(),
-                ),
-                translation_show_prompt: dialog.get_translation_show_prompt(),
-                translation_prompt_size: dialog.get_translation_prompt_size(),
-                translation_prompt_color: color_field_hex(
-                    dialog.get_translation_prompt_use_default(),
-                    dialog.get_translation_prompt_red(),
-                    dialog.get_translation_prompt_green(),
-                    dialog.get_translation_prompt_blue(),
-                ),
+                show_prompt: dialog.get_show_prompt(),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
