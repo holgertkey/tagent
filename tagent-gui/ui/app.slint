@@ -447,7 +447,8 @@ export component SettingsDialog inherits Dialog {
     // pickers, which stay fully editable afterward.
     in-out property <[string]> color-scheme-options: [
         "Presets…", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
-        "Gruvbox Dark", "Monokai", "One Dark"
+        "Gruvbox Dark", "Monokai", "One Dark", "Tokyo Night", "Catppuccin Mocha",
+        "Night Owl", "Ayu Dark", "GitHub Light", "Gruvbox Light", "Catppuccin Latte"
     ];
     in-out property <int> color-scheme-index: 0;
     callback color-scheme-selected <=> color-scheme-combo.selected;

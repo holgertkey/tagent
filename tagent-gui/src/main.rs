@@ -97,6 +97,69 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         translation_color: "#61AFEF",
         translation_background: "#2C313C",
     },
+    ColorScheme {
+        name: "Tokyo Night",
+        dark: true,
+        background: "#1A1B26",
+        phrase_color: "#C0CAF5",
+        phrase_background: "#292E42",
+        translation_color: "#7AA2F7",
+        translation_background: "#292E42",
+    },
+    ColorScheme {
+        name: "Catppuccin Mocha",
+        dark: true,
+        background: "#1E1E2E",
+        phrase_color: "#CDD6F4",
+        phrase_background: "#313244",
+        translation_color: "#CBA6F7",
+        translation_background: "#313244",
+    },
+    ColorScheme {
+        name: "Night Owl",
+        dark: true,
+        background: "#011627",
+        phrase_color: "#D6DEEB",
+        phrase_background: "#1D3B53",
+        translation_color: "#82AAFF",
+        translation_background: "#1D3B53",
+    },
+    ColorScheme {
+        name: "Ayu Dark",
+        dark: true,
+        background: "#0A0E14",
+        phrase_color: "#B3B1AD",
+        phrase_background: "#131721",
+        translation_color: "#FFB454",
+        translation_background: "#131721",
+    },
+    ColorScheme {
+        name: "GitHub Light",
+        dark: false,
+        background: "#FFFFFF",
+        phrase_color: "#24292E",
+        phrase_background: "#F6F8FA",
+        translation_color: "#0366D6",
+        translation_background: "#F6F8FA",
+    },
+    ColorScheme {
+        name: "Gruvbox Light",
+        dark: false,
+        background: "#FBF1C7",
+        phrase_color: "#3C3836",
+        phrase_background: "#EBDBB2",
+        translation_color: "#D65D0E",
+        translation_background: "#EBDBB2",
+    },
+    ColorScheme {
+        name: "Catppuccin Latte",
+        dark: false,
+        background: "#EFF1F5",
+        phrase_color: "#4C4F69",
+        phrase_background: "#CCD0DA",
+        translation_color: "#8839EF",
+        translation_background: "#CCD0DA",
+    },
 ];
 
 /// Parses a `"#RRGGBB"` (or `"RRGGBB"`) string into 0-255 components.
@@ -372,6 +435,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         dialog.set_block_spacing_px(current_config.block_spacing_px);
         dialog.set_phrases_spacing_px(current_config.phrases_spacing_px);
+
+        // Show the matching preset's name in the "Color scheme" dropdown
+        // (instead of the "Presets…" placeholder at index 0) when the five
+        // colors currently in effect are exactly one of the presets — e.g.
+        // right after it was applied and saved. Index +1 accounts for that
+        // placeholder being first in color-scheme-options.
+        let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
+            scheme.background == current_config.background_color
+                && scheme.phrase_color == current_config.phrase_color
+                && scheme.phrase_background == current_config.phrase_background
+                && scheme.translation_color == current_config.translation_color
+                && scheme.translation_background == current_config.translation_background
+        });
+        dialog.set_color_scheme_index(matching_scheme_index.map_or(0, |i| i as i32 + 1));
 
         dialog.set_phrase_font_index(font_index_for(&current_config.phrase_font));
         dialog.set_phrase_size(current_config.phrase_size);

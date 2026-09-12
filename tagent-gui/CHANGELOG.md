@@ -12,6 +12,22 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+013] - 2026-09-12
+
+### Added
+- Seven more entries in the "Color scheme" preset picker (Settings > View):
+  Tokyo Night, Catppuccin Mocha, Night Owl, Ayu Dark (dark), and GitHub
+  Light, Gruvbox Light, Catppuccin Latte (light) — 14 presets total now.
+
+### Fixed
+- Reopening Settings always showed the "Presets…" placeholder in the "Color
+  scheme" dropdown, even right after applying and saving one of the presets
+  — each Settings dialog is a fresh instance, so its `color-scheme-index`
+  never carried over from the previous session. It now shows the matching
+  preset's name instead, whenever the five colors currently in effect
+  (`background_color`/`phrase_*`/`translation_*` in `tagent-gui.json`)
+  exactly equal one of the presets.
+
 ## [0.14.0+012] - 2026-09-12
 
 ### Added
