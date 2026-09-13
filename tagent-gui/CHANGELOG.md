@@ -12,6 +12,33 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+015] - 2026-09-13
+
+### Added
+- Global hotkey support (Stage 5 of the development plan): a configurable
+  hotkey (default `Alt+Q`, same string format as `tagent-cli`'s
+  `TranslateHotkey` — `F1`-`F12`, `Modifier+Key`, or `Key+Key` double-press)
+  copies the current selection and translates it straight into the
+  transcript, without needing the `tagent-gui` window focused first. New
+  hand-editable `translate_hotkey` field in `tagent-gui.json` (default
+  `"Alt+Q"`); a bad or dangerous value logs a warning and disables the
+  hotkey rather than failing to start. Takes effect only on restart — no
+  Settings UI for it yet. **Linux and Windows only**; macOS remains a stub,
+  matching `tagent-cli`'s own posture for this feature. Implementation
+  (`platform/{linux,windows,macos}/{keyboard,keycodes}.rs`, `xgrab.rs` on
+  Linux, `HotkeyType`/`HotkeyParser` in `config.rs`) is ported independently
+  from `tagent-cli`'s own hotkey code — no dependency on `tagent-cli`
+  introduced.
+
+### Known limitation
+- The Windows implementation (`WH_KEYBOARD_LL` hook with Alt swallow-and-
+  replay, mirroring `tagent-cli`'s own hard-won design) has been verified
+  only via `cargo check`/`cargo test --no-run --target
+  x86_64-pc-windows-gnu` from Linux — it compiles and links, including its
+  unit tests, but has not been run on real Windows or under `wine` (neither
+  available in the development environment). Treat as unverified in
+  practice until confirmed on an actual Windows machine.
+
 ## [0.14.0+014] - 2026-09-13
 
 ### Added

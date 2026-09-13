@@ -289,45 +289,82 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `ClipboardManager` per OS (`platform/{linux,windows,macos}/clipboard.rs`), behind
   `#[cfg(target_os = "...")]` re-exports in `platform/mod.rs` — the same
   directory-per-OS, no-`trait` shape as `tagent-cli/src/platform/mod.rs`, chosen
-  deliberately so Stage 5's hotkey code can drop `keyboard.rs` into the same
-  per-OS directories later without a restructure. `get_text`/`set_text`/
+  deliberately so Stage 5's hotkey code could drop `keyboard.rs`/`keycodes.rs`
+  into the same per-OS directories later without a restructure — which is exactly
+  what happened (see the Hotkey bullet below). `get_text`/`set_text`/
   `copy_selected_text`/`get_text_with_copy` are ported near-verbatim from
   `tagent-cli`'s own `ClipboardManager` (Linux: `arboard` + a process-lifetime
   `static CLIPBOARD` + `xdotool`-simulated Ctrl+C; Windows: `clipboard-win` +
   `SendInput`/`WM_CANCELMODE`/`WM_COPY`-to-focused-control fallback; macOS: a
-  stub, every method `Err`, matching `tagent-cli`'s own macOS posture). Windows'
-  version inlines a single `GetAsyncKeyState` call instead of porting
-  `tagent-cli`'s whole `keycodes` module (that module's real job — hotkey name/VK
-  parsing — belongs to Stage 5), and its comments describe the Alt-release-wait/
-  `WM_CANCELMODE` steps as groundwork for Stage 5's future hook rather than citing
-  `tagent-cli`'s hook module, which doesn't exist here. `set_text` is currently
-  unused (`#[allow(dead_code)]`, kept for API parity and future use, e.g. copying
-  a translation result back to the clipboard) — this stage only wires up reading.
-  A "📋" button in the input row (`copy-requested` callback) calls
-  `ClipboardManager::get_text_with_copy()` on a background `std::thread::spawn`
-  (both platforms' `copy_selected_text` block for real wall-clock time — up to
-  ~250ms on Linux, ~900ms on Windows — so this must not run on Slint's own event
-  loop thread), then applies the result via `slint::invoke_from_event_loop`,
-  mirroring `on_translate_requested`'s existing thread-hop pattern exactly. On
-  success it replaces `input-text`; on failure (e.g. the Wayland guard, or
-  `xdotool` missing) it pushes a `TranscriptEntry { phrase: "[Clipboard]", ... }`
-  through the existing `push_transcript_entry` error-display convention, rather
-  than inventing a new one. **Known limitation, inherent to a button-triggered (as
-  opposed to global-hotkey-triggered) design**: clicking "📋" necessarily gives
-  `tagent-gui`'s own window input focus first, so the simulated Ctrl+C inside
-  `copy_selected_text` targets `tagent-gui` itself, not whatever window/selection
-  was active immediately before the click — unlike `tagent-cli`'s global hotkey,
-  which fires without stealing focus from the source app. In practice the button
-  behaves as "pull whatever the system clipboard already holds into the input
-  box" (useful on its own, e.g. after a manual Ctrl+C elsewhere) rather than "grab
-  the current selection with no prior Ctrl+C needed" — that stronger capability is
-  only meaningful once Stage 5's global hotkey exists, since a hotkey doesn't
-  require a focus change to fire. Not a bug to fix in this stage; documented here
-  so it isn't mistaken for one later.
+  stub, every method `Err`, matching `tagent-cli`'s own macOS posture). `set_text`
+  is currently unused (`#[allow(dead_code)]`, kept for API parity and future use,
+  e.g. copying a translation result back to the clipboard) — clipboard support
+  only wires up reading. A "📋" button in the input row (`copy-requested`
+  callback) calls `ClipboardManager::get_text_with_copy()` on a background
+  `std::thread::spawn` (both platforms' `copy_selected_text` block for real
+  wall-clock time — up to ~250ms on Linux, ~900ms on Windows — so this must not
+  run on Slint's own event loop thread), then applies the result via
+  `slint::invoke_from_event_loop`, mirroring `on_translate_requested`'s existing
+  thread-hop pattern exactly. On success it replaces `input-text`; on failure
+  (e.g. the Wayland guard, or `xdotool` missing) it pushes a `TranscriptEntry {
+  phrase: "[Clipboard]", ... }` through the existing `push_transcript_entry`
+  error-display convention, rather than inventing a new one. **Known limitation,
+  inherent to a button-triggered (as opposed to global-hotkey-triggered)
+  design**: clicking "📋" necessarily gives `tagent-gui`'s own window input focus
+  first, so the simulated Ctrl+C inside `copy_selected_text` targets `tagent-gui`
+  itself, not whatever window/selection was active immediately before the click.
+  In practice the button behaves as "pull whatever the system clipboard already
+  holds into the input box" (useful on its own, e.g. after a manual Ctrl+C
+  elsewhere) rather than "grab the current selection with no prior Ctrl+C
+  needed" — that stronger capability now exists via the Stage 5 global hotkey
+  below, which doesn't require a focus change to fire. Not a bug in the button
+  itself; documented here so it isn't mistaken for one.
+- **Global hotkey** (`tagent-gui/src/platform/{linux,windows,macos}/{keyboard,keycodes}.rs`
+  + `xgrab.rs` on Linux, Stage 5, shipped 2026-09-13): default `Alt+Q`, configured
+  via the hand-editable `translate_hotkey` field in `tagent-gui.json` (no Settings
+  UI for it yet — Stage 8 adds a "Hotkeys & Tray" tab control for a field that
+  already works). `config::HotkeyType`/`HotkeyParser` are ported from
+  `tagent-cli/src/config.rs` verbatim (same string grammar: `F1`-`F12` single
+  keys, `Modifier+Key` combos, `Key+Key` double-press), and each OS's
+  `keycodes.rs` drops the `KEY_STATES`/`set_key_state`/`is_key_pressed`
+  ESC-tracking pieces `tagent-cli`'s exist only for its text-to-speech
+  ESC-cancels-speech feature, which `tagent-gui` doesn't have yet. **Linux**:
+  `platform::KeyboardHook::spawn(hotkey, on_trigger)` grabs the hotkey via
+  `xgrab::XGrabManager` (ported from `tagent-cli` near-verbatim — `XGrabKey`
+  with CapsLock/NumLock variants and an AltGr/Mod5 fallback for Alt combos) and
+  runs a single-hotkey `HotkeyState` (simpler than `tagent-cli`'s, which tracks
+  translate *and* speech) fed by an `rdev::listen` thread over a plain
+  `std::sync::mpsc` channel — no `tokio` needed here, unlike `tagent-cli`'s
+  `tokio::select!`-based loop, since there's no second async task to interleave
+  with. **Windows**: a `WH_KEYBOARD_LL` hook with the same process-global
+  `OnceLock` statics and Alt-only swallow-and-replay mechanism as `tagent-cli`'s
+  (see that module's own doc comment, copied into `keyboard.rs` here too, for
+  the five hard-won invariants from `tagent-cli`'s past failed attempts) —
+  simplified to one hotkey instead of two, and with `TRANSLATOR: OnceLock<Arc<Translator>>`
+  replaced by `ON_TRIGGER: OnceLock<Box<dyn Fn() + Send + Sync>>` so this module
+  stays as ignorant of `tagent`/providers/Slint as `ClipboardManager` already is.
+  **Both platforms' hook code is fully app-agnostic**: `KeyboardHook::spawn`
+  only ever calls the `on_trigger` closure `main.rs` supplies — the "only one
+  translation at a time" guard, clipboard read, provider call, and transcript
+  push all live in that closure (and in `spawn_translation`, extracted out of
+  `on_translate_requested` specifically so the button and hotkey paths share one
+  implementation instead of two), not inside the platform code, unlike
+  `tagent-cli`'s own `keyboard.rs` files which couple that guard to the hook
+  directly. On Windows specifically, `on_trigger` must return near-instantly
+  (a slow `WH_KEYBOARD_LL` callback gets silently unhooked by Windows) — it only
+  does an atomic swap plus `slint::invoke_from_event_loop`, never clipboard I/O
+  or network calls directly. **macOS**: a stub (`KeyboardHook::spawn` logs once
+  and does nothing), matching `tagent-cli`'s own macOS posture — Linux+Windows
+  only for this whole hotkey/tray/popup cluster, per the Concept doc. **Verification
+  caveat**: the Windows port compiles and its pure decision-function unit tests
+  build cleanly under `cargo check`/`cargo test --no-run --target
+  x86_64-pc-windows-gnu`, but neither the app nor its tests have been *run* on
+  Windows or under `wine` (unavailable in this environment) — confirmed
+  compiling only, not confirmed correct in practice yet.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
-  spell-check notices, no TTS button, no global hotkeys, no history
-  logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German),
-  much smaller than the ~16 languages `config.rs` supports for CLI/interactive mode.
+  spell-check notices, no TTS button, no history logging. `app.slint` hardcodes a
+  6-language list (Auto/English/Russian/Spanish/French/German), much smaller than
+  the ~16 languages `config.rs` supports for CLI/interactive mode.
 
 ### Known gaps in `tagent-gui`
 
