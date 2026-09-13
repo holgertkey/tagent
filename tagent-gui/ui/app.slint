@@ -193,6 +193,7 @@ export component AppWindow inherits Window {
     callback translate-requested(string, string, string);
     callback swap-requested();
     callback settings-requested();
+    callback copy-requested();
 
     VerticalBox {
         HorizontalBox {
@@ -403,6 +404,11 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
+                }
+
+                Button {
+                    text: "📋";
+                    clicked => { copy-requested(); }
                 }
 
                 Button {

@@ -12,6 +12,26 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+014] - 2026-09-13
+
+### Added
+- Clipboard support (Stage 4 of the development plan): a "📋" button next to
+  Translate pulls the current system clipboard contents into the input box.
+  Backed by a new per-OS `ClipboardManager` in `tagent-gui/src/platform/`
+  (Linux: `arboard` + `xdotool`; Windows: `clipboard-win` + `SendInput`; macOS:
+  stub, not yet implemented), ported independently from `tagent-cli`'s own
+  `ClipboardManager` — no dependency on `tagent-cli` introduced. Runs off the UI
+  thread so the window doesn't freeze during the underlying copy.
+
+### Known limitation
+- Because clicking "📋" gives `tagent-gui` window focus first, its simulated
+  Ctrl+C targets `tagent-gui` itself rather than whatever was focused right
+  before the click — unlike a future global hotkey, which wouldn't need to
+  steal focus to fire. In practice this makes the button behave as "paste
+  whatever the clipboard already holds," not "grab the current selection with
+  no prior manual copy." See `docs/ARCHITECTURE.md` for the full explanation.
+  Expected to be superseded once Stage 5 (global hotkeys) lands.
+
 ## [0.14.0+013] - 2026-09-12
 
 ### Added

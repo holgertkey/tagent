@@ -3,8 +3,10 @@ use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
 mod config;
+mod platform;
 
 use config::GuiConfigManager;
+use platform::ClipboardManager;
 
 slint::include_modules!();
 
@@ -406,6 +408,30 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // "English" (index 1) rather than making it the new target.
             window.set_target_language_index(if source == 0 { 1 } else { source });
         }
+    });
+
+    let weak = window.as_weak();
+    window.on_copy_requested(move || {
+        let weak = weak.clone();
+        std::thread::spawn(move || {
+            let result = ClipboardManager::new().get_text_with_copy();
+
+            slint::invoke_from_event_loop(move || {
+                if let Some(window) = weak.upgrade() {
+                    match result {
+                        Ok(text) => window.set_input_text(text.into()),
+                        Err(err) => push_transcript_entry(
+                            &window,
+                            TranscriptEntry {
+                                phrase: "[Clipboard]".into(),
+                                translation: format!("Error: {err}").into(),
+                            },
+                        ),
+                    }
+                }
+            })
+            .ok();
+        });
     });
 
     let window_weak_for_settings = window.as_weak();
