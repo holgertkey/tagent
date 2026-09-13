@@ -1,3 +1,4 @@
+use crate::platform::keycodes;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -41,6 +42,11 @@ fn default_phrases_spacing_px() -> i32 {
 /// Default: show the "[Auto]:"/"[Russian]:" prompt in front of the text.
 fn default_show_prompt() -> bool {
     true
+}
+
+/// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
+fn default_translate_hotkey() -> String {
+    "Alt+Q".to_string()
 }
 
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
@@ -92,6 +98,11 @@ pub struct GuiConfig {
     /// phrase and translation text.
     #[serde(default = "default_show_prompt")]
     pub show_prompt: bool,
+    /// Global hotkey that copies the current selection and translates it
+    /// (see [`HotkeyParser`] for the supported string formats). Takes effect
+    /// only on restart. Linux and Windows only — no effect on macOS yet.
+    #[serde(default = "default_translate_hotkey")]
+    pub translate_hotkey: String,
 }
 
 impl Default for GuiConfig {
@@ -111,6 +122,7 @@ impl Default for GuiConfig {
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
+            translate_hotkey: default_translate_hotkey(),
         }
     }
 }
@@ -271,6 +283,267 @@ impl Default for GuiConfigManager {
     }
 }
 
+// Hotkey configuration types and parser, ported from `tagent-cli`'s
+// `config.rs` (same string format, same defaults) — see Stage 5 of the
+// development plan.
+/// A parsed hotkey configuration, describing how a key or key combination
+/// should be detected by the platform keyboard hook.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HotkeyType {
+    /// A single key press (only `F1`-`F12` are allowed here for safety).
+    SingleKey {
+        /// Virtual-key code of the key.
+        vk_code: u32,
+    },
+    /// A modifier(s) + key combination, e.g. `Alt+Q` or `Ctrl+Shift+T`.
+    ModifierCombo {
+        /// Virtual-key codes of the required modifier keys, all of which must be held.
+        modifiers: Vec<u32>,
+        /// Virtual-key code of the non-modifier key that completes the combo.
+        key: u32,
+    },
+    /// Two presses of the same key within a configurable time window, e.g. `Ctrl+Ctrl`.
+    DoublePress {
+        /// Virtual-key code of the key.
+        vk_code: u32,
+        /// Minimum time between presses, in milliseconds, for the second press to count.
+        min_interval_ms: u64,
+        /// Maximum time between presses, in milliseconds, for the second press to count.
+        max_interval_ms: u64,
+    },
+}
+
+/// Stateless parser that converts hotkey configuration strings (e.g. `"Alt+Q"`)
+/// into [`HotkeyType`] values, and validates them against dangerous system shortcuts.
+pub struct HotkeyParser;
+
+impl HotkeyParser {
+    /// Parse hotkey string into HotkeyType
+    pub fn parse(hotkey_str: &str) -> Result<HotkeyType, String> {
+        let trimmed = hotkey_str.trim();
+
+        if trimmed.is_empty() {
+            return Err("Empty hotkey string".to_string());
+        }
+
+        // Check for double-press pattern (e.g., "Ctrl+Ctrl")
+        if trimmed.contains('+') {
+            let parts: Vec<&str> = trimmed.split('+').map(|s| s.trim()).collect();
+
+            // Check if it's a double-press (same key twice)
+            if parts.len() == 2 && parts[0].eq_ignore_ascii_case(parts[1]) {
+                // Normalized because the observed key event is always normalized to the
+                // generic code before comparison in the keyboard hooks (see keycodes::normalize_vk_code).
+                let vk_code = keycodes::normalize_vk_code(Self::key_name_to_vk(parts[0])?);
+                return Ok(HotkeyType::DoublePress {
+                    vk_code,
+                    min_interval_ms: 50,
+                    max_interval_ms: 500,
+                });
+            }
+
+            // Otherwise it's a modifier combination
+            // Last part is the key, everything else is modifiers
+            if parts.len() < 2 {
+                return Err("Invalid modifier combination".to_string());
+            }
+
+            // `key` (the trigger) is compared against the raw observed vk_code and stays
+            // left/right-specific. `modifiers` are compared against the normalized observed
+            // code, so they must be normalized here too, or a side-specific modifier
+            // (e.g. "LAlt") would never match.
+            let key = Self::key_name_to_vk(parts.last().unwrap())?;
+            let modifiers: Result<Vec<u32>, String> = parts[..parts.len() - 1]
+                .iter()
+                .map(|m| Self::key_name_to_vk(m).map(keycodes::normalize_vk_code))
+                .collect();
+
+            return Ok(HotkeyType::ModifierCombo {
+                modifiers: modifiers?,
+                key,
+            });
+        }
+
+        // Single key
+        let vk_code = Self::key_name_to_vk(trimmed)?;
+        Ok(HotkeyType::SingleKey { vk_code })
+    }
+
+    /// Convert key name to platform-specific virtual key code
+    fn key_name_to_vk(key_name: &str) -> Result<u32, String> {
+        keycodes::key_name_to_vk(key_name)
+    }
+
+    /// Validate that the hotkey doesn't conflict with critical system shortcuts
+    pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
+        match hotkey {
+            // Only allow F1-F12 as single keys
+            HotkeyType::SingleKey { vk_code }
+                if *vk_code < keycodes::KEY_F1 || *vk_code > keycodes::KEY_F12 =>
+            {
+                return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
+            }
+            HotkeyType::SingleKey { .. } => {}
+            HotkeyType::ModifierCombo { modifiers, key } => {
+                // Forbid Shift-only combinations (Shift+Key interferes with text input)
+                // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
+                let only_shift = modifiers.iter().all(|&m| {
+                    m == keycodes::KEY_SHIFT
+                        || m == keycodes::KEY_LSHIFT
+                        || m == keycodes::KEY_RSHIFT
+                });
+
+                if only_shift {
+                    return Err("Shift+Key combinations are not allowed (interferes with text input). Use multi-modifier combinations like Ctrl+Shift+T or Alt+Shift+Space instead.".to_string());
+                }
+
+                // Warn about common system shortcuts
+                let has_ctrl = modifiers.iter().any(|&m| {
+                    m == keycodes::KEY_CONTROL
+                        || m == keycodes::KEY_LCONTROL
+                        || m == keycodes::KEY_RCONTROL
+                });
+                let has_alt = modifiers.iter().any(|&m| {
+                    m == keycodes::KEY_ALT || m == keycodes::KEY_LALT || m == keycodes::KEY_RALT
+                });
+                let has_win = modifiers
+                    .iter()
+                    .any(|&m| m == keycodes::KEY_LWIN || m == keycodes::KEY_RWIN);
+
+                // Block dangerous combinations
+                if has_ctrl && has_alt && *key == keycodes::KEY_DELETE {
+                    return Err("Ctrl+Alt+Delete is reserved by the system".to_string());
+                }
+
+                if has_win && *key == 'L' as u32 {
+                    return Err("Win+L (lock screen) is reserved by the system".to_string());
+                }
+
+                // Warnings for common shortcuts (don't block, just warn in logs)
+                if has_alt && *key == keycodes::KEY_F4 {
+                    eprintln!("Warning: Alt+F4 may close windows");
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    use super::*;
+
+    #[test]
+    fn parse_single_key() {
+        let result = HotkeyParser::parse("F9").unwrap();
+        assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+
+        let result = HotkeyParser::parse("f9").unwrap();
+        assert!(matches!(result, HotkeyType::SingleKey { vk_code: _ }));
+    }
+
+    #[test]
+    fn validate_single_key_only_allows_f1_to_f12() {
+        let hotkey = HotkeyParser::parse("F9").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("F1").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("F12").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Tab").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+
+    #[test]
+    fn parse_modifier_combo() {
+        let result = HotkeyParser::parse("Alt+Space").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+
+        let result = HotkeyParser::parse("Ctrl+Shift+C").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+
+        let result = HotkeyParser::parse("Win+T").unwrap();
+        assert!(matches!(result, HotkeyType::ModifierCombo { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_shift_only_combo() {
+        let hotkey = HotkeyParser::parse("Shift+T").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Shift+Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Ctrl+Shift+T").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Alt+Shift+Space").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+    }
+
+    #[test]
+    fn parse_double_press() {
+        let result = HotkeyParser::parse("Ctrl+Ctrl").unwrap();
+        assert!(matches!(result, HotkeyType::DoublePress { .. }));
+
+        let result = HotkeyParser::parse("F8+F8").unwrap();
+        assert!(matches!(result, HotkeyType::DoublePress { .. }));
+    }
+
+    #[test]
+    fn parse_left_right_modifier_normalization() {
+        let result = HotkeyParser::parse("LAlt+Q").unwrap();
+        match result {
+            HotkeyType::ModifierCombo { modifiers, .. } => {
+                assert_eq!(modifiers, vec![keycodes::KEY_ALT]);
+            }
+            _ => panic!("expected ModifierCombo"),
+        }
+
+        let result = HotkeyParser::parse("RCtrl+Shift+T").unwrap();
+        match result {
+            HotkeyType::ModifierCombo { modifiers, .. } => {
+                assert!(modifiers.contains(&keycodes::KEY_CONTROL));
+            }
+            _ => panic!("expected ModifierCombo"),
+        }
+    }
+
+    #[test]
+    fn parse_double_press_normalizes_vk_code() {
+        let result = HotkeyParser::parse("LCtrl+LCtrl").unwrap();
+        match result {
+            HotkeyType::DoublePress { vk_code, .. } => {
+                assert_eq!(vk_code, keycodes::KEY_CONTROL);
+            }
+            _ => panic!("expected DoublePress"),
+        }
+    }
+
+    #[test]
+    fn parse_invalid_input_errors() {
+        assert!(HotkeyParser::parse("InvalidKey").is_err());
+        assert!(HotkeyParser::parse("").is_err());
+    }
+
+    #[test]
+    fn validate_blocks_dangerous_combos() {
+        let hotkey = HotkeyParser::parse("Ctrl+Alt+Delete").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Win+L").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +598,17 @@ mod tests {
 
         assert_eq!(config.translate_provider, "google");
         assert_eq!(config.theme, "auto");
+    }
+
+    #[test]
+    fn old_file_without_hotkey_field_defaults_to_alt_q() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.translate_hotkey, "Alt+Q");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use super::keycodes::is_key_pressed;
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
 use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -51,14 +52,15 @@ impl ClipboardManager {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Wait for a physically-held Alt to actually be released, instead of injecting
-            // a synthetic Alt-up below. This stage has no global hotkey yet (Stage 5 will
-            // add one), so a held Alt shouldn't normally happen from this button's own
-            // click -- kept as defensive groundwork for that future hook, which is
-            // expected to need the same swallow-and-replay handling `tagent-cli`'s
-            // low-level keyboard hook already does for Alt-based hotkeys. Physical
-            // release is necessary but not sufficient -- the foreground window's own
-            // message queue may not have finished processing the matching keyup yet,
-            // which is what the WM_CANCELMODE step below is for.
+            // a synthetic Alt-up below. When this call is triggered by the "📋" button
+            // (a click, not a keystroke), a held Alt shouldn't normally happen; when
+            // triggered by the Alt+Q-style global hotkey (see `keyboard.rs`), that hook's
+            // own swallow-and-replay mechanism already prevents the real Alt keydown from
+            // reaching the foreground app in the first place, so this loop is a defensive
+            // fallback either way, not the primary protection. Physical release is
+            // necessary but not sufficient -- the foreground window's own message queue
+            // may not have finished processing the matching keyup yet, which is what the
+            // WM_CANCELMODE step below is for.
             let alt_release_deadline =
                 std::time::Instant::now() + std::time::Duration::from_millis(600);
             while is_key_pressed(VK_MENU.0 as i32)
@@ -229,13 +231,4 @@ impl ClipboardManager {
 
         Ok(last_result)
     }
-}
-
-/// Check whether a virtual key is currently physically held down.
-///
-/// One-line wrapper -- ported inline here rather than as a whole `keycodes` module,
-/// since that module's real job (hotkey name/VK-code parsing, F1-F12 tables,
-/// left/right normalization) belongs to Stage 5's hotkey detection, not this stage.
-unsafe fn is_key_pressed(vk_code: i32) -> bool {
-    GetAsyncKeyState(vk_code) as u16 & 0x8000 != 0
 }

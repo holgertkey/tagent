@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0+014"
+version = "0.14.0+015"
 edition = "2021"
 description = "Tagent GUI — cross-platform text translator with Slint"
 publish = false
@@ -32,8 +32,11 @@ windows = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
 ] }
 
 # Linux-only dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 arboard = "3.4"
+rdev = "0.5"
+x11 = { version = "2.21", features = ["xlib"] }

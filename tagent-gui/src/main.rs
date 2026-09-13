@@ -1,4 +1,5 @@
 use slint::{Color, ComponentHandle, Model, ModelRc, VecModel};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
@@ -6,7 +7,7 @@ mod config;
 mod platform;
 
 use config::GuiConfigManager;
-use platform::ClipboardManager;
+use platform::{ClipboardManager, KeyboardHook};
 
 slint::include_modules!();
 
@@ -331,6 +332,78 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
     scroll_transcript_to_bottom(window);
 }
 
+/// Everything [`spawn_translation`] needs, grouped into one struct rather than passed as
+/// separate arguments (clippy's `too_many_arguments` threshold is 7; this is naturally
+/// more than that once both the display names and the resolved provider codes are
+/// included). `from_lang`/`to_lang` are the human-readable names used for the
+/// transcript's "[Lang]:"-style prompt; `from_code`/`to_code` are their already-resolved
+/// provider codes.
+struct TranslationRequest {
+    translate_provider: String,
+    show_prompt: bool,
+    from_lang: String,
+    to_lang: String,
+    from_code: String,
+    to_code: String,
+    text: String,
+}
+
+/// Translates `request.text` in a background thread and pushes the result (or an error)
+/// into the transcript. Shared by the Translate button/Enter key
+/// (`on_translate_requested`) and the global hotkey (Stage 5) — the only two callers,
+/// extracted here specifically to avoid duplicating the provider-call/transcript-push
+/// logic between them.
+///
+/// `on_done`, if given, runs after the entry is pushed (on the UI thread) — the hotkey
+/// path uses this to clear its "already processing" guard; the button path has no such
+/// guard and passes `None`.
+fn spawn_translation(
+    weak: slint::Weak<AppWindow>,
+    request: TranslationRequest,
+    on_done: Option<Box<dyn FnOnce() + Send>>,
+) {
+    let TranslationRequest {
+        translate_provider,
+        show_prompt,
+        from_lang,
+        to_lang,
+        from_code,
+        to_code,
+        text,
+    } = request;
+
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
+        let request_text = text.clone();
+        let result = runtime.block_on(async move {
+            let provider = providers::create_provider(&translate_provider)?;
+            provider
+                .translate_text(&request_text, &from_code, &to_code)
+                .await
+        });
+
+        slint::invoke_from_event_loop(move || {
+            if let Some(window) = weak.upgrade() {
+                let entry = match result {
+                    Ok(translated) => TranscriptEntry {
+                        phrase: format_line(show_prompt, &from_lang, &text).into(),
+                        translation: format_line(show_prompt, &to_lang, &translated).into(),
+                    },
+                    Err(err) => TranscriptEntry {
+                        phrase: format_line(show_prompt, &from_lang, &text).into(),
+                        translation: format!("Error: {err}").into(),
+                    },
+                };
+                push_transcript_entry(&window, entry);
+            }
+            if let Some(on_done) = on_done {
+                on_done();
+            }
+        })
+        .ok();
+    });
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window = AppWindow::new()?;
 
@@ -339,15 +412,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     apply_style(&window, config_manager.lock().unwrap().config());
 
     let config_manager_for_settings = config_manager.clone();
+    let config_manager_for_translate = config_manager.clone();
     let weak = window.as_weak();
     window.on_translate_requested(move |text, from_lang, to_lang| {
+        let config_manager = &config_manager_for_translate;
         let text = text.trim().to_string();
         if text.is_empty() {
             return;
         }
 
-        let from = languages::name_to_code(&from_lang).to_string();
-        let to = languages::name_to_code(&to_lang).to_string();
+        let from_code = languages::name_to_code(&from_lang).to_string();
+        let to_code = languages::name_to_code(&to_lang).to_string();
 
         let (translate_provider, show_prompt) = {
             let mut manager = config_manager.lock().unwrap();
@@ -356,7 +431,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             (cfg.translate_provider.clone(), cfg.show_prompt)
         };
 
-        if to == "auto" {
+        if to_code == "auto" {
             if let Some(window) = weak.upgrade() {
                 push_transcript_entry(
                     &window,
@@ -369,33 +444,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return;
         }
 
-        let weak = weak.clone();
-
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
-            let request_text = text.clone();
-            let result = runtime.block_on(async move {
-                let provider = providers::create_provider(&translate_provider)?;
-                provider.translate_text(&request_text, &from, &to).await
-            });
-
-            slint::invoke_from_event_loop(move || {
-                if let Some(window) = weak.upgrade() {
-                    let entry = match result {
-                        Ok(translated) => TranscriptEntry {
-                            phrase: format_line(show_prompt, &from_lang, &text).into(),
-                            translation: format_line(show_prompt, &to_lang, &translated).into(),
-                        },
-                        Err(err) => TranscriptEntry {
-                            phrase: format_line(show_prompt, &from_lang, &text).into(),
-                            translation: format!("Error: {err}").into(),
-                        },
-                    };
-                    push_transcript_entry(&window, entry);
-                }
-            })
-            .ok();
-        });
+        spawn_translation(
+            weak.clone(),
+            TranslationRequest {
+                translate_provider,
+                show_prompt,
+                from_lang: from_lang.to_string(),
+                to_lang: to_lang.to_string(),
+                from_code,
+                to_code,
+                text,
+            },
+            None,
+        );
     });
 
     let weak = window.as_weak();
@@ -726,6 +787,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
+                // No Settings UI for this yet (Stage 8) — carry the existing value over
+                // unchanged rather than resetting it to the default on every save.
+                translate_hotkey: current_config.translate_hotkey.clone(),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
@@ -739,6 +803,127 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         dialog.show().unwrap();
     });
+
+    // Global hotkey (Stage 5): parse+validate once at startup from the hand-editable
+    // `translate_hotkey` config field. On failure, log a warning and leave the hotkey
+    // disabled rather than failing to start — same "log and keep running" convention
+    // `tagent-cli` uses for its own hotkeys. Changes to `translate_hotkey` take effect
+    // only on restart (no live-reload of the OS-level grab itself).
+    let hotkey_str = config_manager
+        .lock()
+        .unwrap()
+        .config()
+        .translate_hotkey
+        .clone();
+    match config::HotkeyParser::parse(&hotkey_str)
+        .and_then(|h| config::HotkeyParser::validate_hotkey(&h).map(|_| h))
+    {
+        Ok(hotkey) => {
+            let is_processing = Arc::new(AtomicBool::new(false));
+            let weak = window.as_weak();
+            let config_manager = config_manager.clone();
+            KeyboardHook::spawn(hotkey, move || {
+                // Runs on the platform hook's own thread (on Windows, inside the
+                // WH_KEYBOARD_LL callback itself) -- must stay fast and non-blocking,
+                // hence the atomic guard and invoke_from_event_loop hand-off below
+                // rather than doing any real work here.
+                if is_processing.swap(true, Ordering::SeqCst) {
+                    return; // already handling a previous trigger
+                }
+
+                let is_processing = is_processing.clone();
+                let weak = weak.clone();
+                let config_manager = config_manager.clone();
+                slint::invoke_from_event_loop(move || {
+                    let Some(window) = weak.upgrade() else {
+                        is_processing.store(false, Ordering::SeqCst);
+                        return;
+                    };
+
+                    let languages_model = window.get_languages();
+                    let from_lang = languages_model
+                        .row_data(window.get_source_language_index() as usize)
+                        .unwrap_or_default();
+                    let to_lang = languages_model
+                        .row_data(window.get_target_language_index() as usize)
+                        .unwrap_or_default();
+
+                    let (translate_provider, show_prompt) = {
+                        let mut manager = config_manager.lock().unwrap();
+                        manager.check_and_reload();
+                        let cfg = manager.config();
+                        (cfg.translate_provider.clone(), cfg.show_prompt)
+                    };
+
+                    let from_code = languages::name_to_code(&from_lang).to_string();
+                    let to_code = languages::name_to_code(&to_lang).to_string();
+
+                    if to_code == "auto" {
+                        push_transcript_entry(
+                            &window,
+                            TranscriptEntry {
+                                phrase: "[Hotkey]".into(),
+                                translation: "Error: \"Auto\" is not a valid target language"
+                                    .into(),
+                            },
+                        );
+                        is_processing.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    let weak2 = weak.clone();
+                    let is_processing2 = is_processing.clone();
+                    std::thread::spawn(move || {
+                        match ClipboardManager::new().get_text_with_copy() {
+                            Ok(text) if !text.trim().is_empty() => {
+                                spawn_translation(
+                                    weak2,
+                                    TranslationRequest {
+                                        translate_provider,
+                                        show_prompt,
+                                        from_lang: from_lang.to_string(),
+                                        to_lang: to_lang.to_string(),
+                                        from_code,
+                                        to_code,
+                                        text,
+                                    },
+                                    Some(Box::new(move || {
+                                        is_processing2.store(false, Ordering::SeqCst);
+                                    })),
+                                );
+                            }
+                            Ok(_) => {
+                                is_processing2.store(false, Ordering::SeqCst);
+                            }
+                            Err(err) => {
+                                slint::invoke_from_event_loop(move || {
+                                    if let Some(window) = weak2.upgrade() {
+                                        push_transcript_entry(
+                                            &window,
+                                            TranscriptEntry {
+                                                phrase: "[Hotkey]".into(),
+                                                translation: format!("Error: {err}").into(),
+                                            },
+                                        );
+                                    }
+                                    is_processing2.store(false, Ordering::SeqCst);
+                                })
+                                .ok();
+                            }
+                        }
+                    });
+                })
+                .ok();
+            });
+        }
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to parse/validate translate_hotkey '{}': {}",
+                hotkey_str, e
+            );
+            eprintln!("Global hotkey disabled.");
+        }
+    }
 
     window.run()?;
     Ok(())
