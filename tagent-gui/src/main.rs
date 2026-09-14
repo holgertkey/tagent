@@ -7,9 +7,24 @@ mod config;
 mod platform;
 
 use config::GuiConfigManager;
+use platform::window::WindowHandle;
 use platform::{ClipboardManager, KeyboardHook};
 
 slint::include_modules!();
+
+thread_local! {
+    // The foreground window captured by `show_popup`, to be restored once the
+    // popup actually hides (see `show_popup`'s doc comment for why this moved
+    // from "restore immediately after show()" to "restore at hide time").
+    // `thread_local!` (not `Rc<Cell<_>>` passed around) specifically because
+    // `show_popup` is invoked from a closure that has to satisfy `Send` (it's
+    // moved through a background thread inside `spawn_translation` before
+    // being called back on the UI thread) -- an `Rc` captured there wouldn't
+    // compile, but a thread-local needs no such bound, and both the writer
+    // (`show_popup`) and the reader (`on_hide_requested`'s handler in
+    // `main()`) only ever run on the UI thread anyway.
+    static POPUP_RESTORE_TARGET: std::cell::Cell<Option<WindowHandle>> = const { std::cell::Cell::new(None) };
+}
 
 /// Font-family choices offered for the phrase/translation style pickers in
 /// Settings > View, in the same order as `SettingsDialog.font-options`.
@@ -263,15 +278,22 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
 /// cursor, and (re)starts its auto-hide timer. Called from the hotkey path's
 /// `spawn_translation` completion callback, already on the UI thread.
 ///
-/// Order matters here for the focus-stealing fix (see the Stage 6 plan): the
-/// foreground window is captured *before* `popup.show()` (which takes OS focus on
-/// most window managers) and restored immediately after positioning — not only when
-/// the popup later auto-hides — so the popup never holds keyboard focus even while
-/// visible, and a hotkey re-trigger while it's still on screen still copies from the
-/// real source app. Because focus is handed back right here, the later auto-hide
-/// (driven entirely by `TranslationPopup`'s own `Timer` element in app.slint — see
-/// its `hide-timer`/`start-hide-timer` — via `on_hide_requested` below) never needs to
-/// touch focus again, just call `popup.hide()`.
+/// The foreground window is captured here (before `popup.show()` changes it) but
+/// deliberately **not** restored immediately after — that was the original design
+/// (to stop the popup from ever holding keyboard focus, even transiently), but it
+/// broke visibility entirely: `set_foreground_window` on Linux raises the target via
+/// `XMapRaised` as well as focusing it, and once the popup is correctly positioned
+/// right where the cursor is (i.e. right over the app the user was just using),
+/// raising that app straight back put it right back on top of the popup, hiding it
+/// completely. Restoring focus is instead deferred to `on_hide_requested`'s handler
+/// in `main()` (via `POPUP_RESTORE_TARGET`, a thread-local since this value has to
+/// survive a trip through a `Send`-bounded closure — see that constant's doc
+/// comment), matching `tagent-cli`'s own `hide_terminal_and_restore`, which restores
+/// focus only when actually hiding its own popup, not right after showing it. This
+/// reopens a narrower version of the original concern (a hotkey re-trigger *while
+/// the popup is still visible* could still copy from the popup, not the real source
+/// app) — accepted, since it's the same tradeoff `tagent-cli` already lives with for
+/// its own terminal popup, and strictly better than the popup never being visible.
 ///
 /// The auto-hide timer deliberately lives inside the `.slint` component itself
 /// (a `Timer` element), not as a `slint::Timer` held in `main()`: `on_done` (this
@@ -289,24 +311,27 @@ fn show_popup(
         return;
     };
 
-    let restore_target = platform::window::foreground_window();
+    POPUP_RESTORE_TARGET.with(|cell| cell.set(platform::window::foreground_window()));
 
     popup.set_phrase_text(entry.phrase.clone());
     popup.set_translation_text(entry.translation.clone());
 
-    // No monitor-edge clamping in this stage -- accepted limitation, see the
-    // Stage 6 plan. A `None` cursor position (unsupported window manager) just
-    // leaves the popup at wherever it last was.
+    popup.show().ok();
+
+    // Positioned *after* show(), not before: the Stage 6 plan flagged this
+    // ordering as needing empirical verification, and it turned out
+    // position-before-show is the one that doesn't work -- on this X11 setup
+    // it was silently ignored (no OS-level window exists yet when
+    // set_position is called), leaving the popup at whatever position a
+    // freshly mapped no-frame window defaults to (observed: the screen's
+    // top-left corner), not the cursor. No monitor-edge clamping in this
+    // stage -- accepted limitation, see the Stage 6 plan. A `None` cursor
+    // position (unsupported window manager) just leaves the popup wherever
+    // show() placed it.
     if let Some((x, y)) = platform::window::cursor_position() {
         popup
             .window()
             .set_position(slint::PhysicalPosition::new(x + 16, y + 16));
-    }
-
-    popup.show().ok();
-
-    if let Some(handle) = restore_target {
-        let _ = platform::window::set_foreground_window(handle);
     }
 
     popup.set_auto_hide_seconds(auto_hide_seconds.min(i32::MAX as u64) as i32);
@@ -507,12 +532,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // the Rust `slint::Timer` API) decides when to actually hide it -- see
     // `show_popup`'s doc comment for why that has to live in .slint rather than as a
     // `slint::Timer` held here. It only signals "time to hide" via this callback;
-    // hiding itself (and nothing else -- focus was already restored back in
-    // `show_popup`, right after `show()`) happens here.
+    // hiding it, and restoring focus to whatever was focused before the popup was
+    // shown (see `POPUP_RESTORE_TARGET`'s doc comment for why this happens here now,
+    // not immediately after `show()`), happens here.
     let popup_for_hide = popup.as_weak();
     popup.on_hide_requested(move || {
         if let Some(popup) = popup_for_hide.upgrade() {
             popup.hide().ok();
+        }
+        if let Some(handle) = POPUP_RESTORE_TARGET.with(|cell| cell.take()) {
+            let _ = platform::window::set_foreground_window(handle);
         }
     });
 

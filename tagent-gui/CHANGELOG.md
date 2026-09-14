@@ -12,6 +12,30 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+018] - 2026-09-14
+
+### Fixed
+- Popup was invisible after the `+017` position fix (correctly placed next to
+  the cursor, but never actually seen). Cause: focus was restored to the
+  previous app *immediately* after showing the popup, and on Linux that also
+  raises the restored app (`XMapRaised`) — since the popup now sits right
+  where the cursor is, i.e. right over the app just used, raising that app
+  put it right back on top of the popup. Fixed by deferring the focus
+  restore to when the popup actually hides (matching `tagent-cli`'s own
+  `hide_terminal_and_restore`), instead of doing it right after `show()`.
+  Reopens a narrower version of the focus-stealing edge case from Stage 6's
+  original design (a hotkey re-trigger *while the popup is still visible*
+  can copy from the popup instead of the real source app) — accepted, same
+  tradeoff `tagent-cli` already lives with for its own popup.
+
+## [0.14.0+017] - 2026-09-14
+
+### Fixed
+- Stage 6 popup appeared at the screen's top-left corner instead of next to
+  the mouse cursor. Cause: `Window::set_position` was called *before*
+  `popup.show()`, and on this X11 setup that call is silently ignored when no
+  OS-level window exists yet. Fixed by positioning *after* `show()` instead.
+
 ## [0.14.0+016] - 2026-09-14
 
 ### Added
