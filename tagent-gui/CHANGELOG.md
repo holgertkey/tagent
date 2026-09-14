@@ -12,6 +12,31 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+019] - 2026-09-14
+
+### Fixed
+- **Global hotkey suppression on Linux depended on the active keyboard
+  layout** (`platform/linux/xgrab.rs`): `XGrabManager` resolved the hotkey's
+  base key to an X11 keycode by converting it to an ASCII/Latin `KeySym` and
+  calling `XKeysymToKeycode`, which searches the *currently active* keyboard
+  mapping across all groups. On a layout with no Latin group at all (e.g. a
+  pure Russian layout, as opposed to a combined `us,ru` one), the Latin
+  keysym isn't bound to any keycode, `XKeysymToKeycode` returned 0, and the
+  grab silently failed — hotkey *detection* (via `rdev`, already
+  keycode-based, so already layout-independent) kept working, but the
+  keystroke was no longer *suppressed*: it leaked through into whatever
+  application had keyboard focus instead of being consumed by `tagent-gui`.
+  Replaced `vk_to_keysym` + `XKeysymToKeycode` with `vk_to_x11_keycode`, a
+  direct VK-code-to-hardware-keycode table using the same standard
+  evdev-based keycode numbering `rdev`'s own internal Linux backend already
+  keys off of for detection (cross-checked against `rdev` 0.5.3's own
+  table) — a hardware keycode identifies a physical key position, not a
+  character, so the grab no longer depends on which keysym the active
+  layout/group binds to that position. Detection and suppression now agree
+  on the exact same physical-key identification, regardless of keyboard
+  layout. Same fix ported independently to `tagent-cli`'s copy of this file
+  (see the root [`CHANGELOG.md`](../CHANGELOG.md)).
+
 ## [0.14.0+018] - 2026-09-14
 
 ### Fixed

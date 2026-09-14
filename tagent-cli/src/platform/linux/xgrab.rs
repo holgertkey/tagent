@@ -76,25 +76,16 @@ impl XGrabManager {
 
     /// Grab a single key with a modifier mask, including NumLock/CapsLock variants.
     fn grab_key(&mut self, vk_code: u32, base_mask: c_uint) {
-        let keysym = match vk_to_keysym(vk_code) {
-            Some(ks) => ks,
+        let keycode = match vk_to_x11_keycode(vk_code) {
+            Some(kc) => kc,
             None => {
                 eprintln!(
-                    "XGrabManager: No X11 KeySym mapping for VK code {}",
+                    "XGrabManager: No X11 keycode mapping for VK code {}",
                     vk_code
                 );
                 return;
             }
         };
-
-        let keycode = unsafe { xlib::XKeysymToKeycode(self.display, keysym) };
-        if keycode == 0 {
-            eprintln!(
-                "XGrabManager: XKeysymToKeycode returned 0 for keysym 0x{:x}",
-                keysym
-            );
-            return;
-        }
 
         let lock_mask = xlib::LockMask as c_uint; // CapsLock
         let num_lock_mask = xlib::Mod2Mask as c_uint; // NumLock (typically Mod2)
@@ -182,39 +173,113 @@ fn vk_modifiers_to_x11_mask(modifiers: &[u32]) -> c_uint {
     mask
 }
 
-/// Convert abstract VK code to X11 KeySym
-fn vk_to_keysym(vk_code: u32) -> Option<c_ulong> {
+/// Convert an abstract VK code directly to its X11 **hardware keycode**, using
+/// the standard evdev-based keycode numbering that's universal across
+/// virtually all modern X11/XKB setups (it's what the X server's `evdev`/
+/// `libinput` XKB rules assign, which is effectively every current Linux
+/// distribution) — a hardware keycode identifies a *physical* key position,
+/// the same key regardless of which character the active layout/group makes
+/// it produce.
+///
+/// **Replaces a keysym-based lookup that was layout-dependent, a real bug
+/// (not just a theoretical one)**: the previous implementation converted the
+/// VK code to an ASCII/Latin `KeySym` (e.g. VK `'Q'` -> keysym `XK_q`) and
+/// resolved *that* to a keycode via `XKeysymToKeycode`, which searches the
+/// **currently active** keyboard mapping across all groups. On a layout with
+/// no Latin group at all (e.g. a pure Russian layout, as opposed to a
+/// combined `us,ru` one), the Latin keysym isn't bound to *any* keycode in
+/// that mapping, `XKeysymToKeycode` returns 0, and the grab silently failed —
+/// hotkey *detection* (via `rdev`, see `keyboard.rs`) kept working regardless
+/// (it's keycode-based already, see below), but the keystroke was no longer
+/// *suppressed*: it leaked through into whatever application had keyboard
+/// focus instead of being consumed by tagent. Grabbing the fixed hardware
+/// keycode directly removes that layout dependency entirely, and — as a
+/// bonus — makes suppression use the exact same positional identification
+/// detection already did, instead of two different philosophies.
+///
+/// The specific keycode numbers below match `rdev` 0.5's own internal Linux
+/// keycode table (`rdev::linux::keycodes`, not part of its public API, hence
+/// this independent copy — the same reason `rdev_key_to_vk` in `keyboard.rs`
+/// exists rather than calling into rdev's internals directly) exactly, so
+/// grabbing and detection agree on which physical key each abstract VK code
+/// means.
+fn vk_to_x11_keycode(vk_code: u32) -> Option<c_uint> {
     match vk_code {
-        // Letters A-Z: VK codes match ASCII uppercase
-        0x41..=0x5A => {
-            // X11 keysyms for lowercase letters are the ASCII lowercase values
-            Some((vk_code + 32) as c_ulong) // 'A'(0x41) -> 'a'(0x61)
-        }
+        // Letters A-Z: physical QWERTY key positions, not alphabetical order,
+        // so no linear formula from the VK code -- listed individually.
+        0x41 => Some(38), // A
+        0x42 => Some(56), // B
+        0x43 => Some(54), // C
+        0x44 => Some(40), // D
+        0x45 => Some(26), // E
+        0x46 => Some(41), // F
+        0x47 => Some(42), // G
+        0x48 => Some(43), // H
+        0x49 => Some(31), // I
+        0x4A => Some(44), // J
+        0x4B => Some(45), // K
+        0x4C => Some(46), // L
+        0x4D => Some(58), // M
+        0x4E => Some(57), // N
+        0x4F => Some(32), // O
+        0x50 => Some(33), // P
+        0x51 => Some(24), // Q
+        0x52 => Some(27), // R
+        0x53 => Some(39), // S
+        0x54 => Some(28), // T
+        0x55 => Some(30), // U
+        0x56 => Some(55), // V
+        0x57 => Some(25), // W
+        0x58 => Some(53), // X
+        0x59 => Some(29), // Y
+        0x5A => Some(52), // Z
 
-        // Numbers 0-9: VK codes match ASCII
-        0x30..=0x39 => Some(vk_code as c_ulong),
+        // Numbers 0-9 (top row, not numpad): keycodes run 1..9,0 in physical
+        // left-to-right order, not numeric order.
+        0x30 => Some(19), // 0
+        0x31 => Some(10), // 1
+        0x32 => Some(11), // 2
+        0x33 => Some(12), // 3
+        0x34 => Some(13), // 4
+        0x35 => Some(14), // 5
+        0x36 => Some(15), // 6
+        0x37 => Some(16), // 7
+        0x38 => Some(17), // 8
+        0x39 => Some(18), // 9
 
-        // Function keys F1-F12: VK 112-123 -> XK_F1(0xFFBE)-XK_F12(0xFFC9)
-        112..=123 => Some((0xFFBE + (vk_code - 112)) as c_ulong),
+        // Function keys F1-F12: F1-F10 are sequential, but F11/F12 break the
+        // pattern (95/96), so no linear formula covers all twelve.
+        112 => Some(67), // F1
+        113 => Some(68), // F2
+        114 => Some(69), // F3
+        115 => Some(70), // F4
+        116 => Some(71), // F5
+        117 => Some(72), // F6
+        118 => Some(73), // F7
+        119 => Some(74), // F8
+        120 => Some(75), // F9
+        121 => Some(76), // F10
+        122 => Some(95), // F11
+        123 => Some(96), // F12
 
         // Special keys
-        32 => Some(0x0020), // Space -> XK_space
-        9 => Some(0xFF09),  // Tab -> XK_Tab
-        13 => Some(0xFF0D), // Return -> XK_Return
-        27 => Some(0xFF1B), // Escape -> XK_Escape
-        8 => Some(0xFF08),  // Backspace -> XK_BackSpace
-        46 => Some(0xFFFF), // Delete -> XK_Delete
-        45 => Some(0xFF63), // Insert -> XK_Insert
-        36 => Some(0xFF50), // Home -> XK_Home
-        35 => Some(0xFF57), // End -> XK_End
-        33 => Some(0xFF55), // PageUp -> XK_Page_Up
-        34 => Some(0xFF56), // PageDown -> XK_Page_Down
+        32 => Some(65),  // Space
+        9 => Some(23),   // Tab
+        13 => Some(36),  // Return
+        27 => Some(9),   // Escape
+        8 => Some(22),   // Backspace
+        46 => Some(119), // Delete
+        45 => Some(118), // Insert
+        36 => Some(110), // Home
+        35 => Some(115), // End
+        33 => Some(112), // PageUp
+        34 => Some(117), // PageDown
 
         // Arrow keys
-        37 => Some(0xFF51), // Left -> XK_Left
-        39 => Some(0xFF53), // Right -> XK_Right
-        38 => Some(0xFF52), // Up -> XK_Up
-        40 => Some(0xFF54), // Down -> XK_Down
+        37 => Some(113), // Left
+        39 => Some(114), // Right
+        38 => Some(111), // Up
+        40 => Some(116), // Down
 
         _ => None,
     }
@@ -225,35 +290,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_vk_to_keysym_letters() {
-        assert_eq!(vk_to_keysym('A' as u32), Some(0x61));
-        assert_eq!(vk_to_keysym('Q' as u32), Some(0x71));
-        assert_eq!(vk_to_keysym('Z' as u32), Some(0x7A));
+    fn test_vk_to_x11_keycode_letters() {
+        // Expected values are physical QWERTY keycodes, cross-checked against
+        // rdev 0.5.3's own internal Linux keycode table
+        // (rdev-0.5.3/src/linux/keycodes.rs: KeyA=38, KeyQ=24, KeyZ=52).
+        assert_eq!(vk_to_x11_keycode('A' as u32), Some(38));
+        assert_eq!(vk_to_x11_keycode('Q' as u32), Some(24));
+        assert_eq!(vk_to_x11_keycode('Z' as u32), Some(52));
     }
 
     #[test]
-    fn test_vk_to_keysym_numbers() {
-        assert_eq!(vk_to_keysym('0' as u32), Some(0x30));
-        assert_eq!(vk_to_keysym('9' as u32), Some(0x39));
+    fn test_vk_to_x11_keycode_numbers() {
+        // rdev: Num0=19, Num9=18.
+        assert_eq!(vk_to_x11_keycode('0' as u32), Some(19));
+        assert_eq!(vk_to_x11_keycode('9' as u32), Some(18));
     }
 
     #[test]
-    fn test_vk_to_keysym_function_keys() {
-        assert_eq!(vk_to_keysym(112), Some(0xFFBE)); // F1
-        assert_eq!(vk_to_keysym(120), Some(0xFFC6)); // F9
-        assert_eq!(vk_to_keysym(123), Some(0xFFC9)); // F12
+    fn test_vk_to_x11_keycode_function_keys() {
+        // rdev: F1=67, F9=75, F12=96 (F11/F12 break the otherwise-sequential
+        // F1-F10 pattern -- specifically worth covering here).
+        assert_eq!(vk_to_x11_keycode(112), Some(67)); // F1
+        assert_eq!(vk_to_x11_keycode(120), Some(75)); // F9
+        assert_eq!(vk_to_x11_keycode(123), Some(96)); // F12
     }
 
     #[test]
-    fn test_vk_to_keysym_special_keys() {
-        assert_eq!(vk_to_keysym(32), Some(0x0020)); // Space
-        assert_eq!(vk_to_keysym(27), Some(0xFF1B)); // Escape
-        assert_eq!(vk_to_keysym(13), Some(0xFF0D)); // Return
+    fn test_vk_to_x11_keycode_special_keys() {
+        // rdev: Space=65, Escape=9, Return=36.
+        assert_eq!(vk_to_x11_keycode(32), Some(65)); // Space
+        assert_eq!(vk_to_x11_keycode(27), Some(9)); // Escape
+        assert_eq!(vk_to_x11_keycode(13), Some(36)); // Return
     }
 
     #[test]
-    fn test_vk_to_keysym_unknown() {
-        assert_eq!(vk_to_keysym(999), None);
+    fn test_vk_to_x11_keycode_unknown() {
+        assert_eq!(vk_to_x11_keycode(999), None);
     }
 
     #[test]

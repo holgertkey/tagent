@@ -122,6 +122,17 @@ focused application. `tagent-cli/src/platform/linux/xgrab.rs` uses X11's `XGrabK
 grab the configured hotkey combo at the X server level so the keystroke is consumed by
 tagent instead of leaking through. Notable details:
 
+- **Layout-independent by construction**: the base key is grabbed by its raw X11
+  hardware keycode (`vk_to_x11_keycode`, standard evdev-based numbering — the same
+  positional identification `rdev` itself uses internally for detection, cross-checked
+  against `rdev` 0.5.3's own keycode table), not by converting to a keysym and calling
+  `XKeysymToKeycode` (fixed 2026-09-14: that approach silently failed to grab at all on
+  a keyboard layout with no Latin group, e.g. a pure Russian layout — `XKeysymToKeycode`
+  found no keycode for the Latin keysym, so the hotkey kept *triggering* via `rdev`
+  (already keycode-based) but stopped being *suppressed*, leaking the keystroke into
+  whatever app had focus). Modifier masks (`ControlMask`/`Mod1Mask`/`ShiftMask`/
+  `Mod4Mask`) are unaffected either way — those are fixed protocol-level bits, not
+  layout-resolved.
 - Grabs all CapsLock/NumLock modifier-mask variants, plus a duplicate grab under
   `Mod5Mask` to also catch AltGr-mapped right-Alt.
 - **Cannot** grab `HotkeyType::DoublePress` hotkeys — `XGrabKey` has no double-tap
