@@ -236,6 +236,83 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_phrases_spacing_px(config.phrases_spacing_px);
 }
 
+/// Applies the theme and the phrase/translation display style to the Stage 6 popup —
+/// the same subset of [`apply_style`] that's meaningful for it (no panel-background,
+/// no block/phrase spacing, since the popup only ever shows one phrase/translation
+/// pair). Kept as its own small function rather than widening `apply_style` to
+/// branch on window type, since the two windows' style surfaces only partially
+/// overlap.
+fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
+    popup.invoke_apply_theme(config.theme.clone().into());
+
+    let default_fg = popup.get_panel_foreground().color();
+    let default_bg = popup.get_panel_background_theme_default().color();
+
+    popup.set_phrase_font(config.phrase_font.clone().into());
+    popup.set_phrase_size(config.phrase_size);
+    popup.set_phrase_color(resolve_color(&config.phrase_color, default_fg));
+    popup.set_phrase_background(resolve_color(&config.phrase_background, default_bg));
+
+    popup.set_translation_font(config.translation_font.clone().into());
+    popup.set_translation_size(config.translation_size);
+    popup.set_translation_color(resolve_color(&config.translation_color, default_fg));
+    popup.set_translation_background(resolve_color(&config.translation_background, default_bg));
+}
+
+/// Shows the Stage 6 popup with `entry`'s text, positioned next to the current mouse
+/// cursor, and (re)starts its auto-hide timer. Called from the hotkey path's
+/// `spawn_translation` completion callback, already on the UI thread.
+///
+/// Order matters here for the focus-stealing fix (see the Stage 6 plan): the
+/// foreground window is captured *before* `popup.show()` (which takes OS focus on
+/// most window managers) and restored immediately after positioning — not only when
+/// the popup later auto-hides — so the popup never holds keyboard focus even while
+/// visible, and a hotkey re-trigger while it's still on screen still copies from the
+/// real source app. Because focus is handed back right here, the later auto-hide
+/// (driven entirely by `TranslationPopup`'s own `Timer` element in app.slint — see
+/// its `hide-timer`/`start-hide-timer` — via `on_hide_requested` below) never needs to
+/// touch focus again, just call `popup.hide()`.
+///
+/// The auto-hide timer deliberately lives inside the `.slint` component itself
+/// (a `Timer` element), not as a `slint::Timer` held in `main()`: `on_done` (this
+/// function's caller, indirectly) is a `Box<dyn FnOnce(&TranscriptEntry) + Send>` that
+/// `spawn_translation` moves through a background thread before calling it back on the
+/// UI thread, and `slint::Timer` is `!Send` — it can't be captured into that closure at
+/// all, regardless of how carefully it'd actually be used only on the UI thread.
+/// `slint::Weak<TranslationPopup>` (used here) has no such restriction.
+fn show_popup(
+    popup_weak: &slint::Weak<TranslationPopup>,
+    entry: &TranscriptEntry,
+    auto_hide_seconds: u64,
+) {
+    let Some(popup) = popup_weak.upgrade() else {
+        return;
+    };
+
+    let restore_target = platform::window::foreground_window();
+
+    popup.set_phrase_text(entry.phrase.clone());
+    popup.set_translation_text(entry.translation.clone());
+
+    // No monitor-edge clamping in this stage -- accepted limitation, see the
+    // Stage 6 plan. A `None` cursor position (unsupported window manager) just
+    // leaves the popup at wherever it last was.
+    if let Some((x, y)) = platform::window::cursor_position() {
+        popup
+            .window()
+            .set_position(slint::PhysicalPosition::new(x + 16, y + 16));
+    }
+
+    popup.show().ok();
+
+    if let Some(handle) = restore_target {
+        let _ = platform::window::set_foreground_window(handle);
+    }
+
+    popup.set_auto_hide_seconds(auto_hide_seconds.min(i32::MAX as u64) as i32);
+    popup.invoke_start_hide_timer();
+}
+
 /// Formats one transcript line, with or without its "[Auto]:"-style prompt.
 ///
 /// The prompt is baked directly into the string (rather than kept as a
@@ -348,19 +425,25 @@ struct TranslationRequest {
     text: String,
 }
 
+/// Callback type for [`spawn_translation`]'s `on_done` parameter — named (rather than
+/// spelled out inline) because `clippy::type_complexity` flags it inline once it grew
+/// a `&TranscriptEntry` argument for Stage 6.
+type TranslationDoneCallback = Box<dyn FnOnce(&TranscriptEntry) + Send>;
+
 /// Translates `request.text` in a background thread and pushes the result (or an error)
 /// into the transcript. Shared by the Translate button/Enter key
 /// (`on_translate_requested`) and the global hotkey (Stage 5) — the only two callers,
 /// extracted here specifically to avoid duplicating the provider-call/transcript-push
 /// logic between them.
 ///
-/// `on_done`, if given, runs after the entry is pushed (on the UI thread) — the hotkey
-/// path uses this to clear its "already processing" guard; the button path has no such
-/// guard and passes `None`.
+/// `on_done`, if given, runs on the UI thread with the resolved [`TranscriptEntry`],
+/// before it's pushed into the transcript. The hotkey path (Stage 5/6) uses this to
+/// clear its "already processing" guard and to populate+show the Stage 6 popup; the
+/// button path has no such guard and no popup, and passes `None`.
 fn spawn_translation(
     weak: slint::Weak<AppWindow>,
     request: TranslationRequest,
-    on_done: Option<Box<dyn FnOnce() + Send>>,
+    on_done: Option<TranslationDoneCallback>,
 ) {
     let TranslationRequest {
         translate_provider,
@@ -383,21 +466,21 @@ fn spawn_translation(
         });
 
         slint::invoke_from_event_loop(move || {
-            if let Some(window) = weak.upgrade() {
-                let entry = match result {
-                    Ok(translated) => TranscriptEntry {
-                        phrase: format_line(show_prompt, &from_lang, &text).into(),
-                        translation: format_line(show_prompt, &to_lang, &translated).into(),
-                    },
-                    Err(err) => TranscriptEntry {
-                        phrase: format_line(show_prompt, &from_lang, &text).into(),
-                        translation: format!("Error: {err}").into(),
-                    },
-                };
-                push_transcript_entry(&window, entry);
-            }
+            let entry = match result {
+                Ok(translated) => TranscriptEntry {
+                    phrase: format_line(show_prompt, &from_lang, &text).into(),
+                    translation: format_line(show_prompt, &to_lang, &translated).into(),
+                },
+                Err(err) => TranscriptEntry {
+                    phrase: format_line(show_prompt, &from_lang, &text).into(),
+                    translation: format!("Error: {err}").into(),
+                },
+            };
             if let Some(on_done) = on_done {
-                on_done();
+                on_done(&entry);
+            }
+            if let Some(window) = weak.upgrade() {
+                push_transcript_entry(&window, entry);
             }
         })
         .ok();
@@ -410,6 +493,28 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
     apply_style(&window, config_manager.lock().unwrap().config());
+
+    // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
+    // re-shown) on every hotkey trigger rather than constructed per trigger --
+    // see the "one persistent PopupWindow instance" note in the Stage 6 plan.
+    // `popup` itself must stay alive for the rest of `main()` (never dropped
+    // early), same lifetime reasoning as `window`/`config_manager` below.
+    let popup = TranslationPopup::new()?;
+    apply_popup_style(&popup, config_manager.lock().unwrap().config());
+    let popup_weak = popup.as_weak();
+
+    // The popup's own `hide-timer` (a `Timer` *element* declared in app.slint, not
+    // the Rust `slint::Timer` API) decides when to actually hide it -- see
+    // `show_popup`'s doc comment for why that has to live in .slint rather than as a
+    // `slint::Timer` held here. It only signals "time to hide" via this callback;
+    // hiding itself (and nothing else -- focus was already restored back in
+    // `show_popup`, right after `show()`) happens here.
+    let popup_for_hide = popup.as_weak();
+    popup.on_hide_requested(move || {
+        if let Some(popup) = popup_for_hide.upgrade() {
+            popup.hide().ok();
+        }
+    });
 
     let config_manager_for_settings = config_manager.clone();
     let config_manager_for_translate = config_manager.clone();
@@ -787,9 +892,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
-                // No Settings UI for this yet (Stage 8) — carry the existing value over
-                // unchanged rather than resetting it to the default on every save.
+                // No Settings UI for these yet (Stage 8) — carry the existing values over
+                // unchanged rather than resetting them to their defaults on every save.
                 translate_hotkey: current_config.translate_hotkey.clone(),
+                popup_auto_hide_seconds: current_config.popup_auto_hide_seconds,
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
@@ -822,6 +928,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let is_processing = Arc::new(AtomicBool::new(false));
             let weak = window.as_weak();
             let config_manager = config_manager.clone();
+            let popup_weak_for_hotkey = popup_weak.clone();
             KeyboardHook::spawn(hotkey, move || {
                 // Runs on the platform hook's own thread (on Windows, inside the
                 // WH_KEYBOARD_LL callback itself) -- must stay fast and non-blocking,
@@ -834,6 +941,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let is_processing = is_processing.clone();
                 let weak = weak.clone();
                 let config_manager = config_manager.clone();
+                let popup_weak = popup_weak_for_hotkey.clone();
                 slint::invoke_from_event_loop(move || {
                     let Some(window) = weak.upgrade() else {
                         is_processing.store(false, Ordering::SeqCst);
@@ -848,11 +956,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .row_data(window.get_target_language_index() as usize)
                         .unwrap_or_default();
 
-                    let (translate_provider, show_prompt) = {
+                    let (translate_provider, show_prompt, popup_auto_hide_seconds) = {
                         let mut manager = config_manager.lock().unwrap();
                         manager.check_and_reload();
                         let cfg = manager.config();
-                        (cfg.translate_provider.clone(), cfg.show_prompt)
+                        (
+                            cfg.translate_provider.clone(),
+                            cfg.show_prompt,
+                            cfg.popup_auto_hide_seconds_or_default(),
+                        )
                     };
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
@@ -873,6 +985,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     let weak2 = weak.clone();
                     let is_processing2 = is_processing.clone();
+                    let popup_weak2 = popup_weak.clone();
                     std::thread::spawn(move || {
                         match ClipboardManager::new().get_text_with_copy() {
                             Ok(text) if !text.trim().is_empty() => {
@@ -887,8 +1000,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         to_code,
                                         text,
                                     },
-                                    Some(Box::new(move || {
+                                    Some(Box::new(move |entry: &TranscriptEntry| {
                                         is_processing2.store(false, Ordering::SeqCst);
+                                        show_popup(&popup_weak2, entry, popup_auto_hide_seconds);
                                     })),
                                 );
                             }

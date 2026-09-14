@@ -361,6 +361,94 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   x86_64-pc-windows-gnu`, but neither the app nor its tests have been *run* on
   Windows or under `wine` (unavailable in this environment) — confirmed
   compiling only, not confirmed correct in practice yet.
+- **Popup window** (`TranslationPopup` in `app.slint`, `platform::window` module,
+  Stage 6, shipped 2026-09-14): the global hotkey above now also shows a small,
+  cursor-positioned popup with the phrase/translation, in addition to (not instead
+  of) the existing transcript update — hotkey-triggered only, not shown for the
+  Translate button/Enter key. `TranslationPopup inherits Window` directly (`no-frame:
+  true; always-on-top: true;`), a real top-level OS window rather than Slint's
+  builtin `PopupWindow` *element* (used elsewhere in `app.slint` by
+  `ColorPickerField`'s color swatch — an anchored, parent-relative overlay with no
+  frame/always-on-top/position control, not usable here); named `TranslationPopup`
+  specifically to avoid colliding with that builtin element name. `main()` creates
+  **one persistent instance** at startup (not one per trigger, unlike
+  `SettingsDialog`, since the popup fires on every hotkey trigger) and reuses it:
+  `show_popup()` in `main.rs` re-texts, repositions, and re-shows it each time.
+  - **Sizing**: fixed `width: 360px`, reactive `height: content-layout.preferred-height`
+    — bound directly to the content `VerticalLayout`'s computed height rather than
+    left unbound and hoped to auto-fit, so re-showing the same instance with
+    shorter/longer text resizes the actual OS window via Slint's normal reactive
+    layout recompute (the same mechanism AppWindow's transcript rows already use),
+    with no explicit `Window::set_size()` call needed from Rust.
+  - **Positioning**: `platform::window::cursor_position()` (new per-OS free
+    function, `XQueryPointer` on Linux / `GetCursorPos` on Windows — trimmed from
+    `tagent-cli`'s `WindowManager::is_mouse_over_terminal`, which needed the same
+    query internally) feeds `popup.window().set_position(slint::PhysicalPosition::new(x
+    + 16, y + 16))`, called *before* `popup.show()`. No monitor-edge clamping —
+    accepted limitation for this stage.
+  - **Hover-based auto-hide, entirely self-contained in `.slint`**: a `hide-timer :=
+    Timer { ... }` *element* (Slint 1.8+ builtin, distinct from the Rust
+    `slint::Timer` API) inside `TranslationPopup` itself, polling
+    `touch-area.has-hover` (a `TouchArea` layered under the content) — not
+    `tagent-cli`'s `XQueryPointer`/window-geometry approach, which only exists
+    because that code tracks a terminal window from *outside* it; here the popup
+    owns its content directly, so Slint's own hover tracking is enough, no platform
+    code involved for this part at all. `main.rs` sets `auto-hide-seconds` and calls
+    the `start-hide-timer()` public function; the timer's own `triggered` callback
+    waits the configured delay, then re-checks hover once a second (mirroring
+    `tagent-cli`'s `hide_terminal_and_restore` polling loop in `translator.rs`) until
+    the cursor leaves, at which point it fires a `hide-requested()` callback that
+    `main.rs` handles by calling `popup.hide()` — nothing else, no focus juggling at
+    that point (see below). Re-triggering while a previous popup is still counting
+    down calls the same `start-hide-timer()` again, which resets the deadline via
+    the `Timer` element's own `restart()` (documented to reschedule relative to
+    *now* even if already running) rather than stacking a second pending hide.
+  - **Why the timer lives in `.slint`, not as a `slint::Timer` in `main.rs`**: the
+    hotkey path's `on_done` callback (`spawn_translation`'s completion hook, now
+    typed `Box<dyn FnOnce(&TranscriptEntry) + Send>` since Stage 6 needs the
+    resolved entry to populate the popup) is moved through a background
+    `std::thread::spawn` before being called back on the UI thread — and
+    `slint::Timer` is `!Send` (confirmed via its own docs), so it cannot be
+    captured into that closure at all, regardless of whether it would only ever
+    actually run on the UI thread. `slint::Weak<TranslationPopup>` has no such
+    restriction (component weak handles are `Send`, the same reason `AppWindow`'s
+    weak already crosses this exact boundary for the transcript push), so it's what
+    `show_popup()` actually carries across; the `Timer` itself never leaves
+    `app.slint`.
+  - **Focus-stealing fix**: `popup.show()` takes OS focus on most window managers,
+    same as Stage 4's "📋" button did — but here it recurs in a worse form, since the
+    popup's default 3-second visible window is long enough for a user to select new
+    text and press the hotkey again. `show_popup()` captures the current foreground
+    window via `platform::window::foreground_window()` *before* calling
+    `popup.show()`, then calls `platform::window::set_foreground_window()`
+    immediately after positioning — not deferred to when the popup later auto-hides
+    — so the popup never actually holds keyboard focus even while visible, and a
+    hotkey re-trigger while it's on screen still copies from the real source app.
+    Because focus is restored this early, the auto-hide path (above) never needs to
+    touch focus again.
+  - **`popup_auto_hide_seconds`** (`GuiConfig`, default `3`, live-reloaded — read
+    fresh via `check_and_reload()` on every hotkey trigger, unlike `translate_hotkey`
+    which is parsed once at startup): `0` is clamped to the default
+    (`GuiConfig::popup_auto_hide_seconds_or_default()`) rather than meaning "never
+    auto-hide" — unlike `tagent-cli`'s `auto_hide_terminal_seconds: 0`, safe there
+    because the terminal has a normal frame the user can close manually, this popup
+    is `no-frame` and deliberately has no close affordance, so `0` would otherwise
+    leave it stuck on screen for the process's life. No Settings UI for this field
+    yet (Stage 8); `on_save_requested` hand-carries it through unchanged, same
+    treatment as `translate_hotkey`.
+  - **`platform::window` module** (`tagent-gui/src/platform/{linux,windows,macos}/window.rs`):
+    three free functions — `cursor_position`, `foreground_window`,
+    `set_foreground_window` — rather than a struct with a cached `Display`/handle
+    like `tagent-cli`'s `WindowManager`, since each is called once per hotkey
+    trigger, not a hot path. Linux opens/closes its own short-lived X11 `Display`
+    connection per call; `foreground_window`/`set_foreground_window` read/send
+    `_NET_ACTIVE_WINDOW`, ported from `tagent-cli`'s `get_active_window`/
+    `send_active_window_message`. Windows uses `GetCursorPos`/`GetForegroundWindow`/
+    `SetForegroundWindow`/`IsIconic`+`SW_RESTORE`, all already available from
+    Stage 4/5's `windows` crate feature set — no new dependency on either platform.
+    macOS is a stub (`None`/`None`/`Ok(())`) matching `keycodes.rs`'s rationale: the
+    hotkey itself never fires there, so these functions are never actually called,
+    but exist with the same signatures so `main.rs`'s wiring stays OS-independent.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no history logging. `app.slint` hardcodes a
   6-language list (Auto/English/Russian/Spanish/French/German), much smaller than
@@ -368,12 +456,14 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 
 ### Known gaps in `tagent-gui`
 
-- **`tagent-gui.json` only has one settable field** (`translate_provider`, via the
-  Settings dialog above) — language list, hotkeys, history logging, colors, TTS
-  settings, dictionary/spell-check toggles aren't configurable at all yet (either
-  hardcoded, like the 6-language list, or simply unsupported, like history/
-  hotkeys). `tagent-cli.conf` is not read at all any more (no migration path — see
-  the "own configuration" concept in the development plan).
+- **Several `tagent-gui.json` fields are hand-editable-only, with no Settings UI
+  control yet** (`translate_hotkey`, `popup_auto_hide_seconds` — both land their
+  config field ahead of their Settings tab, per the precedent set by Stage 1→3;
+  Stage 8 adds the "Hotkeys & Tray" tab control for both). Language list, history
+  logging, and TTS settings aren't configurable at all yet — no field exists for
+  them (the 6-language list stays hardcoded). `tagent-cli.conf` is not read at all
+  any more (no migration path — see the "own configuration" concept in the
+  development plan).
 - **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
   directly rather than going through `Translator`'s richer orchestration and formatting.
 

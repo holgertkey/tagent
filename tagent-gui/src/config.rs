@@ -49,6 +49,12 @@ fn default_translate_hotkey() -> String {
     "Alt+Q".to_string()
 }
 
+/// Default delay (seconds) before the hotkey-triggered popup auto-hides, same
+/// default as `tagent-cli`'s `AutoHideTerminalSeconds`.
+fn default_popup_auto_hide_seconds() -> u64 {
+    3
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -103,6 +109,14 @@ pub struct GuiConfig {
     /// only on restart. Linux and Windows only — no effect on macOS yet.
     #[serde(default = "default_translate_hotkey")]
     pub translate_hotkey: String,
+    /// Delay (seconds) before the hotkey-triggered popup (Stage 6) auto-hides,
+    /// once the cursor is no longer over it. Live-reloaded, no restart needed.
+    /// `0` is treated the same as the default (`3`) rather than "never
+    /// auto-hide" — see [`Self::popup_auto_hide_seconds_or_default`] — since the
+    /// popup is a no-frame window with no close button, so `0` would otherwise
+    /// leave it stuck on screen for the rest of the process's life.
+    #[serde(default = "default_popup_auto_hide_seconds")]
+    pub popup_auto_hide_seconds: u64,
 }
 
 impl Default for GuiConfig {
@@ -123,6 +137,18 @@ impl Default for GuiConfig {
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
             translate_hotkey: default_translate_hotkey(),
+            popup_auto_hide_seconds: default_popup_auto_hide_seconds(),
+        }
+    }
+}
+
+impl GuiConfig {
+    /// [`Self::popup_auto_hide_seconds`], with `0` clamped to the default (`3`).
+    pub fn popup_auto_hide_seconds_or_default(&self) -> u64 {
+        if self.popup_auto_hide_seconds == 0 {
+            default_popup_auto_hide_seconds()
+        } else {
+            self.popup_auto_hide_seconds
         }
     }
 }
@@ -609,6 +635,32 @@ mod tests {
         let config = load_from_path(&path);
 
         assert_eq!(config.translate_hotkey, "Alt+Q");
+    }
+
+    #[test]
+    fn old_file_without_popup_auto_hide_field_defaults_to_three() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.popup_auto_hide_seconds, 3);
+    }
+
+    #[test]
+    fn popup_auto_hide_seconds_or_default_clamps_zero() {
+        let config = GuiConfig {
+            popup_auto_hide_seconds: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.popup_auto_hide_seconds_or_default(), 3);
+
+        let config = GuiConfig {
+            popup_auto_hide_seconds: 10,
+            ..Default::default()
+        };
+        assert_eq!(config.popup_auto_hide_seconds_or_default(), 10);
     }
 
     #[test]

@@ -4,3 +4,5 @@ pub mod clipboard;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Cursor position and foreground-window focus save/restore, for the Stage 6 popup.
+pub mod window;

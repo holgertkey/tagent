@@ -12,6 +12,29 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+016] - 2026-09-14
+
+### Added
+- Popup window (Stage 6 of the development plan): the global hotkey (Stage 5)
+  now also shows a small, no-frame, always-on-top popup next to the mouse
+  cursor with the just-translated phrase and translation, in addition to the
+  existing transcript update. Purely informational — no buttons, no
+  click-to-dismiss — it closes on its own after a configurable delay
+  (`popup_auto_hide_seconds` in `tagent-gui.json`, default `3`, live-reloaded;
+  `0` is treated as the default rather than "never auto-hide", since this
+  popup has no manual close affordance) unless the cursor is resting over it,
+  in which case it keeps re-checking once a second until the cursor leaves.
+  Hotkey-triggered only — not shown for the main window's Translate
+  button/Enter key. The popup never holds keyboard focus, even while visible:
+  focus is captured before it's shown and handed back immediately after, so a
+  second hotkey press while it's still on screen still copies from the real
+  source application rather than from the popup itself.
+- New per-OS `platform::window` module (`cursor_position`/`foreground_window`/
+  `set_foreground_window`), trimmed from `tagent-cli`'s `WindowManager` and
+  used only by the popup's cursor placement and focus save/restore — no new
+  dependency, `tagent-gui` already had X11 (`xlib`)/`windows` crate access
+  from Stage 4/5.
+
 ## [0.14.0+015] - 2026-09-13
 
 ### Added

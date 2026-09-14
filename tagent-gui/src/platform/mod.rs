@@ -23,6 +23,8 @@ pub use self::linux::clipboard::ClipboardManager;
 pub use self::linux::keyboard::KeyboardHook;
 #[cfg(target_os = "linux")]
 pub use self::linux::keycodes;
+#[cfg(target_os = "linux")]
+pub use self::linux::window;
 
 #[cfg(target_os = "macos")]
 pub use self::macos::clipboard::ClipboardManager;
@@ -30,6 +32,8 @@ pub use self::macos::clipboard::ClipboardManager;
 pub use self::macos::keyboard::KeyboardHook;
 #[cfg(target_os = "macos")]
 pub use self::macos::keycodes;
+#[cfg(target_os = "macos")]
+pub use self::macos::window;
 
 #[cfg(target_os = "windows")]
 pub use self::windows::clipboard::ClipboardManager;
@@ -37,3 +41,5 @@ pub use self::windows::clipboard::ClipboardManager;
 pub use self::windows::keyboard::KeyboardHook;
 #[cfg(target_os = "windows")]
 pub use self::windows::keycodes;
+#[cfg(target_os = "windows")]
+pub use self::windows::window;

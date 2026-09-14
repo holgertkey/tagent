@@ -427,6 +427,150 @@ export component AppWindow inherits Window {
     }
 }
 
+// Stage 6: the hotkey-triggered popup shown next to the mouse cursor. A real
+// top-level `Window` (not Slint's builtin `PopupWindow` element used above by
+// ColorPickerField — that one is an anchored, parent-relative overlay with no
+// OS-level frame/always-on-top control, not what a cursor-positioned,
+// independently placed popup needs), so it can be `no-frame`/`always-on-top`
+// and moved with `Window::set_position` from Rust. Named `TranslationPopup`
+// specifically to avoid colliding with that builtin element name.
+export component TranslationPopup inherits Window {
+    no-frame: true;
+    always-on-top: true;
+
+    // Fixed width, reactive height: rather than leaving the window's own size
+    // unbound and hoping the platform backend re-fits it to new content on
+    // every show() (unverified — see the Stage 6 plan's sizing flag), the
+    // height is explicitly bound to the content layout's preferred-height
+    // (which already includes content-layout's own 8px top/bottom padding —
+    // no extra margin added here), so Slint's normal reactive layout
+    // recompute (the same mechanism that already resizes AppWindow's
+    // transcript rows to wrapped text) drives the actual OS window size too.
+    width: 360px;
+    height: content-layout.preferred-height;
+
+    // Same helper as AppWindow's/SettingsDialog's — this window has its own
+    // separate Palette instance too.
+    public function apply-theme(theme: string) {
+        Palette.color-scheme = theme == "light" ? ColorScheme.light
+            : theme == "dark" ? ColorScheme.dark
+            : ColorScheme.unknown;
+    }
+
+    // Theme-derived defaults for phrase-color/translation-color/phrase-background/
+    // translation-background when their config value is "" ("follow the theme") —
+    // read from Rust as `out` properties, same pattern and same Palette roles as
+    // AppWindow's own panel-foreground/panel-background-theme-default.
+    out property <brush> panel-foreground: Palette.alternate-foreground;
+    out property <brush> panel-background-theme-default: Palette.alternate-background;
+
+    in property <string> phrase-text: "";
+    in property <string> translation-text: "";
+    in property <string> phrase-font: "monospace";
+    in property <int> phrase-size: 13;
+    in property <color> phrase-color: #000000;
+    in property <color> phrase-background: #00000000;
+    in property <string> translation-font: "monospace";
+    in property <int> translation-size: 13;
+    in property <color> translation-color: #000000;
+    in property <color> translation-background: #00000000;
+
+    // Auto-hide: entirely self-contained in this component via the `Timer`
+    // *element* below (not Rust's `slint::Timer` API, which is `!Send` and so
+    // can't be held by main.rs across the background thread its hotkey path
+    // routes translation results through — see `show_popup`'s doc comment in
+    // main.rs). `main.rs` only sets `auto-hide-seconds` and calls
+    // `start-hide-timer()`; it finds out the popup is ready to close via
+    // `hide-requested`, which just calls `popup.hide()` — no timer/threading
+    // concerns on the Rust side at all.
+    //
+    // Hover detection itself (`touch-area.has-hover`) is also fully internal:
+    // unlike tagent-cli's terminal-window popup (which has to poll
+    // XQueryPointer/GetCursorPos plus window-geometry math from *outside* the
+    // window it's tracking), this window owns its content directly, so
+    // Slint's own hover tracking is enough — no platform code involved.
+    in-out property <int> auto-hide-seconds: 3;
+    callback hide-requested();
+
+    hide-timer := Timer {
+        interval: 3s;
+        running: false;
+        triggered => {
+            if (touch-area.has-hover) {
+                // Mirrors tagent-cli's `hide_terminal_and_restore` polling
+                // loop (`translator.rs`): once the initial delay has passed,
+                // keep re-checking every second for as long as the cursor
+                // stays over the popup.
+                self.interval = 1s;
+                self.restart();
+            } else {
+                self.running = false;
+                hide-requested();
+            }
+        }
+    }
+
+    // Called from Rust each time the popup is (re)shown. `running = true`
+    // covers the never-started-yet case; `restart()` additionally resets the
+    // countdown relative to *now* even if the timer was already running (a
+    // second hotkey trigger while a previous popup is still visible must
+    // restart the delay, not let the earlier schedule fire early and hide the
+    // new popup out from under it).
+    public function start-hide-timer() {
+        hide-timer.interval = auto-hide-seconds * 1s;
+        hide-timer.running = true;
+        hide-timer.restart();
+    }
+
+    Rectangle {
+        background: panel-background-theme-default;
+        border-width: 1px;
+        border-color: Palette.border;
+
+        touch-area := TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        content-layout := VerticalLayout {
+            padding: 8px;
+            spacing: 4px;
+
+            Rectangle {
+                background: phrase-background;
+                border-radius: 3px;
+                height: phrase-line.preferred-height;
+
+                phrase-line := Text {
+                    text: phrase-text;
+                    font-family: phrase-font;
+                    font-size: phrase-size * 1px;
+                    color: phrase-color;
+                    wrap: word-wrap;
+                    x: 4px;
+                    width: parent.width - 8px;
+                }
+            }
+
+            Rectangle {
+                background: translation-background;
+                border-radius: 3px;
+                height: translation-line.preferred-height;
+
+                translation-line := Text {
+                    text: translation-text;
+                    font-family: translation-font;
+                    font-size: translation-size * 1px;
+                    color: translation-color;
+                    wrap: word-wrap;
+                    x: 4px;
+                    width: parent.width - 8px;
+                }
+            }
+        }
+    }
+}
+
 export component SettingsDialog inherits Dialog {
     title: "Settings";
     preferred-width: 460px;

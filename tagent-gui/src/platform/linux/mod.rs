@@ -4,5 +4,7 @@ pub mod clipboard;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Cursor position and foreground-window focus save/restore, for the Stage 6 popup.
+pub mod window;
 /// X11 key grabbing (`XGrabKey`) so hotkeys are consumed rather than just observed.
 pub mod xgrab;
