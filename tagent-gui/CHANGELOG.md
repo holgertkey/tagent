@@ -12,6 +12,32 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+020] - 2026-09-15
+
+### Added
+- **System tray integration (Stage 7)**: a persistent tray icon (`TrayIcon` in
+  `app.slint`, built on Slint's own `SystemTrayIcon` element — no new crate
+  dependency) with "Show Tagent" / "Settings…" / "Quit" entries; left-clicking
+  the icon also shows the window.
+- `start_minimized` field in `tagent-gui.json` (default `true`) controls
+  whether the app launches straight into the tray or with the window shown;
+  editable via a new checkbox in Settings > "Hotkeys & Tray". Read once at
+  startup, restart required to take effect, same as `translate_hotkey`.
+
+### Changed
+- **Closing the main window (the OS close button) now hides it to the tray
+  instead of quitting the app.** "Quit" in the tray menu is the only way to
+  fully exit from now on. This is a real behavior change for every existing
+  user, not just a new opt-in feature.
+
+### Dependencies
+- `slint`/`slint-build` bumped 1.14.1 → 1.17.1 (minimum version with
+  `SystemTrayIcon`). Building `tagent-gui` now additionally requires the
+  `fontconfig` development package (`libfontconfig1-dev` on
+  Debian/Ubuntu) to be installed on the system, via `pkg-config` — a
+  transitive requirement of the upgraded font-matching stack, not a new
+  direct dependency of this project.
+
 ## [0.14.0+019] - 2026-09-14
 
 ### Fixed

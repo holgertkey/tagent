@@ -55,6 +55,12 @@ fn default_popup_auto_hide_seconds() -> u64 {
     3
 }
 
+/// Default for [`GuiConfig::start_minimized`] (Stage 7): the app launches
+/// straight into the tray with no window shown.
+fn default_start_minimized() -> bool {
+    true
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -117,6 +123,16 @@ pub struct GuiConfig {
     /// leave it stuck on screen for the rest of the process's life.
     #[serde(default = "default_popup_auto_hide_seconds")]
     pub popup_auto_hide_seconds: u64,
+    /// Whether the app launches with the main window hidden (living only in the
+    /// system tray, Stage 7) or shown, on the *next* launch — read once at
+    /// startup, not live-reloaded. Default `true`. The main window is always
+    /// reachable regardless of this setting: the tray icon's "Show Tagent" entry
+    /// (or a left click on it) reveals it, and the global hotkey
+    /// ([`Self::translate_hotkey`]) still works even while both the window and
+    /// the tray icon are invisible (e.g. on a desktop with no StatusNotifierItem
+    /// host) — that's the practical way back in if the tray never appears.
+    #[serde(default = "default_start_minimized")]
+    pub start_minimized: bool,
 }
 
 impl Default for GuiConfig {
@@ -138,6 +154,7 @@ impl Default for GuiConfig {
             show_prompt: default_show_prompt(),
             translate_hotkey: default_translate_hotkey(),
             popup_auto_hide_seconds: default_popup_auto_hide_seconds(),
+            start_minimized: default_start_minimized(),
         }
     }
 }
@@ -646,6 +663,17 @@ mod tests {
         let config = load_from_path(&path);
 
         assert_eq!(config.popup_auto_hide_seconds, 3);
+    }
+
+    #[test]
+    fn old_file_without_start_minimized_field_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(config.start_minimized);
     }
 
     #[test]

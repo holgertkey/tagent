@@ -515,6 +515,13 @@ fn spawn_translation(
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window = AppWindow::new()?;
 
+    // Stage 7: redirect the OS-level close button (and Alt+F4/Cmd+Q-equivalent)
+    // to hide the window instead of quitting the app -- the tray's "Quit" item
+    // (wired below) becomes the only way to actually exit from here on.
+    window
+        .window()
+        .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
     apply_style(&window, config_manager.lock().unwrap().config());
@@ -543,6 +550,43 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(handle) = POPUP_RESTORE_TARGET.with(|cell| cell.take()) {
             let _ = platform::window::set_foreground_window(handle);
         }
+    });
+
+    // Stage 7: persistent tray icon -- same "must stay alive for the rest of
+    // main()" reasoning as `popup` above. Its own `.show()`/`.hide()` are
+    // deliberately never called (see TrayIcon's doc comment in app.slint):
+    // the icon exists for as long as this binding does, and disappears when
+    // `main()` returns.
+    let tray = TrayIcon::new()?;
+
+    let weak_for_tray_show = window.as_weak();
+    tray.on_show_requested(move || {
+        if let Some(window) = weak_for_tray_show.upgrade() {
+            window.show().ok();
+        }
+    });
+
+    // Reuses the *existing* `on_settings_requested` handler registered on
+    // `window` below by invoking that callback programmatically, rather than
+    // duplicating the ~300-line Settings-opening body here. `invoke_<name>` is
+    // Slint's standard generated way to fire a callback from Rust regardless of
+    // whether it has a Rust-registered handler (unlike `invoke_apply_theme`/
+    // `invoke_start_hide_timer` elsewhere in this file, which invoke
+    // `public function`s with a body defined in .slint -- a different
+    // mechanism); confirmed by this file compiling, since a missing/wrong
+    // generated method is a build error, not a runtime one. What was *not*
+    // checked in this session is that it does the right thing at runtime (this
+    // stage's own "no live launch" policy) -- the manual verification algorithm
+    // covers that.
+    let weak_for_tray_settings = window.as_weak();
+    tray.on_settings_requested(move || {
+        if let Some(window) = weak_for_tray_settings.upgrade() {
+            window.invoke_settings_requested();
+        }
+    });
+
+    tray.on_quit_requested(|| {
+        slint::quit_event_loop().ok();
     });
 
     let config_manager_for_settings = config_manager.clone();
@@ -677,6 +721,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.set_translation_size(current_config.translation_size);
 
         dialog.set_show_prompt(current_config.show_prompt);
+        dialog.set_start_minimized(current_config.start_minimized);
 
         init_color_field!(
             dialog,
@@ -925,6 +970,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // unchanged rather than resetting them to their defaults on every save.
                 translate_hotkey: current_config.translate_hotkey.clone(),
                 popup_auto_hide_seconds: current_config.popup_auto_hide_seconds,
+                // Stage 7: a real dialog control exists for this one, unlike the two above.
+                start_minimized: dialog.get_start_minimized(),
             };
 
             if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
@@ -1068,6 +1115,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    window.run()?;
+    // Stage 7: `run_event_loop_until_quit()` replaces the old `window.run()`
+    // (which showed the window, ran the loop, and quit as soon as the window
+    // was hidden) -- the loop must now keep running even with `window` hidden,
+    // whether that's from `start_minimized` at launch or from the user closing
+    // it later, since `tray` (and the hotkey, if enabled) are still live. Only
+    // `tray`'s "Quit" item (`slint::quit_event_loop()`, wired above) ends it.
+    let start_minimized = config_manager.lock().unwrap().config().start_minimized;
+    if !start_minimized {
+        window.show()?;
+    }
+    slint::run_event_loop_until_quit()?;
     Ok(())
 }

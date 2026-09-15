@@ -110,6 +110,7 @@ component ColorPickerField {
 
 export component AppWindow inherits Window {
     title: "Tagent";
+    icon: @image-url("../assets/icons/tray.png");
     preferred-width: 560px;
     preferred-height: 420px;
     forward-focus: input-field;
@@ -659,14 +660,21 @@ export component SettingsDialog inherits Dialog {
 
     in-out property <bool> show-prompt: true;
 
+    // Stage 7: whether the app launches straight into the tray with no window
+    // shown. The hotkey/popup-delay fields on this same tab stay hand-edited in
+    // tagent-gui.json for now (Stage 8) -- this one field gets a real control
+    // here specifically because its default is `true`, and shipping that
+    // default with no in-app way to turn it back off would be a dead end.
+    in-out property <bool> start-minimized: true;
+
     callback save-requested(string /* provider */, string /* theme */);
 
     // Tabbed layout, laid out now for settings that don't exist yet: "General"
     // holds the provider, "View" holds the theme plus the phrase/translation
-    // display style, "Hotkeys & Tray" is a placeholder for the hotkey/
-    // start-minimized/popup-delay fields Stage 8 adds. Adding a category
-    // later means adding another `Tab { ... }` here, not restructuring the
-    // dialog.
+    // display style, "Hotkeys & Tray" holds the Stage 7 start-minimized toggle;
+    // the hotkey string and popup delay stay hand-edited in tagent-gui.json
+    // until Stage 8. Adding a category later means adding another
+    // `Tab { ... }` here, not restructuring the dialog.
     TabWidget {
         Tab {
             title: "General";
@@ -746,8 +754,9 @@ export component SettingsDialog inherits Dialog {
             VerticalBox {
                 alignment: start;
 
+                CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                 Text {
-                    text: "Hotkey and system tray settings are coming soon.";
+                    text: "Hotkey and popup-delay settings are hand-edited in tagent-gui.json for now — a Settings UI for those is planned for a later stage.";
                     wrap: word-wrap;
                 }
             }
@@ -770,4 +779,31 @@ export component SettingsDialog inherits Dialog {
         clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
     StandardButton { kind: cancel; }
+}
+
+// Stage 7: system tray icon. One instance is created in main.rs and kept alive
+// for the whole process lifetime -- per SystemTrayIcon's own docs, the icon
+// appears as soon as the instance exists and an event loop is running, and
+// disappears when the instance is dropped, so no `.show()`/`.hide()` call is
+// needed (or wanted -- see below). Left-click and the "Show Tagent" menu item
+// both just ask main.rs to reveal the main window; "Settings…" reuses the
+// existing Settings dialog; "Quit" is now the only way to actually exit the
+// app, since AppWindow's own close button (main.rs) is redirected to hide
+// instead of quit.
+export component TrayIcon inherits SystemTrayIcon {
+    icon: @image-url("../assets/icons/tray.png");
+    tooltip: "Tagent";
+
+    callback show-requested();
+    callback settings-requested();
+    callback quit-requested();
+
+    clicked => { show-requested(); }
+
+    Menu {
+        MenuItem { title: "Show Tagent"; activated => { show-requested(); } }
+        MenuItem { title: "Settings…"; activated => { settings-requested(); } }
+        MenuSeparator {}
+        MenuItem { title: "Quit"; activated => { quit-requested(); } }
+    }
 }

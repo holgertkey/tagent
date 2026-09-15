@@ -460,6 +460,83 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     macOS is a stub (`None`/`None`/`Ok(())`) matching `keycodes.rs`'s rationale: the
     hotkey itself never fires there, so these functions are never actually called,
     but exist with the same signatures so `main.rs`'s wiring stays OS-independent.
+- **System tray** (`TrayIcon` in `app.slint`, Stage 7, shipped 2026-09-15): a
+  persistent tray icon built on Slint's own **built-in `SystemTrayIcon` element**
+  (Linux: StatusNotifierItem over D-Bus, via the `ksni` crate Slint pulls in
+  transitively — confirmed by its appearance in `Cargo.lock` after the version
+  bump below, not just by reading Slint's docs; Windows: shell notification area;
+  macOS: `NSStatusItem`), not the external `tray-icon` crate the roadmap originally
+  assumed — no new GTK/D-Bus/tray dependency of `tagent-gui`'s own. Required
+  bumping `slint`/`slint-build` from 1.14.1 to 1.17.1 (`cargo update -p slint -p
+  slint-build --precise 1.17.1` — both had to move together in one command, since
+  each pins an exact-matching `i-slint-compiler` version and updating only one at
+  a time leaves the two in conflict), the minimum version `SystemTrayIcon` exists
+  in. The bump also pulled in a new build-time system dependency,
+  `libfontconfig1-dev` (via `pkg-config`, needed by the upgraded `fontique`/
+  `fontdb` font-matching stack) — not a Rust crate, a system package, so it won't
+  show up from `cargo` alone if it's missing.
+  - `AppWindow` also gets an `icon: @image-url(...)` property now, pointing at
+    the same PNG the tray icon uses — the window previously had no
+    window/taskbar icon at all.
+  - `TrayIcon inherits SystemTrayIcon`, declared in `app.slint` like
+    `Dialog`/`Timer` — `Menu`/`MenuItem`/`MenuSeparator` turned out to be core
+    language elements needing no `std-widgets` import, confirmed by the plain
+    `SystemTrayIcon`-referencing component compiling as written (same kind of
+    check Stage 3 had to do for `Dialog`). One instance is constructed in
+    `main()` and kept alive for the process's whole lifetime, same as `popup`
+    (Stage 6) — per the element's own docs, the icon appears as soon as the
+    instance exists and an event loop is running, and disappears when it's
+    dropped, so nothing calls `.show()`/`.hide()`/`.set_visible()` on it.
+    Deliberate: Slint's own changelog lists a `show()`/`hide()`-on-
+    `SystemTrayIcon` fix as `[1.18.0] - Unreleased` — not in the 1.17.1 this
+    project pins — so those methods are avoided entirely rather than risked.
+  - Menu: "Show Tagent" (left-click does the same) calls
+    `window.show()`; "Settings…" calls `window.invoke_settings_requested()` —
+    firing the *existing* callback already registered via
+    `window.on_settings_requested(...)` (main.rs) rather than duplicating that
+    ~300-line body. This relies on Slint's standard generated `invoke_<name>`
+    method for an ordinary `callback` (not the `public function` mechanism
+    `invoke_apply_theme`/`invoke_start_hide_timer` elsewhere in this file use);
+    confirmed only by the call compiling in this session, not by seeing it fire
+    at runtime (no live launch — see below). "Quit" calls
+    `slint::quit_event_loop()` and is now the **only** way to fully exit.
+  - `AppWindow`'s own close button is redirected via
+    `window.window().on_close_requested(|| slint::CloseRequestResponse::HideWindow)`
+    to hide instead of quit — a real behavior change for existing users, not
+    just an addition.
+  - `main()`'s tail changed from `window.run()?` (show + run + quit-on-hide) to
+    an explicit `if !start_minimized { window.show()?; }` followed by
+    `slint::run_event_loop_until_quit()?` — the loop must keep running even
+    with `AppWindow` fully hidden (from `start_minimized` at launch, or from
+    the user closing it later), which `run_event_loop()` (quits when the last
+    window closes) would not do.
+  - `GuiConfig.start_minimized: bool` (default `true`) controls only the
+    *next* launch, read once at startup like `translate_hotkey`, not
+    live-reloaded. Unlike `translate_hotkey`/`popup_auto_hide_seconds` (Stages
+    5/6, still hand-edit-only pending Stage 8), this field got a real
+    checkbox in `SettingsDialog`'s "Hotkeys & Tray" tab immediately, in this
+    same stage — a `default: true` field with no in-app way to turn it back
+    off would otherwise compound with the tray-icon-might-not-appear risk
+    below into a genuine dead end.
+  - **Known environment limitation, not a bug**: Slint's Linux tray backend
+    needs a StatusNotifierItem host (e.g. GNOME's "AppIndicator and
+    KStatusNotifierItem Support" extension) — plain X11 system trays aren't
+    supported. On a desktop with no such host running, the icon simply never
+    appears, silently. The escape hatch is the global hotkey (Stage 5), which
+    never depended on window or tray visibility and still works with both
+    invisible.
+  - **Platform scope note**: the hotkey (Stage 5) and popup (Stage 6) stay
+    Linux + Windows only, matching `tagent-cli`'s macOS posture — but the tray
+    itself also works on macOS, since Slint's element is genuinely
+    cross-platform and macOS's manual Translate-button flow already works
+    today. A deliberate revision of the "Linux + Windows only" scope stated
+    for this cluster when Stage 7 was first drafted, not an oversight.
+  - **Verification note**: same "no live launch" policy as Stages 5/6
+    ([[feedback_gui_automation_risk]]) — build/test/clippy/fmt (Linux) plus
+    `cargo check`/`cargo test --no-run --target x86_64-pc-windows-gnu` all
+    passed, but the tray icon's actual appearance, the close-to-tray/restore
+    round trip, and Quit actually exiting were not observed running in this
+    session.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no history logging. `app.slint` hardcodes a
   6-language list (Auto/English/Russian/Spanish/French/German), much smaller than
