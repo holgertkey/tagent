@@ -478,6 +478,26 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   - `AppWindow` also gets an `icon: @image-url(...)` property now, pointing at
     the same PNG the tray icon uses — the window previously had no
     window/taskbar icon at all.
+  - **Known limitation, confirmed by the user right after this stage shipped**:
+    on GNOME (this dev machine's desktop), the dock/taskbar still shows a
+    generic gear icon for the running app instead of this one. Confirmed via
+    Slint's own source (`i-slint-backend-winit`) that the `icon` property
+    *does* correctly reach the OS — it's forwarded to
+    `winit::window::Window::set_window_icon`, which sets `_NET_WM_ICON` on
+    X11. The gap is on GNOME Shell's side: its dock matches a running window's
+    `WM_CLASS` against an *installed `.desktop` file*'s `Icon=`/
+    `StartupWMClass=` fields for the taskbar/dash representation, and falls
+    back to a generic icon when no match exists — it doesn't use
+    `_NET_WM_ICON` for that purpose. Neither `tagent-gui` nor `tagent-cli` has
+    ever shipped a `.desktop` file, so this is a pre-existing gap, not
+    something this stage introduced or could fix by itself; a real fix needs
+    `slint::set_xdg_app_id(...)` (for a stable `WM_CLASS`) plus an installed
+    `.desktop` file — packaging/installation work, out of scope for Stage 7.
+    Decided with the user (2026-09-15) to leave this documented rather than
+    patch it now; revisit as part of a future packaging/installation stage.
+    The system tray icon itself (`TrayIcon`, above) is unaffected — it's a
+    separate GNOME UI surface (the status area, via StatusNotifierItem/D-Bus)
+    that carries its own icon data directly, no `.desktop` lookup involved.
   - `TrayIcon inherits SystemTrayIcon`, declared in `app.slint` like
     `Dialog`/`Timer` — `Menu`/`MenuItem`/`MenuSeparator` turned out to be core
     language elements needing no `std-widgets` import, confirmed by the plain
