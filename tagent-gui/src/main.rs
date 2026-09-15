@@ -1,4 +1,6 @@
 use slint::{Color, ComponentHandle, Model, ModelRc, VecModel};
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
@@ -30,11 +32,13 @@ thread_local! {
 /// Settings > View, in the same order as `SettingsDialog.font-options`.
 const FONT_FAMILIES: [&str; 3] = ["monospace", "sans-serif", "serif"];
 
+/// Must match `AppWindow`'s `preferred-width`/`preferred-height` in `app.slint`.
+/// Re-asserted explicitly in Rust by [`show_window_restoring_geometry`] as a fix for
+/// a real initial-window-sizing race -- see that function's doc comment.
+const DEFAULT_WINDOW_SIZE: slint::PhysicalSize = slint::PhysicalSize::new(480, 480);
+
 fn font_index_for(family: &str) -> i32 {
-    FONT_FAMILIES
-        .iter()
-        .position(|f| *f == family)
-        .unwrap_or(0) as i32
+    FONT_FAMILIES.iter().position(|f| *f == family).unwrap_or(0) as i32
 }
 
 /// One preset entry for the "Color scheme" picker in Settings > View: a
@@ -512,17 +516,150 @@ fn spawn_translation(
     });
 }
 
+/// Reads `window`'s current position/size as a [`config::WindowGeometry`].
+fn current_window_geometry(window: &AppWindow) -> config::WindowGeometry {
+    let position = window.window().position();
+    let size = window.window().size();
+    config::WindowGeometry {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    }
+}
+
+/// Captures `window`'s current position/size into `config_manager` and persists it,
+/// if [`config::GuiConfig::remember_window_geometry`] is enabled -- a no-op otherwise,
+/// so a geometry saved from before the setting was turned off is left on disk rather
+/// than overwritten with nothing. Called right before the window is hidden
+/// (`on_close_requested`) or the app quits (`tray.on_quit_requested`) -- the two
+/// points in `main()` that actually call this.
+fn save_window_geometry(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+    let mut manager = config_manager.lock().unwrap();
+    if !manager.config().remember_window_geometry {
+        return;
+    }
+    let geometry = current_window_geometry(window);
+    let mut new_config = manager.config().clone();
+    new_config.window_geometry = Some(geometry);
+    let _ = manager.update(new_config);
+}
+
+/// Shows `window` and, only the *first* time this is called in a given run (tracked
+/// via `geometry_restored`), restores its saved position/size from config -- if
+/// `remember_window_geometry` is enabled and a geometry was actually saved by a
+/// previous run -- or otherwise re-asserts [`DEFAULT_WINDOW_SIZE`] explicitly.
+///
+/// Applied *after* `.show()`, not before: Stage 6 found that `set_position` before
+/// `.show()` is silently ignored on this project's X11 setup (no OS-level window
+/// exists yet at that point), and the same is assumed to hold for `set_size`.
+///
+/// The explicit re-assert of `DEFAULT_WINDOW_SIZE` (even though `AppWindow` already
+/// declares `preferred-width`/`preferred-height: 480px` in `app.slint`) is a real fix
+/// for a real bug found while testing this function, not defensive-programming
+/// speculation: on this project's X11/mutter setup, the *first* one or two window
+/// creations after a fresh launch sometimes settle at a much smaller size (observed:
+/// 458x188) instead of the requested 480x480 -- a winit/X11 initial-size-negotiation
+/// race, reproduced consistently even with this function's own restore logic fully
+/// bypassed (a plain `window.show()?` hit it too), and gone once the same process ran
+/// a few more launches. Since explicitly calling `set_size()` *after* `.show()` is
+/// already established as reliable here (the same pattern this popup-derived doc
+/// comment already describes for position), re-asserting the intended size the same
+/// way corrects the race instead of leaving it to chance.
+///
+/// Only the *first* show restores/re-asserts anything -- a later one (e.g.
+/// re-opening from the tray after hiding, in the same run) leaves the window exactly
+/// as the user last had it, since blindly re-applying a size every time would fight
+/// with a live resize/move that hasn't been captured back into `config_manager` yet
+/// (only `save_window_geometry`, called on hide/quit, does that).
+///
+/// The immediate `set_size`/`set_position` call is followed by a second, deferred
+/// re-apply via `slint::Timer::single_shot`. This isn't defensive speculation: live
+/// testing found that this function is only reliable when it runs *before*
+/// `run_event_loop_until_quit()` (the `!start_minimized` startup path, which settles
+/// within ~0.5s). When it instead runs *from inside* the already-running event loop --
+/// which is the normal case once `start_minimized` is on, since then the first-ever
+/// `show()` happens from the tray's "Show Tagent" click, delivered via a D-Bus/ksni
+/// callback -- the synchronous `set_size`/`set_position` calls are silently dropped:
+/// the window sticks at winit/X11's own race-default size (observed: 458x188) and
+/// never settles, even given seconds of dwell time (confirmed live by driving the
+/// tray icon's `org.kde.StatusNotifierItem.Activate` over D-Bus directly). Re-issuing
+/// the same calls ~150ms later, after the window manager's own initial map/placement
+/// negotiation has had a chance to finish, reliably corrects it.
+fn show_window_restoring_geometry(
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+    geometry_restored: &Rc<Cell<bool>>,
+) {
+    window.show().ok();
+
+    if geometry_restored.replace(true) {
+        return;
+    }
+
+    let config = config_manager.lock().unwrap().config().clone();
+    let saved_geometry = config
+        .remember_window_geometry
+        .then_some(config.window_geometry)
+        .flatten();
+
+    let (target_size, target_position) = match saved_geometry {
+        Some(geometry) => (
+            slint::PhysicalSize::new(geometry.width, geometry.height),
+            Some(slint::PhysicalPosition::new(geometry.x, geometry.y)),
+        ),
+        // No saved geometry to restore (or the setting is off) -- still
+        // re-assert the default size, to correct the initial-sizing race
+        // described above rather than leave the window at whatever it raced
+        // into.
+        None => (DEFAULT_WINDOW_SIZE, None),
+    };
+
+    apply_window_geometry(window, target_size, target_position);
+
+    let weak_window = window.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+        if let Some(window) = weak_window.upgrade() {
+            apply_window_geometry(&window, target_size, target_position);
+        }
+    });
+}
+
+fn apply_window_geometry(
+    window: &AppWindow,
+    size: slint::PhysicalSize,
+    position: Option<slint::PhysicalPosition>,
+) {
+    window.window().set_size(size);
+    if let Some(position) = position {
+        window.window().set_position(position);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let window = AppWindow::new()?;
 
+    let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
+
+    // Whether the saved window geometry (if any) has been restored yet in this
+    // run -- see `show_window_restoring_geometry`'s doc comment for why this is
+    // only ever done once, not on every show.
+    let geometry_restored = Rc::new(Cell::new(false));
+
     // Stage 7: redirect the OS-level close button (and Alt+F4/Cmd+Q-equivalent)
     // to hide the window instead of quitting the app -- the tray's "Quit" item
-    // (wired below) becomes the only way to actually exit from here on.
-    window
-        .window()
-        .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
-
-    let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
+    // (wired below) becomes the only way to actually exit from here on. Also
+    // captures the window's current position/size first, so closing it is one
+    // of the two points (the other: Quit, below) "remember window geometry"
+    // actually saves from.
+    let weak_for_close = window.as_weak();
+    let config_manager_for_close = config_manager.clone();
+    window.window().on_close_requested(move || {
+        if let Some(window) = weak_for_close.upgrade() {
+            save_window_geometry(&window, &config_manager_for_close);
+        }
+        slint::CloseRequestResponse::HideWindow
+    });
 
     apply_style(&window, config_manager.lock().unwrap().config());
 
@@ -560,9 +697,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tray = TrayIcon::new()?;
 
     let weak_for_tray_show = window.as_weak();
+    let config_manager_for_tray_show = config_manager.clone();
+    let geometry_restored_for_tray_show = geometry_restored.clone();
     tray.on_show_requested(move || {
         if let Some(window) = weak_for_tray_show.upgrade() {
-            window.show().ok();
+            show_window_restoring_geometry(
+                &window,
+                &config_manager_for_tray_show,
+                &geometry_restored_for_tray_show,
+            );
         }
     });
 
@@ -585,7 +728,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    tray.on_quit_requested(|| {
+    let weak_for_quit = window.as_weak();
+    let config_manager_for_quit = config_manager.clone();
+    tray.on_quit_requested(move || {
+        // Only save if the window is actually visible right now -- an
+        // already-hidden (or never-shown, if start_minimized and the window
+        // was never opened this run) window's position()/size() would just
+        // return stale/default values, which would otherwise silently
+        // overwrite a perfectly good previously-saved geometry with nothing
+        // meaningful.
+        if let Some(window) = weak_for_quit.upgrade() {
+            if window.window().is_visible() {
+                save_window_geometry(&window, &config_manager_for_quit);
+            }
+        }
         slint::quit_event_loop().ok();
     });
 
@@ -722,6 +878,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         dialog.set_show_prompt(current_config.show_prompt);
         dialog.set_start_minimized(current_config.start_minimized);
+        dialog.set_remember_window_geometry(current_config.remember_window_geometry);
 
         init_color_field!(
             dialog,
@@ -906,7 +1063,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let target_theme = if scheme.dark { "dark" } else { "light" };
             let themes = dialog.get_themes();
-            if let Some(index) = themes.iter().position(|t| t.as_str().to_lowercase() == target_theme) {
+            if let Some(index) = themes
+                .iter()
+                .position(|t| t.as_str().to_lowercase() == target_theme)
+            {
                 dialog.set_theme_index(index as i32);
             }
             dialog.invoke_apply_theme(target_theme.into());
@@ -929,8 +1089,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_background_green(),
                     dialog.get_background_blue(),
                 ),
-                phrase_font: FONT_FAMILIES
-                    [dialog.get_phrase_font_index().clamp(0, FONT_FAMILIES.len() as i32 - 1) as usize]
+                phrase_font: FONT_FAMILIES[dialog
+                    .get_phrase_font_index()
+                    .clamp(0, FONT_FAMILIES.len() as i32 - 1)
+                    as usize]
                     .to_string(),
                 phrase_size: dialog.get_phrase_size(),
                 phrase_color: color_field_hex(
@@ -972,9 +1134,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 popup_auto_hide_seconds: current_config.popup_auto_hide_seconds,
                 // Stage 7: a real dialog control exists for this one, unlike the two above.
                 start_minimized: dialog.get_start_minimized(),
+                remember_window_geometry: dialog.get_remember_window_geometry(),
+                // Not dialog-editable -- captured automatically from the real window
+                // (see save_window_geometry) -- so carried through unchanged, same
+                // treatment as translate_hotkey/popup_auto_hide_seconds above.
+                window_geometry: current_config.window_geometry,
             };
 
-            if let Err(err) = config_manager_for_save.lock().unwrap().update(new_config.clone()) {
+            if let Err(err) = config_manager_for_save
+                .lock()
+                .unwrap()
+                .update(new_config.clone())
+            {
                 eprintln!("Warning: failed to save tagent-gui.json: {err}");
             }
             if let Some(window) = window_weak_for_save.upgrade() {
@@ -1123,7 +1294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // `tray`'s "Quit" item (`slint::quit_event_loop()`, wired above) ends it.
     let start_minimized = config_manager.lock().unwrap().config().start_minimized;
     if !start_minimized {
-        window.show()?;
+        show_window_restoring_geometry(&window, &config_manager, &geometry_restored);
     }
     slint::run_event_loop_until_quit()?;
     Ok(())

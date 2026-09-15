@@ -111,8 +111,8 @@ component ColorPickerField {
 export component AppWindow inherits Window {
     title: "Tagent";
     icon: @image-url("../assets/icons/tray.png");
-    preferred-width: 560px;
-    preferred-height: 420px;
+    preferred-width: 480px;
+    preferred-height: 480px;
     forward-focus: input-field;
 
     // Applies a theme string ("auto"/"light"/"dark") to this window's own
@@ -667,6 +667,14 @@ export component SettingsDialog inherits Dialog {
     // default with no in-app way to turn it back off would be a dead end.
     in-out property <bool> start-minimized: true;
 
+    // Stage 7 follow-up: whether the main window's size/position are saved on
+    // hide-to-tray/quit and restored the next time it's shown. The saved
+    // x/y/width/height themselves aren't dialog-editable fields -- they're
+    // captured automatically from the real window -- so only this on/off
+    // toggle lives here, same "field before its own editor" split as
+    // popup-delay/translate-hotkey above.
+    in-out property <bool> remember-window-geometry: true;
+
     callback save-requested(string /* provider */, string /* theme */);
 
     // Tabbed layout, laid out now for settings that don't exist yet: "General"
@@ -755,6 +763,10 @@ export component SettingsDialog inherits Dialog {
                 alignment: start;
 
                 CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
+                CheckBox {
+                    text: "Remember window size and position";
+                    checked <=> remember-window-geometry;
+                }
                 Text {
                     text: "Hotkey and popup-delay settings are hand-edited in tagent-gui.json for now — a Settings UI for those is planned for a later stage.";
                     wrap: word-wrap;

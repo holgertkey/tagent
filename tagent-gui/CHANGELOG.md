@@ -12,6 +12,49 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+023] - 2026-09-15
+
+### Fixed
+- **"Remember window size and position" didn't actually restore anything when
+  `start_minimized` was on** (the default): the restore only ever worked when
+  the window was shown at startup, since the very first `show()` — which is
+  when the restore runs — normally happens from the tray's "Show Tagent"
+  click instead, delivered via a D-Bus/ksni callback while the event loop is
+  already running. In that context the synchronous `set_size`/`set_position`
+  calls were silently dropped and the window stuck at whatever size the
+  window manager's own initial placement negotiation picked, no matter how
+  long it was left open. Confirmed live by driving the tray icon's
+  `org.kde.StatusNotifierItem.Activate` directly over D-Bus. Fixed by
+  re-issuing the same `set_size`/`set_position` calls a second time, ~150ms
+  later via `slint::Timer::single_shot`, after the window manager's initial
+  negotiation has had a chance to settle.
+
+## [0.14.0+022] - 2026-09-15
+
+### Added
+- **Remember window size and position**: `remember_window_geometry` setting
+  (`tagent-gui.json`, default on, editable via a new checkbox in Settings >
+  "Hotkeys & Tray"). When on, the main window's position/size are saved when
+  it's hidden to the tray or the app quits, and restored the next time it's
+  shown (once per run — a later re-open from the tray leaves the window
+  exactly as you last had it).
+
+### Fixed
+- **Real, intermittent bug found while testing the above**: on this
+  project's X11/mutter setup, the main window occasionally (observed ~2 of 7
+  fresh launches) opened at a much smaller size than its configured
+  480×480 default — a winit/X11 initial-window-sizing race, not tied to the
+  new geometry feature (reproduced even with it fully bypassed). Fixed by
+  explicitly re-asserting the intended size right after `.show()` whenever
+  there's no saved geometry to restore instead — 6/6 clean runs after the
+  fix, 0/7 before it.
+
+## [0.14.0+021] - 2026-09-15
+
+### Changed
+- Default main window size changed from 560×420 to 480×480 (now square). Still
+  resizable; only the launch-time default changed.
+
 ## [0.14.0+020] - 2026-09-15
 
 ### Added

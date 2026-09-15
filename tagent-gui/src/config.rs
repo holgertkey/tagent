@@ -61,6 +61,11 @@ fn default_start_minimized() -> bool {
     true
 }
 
+/// Default for [`GuiConfig::remember_window_geometry`]: on.
+fn default_remember_window_geometry() -> bool {
+    true
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -133,6 +138,39 @@ pub struct GuiConfig {
     /// host) — that's the practical way back in if the tray never appears.
     #[serde(default = "default_start_minimized")]
     pub start_minimized: bool,
+    /// Whether the main window's size and position are saved when it's hidden
+    /// (to the tray) or the app quits, and restored the next time it's shown.
+    /// Default `true`. Applied once, the first time the window is actually
+    /// shown in a given run (at startup if not [`Self::start_minimized`],
+    /// otherwise the first time it's revealed from the tray) — not
+    /// live-reloaded, since re-applying it on every later show would fight
+    /// with the user moving/resizing the already-visible window.
+    #[serde(default = "default_remember_window_geometry")]
+    pub remember_window_geometry: bool,
+    /// The main window's last known position/size, in physical pixels — `None`
+    /// until it's been shown and hidden (or the app quit) at least once.
+    /// Ignored entirely when [`Self::remember_window_geometry`] is `false`, but
+    /// still kept on disk either way, so toggling the setting back on later
+    /// restores the last position from before it was turned off rather than
+    /// starting over.
+    #[serde(default)]
+    pub window_geometry: Option<WindowGeometry>,
+}
+
+/// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
+/// physical pixels — the same units [`slint::PhysicalPosition`]/
+/// [`slint::PhysicalSize`] use, so no conversion is needed at the call sites
+/// that read or write this.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    /// Horizontal position of the window's top-left corner.
+    pub x: i32,
+    /// Vertical position of the window's top-left corner.
+    pub y: i32,
+    /// Window width.
+    pub width: u32,
+    /// Window height.
+    pub height: u32,
 }
 
 impl Default for GuiConfig {
@@ -155,6 +193,8 @@ impl Default for GuiConfig {
             translate_hotkey: default_translate_hotkey(),
             popup_auto_hide_seconds: default_popup_auto_hide_seconds(),
             start_minimized: default_start_minimized(),
+            remember_window_geometry: default_remember_window_geometry(),
+            window_geometry: None,
         }
     }
 }
@@ -647,7 +687,11 @@ mod tests {
     fn old_file_without_hotkey_field_defaults_to_alt_q() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
-        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
 
         let config = load_from_path(&path);
 
@@ -658,7 +702,11 @@ mod tests {
     fn old_file_without_popup_auto_hide_field_defaults_to_three() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
-        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
 
         let config = load_from_path(&path);
 
@@ -669,11 +717,59 @@ mod tests {
     fn old_file_without_start_minimized_field_defaults_to_true() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
-        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
 
         let config = load_from_path(&path);
 
         assert!(config.start_minimized);
+    }
+
+    #[test]
+    fn old_file_without_window_geometry_fields_defaults_to_remembering_with_none_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(config.remember_window_geometry);
+        assert_eq!(config.window_geometry, None);
+    }
+
+    #[test]
+    fn window_geometry_round_trips_through_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        let config = GuiConfig {
+            window_geometry: Some(WindowGeometry {
+                x: 100,
+                y: 50,
+                width: 480,
+                height: 480,
+            }),
+            ..Default::default()
+        };
+        save_to_path(&path, &config).unwrap();
+
+        let loaded = load_from_path(&path);
+
+        assert_eq!(
+            loaded.window_geometry,
+            Some(WindowGeometry {
+                x: 100,
+                y: 50,
+                width: 480,
+                height: 480
+            })
+        );
     }
 
     #[test]
@@ -695,7 +791,11 @@ mod tests {
     fn old_file_without_style_fields_defaults_to_monospace_and_theme_colors() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
-        fs::write(&path, br#"{"translate_provider": "google", "theme": "dark"}"#).unwrap();
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
 
         let config = load_from_path(&path);
 

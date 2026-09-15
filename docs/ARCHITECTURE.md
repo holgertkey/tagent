@@ -557,6 +557,67 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     passed, but the tray icon's actual appearance, the close-to-tray/restore
     round trip, and Quit actually exiting were not observed running in this
     session.
+- **Remember window size/position** (`GuiConfig.remember_window_geometry`/
+  `window_geometry`, `main.rs`'s `show_window_restoring_geometry`/
+  `save_window_geometry`, Stage 7 follow-up, shipped 2026-09-15): captured on
+  hide-to-tray (`on_close_requested`) and on Quit (only if the window is
+  actually visible at that moment, so a never-shown or already-hidden window
+  doesn't overwrite a good saved value with nothing meaningful), restored once
+  per run the first time the window is shown — later re-opens from the tray
+  leave the window exactly as the user last had it, rather than snapping back
+  to the saved value on every show. `set_size`/`set_position` are both called
+  *after* `.show()`, following the same rule Stage 6's popup already
+  established (setting them before `.show()` is silently ignored on this
+  project's X11 setup, since no OS-level window exists yet).
+  - **A real bug found and fixed while verifying this, unrelated to the
+    feature's own logic**: this session, unlike Stages 5/6, *did* launch the
+    real binary live (with the global hotkey deliberately disabled via an
+    isolated config — `"translate_hotkey": "DISABLED"` fails to parse and
+    logs a warning, same graceful-degradation path already documented above
+    — so `XGrabKey` was never invoked; a deliberate, narrower exception to
+    the "no live launch" policy, not a reversal of it). Across repeated fresh
+    launches, the main window intermittently (2 of the first 7 observed)
+    opened at a much smaller size (`458×188`) than its configured `480×480`
+    default — a winit/X11 initial-window-sizing race with mutter, reproduced
+    even with this feature's own restore logic completely bypassed (a plain
+    `window.show()?` hit it too), so it predates this feature and isn't
+    specific to it. Fixed by having `show_window_restoring_geometry`
+    explicitly re-assert a `DEFAULT_WINDOW_SIZE` constant (`480×480`, kept in
+    sync with `AppWindow`'s `preferred-width`/`preferred-height` in
+    `app.slint` by a doc-comment cross-reference, not a shared source of
+    truth) via `set_size()` whenever there's no saved geometry to restore
+    instead — confirmed 6/6 clean launches after the fix (0/7 before it).
+    This likely explains the plain square-window-size change (`0.14.0+021`)
+    appearing not to take effect when the user first tested it, and quite
+    possibly also explains Stage 3's older, vaguer "the window manager
+    appears to override preferred-width/preferred-height regardless" note —
+    same underlying race, not a hard WM override as that note assumed.
+  - **`save_window_geometry` persisting on a real close**: confirmed working
+    end-to-end via the user's own live testing (four consecutive real
+    launches with debug logging) — every run's "captured" geometry on
+    close/quit correctly appeared as the next run's loaded `window_geometry`.
+  - **A second, distinct bug found via that same live testing, fixed in
+    `0.14.0+023`**: the restore only actually worked when
+    `show_window_restoring_geometry` ran *before* `run_event_loop_until_quit()`
+    (i.e. the `!start_minimized` startup path). With `start_minimized` on
+    (the default), the window's first-ever `show()` instead happens from
+    inside the already-running event loop, via the tray's "Show Tagent"
+    click — delivered as a D-Bus/ksni callback. In that context the
+    synchronous `set_size`/`set_position` calls were silently dropped: the
+    window stuck at the same race-default size (`458×188`) described above
+    and never settled, even given seconds of dwell time. Confirmed by
+    reproducing the tray-click path directly — driving the tray icon's
+    `org.kde.StatusNotifierItem.Activate` method over D-Bus (`busctl --user
+    call ... Activate ii 0 0`) — versus the plain startup path, which settled
+    correctly within ~0.5s in the same test harness. Fixed by having
+    `show_window_restoring_geometry` re-issue the same `set_size`/
+    `set_position` calls a second time, ~150ms later, via
+    `slint::Timer::single_shot` (confirmed safe here — no `Send` bound
+    required, unlike Stage 6's popup hide-timer which specifically avoided
+    `slint::Timer` because its callback crosses a `Send`-bounded background
+    thread). Verified via the same D-Bus-driven reproduction: saved-geometry
+    restore and the no-saved-geometry default both land correctly through
+    the tray-click path after the fix.
 - **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
   spell-check notices, no TTS button, no history logging. `app.slint` hardcodes a
   6-language list (Auto/English/Russian/Spanish/French/German), much smaller than
