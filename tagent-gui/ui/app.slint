@@ -572,6 +572,126 @@ export component TranslationPopup inherits Window {
     }
 }
 
+// Stage 8 follow-up: press-the-actual-keys capture for the global hotkey
+// field, as an addition next to the plain text field, not a replacement.
+// `FocusScope`/`Timer`/the `Key` namespace are core-language builtins (like
+// `Dialog`/`TabWidget`/`Tab`), not imported from std-widgets.
+//
+// State machine, entirely on the .slint side except the one text->token
+// mapping step (`map-key-to-token`, implemented in main.rs since it needs
+// the same key-name vocabulary `HotkeyParser`/`key_name_to_vk` already
+// define -- no point duplicating that table here):
+// - Escape cancels recording outright.
+// - A lone modifier press (Ctrl/Alt/Shift/Win pressed by itself) is ignored;
+//   we're still waiting for the real key.
+// - A real key pressed together with a modifier finalizes immediately as a
+//   modifier combo (e.g. "Ctrl+Shift+T") -- no double-press ambiguity when
+//   modifiers are held.
+// - A bare real key (no modifiers) starts (or restarts) a 500ms window --
+//   the same max_interval_ms `HotkeyType::DoublePress` already validates
+//   against -- during which a second bare press of the *same* key finalizes
+//   as a double-press ("F8+F8"); a second bare press of a *different* key
+//   restarts the window on the new key instead; and a timeout with nothing
+//   else pressed finalizes the lone key by itself (which `validate_hotkey`
+//   then accepts only for F1-F12, surfacing through the existing inline
+//   error otherwise -- no special-casing needed here).
+// - A key `map-key-to-token` doesn't recognize (most commonly: a non-Latin
+//   keyboard layout producing a non-ASCII character for what should be a
+//   plain letter key) reports through `unrecognized` instead of
+//   `captured`, so main.rs can show a friendlier message than the generic
+//   parser error.
+component HotkeyRecorder inherits FocusScope {
+    callback captured(string);
+    callback unrecognized();
+    callback cancelled();
+    callback map-key-to-token(string) -> string;
+
+    property <string> pending-key: "";
+
+    double-press-timer := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if pending-key != "" {
+                captured(pending-key);
+                pending-key = "";
+            }
+        }
+    }
+
+    key-pressed(event) => {
+        if event.repeat {
+            return accept;
+        }
+        if event.text == Key.Escape {
+            double-press-timer.running = false;
+            pending-key = "";
+            cancelled();
+            return accept;
+        }
+        if event.text == Key.Alt || event.text == Key.AltGr || event.text == Key.Control
+            || event.text == Key.ControlR || event.text == Key.Shift || event.text == Key.ShiftR
+            || event.text == Key.Meta || event.text == Key.MetaR {
+            return accept; // still waiting for the real key
+        }
+
+        let local-token = map-key-to-token(event.text);
+        if local-token == "" {
+            double-press-timer.running = false;
+            pending-key = "";
+            unrecognized();
+            return accept;
+        }
+
+        if event.modifiers.control || event.modifiers.alt || event.modifiers.shift || event.modifiers.meta {
+            double-press-timer.running = false;
+            pending-key = "";
+            captured(
+                (event.modifiers.control ? "Ctrl+" : "")
+                + (event.modifiers.alt ? "Alt+" : "")
+                + (event.modifiers.shift ? "Shift+" : "")
+                + (event.modifiers.meta ? "Win+" : "")
+                + local-token
+            );
+            return accept;
+        }
+
+        if pending-key == local-token {
+            double-press-timer.running = false;
+            pending-key = "";
+            captured(local-token + "+" + local-token);
+            return accept;
+        }
+
+        pending-key = local-token;
+        double-press-timer.running = true;
+        double-press-timer.restart();
+        return accept;
+    }
+
+    horizontal-stretch: 1;
+    min-width: 160px;
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-width: 1px;
+        border-color: Palette.border;
+        border-radius: 4px;
+        background: Palette.alternate-background;
+
+        Text {
+            text: "Press keys… (Esc cancels)";
+            font-size: 11px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            width: parent.width - 8px;
+        }
+    }
+}
+
 export component SettingsDialog inherits Dialog {
     title: "Settings";
     preferred-width: 460px;
@@ -669,6 +789,13 @@ export component SettingsDialog inherits Dialog {
     in property <string> translate-hotkey-error: "";
     callback hotkey-edited(string);
     in-out property <int> popup-auto-hide-seconds: 3;
+
+    // Stage 8 follow-up: "Record" button -- press-the-actual-keys capture,
+    // as an addition next to the plain text field above, not a replacement.
+    // `is-recording` is session-only UI state, never persisted.
+    in-out property <bool> is-recording: false;
+    callback hotkey-unrecognized();
+    callback map-key-to-token(string) -> string;
 
     // Stage 7: whether the app launches straight into the tray with no window
     // shown. Default is `true`, and shipping that default with no in-app way
@@ -770,9 +897,37 @@ export component SettingsDialog inherits Dialog {
                 alignment: start;
 
                 Text { text: "Global hotkey:"; }
-                LineEdit {
-                    text <=> translate-hotkey;
-                    edited(text) => { hotkey-edited(text); }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        visible: !is-recording;
+                        text <=> translate-hotkey;
+                        edited(text) => { hotkey-edited(text); }
+                    }
+                    recorder := HotkeyRecorder {
+                        visible: is-recording;
+                        height: 32px;
+                        map-key-to-token(text) => { root.map-key-to-token(text) }
+                        captured(hotkey) => {
+                            is-recording = false;
+                            translate-hotkey = hotkey;
+                            hotkey-edited(hotkey);
+                        }
+                        unrecognized => {
+                            is-recording = false;
+                            root.hotkey-unrecognized();
+                        }
+                        cancelled => { is-recording = false; }
+                    }
+                    Button {
+                        text: is-recording ? "Cancel" : "Record";
+                        clicked => {
+                            is-recording = !is-recording;
+                            if is-recording {
+                                recorder.focus();
+                            }
+                        }
+                    }
                 }
                 Text {
                     text: translate-hotkey-error;

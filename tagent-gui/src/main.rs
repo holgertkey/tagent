@@ -231,6 +231,60 @@ fn hotkey_validation_error(text: &str) -> String {
     }
 }
 
+/// Maps one key press's raw `KeyEvent.text` (from the Settings dialog's
+/// "Record" hotkey capture, see `HotkeyRecorder` in `app.slint`) to the key-name
+/// vocabulary `platform::keycodes::key_name_to_vk` accepts, or `""` if the
+/// key isn't one it recognizes (most commonly: a non-Latin keyboard layout
+/// producing a non-ASCII character for what should be a plain letter key).
+/// Only covers real keys, never modifiers or Escape — `HotkeyRecorder`
+/// filters those out in `.slint` before this is ever called.
+fn slint_key_text_to_hotkey_token(text: &str) -> String {
+    use slint::platform::Key;
+
+    let mut chars = text.chars();
+    let (Some(ch), None) = (chars.next(), chars.next()) else {
+        return String::new();
+    };
+
+    if ch.is_ascii_alphanumeric() {
+        return ch.to_ascii_uppercase().to_string();
+    }
+
+    const NAMED_KEYS: &[(Key, &str)] = &[
+        (Key::F1, "F1"),
+        (Key::F2, "F2"),
+        (Key::F3, "F3"),
+        (Key::F4, "F4"),
+        (Key::F5, "F5"),
+        (Key::F6, "F6"),
+        (Key::F7, "F7"),
+        (Key::F8, "F8"),
+        (Key::F9, "F9"),
+        (Key::F10, "F10"),
+        (Key::F11, "F11"),
+        (Key::F12, "F12"),
+        (Key::Space, "Space"),
+        (Key::Tab, "Tab"),
+        (Key::Return, "Enter"),
+        (Key::Backspace, "Backspace"),
+        (Key::Delete, "Delete"),
+        (Key::Insert, "Insert"),
+        (Key::Home, "Home"),
+        (Key::End, "End"),
+        (Key::PageUp, "PageUp"),
+        (Key::PageDown, "PageDown"),
+        (Key::LeftArrow, "Left"),
+        (Key::RightArrow, "Right"),
+        (Key::UpArrow, "Up"),
+        (Key::DownArrow, "Down"),
+    ];
+    NAMED_KEYS
+        .iter()
+        .find(|(key, _)| char::from(*key) == ch)
+        .map(|(_, name)| name.to_string())
+        .unwrap_or_default()
+}
+
 /// Applies the theme and the phrase/translation display style from `config`
 /// to `window`. Colors left at "theme default" (empty string in config) are
 /// resolved against the window's own theme-driven `panel-foreground`/
@@ -905,6 +959,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.on_hotkey_edited(move |text| {
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.set_translate_hotkey_error(hotkey_validation_error(text.as_str()).into());
+            }
+        });
+
+        dialog.on_map_key_to_token(|text| slint_key_text_to_hotkey_token(text.as_str()).into());
+
+        let dialog_weak = dialog.as_weak();
+        dialog.on_hotkey_unrecognized(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.set_translate_hotkey_error(
+                    "Couldn't recognize that key — if you're on a non-Latin keyboard \
+                     layout, switch to a Latin layout while recording, or type the \
+                     hotkey manually above."
+                        .into(),
+                );
             }
         });
 

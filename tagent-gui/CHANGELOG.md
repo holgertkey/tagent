@@ -12,6 +12,21 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+025] - 2026-09-16
+
+### Added
+- **"Record" button for the global hotkey field** (Stage 8 follow-up):
+  press it and then press the actual key combination instead of typing the
+  string by hand — captures via Slint's `FocusScope`, converts the key
+  press(es) into the same string grammar the field already accepts, and
+  writes it into the field (still editable manually afterward, same
+  validation as before). Supports plain keys, modifier combos, and
+  double-press patterns (press the same bare key twice quickly, e.g.
+  `F8+F8`); Escape cancels recording. A key the app doesn't recognize
+  (most commonly a non-Latin keyboard layout) shows a dedicated message
+  suggesting a Latin layout or manual entry, instead of a generic parser
+  error.
+
 ## [0.14.0+024] - 2026-09-16
 
 ### Added
