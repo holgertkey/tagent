@@ -12,6 +12,25 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+028] - 2026-09-16
+
+### Fixed
+- **Recording a hotkey close to (or the same as) the currently-active one
+  captured `Ctrl+C` instead** (`main.rs`): the global hotkey kept firing for
+  real while the Settings dialog's "Record" capture was open. Its own
+  `ClipboardManager::get_text_with_copy` step simulates a real Ctrl+C
+  keypress to grab the current selection — which, since the Settings
+  dialog still held keyboard focus during recording, landed right back on
+  the "Record" capture itself, overwriting whatever key was actually
+  pressed with `"Ctrl+C"`. The global hotkey now suppresses itself while a
+  recording is in progress (self-clearing after 30s if the dialog is ever
+  closed uncleanly mid-recording, so it can't get stuck disabled). Residual
+  limitation, not fixed here: the exact key combination that's already the
+  *active* global hotkey is grabbed system-wide (`XGrabKey` on Linux) before
+  it ever reaches the Settings window, so recording that exact combination
+  still won't register anything — type it manually instead, or pick a
+  different hotkey first.
+
 ## [0.14.0+027] - 2026-09-16
 
 ### Changed

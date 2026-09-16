@@ -796,6 +796,10 @@ export component SettingsDialog inherits Dialog {
     in-out property <bool> is-recording: false;
     callback hotkey-unrecognized();
     callback map-key-to-token(string) -> string;
+    // Fired on every `is-recording` transition (both directions) -- lets
+    // main.rs suppress the global hotkey while a recording is in progress.
+    // See `recording_started_at`'s doc comment in `main()` for why.
+    callback recording-changed(bool);
 
     // Stage 7: whether the app launches straight into the tray with no window
     // shown. Default is `true`, and shipping that default with no in-app way
@@ -910,19 +914,25 @@ export component SettingsDialog inherits Dialog {
                         map-key-to-token(text) => { root.map-key-to-token(text) }
                         captured(hotkey) => {
                             is-recording = false;
+                            root.recording-changed(false);
                             translate-hotkey = hotkey;
                             hotkey-edited(hotkey);
                         }
                         unrecognized => {
                             is-recording = false;
+                            root.recording-changed(false);
                             root.hotkey-unrecognized();
                         }
-                        cancelled => { is-recording = false; }
+                        cancelled => {
+                            is-recording = false;
+                            root.recording-changed(false);
+                        }
                     }
                     Button {
                         text: is-recording ? "Cancel" : "Record";
                         clicked => {
                             is-recording = !is-recording;
+                            root.recording-changed(is-recording);
                             if is-recording {
                                 recorder.focus();
                             }

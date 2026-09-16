@@ -37,6 +37,11 @@ const FONT_FAMILIES: [&str; 3] = ["monospace", "sans-serif", "serif"];
 /// a real initial-window-sizing race -- see that function's doc comment.
 const DEFAULT_WINDOW_SIZE: slint::PhysicalSize = slint::PhysicalSize::new(480, 480);
 
+/// How long the global hotkey stays suppressed after the Settings dialog's
+/// "Record" capture starts, if no matching stop signal arrives first. See the
+/// `recording_started_at` doc comment in `main()` for why this exists.
+const RECORDING_SUPPRESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn font_index_for(family: &str) -> i32 {
     FONT_FAMILIES.iter().position(|f| *f == family).unwrap_or(0) as i32
 }
@@ -708,6 +713,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
+    // Timestamp of when the Settings dialog's "Record" capture (the
+    // `HotkeyRecorder` in app.slint) last started, `None` while not recording.
+    // Checked by the global hotkey callback below to suppress firing for real
+    // while a recording is in progress -- otherwise, if the hotkey being
+    // recorded happens to be (or be close to) the currently *active* hotkey,
+    // the real trigger fires mid-capture, and its `ClipboardManager::get_text_with_copy`
+    // step -- which simulates a real Ctrl+C keypress to grab the selection --
+    // lands right back on the Settings dialog (since it still holds keyboard
+    // focus), getting captured as "Ctrl+C" instead of whatever was actually
+    // pressed. The dialog signals start/stop via `recording-changed`, but a
+    // timestamp-plus-timeout (rather than a plain latch cleared only on the
+    // expected stop signal) means a dialog closed uncleanly mid-recording
+    // (e.g. the window's own X button, bypassing the Record button's own
+    // "Cancel") can't wedge the global hotkey off forever -- it self-clears
+    // after `RECORDING_SUPPRESSION_TIMEOUT`.
+    let recording_started_at: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+
     // Whether the saved window geometry (if any) has been restored yet in this
     // run -- see `show_window_restoring_geometry`'s doc comment for why this is
     // only ever done once, not on every show.
@@ -897,9 +919,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let window_weak_for_settings = window.as_weak();
+    let recording_started_at_for_settings = recording_started_at.clone();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
+
+        let recording_started_at_for_recording = recording_started_at_for_settings.clone();
+        dialog.on_recording_changed(move |active| {
+            *recording_started_at_for_recording.lock().unwrap() =
+                active.then(std::time::Instant::now);
+        });
 
         let current_config = config_manager_for_settings.lock().unwrap().config().clone();
 
@@ -1269,11 +1298,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let weak = window.as_weak();
             let config_manager = config_manager.clone();
             let popup_weak_for_hotkey = popup_weak.clone();
+            let recording_started_at = recording_started_at.clone();
             KeyboardHook::spawn(hotkey, move || {
                 // Runs on the platform hook's own thread (on Windows, inside the
                 // WH_KEYBOARD_LL callback itself) -- must stay fast and non-blocking,
                 // hence the atomic guard and invoke_from_event_loop hand-off below
                 // rather than doing any real work here.
+
+                // Suppressed while the Settings dialog is actively recording a new
+                // hotkey -- see `recording_started_at`'s doc comment in `main()` for
+                // why (this is what stops a recorded "Ctrl+C" from ever showing up:
+                // that was this same trigger firing for real mid-capture, not a bug
+                // in the capture logic itself).
+                if let Some(started) = *recording_started_at.lock().unwrap() {
+                    if started.elapsed() < RECORDING_SUPPRESSION_TIMEOUT {
+                        return;
+                    }
+                }
+
                 if is_processing.swap(true, Ordering::SeqCst) {
                     return; // already handling a previous trigger
                 }
