@@ -12,6 +12,14 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+027] - 2026-09-16
+
+### Changed
+- **Default `translate_hotkey` changed from `Alt+Q` to `Alt+A`** (`config.rs`):
+  applies to `GuiConfig::default()` and the fallback used when an existing
+  `tagent-gui.json` omits `translate_hotkey`. Existing config files with an
+  explicit `translate_hotkey` value are unaffected.
+
 ## [0.14.0+026] - 2026-09-16
 
 ### Fixed

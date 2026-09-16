@@ -1,11 +1,11 @@
-# Tagent Text Translator v0.16.0+012
+# Tagent Text Translator v0.16.0+013
 
-A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+Q hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
+A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
 ## Features
 
 ### 🔥 **Unified Translation Modes**
-- **GUI Hotkeys**: Select text anywhere, press Alt+Q, get instant translation
+- **GUI Hotkeys**: Select text anywhere, press Alt+A, get instant translation
 - **Interactive Terminal**: Type text directly in the terminal prompt
 - **CLI Mode**: One-time translations from command line
 
@@ -97,7 +97,7 @@ tagent-cli.exe
 ```
 This starts both:
 - **Interactive prompt** in the terminal
-- **GUI hotkeys** (Alt+Q) for system-wide translation
+- **GUI hotkeys** (Alt+A) for system-wide translation
 
 ### CLI Mode
 ```bash
@@ -126,9 +126,9 @@ tagent-cli --config
 
 ### GUI Hotkeys (System-wide)
 
-**Translation Hotkey** (default: Alt+Q)
+**Translation Hotkey** (default: Alt+A)
 1. Select any text in any Windows application
-2. Press the translation hotkey (Alt+Q by default)
+2. Press the translation hotkey (Alt+A by default)
 3. Translation appears in terminal and copies to clipboard
 4. Paste anywhere with Ctrl+V
 
@@ -214,7 +214,7 @@ HistoryFile = C:\Users\<YourName>\AppData\Roaming\tagent-cli\translation_history
 ;   - Single keys: F1-F12 (e.g., F9)
 ;   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
 ;   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
-TranslateHotkey = Alt+Q
+TranslateHotkey = Alt+A
 
 ; Text-to-speech hotkey (same formats as TranslateHotkey)
 SpeechHotkey = Alt+E
@@ -379,7 +379,7 @@ tagent-cli --config
 # Copy to Clipboard: Enabled
 # Save Translation History: Disabled
 # History File: translation_history.txt
-# Translation Hotkey: Alt+Q
+# Translation Hotkey: Alt+A
 # Speech Hotkey: Alt+E
 # Speech Hotkey Enabled: Yes
 ```
@@ -546,7 +546,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](../CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+012
+**Current Version**: v0.16.0+013
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -579,4 +579,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+012** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+013** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

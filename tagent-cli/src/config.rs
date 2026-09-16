@@ -81,7 +81,7 @@ impl Default for Config {
             target_prompt_color: "BrightYellow".to_string(), // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
             source_prompt_color: "None".to_string(),             // Default no color for source
-            translate_hotkey: "Alt+Q".to_string(),               // Default translation hotkey
+            translate_hotkey: "Alt+A".to_string(),               // Default translation hotkey
             enable_text_to_speech: true,                         // TTS enabled by default
             speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
             enable_speech_hotkey: true,                          // Enable speech hotkey by default
@@ -196,7 +196,7 @@ impl ConfigManager {
 ;
 ; Usage:
 ; 1. Select text in any application
-; 2. Press the translation hotkey (default: Alt+Q)
+; 2. Press the translation hotkey (default: Alt+A)
 ; 3. Translation will be shown (enable CopyToClipboard below to also copy it)
 ; 4. Type /q or /e in the interactive prompt to exit the program
 ;
@@ -293,7 +293,7 @@ HistoryFile = {}
 ;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
 ;   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.
 ; Examples:
-;   TranslateHotkey = Alt+Q (default)
+;   TranslateHotkey = Alt+A (default)
 ;   TranslateHotkey = Ctrl+Ctrl
 ;   TranslateHotkey = F9
 ;   TranslateHotkey = Alt+Space
@@ -443,7 +443,7 @@ EnableSpeechHotkey = {}
             .get("Hotkeys")
             .and_then(|section| section.get("TranslateHotkey"))
             .cloned()
-            .unwrap_or_else(|| "Alt+Q".to_string());
+            .unwrap_or_else(|| "Alt+A".to_string());
 
         // Speech settings
         let enable_text_to_speech = parsed_config
@@ -634,7 +634,7 @@ EnableSpeechHotkey = {}
 
         println!("2. GUI Hotkeys (Any Application):");
         println!("   - Select text anywhere in Windows");
-        println!("   - Press configured hotkey (default: Alt+Q)");
+        println!("   - Press configured hotkey (default: Alt+A)");
         println!("   - Result copied to clipboard automatically");
         println!("   - Configure hotkeys in tagent-cli.conf [Hotkeys] section");
         println!();

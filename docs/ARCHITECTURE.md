@@ -333,7 +333,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   below, which doesn't require a focus change to fire. Not a bug in the button
   itself; documented here so it isn't mistaken for one.
 - **Global hotkey** (`tagent-gui/src/platform/{linux,windows,macos}/{keyboard,keycodes}.rs`
-  + `xgrab.rs` on Linux, Stage 5, shipped 2026-09-13): default `Alt+Q`, configured
+  + `xgrab.rs` on Linux, Stage 5, shipped 2026-09-13): default `Alt+A`, configured
   via the `translate_hotkey` field in `tagent-gui.json` — hand-editable, and (Stage
   8, shipped 2026-09-16) also editable from Settings > "Hotkeys & Tray", which
   validates the string live via `HotkeyParser` and disables OK while it's invalid.

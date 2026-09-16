@@ -46,7 +46,7 @@ fn default_show_prompt() -> bool {
 
 /// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
 fn default_translate_hotkey() -> String {
-    "Alt+Q".to_string()
+    "Alt+A".to_string()
 }
 
 /// Default delay (seconds) before the hotkey-triggered popup auto-hides, same
@@ -729,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn old_file_without_hotkey_field_defaults_to_alt_q() {
+    fn old_file_without_hotkey_field_defaults_to_alt_a() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
         fs::write(
@@ -740,7 +740,7 @@ mod tests {
 
         let config = load_from_path(&path);
 
-        assert_eq!(config.translate_hotkey, "Alt+Q");
+        assert_eq!(config.translate_hotkey, "Alt+A");
     }
 
     #[test]

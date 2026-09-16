@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+013] - 2026-09-16
+
+### Changed
+- **Default `TranslateHotkey` changed from `Alt+Q` to `Alt+A`** (`config.rs`):
+  applies to `Config::default()`, the fallback used when an existing config
+  file omits `TranslateHotkey`, and the generated `tagent-cli.conf` template
+  comment. Existing config files with an explicit `TranslateHotkey` value
+  are unaffected — this only changes what a fresh install, or a config file
+  missing that key, gets.
+
 ## [0.16.0+012] - 2026-09-16
 
 ### Fixed
