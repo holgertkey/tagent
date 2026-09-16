@@ -507,7 +507,23 @@ impl HotkeyParser {
                     eprintln!("Warning: Alt+F4 may close windows");
                 }
             }
-            _ => {}
+            // Only allow F1-F12 or a modifier key to be double-pressed -- doubling an
+            // ordinary letter/digit/etc. key (e.g. "Q+Q") is indistinguishable from just
+            // typing that letter twice while using the app normally.
+            HotkeyType::DoublePress { vk_code, .. }
+                if !(*vk_code >= keycodes::KEY_F1 && *vk_code <= keycodes::KEY_F12)
+                    && !matches!(
+                        *vk_code,
+                        keycodes::KEY_CONTROL
+                            | keycodes::KEY_ALT
+                            | keycodes::KEY_SHIFT
+                            | keycodes::KEY_LWIN
+                            | keycodes::KEY_RWIN
+                    ) =>
+            {
+                return Err("Double-press is only allowed for F1-F12 or modifier keys (Ctrl, Alt, Shift, Win). For other keys, use a modifier combination instead (e.g., Ctrl+Q).".to_string());
+            }
+            HotkeyType::DoublePress { .. } => {}
         }
 
         Ok(())
@@ -623,6 +639,35 @@ mod hotkey_tests {
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
 
         let hotkey = HotkeyParser::parse("Win+L").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+
+    #[test]
+    fn validate_double_press_only_allows_f1_to_f12_or_modifiers() {
+        let hotkey = HotkeyParser::parse("F8+F8").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Ctrl+Ctrl").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Shift+Shift").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        let hotkey = HotkeyParser::parse("Alt+Alt").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+
+        // Doubling an ordinary letter/digit/space/etc. is indistinguishable from
+        // just typing that key twice while using the app normally -- must be rejected.
+        let hotkey = HotkeyParser::parse("Q+Q").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("A+A").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("5+5").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+
+        let hotkey = HotkeyParser::parse("Space+Space").unwrap();
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
     }
 }

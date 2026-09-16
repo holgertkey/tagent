@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+012] - 2026-09-16
+
+### Fixed
+- **`HotkeyParser::validate_hotkey` didn't restrict double-press hotkeys at
+  all** (`config.rs`): `"Q+Q"`, `"A+A"`, `"5+5"`, or any other ordinary key
+  doubled was silently accepted as valid, even though the same key pressed
+  *once* alone (`"Q"`) was correctly rejected (single keys are F1-F12 only)
+  — the `DoublePress` match arm was a bare `_ => {}` with no check at all.
+  Found via `tagent-gui`'s new hotkey-capture "Record" button, which makes
+  it easy to double-press an ordinary letter by accident, but the bug was
+  in the shared `HotkeyParser` logic both apps independently duplicate, so
+  it affected typing a hotkey string by hand here too. Double-press is now
+  restricted the same way single keys already were: only F1-F12 or a
+  modifier key (Ctrl, Alt, Shift, Win) may be double-pressed — matching the
+  documented examples (`Ctrl+Ctrl`, `F8+F8`, `Shift+Shift`, `Alt+Alt`). Same
+  fix ported to `tagent-gui`'s own copy of this file (`tagent-gui/src/config.rs`,
+  `tagent-gui/CHANGELOG.md`).
+
 ## [0.16.0+011] - 2026-09-14
 
 ### Fixed

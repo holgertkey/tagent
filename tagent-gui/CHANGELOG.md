@@ -12,6 +12,20 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+026] - 2026-09-16
+
+### Fixed
+- **`HotkeyParser::validate_hotkey` didn't restrict double-press hotkeys at
+  all** — `"Q+Q"`, `"A+A"`, `"5+5"`, or any other ordinary key doubled was
+  silently accepted as valid, even though the same key pressed *once* alone
+  (`"Q"`) was correctly rejected (single keys are F1-F12 only). Found via
+  the new "Record" button, which makes it easy to double-press an ordinary
+  letter by accident. Double-press is now restricted the same way single
+  keys already were: only F1-F12 or a modifier key (Ctrl, Alt, Shift, Win)
+  may be double-pressed — matching the documented examples (`Ctrl+Ctrl`,
+  `F8+F8`, `Shift+Shift`, `Alt+Alt`). Covers both the manually typed field
+  and the "Record" button, since both go through the same validator.
+
 ## [0.14.0+025] - 2026-09-16
 
 ### Added
