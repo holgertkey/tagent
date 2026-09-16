@@ -218,6 +218,19 @@ fn color_field_hex(use_default: bool, r: f32, g: f32, b: f32) -> String {
     }
 }
 
+/// Validates a `translate_hotkey` string typed into the Settings dialog,
+/// using the same `HotkeyParser` the startup path (`main()`) parses the
+/// saved value with. Returns `""` when valid, or the parser's own error
+/// message otherwise, for direct display in the dialog's inline error `Text`.
+fn hotkey_validation_error(text: &str) -> String {
+    match config::HotkeyParser::parse(text)
+        .and_then(|h| config::HotkeyParser::validate_hotkey(&h))
+    {
+        Ok(()) => String::new(),
+        Err(err) => err,
+    }
+}
+
 /// Applies the theme and the phrase/translation display style from `config`
 /// to `window`. Colors left at "theme default" (empty string in config) are
 /// resolved against the window's own theme-driven `panel-foreground`/
@@ -880,6 +893,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.set_start_minimized(current_config.start_minimized);
         dialog.set_remember_window_geometry(current_config.remember_window_geometry);
 
+        dialog.set_translate_hotkey(current_config.translate_hotkey.clone().into());
+        dialog.set_translate_hotkey_error(
+            hotkey_validation_error(&current_config.translate_hotkey).into(),
+        );
+        dialog.set_popup_auto_hide_seconds(
+            current_config.popup_auto_hide_seconds.min(60) as i32,
+        );
+
+        let dialog_weak = dialog.as_weak();
+        dialog.on_hotkey_edited(move |text| {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.set_translate_hotkey_error(hotkey_validation_error(text.as_str()).into());
+            }
+        });
+
         init_color_field!(
             dialog,
             current_config.background_color.as_str(),
@@ -1128,11 +1156,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
-                // No Settings UI for these yet (Stage 8) — carry the existing values over
-                // unchanged rather than resetting them to their defaults on every save.
-                translate_hotkey: current_config.translate_hotkey.clone(),
-                popup_auto_hide_seconds: current_config.popup_auto_hide_seconds,
-                // Stage 7: a real dialog control exists for this one, unlike the two above.
+                translate_hotkey: dialog.get_translate_hotkey().to_string(),
+                popup_auto_hide_seconds: dialog.get_popup_auto_hide_seconds() as u64,
                 start_minimized: dialog.get_start_minimized(),
                 remember_window_geometry: dialog.get_remember_window_geometry(),
                 // Not dialog-editable -- captured automatically from the real window

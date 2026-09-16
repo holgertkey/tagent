@@ -224,10 +224,12 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   the platform convention for free — sets `preferred-width`/`preferred-height`
   explicitly (420×300); without it the dialog fell back to Slint's default window
   size, an early Stage 3 bug fixed the same day it shipped. Its content sits inside
-  a `TabWidget` (`General`, holding everything that exists today; `Hotkeys & Tray`,
-  a placeholder `Text` pending the fields Stage 8 adds) rather than a flat panel —
-  laid out ahead of need since Settings is expected to grow more categories over
-  future stages, so a new category is a new `Tab { }` block, not a redesign.
+  a `TabWidget` (`General` for the provider; `View` for theme/style; `Hotkeys &
+  Tray`, added empty at Stage 3 and filled in across Stages 7-8 with the
+  start-minimized/remember-geometry checkboxes and the hotkey/popup-delay
+  controls) rather than a flat panel — laid out ahead of need since Settings is
+  expected to grow more categories over future stages, so a new category is a
+  new `Tab { }` block, not a redesign.
   `TabWidget`'s `Tab` children, like `Dialog` itself, are core-language-adjacent:
   importing `Tab` from `std-widgets.slint` explicitly is rejected the same way
   importing `Dialog` is — only `TabWidget` itself is imported. Its `providers`
@@ -332,9 +334,11 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   itself; documented here so it isn't mistaken for one.
 - **Global hotkey** (`tagent-gui/src/platform/{linux,windows,macos}/{keyboard,keycodes}.rs`
   + `xgrab.rs` on Linux, Stage 5, shipped 2026-09-13): default `Alt+Q`, configured
-  via the hand-editable `translate_hotkey` field in `tagent-gui.json` (no Settings
-  UI for it yet — Stage 8 adds a "Hotkeys & Tray" tab control for a field that
-  already works). `config::HotkeyType`/`HotkeyParser` are ported from
+  via the `translate_hotkey` field in `tagent-gui.json` — hand-editable, and (Stage
+  8, shipped 2026-09-16) also editable from Settings > "Hotkeys & Tray", which
+  validates the string live via `HotkeyParser` and disables OK while it's invalid.
+  Either way, a change only takes effect after restarting `tagent-gui` (no
+  live-reload of the OS-level grab itself). `config::HotkeyType`/`HotkeyParser` are ported from
   `tagent-cli/src/config.rs` verbatim (same string grammar: `F1`-`F12` single
   keys, `Modifier+Key` combos, `Key+Key` double-press), and each OS's
   `keycodes.rs` drops the `KEY_STATES`/`set_key_state`/`is_key_pressed`
@@ -444,9 +448,11 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     auto-hide" — unlike `tagent-cli`'s `auto_hide_terminal_seconds: 0`, safe there
     because the terminal has a normal frame the user can close manually, this popup
     is `no-frame` and deliberately has no close affordance, so `0` would otherwise
-    leave it stuck on screen for the process's life. No Settings UI for this field
-    yet (Stage 8); `on_save_requested` hand-carries it through unchanged, same
-    treatment as `translate_hotkey`.
+    leave it stuck on screen for the process's life. Settings > "Hotkeys & Tray"
+    (Stage 8, shipped 2026-09-16) exposes this as a `0`-`60` spinbox with a
+    "(0 = default 3s)" hint, keeping that same normalization rather than fighting
+    it — the dialog shows the raw stored value, not `3`, so a hand-edited `0`
+    isn't silently rewritten just by opening and re-saving Settings.
   - **`platform::window` module** (`tagent-gui/src/platform/{linux,windows,macos}/window.rs`):
     three free functions — `cursor_position`, `foreground_window`,
     `set_foreground_window` — rather than a struct with a cached `Display`/handle
@@ -533,7 +539,8 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   - `GuiConfig.start_minimized: bool` (default `true`) controls only the
     *next* launch, read once at startup like `translate_hotkey`, not
     live-reloaded. Unlike `translate_hotkey`/`popup_auto_hide_seconds` (Stages
-    5/6, still hand-edit-only pending Stage 8), this field got a real
+    5/6, hand-edit-only at the time this stage shipped — Stage 8 later gave
+    both a `SettingsDialog` control too), this field got a real
     checkbox in `SettingsDialog`'s "Hotkeys & Tray" tab immediately, in this
     same stage — a `default: true` field with no in-app way to turn it back
     off would otherwise compound with the tray-icon-might-not-appear risk
@@ -625,14 +632,12 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 
 ### Known gaps in `tagent-gui`
 
-- **Several `tagent-gui.json` fields are hand-editable-only, with no Settings UI
-  control yet** (`translate_hotkey`, `popup_auto_hide_seconds` — both land their
-  config field ahead of their Settings tab, per the precedent set by Stage 1→3;
-  Stage 8 adds the "Hotkeys & Tray" tab control for both). Language list, history
-  logging, and TTS settings aren't configurable at all yet — no field exists for
-  them (the 6-language list stays hardcoded). `tagent-cli.conf` is not read at all
-  any more (no migration path — see the "own configuration" concept in the
-  development plan).
+- **Language list, history logging, and TTS settings aren't configurable at
+  all yet** — no field exists for them (the 6-language list stays hardcoded).
+  `tagent-cli.conf` is not read at all any more (no migration path — see the
+  "own configuration" concept in the development plan). (`translate_hotkey`
+  and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
+  Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control.)
 - **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
   directly rather than going through `Translator`'s richer orchestration and formatting.
 

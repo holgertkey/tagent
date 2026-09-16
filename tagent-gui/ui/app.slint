@@ -660,11 +660,19 @@ export component SettingsDialog inherits Dialog {
 
     in-out property <bool> show-prompt: true;
 
+    // Stage 8: the global hotkey string (Stage 5) and the popup auto-hide
+    // delay (Stage 6), now editable here instead of only by hand in
+    // tagent-gui.json. `translate-hotkey-error` is set from Rust (not
+    // dialog-owned) after validating every edit via `hotkey-edited` --
+    // non-empty disables the OK button below.
+    in-out property <string> translate-hotkey: "Alt+Q";
+    in property <string> translate-hotkey-error: "";
+    callback hotkey-edited(string);
+    in-out property <int> popup-auto-hide-seconds: 3;
+
     // Stage 7: whether the app launches straight into the tray with no window
-    // shown. The hotkey/popup-delay fields on this same tab stay hand-edited in
-    // tagent-gui.json for now (Stage 8) -- this one field gets a real control
-    // here specifically because its default is `true`, and shipping that
-    // default with no in-app way to turn it back off would be a dead end.
+    // shown. Default is `true`, and shipping that default with no in-app way
+    // to turn it back off would be a dead end, hence a real control here.
     in-out property <bool> start-minimized: true;
 
     // Stage 7 follow-up: whether the main window's size/position are saved on
@@ -677,12 +685,11 @@ export component SettingsDialog inherits Dialog {
 
     callback save-requested(string /* provider */, string /* theme */);
 
-    // Tabbed layout, laid out now for settings that don't exist yet: "General"
-    // holds the provider, "View" holds the theme plus the phrase/translation
-    // display style, "Hotkeys & Tray" holds the Stage 7 start-minimized toggle;
-    // the hotkey string and popup delay stay hand-edited in tagent-gui.json
-    // until Stage 8. Adding a category later means adding another
-    // `Tab { ... }` here, not restructuring the dialog.
+    // Tabbed layout: "General" holds the provider, "View" holds the theme
+    // plus the phrase/translation display style, "Hotkeys & Tray" holds the
+    // global hotkey, popup auto-hide delay, start-minimized and
+    // remember-window-geometry toggles. Adding a category later means adding
+    // another `Tab { ... }` here, not restructuring the dialog.
     TabWidget {
         Tab {
             title: "General";
@@ -762,13 +769,33 @@ export component SettingsDialog inherits Dialog {
             VerticalBox {
                 alignment: start;
 
+                Text { text: "Global hotkey:"; }
+                LineEdit {
+                    text <=> translate-hotkey;
+                    edited(text) => { hotkey-edited(text); }
+                }
+                Text {
+                    text: translate-hotkey-error;
+                    color: #e05252;
+                    wrap: word-wrap;
+                    visible: translate-hotkey-error != "";
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Popup auto-hide (seconds):"; vertical-alignment: center; }
+                    SpinBox { minimum: 0; maximum: 60; value <=> popup-auto-hide-seconds; }
+                    Text { text: "(0 = default 3s)"; vertical-alignment: center; }
+                }
+
                 CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                 CheckBox {
                     text: "Remember window size and position";
                     checked <=> remember-window-geometry;
                 }
+
                 Text {
-                    text: "Hotkey and popup-delay settings are hand-edited in tagent-gui.json for now — a Settings UI for those is planned for a later stage.";
+                    text: "The global hotkey takes effect only after restarting Tagent. The popup delay applies immediately; \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts.";
                     wrap: word-wrap;
                 }
             }
@@ -788,6 +815,7 @@ export component SettingsDialog inherits Dialog {
 
     StandardButton {
         kind: ok;
+        enabled: translate-hotkey-error == "";
         clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
     StandardButton { kind: cancel; }

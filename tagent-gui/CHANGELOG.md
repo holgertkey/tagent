@@ -12,6 +12,20 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+024] - 2026-09-16
+
+### Added
+- **Settings controls for the global hotkey and popup auto-hide delay**
+  (Stage 8): the "Hotkeys & Tray" tab now has a text field for
+  `translate_hotkey` (Stage 5) with inline validation — an invalid hotkey
+  string shows the parser's own error message and disables the dialog's OK
+  button — and a spinbox for `popup_auto_hide_seconds` (Stage 6, `0` means
+  "use the default, 3s"). Both fields previously required hand-editing
+  `tagent-gui.json`. A new hint at the bottom of the tab clarifies that the
+  hotkey change needs a restart to take effect, while the popup delay and
+  the existing "Start minimized"/"Remember window size and position" toggles
+  don't.
+
 ## [0.14.0+023] - 2026-09-15
 
 ### Fixed
