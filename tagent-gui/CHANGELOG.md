@@ -12,6 +12,20 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+029] - 2026-09-16
+
+### Fixed
+- **Settings dialog's "Cancel" button did nothing** (`app.slint`, `main.rs`):
+  a `StandardButton`'s `kind` only controls its label and platform-specific
+  position, not any auto-close behavior — unlike "OK", which explicitly
+  saves and calls `dialog.hide()` from its own `clicked` handler, "Cancel"
+  had no handler at all, so clicking it was a no-op (the dialog stayed
+  open, and the only way to close it without saving was the window's own
+  OS-level close button). Added a `cancel-requested` callback, fired from
+  "Cancel"'s `clicked`, that just calls `dialog.hide()` — discarding
+  whatever was changed in the current dialog session without touching
+  `tagent-gui.json`, same as clicking OK does but for saving.
+
 ## [0.14.0+028] - 2026-09-16
 
 ### Fixed

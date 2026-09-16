@@ -815,6 +815,11 @@ export component SettingsDialog inherits Dialog {
     in-out property <bool> remember-window-geometry: true;
 
     callback save-requested(string /* provider */, string /* theme */);
+    // Closes the dialog without saving -- edits made in this session are
+    // discarded (the dialog instance itself is dropped on close, and is never
+    // read from again; the config file is untouched since `update()` is only
+    // ever called from `save-requested`'s handler).
+    callback cancel-requested();
 
     // Tabbed layout: "General" holds the provider, "View" holds the theme
     // plus the phrase/translation display style, "Hotkeys & Tray" holds the
@@ -983,7 +988,9 @@ export component SettingsDialog inherits Dialog {
         enabled: translate-hotkey-error == "";
         clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
-    StandardButton { kind: cancel; }
+    // `kind` alone only affects the button's label/position -- unlike OK's
+    // `save-requested`, nothing closes the dialog without an explicit handler.
+    StandardButton { kind: cancel; clicked => { cancel-requested(); } }
 }
 
 // Stage 7: system tray icon. One instance is created in main.rs and kept alive

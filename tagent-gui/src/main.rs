@@ -1276,6 +1276,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             dialog.hide().ok();
         });
 
+        let dialog_weak = dialog.as_weak();
+        dialog.on_cancel_requested(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.hide().ok();
+            }
+        });
+
         dialog.show().unwrap();
     });
 
