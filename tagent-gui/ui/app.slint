@@ -820,6 +820,11 @@ export component SettingsDialog inherits Dialog {
     // read from again; the config file is untouched since `update()` is only
     // ever called from `save-requested`'s handler).
     callback cancel-requested();
+    // Fills every field on every tab with `GuiConfig::default()`'s values,
+    // in-memory only -- same as opening the dialog, but seeded from defaults
+    // instead of the saved config. Still requires OK to actually persist;
+    // Cancel discards it like any other in-session edit.
+    callback reset-to-defaults-requested();
 
     // Tabbed layout: "General" holds the provider, "View" holds the theme
     // plus the phrase/translation display style, "Hotkeys & Tray" holds the
@@ -837,6 +842,15 @@ export component SettingsDialog inherits Dialog {
                 ComboBox {
                     model: providers;
                     current-index <=> provider-index;
+                }
+
+                Button {
+                    text: "Reset to Defaults";
+                    clicked => { reset-to-defaults-requested(); }
+                }
+                Text {
+                    text: "Resets every setting on every tab to its default value. Nothing is saved until you click OK.";
+                    wrap: word-wrap;
                 }
             }
         }

@@ -12,6 +12,17 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+030] - 2026-09-16
+
+### Added
+- **"Reset to Defaults" button** (General tab): fills every setting on
+  every tab — provider, theme, colors, fonts, hotkey, popup delay,
+  start-minimized, remember-window-geometry — with `GuiConfig::default()`'s
+  values, in-memory only. Nothing is written to `tagent-gui.json` until OK
+  is clicked; Cancel discards the reset like any other in-session edit.
+  Saved window geometry (`window_geometry`) is deliberately not part of
+  this — it's captured window state, not a user-facing setting.
+
 ## [0.14.0+029] - 2026-09-16
 
 ### Fixed

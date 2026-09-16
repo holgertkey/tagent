@@ -490,6 +490,108 @@ macro_rules! wire_rgb_changed {
     }};
 }
 
+/// Fills every `SettingsDialog` field from `config` -- used both to seed the
+/// dialog when Settings opens (from the current saved config) and by the
+/// General tab's "Reset to Defaults" button (from `GuiConfig::default()`).
+/// Only fills field *values*; callback wiring (`on_hotkey_edited`,
+/// `on_save_requested`, etc.) happens once per dialog instance in
+/// `on_settings_requested` and isn't repeated here.
+fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
+    let providers = dialog.get_providers();
+    let provider_index = providers
+        .iter()
+        .position(|p| p.as_str() == config.translate_provider)
+        .unwrap_or(0);
+    dialog.set_provider_index(provider_index as i32);
+
+    let themes = dialog.get_themes();
+    let theme_index = themes
+        .iter()
+        .position(|t| t.as_str().to_lowercase() == config.theme)
+        .unwrap_or(0);
+    dialog.set_theme_index(theme_index as i32);
+    // The dialog gets its own Palette instance (globals aren't shared
+    // between windows) — apply the currently-active theme to it too, or
+    // it would render in the system default regardless of what's saved.
+    dialog.invoke_apply_theme(config.theme.clone().into());
+
+    dialog.set_block_spacing_px(config.block_spacing_px);
+    dialog.set_phrases_spacing_px(config.phrases_spacing_px);
+
+    // Show the matching preset's name in the "Color scheme" dropdown
+    // (instead of the "Presets…" placeholder at index 0) when the five
+    // colors currently in effect are exactly one of the presets — e.g.
+    // right after it was applied and saved. Index +1 accounts for that
+    // placeholder being first in color-scheme-options.
+    let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
+        scheme.background == config.background_color
+            && scheme.phrase_color == config.phrase_color
+            && scheme.phrase_background == config.phrase_background
+            && scheme.translation_color == config.translation_color
+            && scheme.translation_background == config.translation_background
+    });
+    dialog.set_color_scheme_index(matching_scheme_index.map_or(0, |i| i as i32 + 1));
+
+    dialog.set_phrase_font_index(font_index_for(&config.phrase_font));
+    dialog.set_phrase_size(config.phrase_size);
+    dialog.set_translation_font_index(font_index_for(&config.translation_font));
+    dialog.set_translation_size(config.translation_size);
+
+    dialog.set_show_prompt(config.show_prompt);
+    dialog.set_start_minimized(config.start_minimized);
+    dialog.set_remember_window_geometry(config.remember_window_geometry);
+
+    dialog.set_translate_hotkey(config.translate_hotkey.clone().into());
+    dialog.set_translate_hotkey_error(hotkey_validation_error(&config.translate_hotkey).into());
+    dialog.set_popup_auto_hide_seconds(config.popup_auto_hide_seconds.min(60) as i32);
+
+    init_color_field!(
+        dialog,
+        config.background_color.as_str(),
+        set_background_use_default,
+        set_background_red,
+        set_background_green,
+        set_background_blue,
+        set_background_hex
+    );
+    init_color_field!(
+        dialog,
+        config.phrase_color.as_str(),
+        set_phrase_color_use_default,
+        set_phrase_color_red,
+        set_phrase_color_green,
+        set_phrase_color_blue,
+        set_phrase_color_hex
+    );
+    init_color_field!(
+        dialog,
+        config.phrase_background.as_str(),
+        set_phrase_bg_use_default,
+        set_phrase_bg_red,
+        set_phrase_bg_green,
+        set_phrase_bg_blue,
+        set_phrase_bg_hex
+    );
+    init_color_field!(
+        dialog,
+        config.translation_color.as_str(),
+        set_translation_color_use_default,
+        set_translation_color_red,
+        set_translation_color_green,
+        set_translation_color_blue,
+        set_translation_color_hex
+    );
+    init_color_field!(
+        dialog,
+        config.translation_background.as_str(),
+        set_translation_bg_use_default,
+        set_translation_bg_red,
+        set_translation_bg_green,
+        set_translation_bg_blue,
+        set_translation_bg_hex
+    );
+}
+
 fn scroll_transcript_to_bottom(window: &AppWindow) {
     let overflow = window.get_transcript_viewport_height() - window.get_transcript_visible_height();
     window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
@@ -932,57 +1034,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let current_config = config_manager_for_settings.lock().unwrap().config().clone();
 
-        let providers = dialog.get_providers();
-        let provider_index = providers
-            .iter()
-            .position(|p| p.as_str() == current_config.translate_provider)
-            .unwrap_or(0);
-        dialog.set_provider_index(provider_index as i32);
-
-        let themes = dialog.get_themes();
-        let theme_index = themes
-            .iter()
-            .position(|t| t.as_str().to_lowercase() == current_config.theme)
-            .unwrap_or(0);
-        dialog.set_theme_index(theme_index as i32);
-        // The dialog gets its own Palette instance (globals aren't shared
-        // between windows) — apply the currently-active theme to it too, or
-        // it would render in the system default regardless of what's saved.
-        dialog.invoke_apply_theme(current_config.theme.clone().into());
-
-        dialog.set_block_spacing_px(current_config.block_spacing_px);
-        dialog.set_phrases_spacing_px(current_config.phrases_spacing_px);
-
-        // Show the matching preset's name in the "Color scheme" dropdown
-        // (instead of the "Presets…" placeholder at index 0) when the five
-        // colors currently in effect are exactly one of the presets — e.g.
-        // right after it was applied and saved. Index +1 accounts for that
-        // placeholder being first in color-scheme-options.
-        let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
-            scheme.background == current_config.background_color
-                && scheme.phrase_color == current_config.phrase_color
-                && scheme.phrase_background == current_config.phrase_background
-                && scheme.translation_color == current_config.translation_color
-                && scheme.translation_background == current_config.translation_background
-        });
-        dialog.set_color_scheme_index(matching_scheme_index.map_or(0, |i| i as i32 + 1));
-
-        dialog.set_phrase_font_index(font_index_for(&current_config.phrase_font));
-        dialog.set_phrase_size(current_config.phrase_size);
-        dialog.set_translation_font_index(font_index_for(&current_config.translation_font));
-        dialog.set_translation_size(current_config.translation_size);
-
-        dialog.set_show_prompt(current_config.show_prompt);
-        dialog.set_start_minimized(current_config.start_minimized);
-        dialog.set_remember_window_geometry(current_config.remember_window_geometry);
-
-        dialog.set_translate_hotkey(current_config.translate_hotkey.clone().into());
-        dialog.set_translate_hotkey_error(
-            hotkey_validation_error(&current_config.translate_hotkey).into(),
-        );
-        dialog.set_popup_auto_hide_seconds(
-            current_config.popup_auto_hide_seconds.min(60) as i32,
-        );
+        seed_dialog_fields(&dialog, &current_config);
 
         let dialog_weak = dialog.as_weak();
         dialog.on_hotkey_edited(move |text| {
@@ -1005,51 +1057,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         });
 
-        init_color_field!(
-            dialog,
-            current_config.background_color.as_str(),
-            set_background_use_default,
-            set_background_red,
-            set_background_green,
-            set_background_blue,
-            set_background_hex
-        );
-        init_color_field!(
-            dialog,
-            current_config.phrase_color.as_str(),
-            set_phrase_color_use_default,
-            set_phrase_color_red,
-            set_phrase_color_green,
-            set_phrase_color_blue,
-            set_phrase_color_hex
-        );
-        init_color_field!(
-            dialog,
-            current_config.phrase_background.as_str(),
-            set_phrase_bg_use_default,
-            set_phrase_bg_red,
-            set_phrase_bg_green,
-            set_phrase_bg_blue,
-            set_phrase_bg_hex
-        );
-        init_color_field!(
-            dialog,
-            current_config.translation_color.as_str(),
-            set_translation_color_use_default,
-            set_translation_color_red,
-            set_translation_color_green,
-            set_translation_color_blue,
-            set_translation_color_hex
-        );
-        init_color_field!(
-            dialog,
-            current_config.translation_background.as_str(),
-            set_translation_bg_use_default,
-            set_translation_bg_red,
-            set_translation_bg_green,
-            set_translation_bg_blue,
-            set_translation_bg_hex
-        );
         wire_hex_committed!(
             dialog,
             on_background_hex_committed,
@@ -1280,6 +1287,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.on_cancel_requested(move || {
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.hide().ok();
+            }
+        });
+
+        let dialog_weak = dialog.as_weak();
+        dialog.on_reset_to_defaults_requested(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                seed_dialog_fields(&dialog, &config::GuiConfig::default());
             }
         });
 
