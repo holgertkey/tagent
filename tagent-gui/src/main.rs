@@ -373,9 +373,11 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.set_popup_background(resolve_color(&config.popup_background, default_bg));
 }
 
-/// Shows the Stage 6 popup with `entry`'s text, positioned next to the current mouse
-/// cursor, and (re)starts its auto-hide timer. Called from the hotkey path's
-/// `spawn_translation` completion callback, already on the UI thread.
+/// Shows the Stage 6 popup with `outcome`'s text -- formatted here using the popup's
+/// own independent `show_prompt`/`show_phrase` settings (Stage 9), not the
+/// transcript's -- positioned next to the current mouse cursor, and (re)starts its
+/// auto-hide timer. Called from the hotkey path's `spawn_translation` completion
+/// callback, already on the UI thread.
 ///
 /// The foreground window is captured here (before `popup.show()` changes it) but
 /// deliberately **not** restored immediately after — that was the original design
@@ -396,14 +398,16 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
 ///
 /// The auto-hide timer deliberately lives inside the `.slint` component itself
 /// (a `Timer` element), not as a `slint::Timer` held in `main()`: `on_done` (this
-/// function's caller, indirectly) is a `Box<dyn FnOnce(&TranscriptEntry) + Send>` that
-/// `spawn_translation` moves through a background thread before calling it back on the
-/// UI thread, and `slint::Timer` is `!Send` — it can't be captured into that closure at
-/// all, regardless of how carefully it'd actually be used only on the UI thread.
+/// function's caller, indirectly) is a `Box<dyn FnOnce(&TranscriptEntry, &TranslationOutcome) + Send>`
+/// that `spawn_translation` moves through a background thread before calling it back on
+/// the UI thread, and `slint::Timer` is `!Send` — it can't be captured into that closure
+/// at all, regardless of how carefully it'd actually be used only on the UI thread.
 /// `slint::Weak<TranslationPopup>` (used here) has no such restriction.
 fn show_popup(
     popup_weak: &slint::Weak<TranslationPopup>,
-    entry: &TranscriptEntry,
+    outcome: &TranslationOutcome,
+    show_prompt: bool,
+    show_phrase: bool,
     auto_hide_seconds: u64,
 ) {
     let Some(popup) = popup_weak.upgrade() else {
@@ -412,8 +416,13 @@ fn show_popup(
 
     POPUP_RESTORE_TARGET.with(|cell| cell.set(platform::window::foreground_window()));
 
-    popup.set_phrase_text(entry.phrase.clone());
-    popup.set_translation_text(entry.translation.clone());
+    popup.set_phrase_text(format_line(show_prompt, &outcome.from_lang, &outcome.phrase_raw).into());
+    popup.set_translation_text(if outcome.is_error {
+        outcome.translation_raw.clone().into()
+    } else {
+        format_line(show_prompt, &outcome.to_lang, &outcome.translation_raw).into()
+    });
+    popup.set_show_phrase(show_phrase);
 
     popup.show().ok();
 
@@ -561,6 +570,8 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_translation_size(config.translation_size);
     dialog.set_popup_font_index(font_index_for(&config.popup_font));
     dialog.set_popup_size(config.popup_size);
+    dialog.set_popup_show_prompt(config.popup_show_prompt);
+    dialog.set_popup_show_phrase(config.popup_show_phrase);
 
     dialog.set_show_prompt(config.show_prompt);
     dialog.set_start_minimized(config.start_minimized);
@@ -671,10 +682,25 @@ struct TranslationRequest {
     text: String,
 }
 
+/// Raw (un-prompt-formatted) translation result, handed to [`spawn_translation`]'s
+/// `on_done` callback alongside the already-formatted [`TranscriptEntry`] -- the
+/// Stage 6/9 popup uses this to format its own phrase/translation lines with its own
+/// independent `popup_show_prompt`/`popup_show_phrase` settings, rather than
+/// inheriting whatever the transcript's `show_prompt` baked into `TranscriptEntry`.
+struct TranslationOutcome {
+    from_lang: String,
+    to_lang: String,
+    phrase_raw: String,
+    translation_raw: String,
+    /// `true` when `translation_raw` is already a formatted `"Error: ..."` message
+    /// (never itself lang-prompt-formatted, same as the transcript's own handling).
+    is_error: bool,
+}
+
 /// Callback type for [`spawn_translation`]'s `on_done` parameter — named (rather than
 /// spelled out inline) because `clippy::type_complexity` flags it inline once it grew
 /// a `&TranscriptEntry` argument for Stage 6.
-type TranslationDoneCallback = Box<dyn FnOnce(&TranscriptEntry) + Send>;
+type TranslationDoneCallback = Box<dyn FnOnce(&TranscriptEntry, &TranslationOutcome) + Send>;
 
 /// Translates `request.text` in a background thread and pushes the result (or an error)
 /// into the transcript. Shared by the Translate button/Enter key
@@ -682,10 +708,11 @@ type TranslationDoneCallback = Box<dyn FnOnce(&TranscriptEntry) + Send>;
 /// extracted here specifically to avoid duplicating the provider-call/transcript-push
 /// logic between them.
 ///
-/// `on_done`, if given, runs on the UI thread with the resolved [`TranscriptEntry`],
-/// before it's pushed into the transcript. The hotkey path (Stage 5/6) uses this to
-/// clear its "already processing" guard and to populate+show the Stage 6 popup; the
-/// button path has no such guard and no popup, and passes `None`.
+/// `on_done`, if given, runs on the UI thread with the resolved [`TranscriptEntry`] and
+/// the raw [`TranslationOutcome`] it was built from, before either is pushed into the
+/// transcript. The hotkey path (Stage 5/6) uses this to clear its "already processing"
+/// guard and to populate+show the Stage 6 popup; the button path has no such guard and
+/// no popup, and passes `None`.
 fn spawn_translation(
     weak: slint::Weak<AppWindow>,
     request: TranslationRequest,
@@ -712,18 +739,28 @@ fn spawn_translation(
         });
 
         slint::invoke_from_event_loop(move || {
-            let entry = match result {
-                Ok(translated) => TranscriptEntry {
-                    phrase: format_line(show_prompt, &from_lang, &text).into(),
-                    translation: format_line(show_prompt, &to_lang, &translated).into(),
-                },
-                Err(err) => TranscriptEntry {
-                    phrase: format_line(show_prompt, &from_lang, &text).into(),
-                    translation: format!("Error: {err}").into(),
+            let (translation_raw, is_error) = match &result {
+                Ok(translated) => (translated.clone(), false),
+                Err(err) => (format!("Error: {err}"), true),
+            };
+
+            let entry = TranscriptEntry {
+                phrase: format_line(show_prompt, &from_lang, &text).into(),
+                translation: if is_error {
+                    translation_raw.clone().into()
+                } else {
+                    format_line(show_prompt, &to_lang, &translation_raw).into()
                 },
             };
+            let outcome = TranslationOutcome {
+                from_lang: from_lang.clone(),
+                to_lang: to_lang.clone(),
+                phrase_raw: text.clone(),
+                translation_raw,
+                is_error,
+            };
             if let Some(on_done) = on_done {
-                on_done(&entry);
+                on_done(&entry, &outcome);
             }
             if let Some(window) = weak.upgrade() {
                 push_transcript_entry(&window, entry);
@@ -1418,6 +1455,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_popup_bg_green(),
                     dialog.get_popup_bg_blue(),
                 ),
+                popup_show_prompt: dialog.get_popup_show_prompt(),
+                popup_show_phrase: dialog.get_popup_show_phrase(),
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
@@ -1523,7 +1562,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .row_data(window.get_target_language_index() as usize)
                         .unwrap_or_default();
 
-                    let (translate_provider, show_prompt, popup_auto_hide_seconds) = {
+                    let (
+                        translate_provider,
+                        show_prompt,
+                        popup_auto_hide_seconds,
+                        popup_show_prompt,
+                        popup_show_phrase,
+                    ) = {
                         let mut manager = config_manager.lock().unwrap();
                         manager.check_and_reload();
                         let cfg = manager.config();
@@ -1531,6 +1576,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             cfg.translate_provider.clone(),
                             cfg.show_prompt,
                             cfg.popup_auto_hide_seconds_or_default(),
+                            cfg.popup_show_prompt,
+                            cfg.popup_show_phrase,
                         )
                     };
 
@@ -1567,9 +1614,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         to_code,
                                         text,
                                     },
-                                    Some(Box::new(move |entry: &TranscriptEntry| {
+                                    Some(Box::new(move |_entry: &TranscriptEntry, outcome: &TranslationOutcome| {
                                         is_processing2.store(false, Ordering::SeqCst);
-                                        show_popup(&popup_weak2, entry, popup_auto_hide_seconds);
+                                        show_popup(
+                                            &popup_weak2,
+                                            outcome,
+                                            popup_show_prompt,
+                                            popup_show_phrase,
+                                            popup_auto_hide_seconds,
+                                        );
                                     })),
                                 );
                             }

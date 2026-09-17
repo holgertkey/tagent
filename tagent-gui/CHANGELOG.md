@@ -12,6 +12,24 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+034] - 2026-09-17
+
+### Added
+- **"Show prompt" / "Show phrase" toggles for the popup** (Settings > "Popup"
+  tab): the popup can now hide its "[Auto]:"/"[Russian]:"-style prompt, or
+  the original phrase line entirely (showing only the translation),
+  independently of the transcript's own "Show prompt" (View tab). New
+  `GuiConfig` fields `popup_show_prompt`/`popup_show_phrase`, both default
+  `true` (today's behavior unchanged out of the box). Required threading raw
+  (un-prompt-formatted) phrase/translation text through to the popup — it
+  previously only ever received the transcript's already-formatted
+  `TranscriptEntry` strings, which baked in the transcript's own prompt
+  setting and always included the phrase — via a new `TranslationOutcome`
+  passed alongside `TranscriptEntry` to `spawn_translation`'s `on_done`
+  callback. `TranslationPopup`'s phrase line is now wrapped in an
+  `if show-phrase:` block in `app.slint`, so hiding it also shrinks the
+  popup window (its height is bound to the content layout's preferred size).
+
 ## [0.14.0+033] - 2026-09-17
 
 ### Added

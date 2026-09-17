@@ -44,6 +44,18 @@ fn default_show_prompt() -> bool {
     true
 }
 
+/// Default: the popup shows the "[Auto]:"/"[Russian]:"-style prompt, same
+/// default as the transcript's own [`default_show_prompt`], but tracked as
+/// its own independent setting.
+fn default_popup_show_prompt() -> bool {
+    true
+}
+
+/// Default: the popup shows the original phrase line, not just the translation.
+fn default_popup_show_phrase() -> bool {
+    true
+}
+
 /// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
 fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
@@ -119,6 +131,15 @@ pub struct GuiConfig {
     /// Background color for the popup, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub popup_background: String,
+    /// Whether the popup shows the "[Auto]:"/"[Russian]:"-style prompt before
+    /// its phrase/translation text. Independent of the transcript's own
+    /// [`Self::show_prompt`].
+    #[serde(default = "default_popup_show_prompt")]
+    pub popup_show_prompt: bool,
+    /// Whether the popup shows the original phrase line at all, or only the
+    /// translation.
+    #[serde(default = "default_popup_show_phrase")]
+    pub popup_show_phrase: bool,
     /// Vertical gap (px) between one phrase/translation pair and the next.
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
@@ -205,6 +226,8 @@ impl Default for GuiConfig {
             popup_size: default_style_size(),
             popup_color: default_style_color(),
             popup_background: default_style_color(),
+            popup_show_prompt: default_popup_show_prompt(),
+            popup_show_phrase: default_popup_show_phrase(),
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
@@ -892,6 +915,22 @@ mod tests {
         assert_eq!(config.popup_size, 13);
         assert_eq!(config.popup_color, "");
         assert_eq!(config.popup_background, "");
+    }
+
+    #[test]
+    fn old_file_without_popup_show_fields_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(config.popup_show_prompt);
+        assert!(config.popup_show_phrase);
     }
 
     #[test]

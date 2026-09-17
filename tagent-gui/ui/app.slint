@@ -473,6 +473,10 @@ export component TranslationPopup inherits Window {
     in property <int> popup-size: 13;
     in property <color> popup-color: #000000;
     in property <color> popup-background: #00000000;
+    // Whether the phrase line renders at all -- the "[Auto]:"/"[Russian]:"
+    // prompt itself is baked directly into phrase-text/translation-text by
+    // main.rs (see format_line's doc comment), so it needs no property here.
+    in property <bool> show-phrase: true;
 
     // Auto-hide: entirely self-contained in this component via the `Timer`
     // *element* below (not Rust's `slint::Timer` API, which is `!Send` and so
@@ -535,7 +539,7 @@ export component TranslationPopup inherits Window {
             padding: 8px;
             spacing: 4px;
 
-            Rectangle {
+            if show-phrase: Rectangle {
                 background: popup-background;
                 border-radius: 3px;
                 height: phrase-line.preferred-height;
@@ -783,6 +787,8 @@ export component SettingsDialog inherits Dialog {
     // phrase/translation style above.
     in-out property <int> popup-font-index: 0;
     in-out property <int> popup-size: 13;
+    in-out property <bool> popup-show-prompt: true;
+    in-out property <bool> popup-show-phrase: true;
 
     in-out property <bool> popup-color-use-default <=> popup-text-color-field.use-default;
     in-out property <float> popup-color-red <=> popup-text-color-field.red;
@@ -1009,6 +1015,9 @@ export component SettingsDialog inherits Dialog {
                         text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection.";
                         wrap: word-wrap;
                     }
+
+                    CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
+                    CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }
 
                     HorizontalLayout {
                         spacing: 8px;
