@@ -389,20 +389,22 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 /// window type, since the two windows' style surfaces only partially overlap.
 ///
 /// "Theme default" (an empty `popup_color`/`popup_background`) resolves
-/// against the transcript's own `phrase_color`/`phrase_background` first
-/// (Stage 9 follow-up), not straight against the raw Palette theme colors —
-/// so an unmodified popup automatically matches whatever Color scheme is
-/// active for the transcript (View tab), with no separate picker needed.
-/// Those transcript fields are themselves resolved against Palette when
-/// *they're* empty (i.e. the transcript is also just following the theme),
-/// which is when the popup falls all the way back to the raw theme colors.
+/// against the transcript's own `translation_color`/`translation_background`
+/// first (Stage 9 follow-up), not straight against the raw Palette theme
+/// colors — so an unmodified popup automatically matches whatever Color
+/// scheme is active for the transcript (View tab), with no separate picker
+/// needed. Translation (not phrase) is the reference field deliberately, per
+/// explicit request. Those transcript fields are themselves resolved against
+/// Palette when *they're* empty (i.e. the transcript is also just following
+/// the theme), which is when the popup falls all the way back to the raw
+/// theme colors.
 fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.invoke_apply_theme(config.theme.clone().into());
 
     let theme_default_fg = popup.get_panel_foreground().color();
     let theme_default_bg = popup.get_panel_background_theme_default().color();
-    let scheme_default_fg = resolve_color(&config.phrase_color, theme_default_fg);
-    let scheme_default_bg = resolve_color(&config.phrase_background, theme_default_bg);
+    let scheme_default_fg = resolve_color(&config.translation_color, theme_default_fg);
+    let scheme_default_bg = resolve_color(&config.translation_background, theme_default_bg);
 
     popup.set_popup_font(config.popup_font.clone().into());
     popup.set_popup_size(config.popup_size);

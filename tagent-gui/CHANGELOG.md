@@ -12,6 +12,17 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+037] - 2026-09-17
+
+### Changed
+- **Popup's "Theme default" now references the transcript's Translation
+  color, not Phrase** (`apply_popup_style` in `main.rs`): `scheme_default_fg`/
+  `scheme_default_bg` resolve against `config.translation_color`/
+  `translation_background` instead of `phrase_color`/`phrase_background`,
+  per explicit request. (In every built-in Color scheme preset the two
+  backgrounds are identical, so this only visibly changes the resolved text
+  color, not the background.)
+
 ## [0.14.0+036] - 2026-09-17
 
 ### Changed
