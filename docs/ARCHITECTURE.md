@@ -306,11 +306,35 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   lands before the real scheme resolves, the wrong colors are permanent, not
   single-frame — e.g. the transcript header ending up unreadable (light text
   baked in against what a moment later becomes a dark-resolved background, or
-  vice versa), not just flashing. Fixed by having `main()` call `apply_style`
-  a second time via a deferred `slint::Timer::single_shot` ~150ms after the
-  first call (same settle delay `show_window_restoring_geometry` already uses
-  for the analogous winit/X11 sizing race), so the snapshot is retaken once
-  the scheme has actually settled.
+  vice versa), not just flashing. A fixed delay timed from window *creation*
+  isn't enough to correct this, confirmed live: with `start_minimized` (the
+  default), the window can sit unmapped for a long time before the user's
+  first "Show Tagent", and system theme detection here appears tied to the
+  window actually having an on-screen surface, not wall-clock time since
+  creation. Fixed (`0.14.0+031`) by moving the re-apply into
+  `show_window_restoring_geometry` instead: it now calls `apply_style` again
+  immediately after the window's first real `.show()`, plus the same 150ms
+  deferred retry `show_window_restoring_geometry` already used for the
+  analogous winit/X11 sizing race — anchored to first-show, not creation.
+  Verified live via the `busctl Activate` trick (see the Tray bullet below)
+  plus a screenshot of the actual window.
+
+  A second, related bug (`0.14.0+032`): none of the above helps if the user
+  changes the OS-level dark/light preference *while `tagent-gui` is already
+  running* — `apply_style` was never called again after the first show, so
+  the same baked snapshots stayed frozen even though Palette-bound elements
+  (the input bar's frame, `field-background`, the OS-drawn window
+  decorations) kept following the live system change on their own, leaving
+  the transcript panel visibly out of sync with the rest of the window.
+  Fixed with a 1-second repeating `slint::Timer` in `main()`
+  (`theme_poll_timer`) that re-calls `apply_style` for as long as
+  `config.theme == "auto"` — polling rather than event-driven, since Slint
+  doesn't expose a "system theme changed" callback and (per the reasoning
+  above about `apply-theme`) this project avoids reaching for Slint's
+  private `ColorScheme` type from Rust to build one. A no-op when nothing
+  has actually changed. Verified live the same way: toggled
+  `org.gnome.desktop.interface color-scheme` via `gsettings set` while the
+  app was running and screenshotted the window before/after.
 - **Clipboard** (`tagent-gui/src/platform/`, Stage 4, shipped 2026-09-13): a
   `ClipboardManager` per OS (`platform/{linux,windows,macos}/clipboard.rs`), behind
   `#[cfg(target_os = "...")]` re-exports in `platform/mod.rs` — the same

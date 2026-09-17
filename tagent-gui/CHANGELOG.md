@@ -12,6 +12,21 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+032] - 2026-09-17
+
+### Fixed
+- **Transcript panel didn't follow a live OS theme switch under `Auto`**
+  (`main.rs`): `apply_style` only ran at startup and on the window's first
+  `show()` (see `0.14.0+031` above). If the user changed the system's
+  dark/light preference while `tagent-gui` was already running, Palette-bound
+  elements (the input bar's frame, field colors, the OS window decorations)
+  updated immediately on their own, but the baked snapshots `apply_style`
+  writes (`panel-background`, phrase/translation colors) stayed frozen at
+  whatever they'd last resolved to — leaving the transcript panel visibly out
+  of sync with the rest of the window. Fixed with a 1s repeating
+  `slint::Timer` that re-calls `apply_style` for as long as `theme` is
+  `"auto"`; a no-op when nothing has actually changed.
+
 ## [0.14.0+031] - 2026-09-17
 
 ### Fixed

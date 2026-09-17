@@ -322,6 +322,13 @@ fn slint_key_text_to_hotkey_token(text: &str) -> String {
 /// after a short settle delay) on the window's first real `show()` rather than
 /// a fixed time after creation, for the same reason it re-asserts size/position
 /// there instead of at creation time.
+///
+/// The same staleness bites again after startup, too: if the user changes the
+/// OS-level dark/light preference while `tagent-gui` is already running under
+/// `Auto`, `panel-foreground` and other live-bound elements repaint on their
+/// own, but the snapshots this function writes don't, until something calls
+/// this again. `main`'s `theme_poll_timer` covers that by re-calling this
+/// periodically for as long as `config.theme == "auto"`.
 fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.invoke_apply_theme(config.theme.clone().into());
 
@@ -895,6 +902,42 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     apply_style(&window, config_manager.lock().unwrap().config());
+
+    // Live-tracks the system's dark/light preference for the `Auto` theme while
+    // the app keeps running. `apply_style`'s baked snapshots (`panel-background`,
+    // phrase/translation colors) don't react to `Palette` changes on their own --
+    // see that function's doc comment -- so without this, toggling the OS theme
+    // while `tagent-gui` is already running leaves those colors stuck at
+    // whatever they resolved to at the last `apply_style` call, even though the
+    // window's OS-drawn decorations and Palette-bound elements (`field-background`,
+    // the input bar's frame, etc.) update immediately on their own.
+    //
+    // Not event-driven: Slint doesn't expose a "system theme changed" callback,
+    // and (per the `apply-theme` doc comment in `app.slint`) this project
+    // deliberately avoids reaching for Slint's private `ColorScheme` type from
+    // Rust to build one. Polling instead, at a light 1s interval; calling
+    // `apply_style` when nothing actually changed is harmless; it resolves the
+    // same values it already set. Skips the work entirely once `config.theme`
+    // isn't `"auto"`, since an explicit Light/Dark theme never changes live.
+    //
+    // `theme_poll_timer` must be kept alive for the timer to keep firing --
+    // bound here so it lives until `main` returns (i.e. until
+    // `run_event_loop_until_quit()` below exits).
+    let theme_poll_timer = slint::Timer::default();
+    let weak_window_for_theme_poll = window.as_weak();
+    let config_manager_for_theme_poll = config_manager.clone();
+    theme_poll_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(1),
+        move || {
+            if let Some(window) = weak_window_for_theme_poll.upgrade() {
+                let config = config_manager_for_theme_poll.lock().unwrap().config().clone();
+                if config.theme == "auto" {
+                    apply_style(&window, &config);
+                }
+            }
+        },
+    );
 
     // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
     // re-shown) on every hotkey trigger rather than constructed per trigger --
