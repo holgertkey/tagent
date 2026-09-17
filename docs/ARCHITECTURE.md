@@ -295,9 +295,22 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   winit limitation ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392):
   winit doesn't deliver Linux theme detection synchronously), not something
   fixable in `apply-theme` itself. Explicit `Light`/`Dark` need no detection and
-  aren't expected to flash. Accepted as-is (see the development plan's theme
-  section for the full reasoning) rather than worked around with extra persisted
-  state for a cosmetic, single-frame issue.
+  aren't expected to flash. For properties bound live to `Palette` (like
+  `panel-foreground`), this really is just a cosmetic single frame, since they
+  repaint on their own once the real scheme resolves — accepted as-is. But
+  `apply_style` (`tagent-gui/src/main.rs`) additionally *snapshots* several
+  `Palette`-derived colors into plain, non-live properties (`panel-background`,
+  `phrase-color`/`phrase-background`, `translation-color`/
+  `translation-background`) so they can be independently overridden from
+  Settings. Those don't self-correct: if `apply_style`'s one and only call
+  lands before the real scheme resolves, the wrong colors are permanent, not
+  single-frame — e.g. the transcript header ending up unreadable (light text
+  baked in against what a moment later becomes a dark-resolved background, or
+  vice versa), not just flashing. Fixed by having `main()` call `apply_style`
+  a second time via a deferred `slint::Timer::single_shot` ~150ms after the
+  first call (same settle delay `show_window_restoring_geometry` already uses
+  for the analogous winit/X11 sizing race), so the snapshot is retaken once
+  the scheme has actually settled.
 - **Clipboard** (`tagent-gui/src/platform/`, Stage 4, shipped 2026-09-13): a
   `ClipboardManager` per OS (`platform/{linux,windows,macos}/clipboard.rs`), behind
   `#[cfg(target_os = "...")]` re-exports in `platform/mod.rs` — the same

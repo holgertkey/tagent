@@ -12,6 +12,23 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+031] - 2026-09-17
+
+### Fixed
+- **Transcript header unreadable under `Auto` theme on Linux** (`main.rs`):
+  `apply_style` snapshots several `Palette`-derived colors (`panel-background`,
+  phrase/translation text and background colors) into plain, non-live
+  properties at startup. Because winit doesn't deliver Linux system theme
+  detection synchronously, that single call could land before the real
+  scheme resolved and permanently bake in the wrong colors — unlike
+  `panel-foreground`, which is live-`Palette`-bound and self-corrects, so the
+  header text could end up unreadable (e.g. light text baked in against a
+  background that a moment later resolves dark) rather than just flashing
+  for a frame. Fixed by calling `apply_style` a second time via a deferred
+  `slint::Timer::single_shot` ~150ms after the first call, the same settle
+  delay `show_window_restoring_geometry` already uses for the analogous
+  winit/X11 sizing race.
+
 ## [0.14.0+030] - 2026-09-16
 
 ### Added

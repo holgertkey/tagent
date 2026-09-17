@@ -301,6 +301,27 @@ fn slint_key_text_to_hotkey_token(text: &str) -> String {
 /// phrase-background/translation-background's own "theme default" then
 /// follows whatever `panel-background` ends up being, custom or not, so the
 /// three stay visually consistent.
+///
+/// Unlike `panel-foreground` (a live `Palette`-bound property that repaints on
+/// its own once the system theme resolves), the colors this function writes
+/// are plain snapshots taken at call time — so on Linux, where winit doesn't
+/// deliver system theme detection synchronously (see the `Auto` theme note in
+/// `docs/ARCHITECTURE.md`), calling this once at startup can permanently bake
+/// in the wrong (light-default) background/colors under an `Auto` theme that
+/// resolves to dark, while the live-bound foreground text correctly repaints
+/// dark-on-dark — leaving the header unreadable rather than just flashing for
+/// a frame.
+///
+/// Confirmed live (not just theoretical) that a short fixed delay after
+/// window *creation* is not enough to work around this: with `start_minimized`
+/// on, the window can sit unmapped for many seconds before the user ever opens
+/// it from the tray, and the wrong snapshot from the startup call was still
+/// showing at that point — so detection here appears tied to the window
+/// actually being mapped on screen, not just wall-clock time since creation.
+/// [`show_window_restoring_geometry`] re-calls this (immediately, then again
+/// after a short settle delay) on the window's first real `show()` rather than
+/// a fixed time after creation, for the same reason it re-asserts size/position
+/// there instead of at creation time.
 fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.invoke_apply_theme(config.theme.clone().into());
 
@@ -722,7 +743,12 @@ fn save_window_geometry(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfig
 /// Shows `window` and, only the *first* time this is called in a given run (tracked
 /// via `geometry_restored`), restores its saved position/size from config -- if
 /// `remember_window_geometry` is enabled and a geometry was actually saved by a
-/// previous run -- or otherwise re-asserts [`DEFAULT_WINDOW_SIZE`] explicitly.
+/// previous run -- or otherwise re-asserts [`DEFAULT_WINDOW_SIZE`] explicitly. That
+/// same first-show gate also re-runs [`apply_style`] (see its doc comment), for the
+/// same underlying reason: some window state doesn't settle to its real value until
+/// the window has an actual on-screen surface, so anything resolved at window
+/// *creation* time (well before `start_minimized` users ever hit their first real
+/// `show()`) can still be showing a stale/default value here.
 ///
 /// Applied *after* `.show()`, not before: Stage 6 found that `set_position` before
 /// `.show()` is silently ignored on this project's X11 setup (no OS-level window
@@ -769,6 +795,22 @@ fn show_window_restoring_geometry(
 
     if geometry_restored.replace(true) {
         return;
+    }
+
+    // Re-resolve Auto-theme-dependent colors now that the window has a real
+    // on-screen surface -- see `apply_style`'s doc comment for why a fixed
+    // delay from window *creation* isn't enough here. Immediate call plus a
+    // short deferred retry, the same settle-and-retry shape as the geometry
+    // re-apply below.
+    apply_style(window, config_manager.lock().unwrap().config());
+    {
+        let weak_window = window.as_weak();
+        let config_manager = config_manager.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+            if let Some(window) = weak_window.upgrade() {
+                apply_style(&window, config_manager.lock().unwrap().config());
+            }
+        });
     }
 
     let config = config_manager.lock().unwrap().config().clone();
