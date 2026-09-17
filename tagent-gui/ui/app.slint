@@ -458,23 +458,21 @@ export component TranslationPopup inherits Window {
             : ColorScheme.unknown;
     }
 
-    // Theme-derived defaults for phrase-color/translation-color/phrase-background/
-    // translation-background when their config value is "" ("follow the theme") —
-    // read from Rust as `out` properties, same pattern and same Palette roles as
-    // AppWindow's own panel-foreground/panel-background-theme-default.
+    // Theme-derived defaults for popup-color/popup-background when their
+    // config value is "" ("follow the theme") — read from Rust as `out`
+    // properties, same pattern and same Palette roles as AppWindow's own
+    // panel-foreground/panel-background-theme-default.
     out property <brush> panel-foreground: Palette.alternate-foreground;
     out property <brush> panel-background-theme-default: Palette.alternate-background;
 
     in property <string> phrase-text: "";
     in property <string> translation-text: "";
-    in property <string> phrase-font: "monospace";
-    in property <int> phrase-size: 13;
-    in property <color> phrase-color: #000000;
-    in property <color> phrase-background: #00000000;
-    in property <string> translation-font: "monospace";
-    in property <int> translation-size: 13;
-    in property <color> translation-color: #000000;
-    in property <color> translation-background: #00000000;
+    // One shared style for both the phrase and translation lines — unlike
+    // the main window's transcript, which styles them separately.
+    in property <string> popup-font: "monospace";
+    in property <int> popup-size: 13;
+    in property <color> popup-color: #000000;
+    in property <color> popup-background: #00000000;
 
     // Auto-hide: entirely self-contained in this component via the `Timer`
     // *element* below (not Rust's `slint::Timer` API, which is `!Send` and so
@@ -538,15 +536,15 @@ export component TranslationPopup inherits Window {
             spacing: 4px;
 
             Rectangle {
-                background: phrase-background;
+                background: popup-background;
                 border-radius: 3px;
                 height: phrase-line.preferred-height;
 
                 phrase-line := Text {
                     text: phrase-text;
-                    font-family: phrase-font;
-                    font-size: phrase-size * 1px;
-                    color: phrase-color;
+                    font-family: popup-font;
+                    font-size: popup-size * 1px;
+                    color: popup-color;
                     wrap: word-wrap;
                     x: 4px;
                     width: parent.width - 8px;
@@ -554,15 +552,15 @@ export component TranslationPopup inherits Window {
             }
 
             Rectangle {
-                background: translation-background;
+                background: popup-background;
                 border-radius: 3px;
                 height: translation-line.preferred-height;
 
                 translation-line := Text {
                     text: translation-text;
-                    font-family: translation-font;
-                    font-size: translation-size * 1px;
-                    color: translation-color;
+                    font-family: popup-font;
+                    font-size: popup-size * 1px;
+                    color: popup-color;
                     wrap: word-wrap;
                     x: 4px;
                     width: parent.width - 8px;
@@ -780,6 +778,28 @@ export component SettingsDialog inherits Dialog {
 
     in-out property <bool> show-prompt: true;
 
+    // Style for the hotkey-triggered popup (Stage 6/9): one shared
+    // Font/Size/Text color/Background, unlike the transcript's separate
+    // phrase/translation style above.
+    in-out property <int> popup-font-index: 0;
+    in-out property <int> popup-size: 13;
+
+    in-out property <bool> popup-color-use-default <=> popup-text-color-field.use-default;
+    in-out property <float> popup-color-red <=> popup-text-color-field.red;
+    in-out property <float> popup-color-green <=> popup-text-color-field.green;
+    in-out property <float> popup-color-blue <=> popup-text-color-field.blue;
+    in-out property <string> popup-color-hex <=> popup-text-color-field.hex-text;
+    callback popup-color-hex-committed <=> popup-text-color-field.hex-committed;
+    callback popup-color-rgb-changed <=> popup-text-color-field.rgb-changed;
+
+    in-out property <bool> popup-bg-use-default <=> popup-bg-color-field.use-default;
+    in-out property <float> popup-bg-red <=> popup-bg-color-field.red;
+    in-out property <float> popup-bg-green <=> popup-bg-color-field.green;
+    in-out property <float> popup-bg-blue <=> popup-bg-color-field.blue;
+    in-out property <string> popup-bg-hex <=> popup-bg-color-field.hex-text;
+    callback popup-bg-hex-committed <=> popup-bg-color-field.hex-committed;
+    callback popup-bg-rgb-changed <=> popup-bg-color-field.rgb-changed;
+
     // Stage 8: the global hotkey string (Stage 5) and the popup auto-hide
     // delay (Stage 6), now editable here instead of only by hand in
     // tagent-gui.json. `translate-hotkey-error` is set from Rust (not
@@ -965,13 +985,6 @@ export component SettingsDialog inherits Dialog {
                     visible: translate-hotkey-error != "";
                 }
 
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Popup auto-hide (seconds):"; vertical-alignment: center; }
-                    SpinBox { minimum: 0; maximum: 60; value <=> popup-auto-hide-seconds; }
-                    Text { text: "(0 = default 3s)"; vertical-alignment: center; }
-                }
-
                 CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                 CheckBox {
                     text: "Remember window size and position";
@@ -979,8 +992,45 @@ export component SettingsDialog inherits Dialog {
                 }
 
                 Text {
-                    text: "The global hotkey takes effect only after restarting Tagent. The popup delay applies immediately; \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts.";
+                    text: "The global hotkey takes effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts.";
                     wrap: word-wrap;
+                }
+            }
+        }
+
+        Tab {
+            title: "Popup";
+
+            ScrollView {
+                VerticalBox {
+                    alignment: start;
+
+                    Text {
+                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection.";
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Font:"; vertical-alignment: center; }
+                        ComboBox { model: font-options; current-index <=> popup-font-index; }
+                        Text { text: "Size:"; vertical-alignment: center; }
+                        SpinBox { minimum: 8; maximum: 48; value <=> popup-size; }
+                    }
+                    popup-text-color-field := ColorPickerField { label: "Text color:"; }
+                    popup-bg-color-field := ColorPickerField { label: "Background:"; }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Auto-hide (seconds):"; vertical-alignment: center; }
+                        SpinBox { minimum: 0; maximum: 60; value <=> popup-auto-hide-seconds; }
+                        Text { text: "(0 = default 3s)"; vertical-alignment: center; }
+                    }
+
+                    Text {
+                        text: "\"Theme default\" follows whichever theme is active. Everything on this tab applies immediately.";
+                        wrap: word-wrap;
+                    }
                 }
             }
         }

@@ -12,6 +12,22 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+033] - 2026-09-17
+
+### Added
+- **Independent style settings for the hotkey-triggered popup** (Settings >
+  new "Popup" tab): Font, Size, Text color, and Background, plus the
+  "Auto-hide (seconds)" setting moved here from "Hotkeys & Tray". Previously
+  the popup (`TranslationPopup` in `app.slint`) just reused the transcript's
+  `phrase_font`/`translation_font`/etc. style — including two different text
+  colors for the phrase and translation lines. The popup now has its own
+  `GuiConfig` fields (`popup_font`, `popup_size`, `popup_color`,
+  `popup_background`) applying one shared style to both lines instead.
+  Defaults to `"monospace"`/13px/`""` (theme default), same as the
+  transcript's own defaults, and "theme default" resolves live against
+  whichever theme is active — including a running `Auto` toggle, now that
+  `theme_poll_timer` re-applies `apply_popup_style` alongside `apply_style`.
+
 ## [0.14.0+032] - 2026-09-17
 
 ### Fixed

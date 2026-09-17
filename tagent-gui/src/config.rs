@@ -105,6 +105,20 @@ pub struct GuiConfig {
     /// Background color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub translation_background: String,
+    /// Font family for the hotkey-triggered popup's text (phrase and
+    /// translation share one style, unlike the transcript's separate
+    /// phrase/translation styling).
+    #[serde(default = "default_style_font")]
+    pub popup_font: String,
+    /// Font size (px) for the popup's text.
+    #[serde(default = "default_style_size")]
+    pub popup_size: i32,
+    /// Text color for the popup, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub popup_color: String,
+    /// Background color for the popup, as `"#RRGGBB"`, or `""` to follow the theme.
+    #[serde(default = "default_style_color")]
+    pub popup_background: String,
     /// Vertical gap (px) between one phrase/translation pair and the next.
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
@@ -187,6 +201,10 @@ impl Default for GuiConfig {
             translation_size: default_style_size(),
             translation_color: default_style_color(),
             translation_background: default_style_color(),
+            popup_font: default_style_font(),
+            popup_size: default_style_size(),
+            popup_color: default_style_color(),
+            popup_background: default_style_color(),
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
@@ -856,6 +874,24 @@ mod tests {
         assert_eq!(config.block_spacing_px, 20);
         assert_eq!(config.phrases_spacing_px, 2);
         assert!(config.show_prompt);
+    }
+
+    #[test]
+    fn old_file_without_popup_style_fields_defaults_to_monospace_and_theme_colors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.popup_font, "monospace");
+        assert_eq!(config.popup_size, 13);
+        assert_eq!(config.popup_color, "");
+        assert_eq!(config.popup_background, "");
     }
 
     #[test]

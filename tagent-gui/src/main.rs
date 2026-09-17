@@ -355,27 +355,22 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_phrases_spacing_px(config.phrases_spacing_px);
 }
 
-/// Applies the theme and the phrase/translation display style to the Stage 6 popup —
-/// the same subset of [`apply_style`] that's meaningful for it (no panel-background,
-/// no block/phrase spacing, since the popup only ever shows one phrase/translation
-/// pair). Kept as its own small function rather than widening `apply_style` to
-/// branch on window type, since the two windows' style surfaces only partially
-/// overlap.
+/// Applies the theme and display style to the Stage 6 popup — its own
+/// independent style (Stage 9), not the transcript's phrase/translation
+/// style: one shared Font/Size/Text color/Background for both lines, since
+/// the popup only ever shows one phrase/translation pair at a time. Kept as
+/// its own small function rather than widening `apply_style` to branch on
+/// window type, since the two windows' style surfaces only partially overlap.
 fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.invoke_apply_theme(config.theme.clone().into());
 
     let default_fg = popup.get_panel_foreground().color();
     let default_bg = popup.get_panel_background_theme_default().color();
 
-    popup.set_phrase_font(config.phrase_font.clone().into());
-    popup.set_phrase_size(config.phrase_size);
-    popup.set_phrase_color(resolve_color(&config.phrase_color, default_fg));
-    popup.set_phrase_background(resolve_color(&config.phrase_background, default_bg));
-
-    popup.set_translation_font(config.translation_font.clone().into());
-    popup.set_translation_size(config.translation_size);
-    popup.set_translation_color(resolve_color(&config.translation_color, default_fg));
-    popup.set_translation_background(resolve_color(&config.translation_background, default_bg));
+    popup.set_popup_font(config.popup_font.clone().into());
+    popup.set_popup_size(config.popup_size);
+    popup.set_popup_color(resolve_color(&config.popup_color, default_fg));
+    popup.set_popup_background(resolve_color(&config.popup_background, default_bg));
 }
 
 /// Shows the Stage 6 popup with `entry`'s text, positioned next to the current mouse
@@ -564,6 +559,8 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_phrase_size(config.phrase_size);
     dialog.set_translation_font_index(font_index_for(&config.translation_font));
     dialog.set_translation_size(config.translation_size);
+    dialog.set_popup_font_index(font_index_for(&config.popup_font));
+    dialog.set_popup_size(config.popup_size);
 
     dialog.set_show_prompt(config.show_prompt);
     dialog.set_start_minimized(config.start_minimized);
@@ -617,6 +614,24 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
         set_translation_bg_green,
         set_translation_bg_blue,
         set_translation_bg_hex
+    );
+    init_color_field!(
+        dialog,
+        config.popup_color.as_str(),
+        set_popup_color_use_default,
+        set_popup_color_red,
+        set_popup_color_green,
+        set_popup_color_blue,
+        set_popup_color_hex
+    );
+    init_color_field!(
+        dialog,
+        config.popup_background.as_str(),
+        set_popup_bg_use_default,
+        set_popup_bg_red,
+        set_popup_bg_green,
+        set_popup_bg_blue,
+        set_popup_bg_hex
     );
 }
 
@@ -903,6 +918,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     apply_style(&window, config_manager.lock().unwrap().config());
 
+    // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
+    // re-shown) on every hotkey trigger rather than constructed per trigger --
+    // see the "one persistent PopupWindow instance" note in the Stage 6 plan.
+    // `popup` itself must stay alive for the rest of `main()` (never dropped
+    // early), same lifetime reasoning as `window`/`config_manager` below.
+    // Created here (before `theme_poll_timer` below) so its own style can be
+    // kept in sync by that same timer.
+    let popup = TranslationPopup::new()?;
+    apply_popup_style(&popup, config_manager.lock().unwrap().config());
+    let popup_weak = popup.as_weak();
+
     // Live-tracks the system's dark/light preference for the `Auto` theme while
     // the app keeps running. `apply_style`'s baked snapshots (`panel-background`,
     // phrase/translation colors) don't react to `Palette` changes on their own --
@@ -910,43 +936,41 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // while `tagent-gui` is already running leaves those colors stuck at
     // whatever they resolved to at the last `apply_style` call, even though the
     // window's OS-drawn decorations and Palette-bound elements (`field-background`,
-    // the input bar's frame, etc.) update immediately on their own.
+    // the input bar's frame, etc.) update immediately on their own. `apply_popup_style`
+    // has the same staleness issue for the popup's own "theme default" color/background.
     //
     // Not event-driven: Slint doesn't expose a "system theme changed" callback,
     // and (per the `apply-theme` doc comment in `app.slint`) this project
     // deliberately avoids reaching for Slint's private `ColorScheme` type from
     // Rust to build one. Polling instead, at a light 1s interval; calling
-    // `apply_style` when nothing actually changed is harmless; it resolves the
-    // same values it already set. Skips the work entirely once `config.theme`
-    // isn't `"auto"`, since an explicit Light/Dark theme never changes live.
+    // `apply_style`/`apply_popup_style` when nothing actually changed is harmless;
+    // they resolve the same values they already set. Skips the work entirely once
+    // `config.theme` isn't `"auto"`, since an explicit Light/Dark theme never
+    // changes live.
     //
     // `theme_poll_timer` must be kept alive for the timer to keep firing --
     // bound here so it lives until `main` returns (i.e. until
     // `run_event_loop_until_quit()` below exits).
     let theme_poll_timer = slint::Timer::default();
     let weak_window_for_theme_poll = window.as_weak();
+    let weak_popup_for_theme_poll = popup.as_weak();
     let config_manager_for_theme_poll = config_manager.clone();
     theme_poll_timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_secs(1),
         move || {
+            let config = config_manager_for_theme_poll.lock().unwrap().config().clone();
+            if config.theme != "auto" {
+                return;
+            }
             if let Some(window) = weak_window_for_theme_poll.upgrade() {
-                let config = config_manager_for_theme_poll.lock().unwrap().config().clone();
-                if config.theme == "auto" {
-                    apply_style(&window, &config);
-                }
+                apply_style(&window, &config);
+            }
+            if let Some(popup) = weak_popup_for_theme_poll.upgrade() {
+                apply_popup_style(&popup, &config);
             }
         },
     );
-
-    // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
-    // re-shown) on every hotkey trigger rather than constructed per trigger --
-    // see the "one persistent PopupWindow instance" note in the Stage 6 plan.
-    // `popup` itself must stay alive for the rest of `main()` (never dropped
-    // early), same lifetime reasoning as `window`/`config_manager` below.
-    let popup = TranslationPopup::new()?;
-    apply_popup_style(&popup, config_manager.lock().unwrap().config());
-    let popup_weak = popup.as_weak();
 
     // The popup's own `hide-timer` (a `Timer` *element* declared in app.slint, not
     // the Rust `slint::Timer` API) decides when to actually hide it -- see
@@ -1106,6 +1130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let window_weak_for_settings = window.as_weak();
+    let popup_weak_for_settings = popup.as_weak();
     let recording_started_at_for_settings = recording_started_at.clone();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
@@ -1182,6 +1207,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_translation_bg_blue,
             set_translation_bg_use_default
         );
+        wire_hex_committed!(
+            dialog,
+            on_popup_color_hex_committed,
+            set_popup_color_red,
+            set_popup_color_green,
+            set_popup_color_blue,
+            set_popup_color_use_default
+        );
+        wire_hex_committed!(
+            dialog,
+            on_popup_bg_hex_committed,
+            set_popup_bg_red,
+            set_popup_bg_green,
+            set_popup_bg_blue,
+            set_popup_bg_use_default
+        );
         wire_rgb_changed!(
             dialog,
             on_background_rgb_changed,
@@ -1221,6 +1262,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             get_translation_bg_green,
             get_translation_bg_blue,
             set_translation_bg_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_popup_color_rgb_changed,
+            get_popup_color_red,
+            get_popup_color_green,
+            get_popup_color_blue,
+            set_popup_color_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_popup_bg_rgb_changed,
+            get_popup_bg_red,
+            get_popup_bg_green,
+            get_popup_bg_blue,
+            set_popup_bg_hex
         );
 
         let dialog_weak = dialog.as_weak();
@@ -1292,6 +1349,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dialog_weak = dialog.as_weak();
         let config_manager_for_save = config_manager_for_settings.clone();
         let window_weak_for_save = window_weak_for_settings.clone();
+        let popup_weak_for_save = popup_weak_for_settings.clone();
         dialog.on_save_requested(move |provider, theme| {
             let Some(dialog) = dialog_weak.upgrade() else {
                 return;
@@ -1342,6 +1400,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_translation_bg_green(),
                     dialog.get_translation_bg_blue(),
                 ),
+                popup_font: FONT_FAMILIES[dialog
+                    .get_popup_font_index()
+                    .clamp(0, FONT_FAMILIES.len() as i32 - 1)
+                    as usize]
+                    .to_string(),
+                popup_size: dialog.get_popup_size(),
+                popup_color: color_field_hex(
+                    dialog.get_popup_color_use_default(),
+                    dialog.get_popup_color_red(),
+                    dialog.get_popup_color_green(),
+                    dialog.get_popup_color_blue(),
+                ),
+                popup_background: color_field_hex(
+                    dialog.get_popup_bg_use_default(),
+                    dialog.get_popup_bg_red(),
+                    dialog.get_popup_bg_green(),
+                    dialog.get_popup_bg_blue(),
+                ),
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
@@ -1364,6 +1440,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             if let Some(window) = window_weak_for_save.upgrade() {
                 apply_style(&window, &new_config);
+            }
+            if let Some(popup) = popup_weak_for_save.upgrade() {
+                apply_popup_style(&popup, &new_config);
             }
             dialog.hide().ok();
         });
