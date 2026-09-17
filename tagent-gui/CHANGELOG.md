@@ -12,6 +12,23 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+041] - 2026-09-17
+
+### Changed
+- **Popup width now shrinks to fit short text instead of always sitting at
+  `popup_max_width`** (`app.slint`): width is bound to the natural
+  (unwrapped) single-line width of the longer of the phrase/translation
+  text, plus a fixed horizontal-chrome allowance, clamped between a 150px
+  floor and `popup_max_width` — text only wraps once its natural width
+  would exceed the max. Uses each `Text`'s own `preferred-width`, which
+  reflects its natural unwrapped size regardless of the `wrap`/`width` it's
+  actually given. Since the phrase line is conditionally removed from the
+  tree entirely when "Show phrase" is off (`if show-phrase: Rectangle {...}`),
+  added an always-present, invisible `phrase-measure` twin Text so its width
+  can still be queried (and correctly excluded from sizing) in that case.
+  Verified with a throwaway example harness across short text, text long
+  enough to hit the max-width wrap, and a hidden phrase.
+
 ## [0.14.0+040] - 2026-09-17
 
 ### Changed

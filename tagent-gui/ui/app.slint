@@ -439,19 +439,50 @@ export component TranslationPopup inherits Window {
     no-frame: true;
     always-on-top: true;
 
-    // Configurable max width, reactive-but-capped height: rather than leaving
-    // the window's own size unbound and hoping the platform backend re-fits
-    // it to new content on every show() (unverified — see the Stage 6 plan's
-    // sizing flag), height is bound to the content layout's preferred-height
-    // (which already includes content-layout's own 8px top/bottom padding —
-    // no extra margin added here) capped at popup-max-height, so Slint's
-    // normal reactive layout recompute (the same mechanism that already
-    // resizes AppWindow's transcript rows to wrapped text) drives the actual
-    // OS window size too. Content taller than the cap scrolls instead of
-    // growing the window further (Stage 9 follow-up) — see the ScrollView
-    // wrapping content-layout below.
-    width: popup-max-width * 1px;
+    // Reactive-but-capped width and height: rather than leaving the window's
+    // own size unbound and hoping the platform backend re-fits it to new
+    // content on every show() (unverified — see the Stage 6 plan's sizing
+    // flag), both dimensions are explicitly bound to what the content
+    // actually needs, each capped at its own popup-max-*. Width shrinks to
+    // fit the longer of the phrase/translation's natural (unwrapped)
+    // single-line width, via `phrase-measure`/`translation-line`'s own
+    // `preferred-width` (a Text's preferred-width reflects its natural
+    // unwrapped size regardless of the `wrap`/`width` it's actually given,
+    // so this doesn't depend on how wide the window currently is) — text
+    // only wraps once that natural width would exceed popup-max-width.
+    // Height is bound to the content layout's preferred-height (which
+    // already includes content-layout's own 8px top/bottom padding — no
+    // extra margin added here), so Slint's normal reactive layout recompute
+    // (the same mechanism that already resizes AppWindow's transcript rows
+    // to wrapped text) drives the actual OS window size too. Content taller
+    // than the cap scrolls instead of growing the window further (Stage 9
+    // follow-up) — see the ScrollView wrapping content-layout below.
+    //
+    // popup-horizontal-chrome accounts for content-layout's own 8px+8px
+    // padding plus phrase-line/translation-line's own 4px+4px inset
+    // (`x: 4px; width: parent.width - 8px`) — the gap between a line's
+    // natural text width and the window width that comfortably fits it
+    // without wrapping.
+    property <length> popup-horizontal-chrome: 24px;
+    property <length> phrase-natural-width: show-phrase ? phrase-measure.preferred-width : 0px;
+    property <length> content-natural-width: max(phrase-natural-width, translation-line.preferred-width) + popup-horizontal-chrome;
+
+    width: max(min(content-natural-width, popup-max-width * 1px), 150px);
     height: min(content-layout.preferred-height, popup-max-height * 1px);
+
+    // Invisible measurement-only twin of phrase-line: the real phrase-line
+    // Text lives inside `if show-phrase: Rectangle { ... }` below, so its id
+    // isn't reliably queryable from this component's root scope when
+    // show-phrase is false (the element doesn't exist in the tree at all in
+    // that case). This one always exists, mirrors phrase-text/popup-font/
+    // popup-size exactly, and is never actually rendered or laid out
+    // (`visible: false`, not placed inside any Layout element).
+    phrase-measure := Text {
+        visible: false;
+        text: phrase-text;
+        font-family: popup-font;
+        font-size: popup-size * 1px;
+    }
 
     // Same helper as AppWindow's/SettingsDialog's — this window has its own
     // separate Palette instance too.
