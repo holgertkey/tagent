@@ -571,48 +571,87 @@ export component TranslationPopup inherits Window {
         border-width: 1px;
         border-color: Palette.border;
 
+        // touch-area wraps ScrollView (rather than sitting beside it as a
+        // sibling) so `has-hover` keeps tracking correctly once the cursor is
+        // over the scrollable content: a plain sibling TouchArea loses the
+        // hit-testing race to ScrollView's own internal Flickable/ScrollBar
+        // (each themselves TouchArea-based) once one is added, since sibling
+        // TouchAreas at the same z-position compete exclusively for pointer
+        // hits -- whichever is topmost (ScrollView, declared later) wins,
+        // and the other's `has-hover` never becomes true again. Nesting
+        // avoids that: hover bubbles up through ancestors independently of
+        // which descendant handles the click/scroll/drag itself, so
+        // touch-area still correctly reports hover while scrolling works
+        // normally inside it. (Regression introduced when ScrollView was
+        // added for the max-height/scrolling feature — before that, this
+        // was the only interactive element here, so nothing competed for
+        // hover in the first place.)
         touch-area := TouchArea {
             width: 100%;
             height: 100%;
-        }
 
-        ScrollView {
-            width: 100%;
-            height: 100%;
+            // Wheel-scrolling flips `has-hover` to false -- even with the
+            // cursor never actually leaving the popup -- because
+            // `ScrollView`'s internal `Flickable` grabs the mouse for the
+            // duration of a wheel gesture, and that grab doesn't hand hover
+            // tracking back to this TouchArea until the next real pointer
+            // motion. Left alone, that reads as "user left" to `hide-timer`,
+            // closing the popup out from under someone who just scrolled and
+            // stopped to read -- exactly the reported bug. `ScrollView`'s own
+            // `scrolled` callback (aliased to `Flickable.flicked`) can't be
+            // used to work around it: it only fires when the viewport
+            // position actually changes, which never happens when the
+            // content already fits (precisely the case this bug shows up
+            // in). `scroll-event` here instead fires on *any* wheel input
+            // reaching this TouchArea, including one the child `Flickable`
+            // ignored because there was nothing to scroll -- and a scroll
+            // can only happen while the cursor is physically over this
+            // window, so it's unambiguous proof of continued engagement.
+            // `reject` passes it on so legitimate scrolling (content that
+            // does overflow) still reaches the `Flickable` normally.
+            scroll-event(event) => {
+                root.start-hide-timer();
+                reject
+            }
 
-            content-layout := VerticalLayout {
-                padding: 8px;
-                spacing: 4px;
+            ScrollView {
+                width: 100%;
+                height: 100%;
 
-                if show-phrase: Rectangle {
-                    background: popup-background;
-                    border-radius: 3px;
-                    height: phrase-line.preferred-height;
+                content-layout := VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
 
-                    phrase-line := Text {
-                        text: phrase-text;
-                        font-family: popup-font;
-                        font-size: popup-size * 1px;
-                        color: popup-color;
-                        wrap: word-wrap;
-                        x: 4px;
-                        width: parent.width - 8px;
+                    if show-phrase: Rectangle {
+                        background: popup-background;
+                        border-radius: 3px;
+                        height: phrase-line.preferred-height;
+
+                        phrase-line := Text {
+                            text: phrase-text;
+                            font-family: popup-font;
+                            font-size: popup-size * 1px;
+                            color: popup-color;
+                            wrap: word-wrap;
+                            x: 4px;
+                            width: parent.width - 8px;
+                        }
                     }
-                }
 
-                Rectangle {
-                    background: popup-background;
-                    border-radius: 3px;
-                    height: translation-line.preferred-height;
+                    Rectangle {
+                        background: popup-background;
+                        border-radius: 3px;
+                        height: translation-line.preferred-height;
 
-                    translation-line := Text {
-                        text: translation-text;
-                        font-family: popup-font;
-                        font-size: popup-size * 1px;
-                        color: popup-color;
-                        wrap: word-wrap;
-                        x: 4px;
-                        width: parent.width - 8px;
+                        translation-line := Text {
+                            text: translation-text;
+                            font-family: popup-font;
+                            font-size: popup-size * 1px;
+                            color: popup-color;
+                            wrap: word-wrap;
+                            x: 4px;
+                            width: parent.width - 8px;
+                        }
                     }
                 }
             }

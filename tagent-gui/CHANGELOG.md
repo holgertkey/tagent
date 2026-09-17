@@ -12,6 +12,29 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+042] - 2026-09-17
+
+### Fixed
+- **Scrolling the mouse wheel over the popup while its content already fit
+  the max size closed it** (`app.slint`): a `Flickable` (which `ScrollView`
+  wraps, added for the max-height/scrolling feature) grabs the mouse for the
+  duration of any wheel gesture, which left `touch-area.has-hover` stuck at
+  `false` afterward until the next real pointer motion — read by
+  `hide-timer` as "the user left," closing the popup out from under someone
+  who'd just scrolled and stopped to read. `touch-area` now wraps `ScrollView`
+  (was a plain sibling) and has its own `scroll-event` handler that restarts
+  the auto-hide timer on any wheel input it sees — including one the child
+  `Flickable` itself ignored because there was nothing to scroll, which is
+  exactly the case this bug showed up in (`ScrollView`'s own `scrolled`
+  callback only fires on an actual viewport change, never true when content
+  already fits, so it couldn't have been used for this). Verified with a
+  throwaway example harness directly wiring `hide-requested` and polling
+  `has-hover`: continuous scrolling every 0.5s over non-overflowing content
+  no longer fires `hide-requested`, even though `has-hover` itself still
+  goes stale after each scroll. No Rust-level test coverage — this is a
+  `.slint` hit-testing/event-propagation defect with no surface in `main.rs`
+  or `config.rs`.
+
 ## [0.14.0+041] - 2026-09-17
 
 ### Changed
