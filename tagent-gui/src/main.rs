@@ -410,6 +410,8 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.set_popup_size(config.popup_size);
     popup.set_popup_color(resolve_color(&config.popup_color, scheme_default_fg));
     popup.set_popup_background(resolve_color(&config.popup_background, scheme_default_bg));
+    popup.set_popup_max_width(config.popup_max_width);
+    popup.set_popup_max_height(config.popup_max_height);
 }
 
 /// Shows the Stage 6 popup with `outcome`'s text -- formatted here using the popup's
@@ -612,6 +614,8 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_popup_size(config.popup_size);
     dialog.set_popup_show_prompt(config.popup_show_prompt);
     dialog.set_popup_show_phrase(config.popup_show_phrase);
+    dialog.set_popup_max_width(config.popup_max_width);
+    dialog.set_popup_max_height(config.popup_max_height);
 
     dialog.set_show_prompt(config.show_prompt);
     dialog.set_start_minimized(config.start_minimized);
@@ -1489,6 +1493,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ),
                 popup_show_prompt: dialog.get_popup_show_prompt(),
                 popup_show_phrase: dialog.get_popup_show_phrase(),
+                popup_max_width: dialog.get_popup_max_width(),
+                popup_max_height: dialog.get_popup_max_height(),
                 block_spacing_px: dialog.get_block_spacing_px(),
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),

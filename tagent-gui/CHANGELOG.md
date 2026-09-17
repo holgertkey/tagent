@@ -12,6 +12,20 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+039] - 2026-09-17
+
+### Added
+- **"Max width (px)" / "Max height (px)" settings for the popup** (Popup
+  tab): the popup window no longer grows unbounded with long translations.
+  Width is now always exactly `popup_max_width` (text wraps to fit, same as
+  the old hardcoded 360px, just configurable — default unchanged at 360).
+  Height grows with content up to `popup_max_height` (new, default 400) and
+  then becomes scrollable instead of growing further, via a `ScrollView`
+  now wrapping the popup's content layout in `app.slint`. Verified with a
+  throwaway example harness instantiating `TranslationPopup` directly with
+  long phrase/translation text and a small max height, confirming the
+  window stays capped at the configured size and the overflow scrolls.
+
 ## [0.14.0+038] - 2026-09-17
 
 ### Changed

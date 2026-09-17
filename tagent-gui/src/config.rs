@@ -56,6 +56,17 @@ fn default_popup_show_phrase() -> bool {
     true
 }
 
+/// Default max width (px) of the popup — the value it always used before this
+/// became configurable.
+fn default_popup_max_width() -> i32 {
+    360
+}
+
+/// Default max height (px) of the popup before its content becomes scrollable.
+fn default_popup_max_height() -> i32 {
+    400
+}
+
 /// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
 fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
@@ -140,6 +151,12 @@ pub struct GuiConfig {
     /// translation.
     #[serde(default = "default_popup_show_phrase")]
     pub popup_show_phrase: bool,
+    /// Max width (px) of the popup — content wraps to fit within it.
+    #[serde(default = "default_popup_max_width")]
+    pub popup_max_width: i32,
+    /// Max height (px) of the popup before its content becomes scrollable.
+    #[serde(default = "default_popup_max_height")]
+    pub popup_max_height: i32,
     /// Vertical gap (px) between one phrase/translation pair and the next.
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
@@ -228,6 +245,8 @@ impl Default for GuiConfig {
             popup_background: default_style_color(),
             popup_show_prompt: default_popup_show_prompt(),
             popup_show_phrase: default_popup_show_phrase(),
+            popup_max_width: default_popup_max_width(),
+            popup_max_height: default_popup_max_height(),
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
@@ -931,6 +950,22 @@ mod tests {
 
         assert!(config.popup_show_prompt);
         assert!(config.popup_show_phrase);
+    }
+
+    #[test]
+    fn old_file_without_popup_max_size_fields_defaults_to_360_by_400() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.popup_max_width, 360);
+        assert_eq!(config.popup_max_height, 400);
     }
 
     #[test]
