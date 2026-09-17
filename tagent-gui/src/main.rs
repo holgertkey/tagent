@@ -590,10 +590,10 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_phrases_spacing_px(config.phrases_spacing_px);
 
     // Show the matching preset's name in the "Color scheme" dropdown
-    // (instead of the "Presets…" placeholder at index 0) when the five
+    // (instead of the "Custom" placeholder at index 0) when the five
     // colors currently in effect are exactly one of the presets — e.g.
     // right after it was applied and saved, or "Default" when they're all
-    // still at "" (theme-following). Index +1 accounts for the "Presets…"
+    // still at "" (theme-following). Index +1 accounts for the "Custom"
     // placeholder being first in color-scheme-options.
     let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
         scheme.background == config.background_color

@@ -12,6 +12,15 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+038] - 2026-09-17
+
+### Changed
+- **Renamed the "Color scheme" placeholder from "Presets…" to "Custom"**
+  (View tab): clearer now that "Default" is itself a real, selectable entry
+  in the same list — "Custom" makes it obvious this one just means "your
+  current colors don't match any preset," rather than looking like another
+  variant of "Default".
+
 ## [0.14.0+037] - 2026-09-17
 
 ### Changed

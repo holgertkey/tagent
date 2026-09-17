@@ -720,8 +720,11 @@ export component SettingsDialog inherits Dialog {
     // pickers, which stay fully editable afterward. "Default" resets those
     // fields back to "" (theme default) and Theme to Auto, same shape as
     // every other named preset just with the theme-following colors.
+    // "Custom" is the inert placeholder shown when the current colors don't
+    // match any preset (including "Default") — selecting it is a no-op,
+    // since it has no corresponding `ColorScheme` entry in main.rs.
     in-out property <[string]> color-scheme-options: [
-        "Presets…", "Default", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
+        "Custom", "Default", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
         "Gruvbox Dark", "Monokai", "One Dark", "Tokyo Night", "Catppuccin Mocha",
         "Night Owl", "Ayu Dark", "GitHub Light", "Gruvbox Light", "Catppuccin Latte"
     ];
