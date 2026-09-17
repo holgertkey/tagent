@@ -56,15 +56,14 @@ fn default_popup_show_phrase() -> bool {
     true
 }
 
-/// Default max width (px) of the popup — the value it always used before this
-/// became configurable.
+/// Default max width (px) of the popup.
 fn default_popup_max_width() -> i32 {
-    360
+    600
 }
 
 /// Default max height (px) of the popup before its content becomes scrollable.
 fn default_popup_max_height() -> i32 {
-    400
+    600
 }
 
 /// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
@@ -953,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn old_file_without_popup_max_size_fields_defaults_to_360_by_400() {
+    fn old_file_without_popup_max_size_fields_defaults_to_600_by_600() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_config_path(&dir);
         fs::write(
@@ -964,8 +963,8 @@ mod tests {
 
         let config = load_from_path(&path);
 
-        assert_eq!(config.popup_max_width, 360);
-        assert_eq!(config.popup_max_height, 400);
+        assert_eq!(config.popup_max_width, 600);
+        assert_eq!(config.popup_max_height, 600);
     }
 
     #[test]

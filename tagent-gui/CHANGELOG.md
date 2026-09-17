@@ -12,6 +12,12 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+040] - 2026-09-17
+
+### Changed
+- **Raised the popup's default max width/height from 360×400 to 600×600**
+  (`default_popup_max_width`/`default_popup_max_height` in `config.rs`).
+
 ## [0.14.0+039] - 2026-09-17
 
 ### Added

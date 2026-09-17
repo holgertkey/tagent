@@ -481,12 +481,12 @@ export component TranslationPopup inherits Window {
     // main.rs (see format_line's doc comment), so it needs no property here.
     in property <bool> show-phrase: true;
     // Size cap (Stage 9 follow-up): the popup's width is always exactly
-    // popup-max-width (text wraps to fit within it, same as the old
-    // hardcoded 360px); popup-max-height instead caps a dimension that
-    // otherwise grows with content, so it's a true "won't exceed" cap, with
-    // the ScrollView below taking over once content is taller than it.
-    in property <int> popup-max-width: 360;
-    in property <int> popup-max-height: 400;
+    // popup-max-width (text wraps to fit within it); popup-max-height
+    // instead caps a dimension that otherwise grows with content, so it's a
+    // true "won't exceed" cap, with the ScrollView below taking over once
+    // content is taller than it.
+    in property <int> popup-max-width: 600;
+    in property <int> popup-max-height: 600;
 
     // Auto-hide: entirely self-contained in this component via the `Timer`
     // *element* below (not Rust's `slint::Timer` API, which is `!Send` and so
@@ -809,8 +809,8 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> popup-size: 13;
     in-out property <bool> popup-show-prompt: true;
     in-out property <bool> popup-show-phrase: true;
-    in-out property <int> popup-max-width: 360;
-    in-out property <int> popup-max-height: 400;
+    in-out property <int> popup-max-width: 600;
+    in-out property <int> popup-max-height: 600;
 
     in-out property <bool> popup-color-use-default <=> popup-text-color-field.use-default;
     in-out property <float> popup-color-red <=> popup-text-color-field.red;
