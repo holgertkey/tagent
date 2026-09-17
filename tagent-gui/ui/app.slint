@@ -518,6 +518,9 @@ export component TranslationPopup inherits Window {
     // content is taller than it.
     in property <int> popup-max-width: 600;
     in property <int> popup-max-height: 600;
+    // Border thickness (px) of the popup's outer panel; color stays theme-derived
+    // (Palette.border) regardless.
+    in property <int> popup-border-width: 1;
 
     // Auto-hide: entirely self-contained in this component via the `Timer`
     // *element* below (not Rust's `slint::Timer` API, which is `!Send` and so
@@ -567,8 +570,15 @@ export component TranslationPopup inherits Window {
     }
 
     Rectangle {
-        background: panel-background-theme-default;
-        border-width: 1px;
+        // popup-background (not the raw panel-background-theme-default) --
+        // otherwise content-layout's own 8px padding exposes a visible
+        // margin in the *raw* theme color around the inner phrase/
+        // translation rectangles whenever popup-background resolves to
+        // something else (an active named Color scheme, or an explicit
+        // override), which reads as a border/frame no matter what
+        // popup-border-width is set to.
+        background: popup-background;
+        border-width: popup-border-width * 1px;
         border-color: Palette.border;
 
         // touch-area wraps ScrollView (rather than sitting beside it as a
@@ -881,6 +891,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <bool> popup-show-phrase: true;
     in-out property <int> popup-max-width: 600;
     in-out property <int> popup-max-height: 600;
+    in-out property <int> popup-border-width: 1;
 
     in-out property <bool> popup-color-use-default <=> popup-text-color-field.use-default;
     in-out property <float> popup-color-red <=> popup-text-color-field.red;
@@ -1137,6 +1148,11 @@ export component SettingsDialog inherits Dialog {
                         spacing: 8px;
                         Text { text: "Max height (px):"; vertical-alignment: center; }
                         SpinBox { minimum: 80; maximum: 1000; value <=> popup-max-height; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Border width (px):"; vertical-alignment: center; }
+                        SpinBox { minimum: 0; maximum: 20; value <=> popup-border-width; }
                     }
 
                     Text {

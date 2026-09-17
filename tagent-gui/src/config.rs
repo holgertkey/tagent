@@ -66,6 +66,11 @@ fn default_popup_max_height() -> i32 {
     600
 }
 
+/// Default border width (px) of the popup.
+fn default_popup_border_width() -> i32 {
+    1
+}
+
 /// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
 fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
@@ -156,6 +161,10 @@ pub struct GuiConfig {
     /// Max height (px) of the popup before its content becomes scrollable.
     #[serde(default = "default_popup_max_height")]
     pub popup_max_height: i32,
+    /// Border width (px) of the popup's outer panel; color stays theme-derived
+    /// regardless.
+    #[serde(default = "default_popup_border_width")]
+    pub popup_border_width: i32,
     /// Vertical gap (px) between one phrase/translation pair and the next.
     #[serde(default = "default_block_spacing_px")]
     pub block_spacing_px: i32,
@@ -246,6 +255,7 @@ impl Default for GuiConfig {
             popup_show_phrase: default_popup_show_phrase(),
             popup_max_width: default_popup_max_width(),
             popup_max_height: default_popup_max_height(),
+            popup_border_width: default_popup_border_width(),
             block_spacing_px: default_block_spacing_px(),
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
@@ -965,6 +975,21 @@ mod tests {
 
         assert_eq!(config.popup_max_width, 600);
         assert_eq!(config.popup_max_height, 600);
+    }
+
+    #[test]
+    fn old_file_without_popup_border_width_field_defaults_to_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.popup_border_width, 1);
     }
 
     #[test]

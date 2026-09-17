@@ -12,6 +12,33 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+044] - 2026-09-17
+
+### Changed
+- **Raised the popup's default border width from 0 to 1**
+  (`default_popup_border_width` in `config.rs`).
+
+## [0.14.0+043] - 2026-09-17
+
+### Added
+- **"Border width (px)" setting for the popup** (Popup tab, default `0` — no
+  border): new `popup_border_width` config field, applied to the popup's
+  outer panel `border-width` (`app.slint`); border color stays theme-derived
+  (`Palette.border`) regardless.
+
+### Fixed
+- **Popup showed a thick colored margin around its content regardless of
+  border settings** (`app.slint`): the outer panel `Rectangle`'s
+  `background` was hardcoded to the raw theme color
+  (`panel-background-theme-default`), never updated to track
+  `popup-background` once that became Color-scheme-aware. Since
+  `content-layout` has 8px padding around the inner phrase/translation
+  boxes, that padding showed through in the *raw theme* color whenever it
+  differed from the active scheme's color — reading as a border no matter
+  what `popup_border_width` was set to. Fixed by binding the outer
+  Rectangle's `background` to `popup-background` directly, so the whole
+  popup (including the padding margin) renders as one consistent color.
+
 ## [0.14.0+042] - 2026-09-17
 
 ### Fixed
