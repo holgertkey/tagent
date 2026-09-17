@@ -12,6 +12,38 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+036] - 2026-09-17
+
+### Changed
+- **Reworked +035's Popup "Color scheme" picker into an automatic fallback
+  instead of a separate dropdown**: the independent "Color scheme" combo box
+  added to the Popup tab in +035 is removed. Instead, the popup's existing
+  "Theme default" checkboxes (Text color/Background) now resolve against the
+  transcript's own `phrase_color`/`phrase_background` first (`apply_popup_style`
+  in `main.rs`), falling back further to the raw Palette theme colors only
+  when the transcript itself is also just following the theme. An unmodified
+  popup now automatically matches whatever Color scheme is active on the
+  View tab, with no picker of its own to keep in sync.
+
+## [0.14.0+035] - 2026-09-17
+
+### Added
+- **"Default" entry in the "Color scheme" preset list** (View tab): resets
+  the transcript's background/phrase/translation colors back to ""
+  (theme-following) and Theme to Auto — same shape as every other named
+  preset, just with no fixed colors of its own. `ColorScheme`'s `dark: bool`
+  field became `theme: &'static str` (`"auto"`/`"light"`/`"dark"`) to
+  represent it.
+- **Independent "Color scheme" picker for the Popup tab**: a second combo
+  box, using the same preset list, that fills the popup's own Text
+  color/Background (from each scheme's `phrase_color`/`phrase_background`)
+  and switches Theme to match, without touching the transcript's colors.
+  Defaults, each time Settings opens, to whichever scheme is currently
+  active for the transcript (not the popup's own saved colors) — e.g. if the
+  transcript is on "Ayu Dark", the Popup tab's dropdown starts on "Ayu Dark"
+  too, but can be changed independently from there (a dark transcript with a
+  light popup, for instance).
+
 ## [0.14.0+034] - 2026-09-17
 
 ### Added

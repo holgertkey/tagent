@@ -717,9 +717,11 @@ export component SettingsDialog inherits Dialog {
     // name) immediately fills in the background/phrase/translation color
     // fields below and switches Theme to match — it isn't itself a
     // persisted setting, just a bulk-fill shortcut for the individual color
-    // pickers, which stay fully editable afterward.
+    // pickers, which stay fully editable afterward. "Default" resets those
+    // fields back to "" (theme default) and Theme to Auto, same shape as
+    // every other named preset just with the theme-following colors.
     in-out property <[string]> color-scheme-options: [
-        "Presets…", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
+        "Presets…", "Default", "Solarized Dark", "Solarized Light", "Dracula", "Nord",
         "Gruvbox Dark", "Monokai", "One Dark", "Tokyo Night", "Catppuccin Mocha",
         "Night Owl", "Ayu Dark", "GitHub Light", "Gruvbox Light", "Catppuccin Latte"
     ];
@@ -1037,7 +1039,7 @@ export component SettingsDialog inherits Dialog {
                     }
 
                     Text {
-                        text: "\"Theme default\" follows whichever theme is active. Everything on this tab applies immediately.";
+                        text: "\"Theme default\" follows the transcript's own Color scheme (View tab), not just the raw Auto/Light/Dark theme. Everything on this tab applies immediately.";
                         wrap: word-wrap;
                     }
                 }

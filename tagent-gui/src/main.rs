@@ -52,7 +52,9 @@ fn font_index_for(family: &str) -> i32 {
 /// `SettingsDialog.color-scheme-options` in app.slint.
 struct ColorScheme {
     name: &'static str,
-    dark: bool,
+    /// One of `"auto"`, `"light"`, `"dark"` — applied to the Theme dropdown
+    /// alongside this scheme's colors. Only `"Default"` uses `"auto"`.
+    theme: &'static str,
     background: &'static str,
     phrase_color: &'static str,
     phrase_background: &'static str,
@@ -61,9 +63,21 @@ struct ColorScheme {
 }
 
 const COLOR_SCHEMES: &[ColorScheme] = &[
+    // Resets the transcript's (or popup's) colors back to theme-following
+    // and Theme to Auto — same shape as every other preset here, just with
+    // no fixed colors of its own.
+    ColorScheme {
+        name: "Default",
+        theme: "auto",
+        background: "",
+        phrase_color: "",
+        phrase_background: "",
+        translation_color: "",
+        translation_background: "",
+    },
     ColorScheme {
         name: "Solarized Dark",
-        dark: true,
+        theme: "dark",
         background: "#002B36",
         phrase_color: "#839496",
         phrase_background: "#073642",
@@ -72,7 +86,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Solarized Light",
-        dark: false,
+        theme: "light",
         background: "#FDF6E3",
         phrase_color: "#657B83",
         phrase_background: "#EEE8D5",
@@ -81,7 +95,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Dracula",
-        dark: true,
+        theme: "dark",
         background: "#282A36",
         phrase_color: "#F8F8F2",
         phrase_background: "#44475A",
@@ -90,7 +104,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Nord",
-        dark: true,
+        theme: "dark",
         background: "#2E3440",
         phrase_color: "#D8DEE9",
         phrase_background: "#3B4252",
@@ -99,7 +113,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Gruvbox Dark",
-        dark: true,
+        theme: "dark",
         background: "#282828",
         phrase_color: "#EBDBB2",
         phrase_background: "#3C3836",
@@ -108,7 +122,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Monokai",
-        dark: true,
+        theme: "dark",
         background: "#272822",
         phrase_color: "#F8F8F2",
         phrase_background: "#3E3D32",
@@ -117,7 +131,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "One Dark",
-        dark: true,
+        theme: "dark",
         background: "#282C34",
         phrase_color: "#ABB2BF",
         phrase_background: "#2C313C",
@@ -126,7 +140,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Tokyo Night",
-        dark: true,
+        theme: "dark",
         background: "#1A1B26",
         phrase_color: "#C0CAF5",
         phrase_background: "#292E42",
@@ -135,7 +149,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Catppuccin Mocha",
-        dark: true,
+        theme: "dark",
         background: "#1E1E2E",
         phrase_color: "#CDD6F4",
         phrase_background: "#313244",
@@ -144,7 +158,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Night Owl",
-        dark: true,
+        theme: "dark",
         background: "#011627",
         phrase_color: "#D6DEEB",
         phrase_background: "#1D3B53",
@@ -153,7 +167,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Ayu Dark",
-        dark: true,
+        theme: "dark",
         background: "#0A0E14",
         phrase_color: "#B3B1AD",
         phrase_background: "#131721",
@@ -162,7 +176,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "GitHub Light",
-        dark: false,
+        theme: "light",
         background: "#FFFFFF",
         phrase_color: "#24292E",
         phrase_background: "#F6F8FA",
@@ -171,7 +185,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Gruvbox Light",
-        dark: false,
+        theme: "light",
         background: "#FBF1C7",
         phrase_color: "#3C3836",
         phrase_background: "#EBDBB2",
@@ -180,7 +194,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
     },
     ColorScheme {
         name: "Catppuccin Latte",
-        dark: false,
+        theme: "light",
         background: "#EFF1F5",
         phrase_color: "#4C4F69",
         phrase_background: "#CCD0DA",
@@ -211,6 +225,18 @@ fn resolve_color(hex: &str, default: Color) -> Color {
         Some((r, g, b)) => Color::from_rgb_u8(r, g, b),
         None => default,
     }
+}
+
+/// Sets `dialog`'s Theme dropdown (and applies it to the dialog's own Palette
+/// instance) to match a [`ColorScheme::theme`] value -- shared by both the
+/// View tab's and the Popup tab's color-scheme-selected handlers, since
+/// picking either one's preset also switches the single app-wide Theme.
+fn apply_scheme_theme(dialog: &SettingsDialog, theme: &str) {
+    let themes = dialog.get_themes();
+    if let Some(index) = themes.iter().position(|t| t.as_str().to_lowercase() == theme) {
+        dialog.set_theme_index(index as i32);
+    }
+    dialog.invoke_apply_theme(theme.into());
 }
 
 /// Reads a color-picker field's dialog state back into a `"#RRGGBB"` config
@@ -361,16 +387,27 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 /// the popup only ever shows one phrase/translation pair at a time. Kept as
 /// its own small function rather than widening `apply_style` to branch on
 /// window type, since the two windows' style surfaces only partially overlap.
+///
+/// "Theme default" (an empty `popup_color`/`popup_background`) resolves
+/// against the transcript's own `phrase_color`/`phrase_background` first
+/// (Stage 9 follow-up), not straight against the raw Palette theme colors —
+/// so an unmodified popup automatically matches whatever Color scheme is
+/// active for the transcript (View tab), with no separate picker needed.
+/// Those transcript fields are themselves resolved against Palette when
+/// *they're* empty (i.e. the transcript is also just following the theme),
+/// which is when the popup falls all the way back to the raw theme colors.
 fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.invoke_apply_theme(config.theme.clone().into());
 
-    let default_fg = popup.get_panel_foreground().color();
-    let default_bg = popup.get_panel_background_theme_default().color();
+    let theme_default_fg = popup.get_panel_foreground().color();
+    let theme_default_bg = popup.get_panel_background_theme_default().color();
+    let scheme_default_fg = resolve_color(&config.phrase_color, theme_default_fg);
+    let scheme_default_bg = resolve_color(&config.phrase_background, theme_default_bg);
 
     popup.set_popup_font(config.popup_font.clone().into());
     popup.set_popup_size(config.popup_size);
-    popup.set_popup_color(resolve_color(&config.popup_color, default_fg));
-    popup.set_popup_background(resolve_color(&config.popup_background, default_bg));
+    popup.set_popup_color(resolve_color(&config.popup_color, scheme_default_fg));
+    popup.set_popup_background(resolve_color(&config.popup_background, scheme_default_bg));
 }
 
 /// Shows the Stage 6 popup with `outcome`'s text -- formatted here using the popup's
@@ -553,7 +590,8 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     // Show the matching preset's name in the "Color scheme" dropdown
     // (instead of the "Presets…" placeholder at index 0) when the five
     // colors currently in effect are exactly one of the presets — e.g.
-    // right after it was applied and saved. Index +1 accounts for that
+    // right after it was applied and saved, or "Default" when they're all
+    // still at "" (theme-following). Index +1 accounts for the "Presets…"
     // placeholder being first in color-scheme-options.
     let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
         scheme.background == config.background_color
@@ -1372,15 +1410,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 set_translation_bg_hex
             );
 
-            let target_theme = if scheme.dark { "dark" } else { "light" };
-            let themes = dialog.get_themes();
-            if let Some(index) = themes
-                .iter()
-                .position(|t| t.as_str().to_lowercase() == target_theme)
-            {
-                dialog.set_theme_index(index as i32);
-            }
-            dialog.invoke_apply_theme(target_theme.into());
+            apply_scheme_theme(&dialog, scheme.theme);
         });
 
         let dialog_weak = dialog.as_weak();
