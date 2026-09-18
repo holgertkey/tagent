@@ -31,6 +31,24 @@ pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
     format!("{} {}", phrase, corrected_word)
 }
 
+/// Picks the single line that best represents `entry` on its own -- the plain
+/// translation fetched alongside the dictionary lookup when available, or the
+/// first part-of-speech's first definition text otherwise.
+///
+/// Used both as [`format_dictionary_entry`]'s header line and, unmodified, as
+/// the text a dictionary-hit transcript entry's translation speaker button
+/// (Stage 10) reads aloud -- never the full formatted block (part-of-speech
+/// headers, synonym lists), which would read strangely out loud.
+pub fn primary_line(entry: &DictionaryEntry, primary_translation: Option<&str>) -> Option<String> {
+    primary_translation.map(|s| s.to_string()).or_else(|| {
+        entry
+            .definitions
+            .first()
+            .and_then(|pos| pos.definitions.first())
+            .map(|def| def.text.clone())
+    })
+}
+
 /// Formats a dictionary entry for display.
 ///
 /// Unlike `tagent-cli`'s CLI-mode formatting, this never repeats the looked-up
@@ -39,7 +57,7 @@ pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
 /// redundant. `primary_translation` (the plain-translation result fetched
 /// concurrently alongside the dictionary lookup) is used as the header line
 /// when available, falling back to the first part-of-speech's first
-/// definition text otherwise.
+/// definition text otherwise -- see [`primary_line`].
 pub fn format_dictionary_entry(
     entry: &DictionaryEntry,
     target_lang: &str,
@@ -47,14 +65,7 @@ pub fn format_dictionary_entry(
 ) -> String {
     let mut result = Vec::new();
 
-    let header = primary_translation.map(|s| s.to_string()).or_else(|| {
-        entry
-            .definitions
-            .first()
-            .and_then(|pos| pos.definitions.first())
-            .map(|def| def.text.clone())
-    });
-    if let Some(h) = header {
+    if let Some(h) = primary_line(entry, primary_translation) {
         result.push(h);
     }
 
@@ -265,6 +276,32 @@ mod tests {
                 ],
             }],
         }
+    }
+
+    #[test]
+    fn primary_line_prefers_primary_translation() {
+        assert_eq!(
+            primary_line(&sample_entry(), Some("furious")),
+            Some("furious".to_string())
+        );
+    }
+
+    #[test]
+    fn primary_line_falls_back_to_first_definition() {
+        assert_eq!(
+            primary_line(&sample_entry(), None),
+            Some("using or involving physical force".to_string())
+        );
+    }
+
+    #[test]
+    fn primary_line_returns_none_when_no_definitions_and_no_primary_translation() {
+        let empty_entry = DictionaryEntry {
+            word: "violent".to_string(),
+            corrected_word: None,
+            definitions: vec![],
+        };
+        assert_eq!(primary_line(&empty_entry, None), None);
     }
 
     #[test]

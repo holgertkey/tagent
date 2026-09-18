@@ -5662,12 +5662,13 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+045"
+version = "0.14.0+046"
 dependencies = [
  "arboard",
  "clipboard-win",
  "dirs",
  "rdev",
+ "rodio",
  "serde",
  "serde_json",
  "slint",

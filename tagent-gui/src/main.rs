@@ -8,6 +8,7 @@ use tagent::{languages, providers};
 mod config;
 mod dictionary;
 mod platform;
+mod speech;
 
 use config::GuiConfigManager;
 use platform::window::WindowHandle;
@@ -505,6 +506,26 @@ fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
     }
 }
 
+/// Builds a [`TranscriptEntry`] for a message that isn't a real translation (a
+/// clipboard error, or the "Auto"-as-target-language guard) -- no speech text
+/// on either side (Stage 10), since there's nothing meaningful to speak;
+/// `translation_is_error: true` also keeps the translation speaker button
+/// hidden even if that changes.
+fn info_transcript_entry(
+    phrase: impl Into<slint::SharedString>,
+    translation: impl Into<slint::SharedString>,
+) -> TranscriptEntry {
+    TranscriptEntry {
+        phrase: phrase.into(),
+        translation: translation.into(),
+        phrase_speech: String::new().into(),
+        translation_speech: String::new().into(),
+        from_code: String::new().into(),
+        to_code: String::new().into(),
+        translation_is_error: true,
+    }
+}
+
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
 /// empty, for "theme default") config value. Used five times (the shared
 /// panel background, plus phrase/translation × text/background) — see the
@@ -580,6 +601,7 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_provider_index(provider_index as i32);
     dialog.set_show_dictionary(config.show_dictionary);
     dialog.set_spell_check(config.spell_check);
+    dialog.set_enable_text_to_speech(config.enable_text_to_speech);
 
     let themes = dialog.get_themes();
     let theme_index = themes
@@ -795,6 +817,16 @@ fn spawn_translation(
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
         let request_text = text.clone();
+        // Cloned before from_code/to_code are moved into the async block below --
+        // needed again afterward, in invoke_from_event_loop, for TranscriptEntry
+        // (Stage 10).
+        let from_code_for_entry = from_code.clone();
+        let to_code_for_entry = to_code.clone();
+        // (display_body, speech_text) -- speech_text is the raw *primary* translation
+        // only (Stage 10): for a plain translation the two are identical, but for a
+        // Stage 9 dictionary hit display_body is the full formatted block while
+        // speech_text is just its header line (dictionary::primary_line), so the
+        // per-entry speaker button never reads out part-of-speech/synonym lists.
         let result = runtime.block_on(async move {
             let provider = providers::create_provider(&translate_provider)?;
 
@@ -822,26 +854,33 @@ fn spawn_translation(
                             &to_code,
                             translate_result.as_deref().ok(),
                         ));
-                        Ok(body)
+                        let speech_text =
+                            dictionary::primary_line(&entry, translate_result.as_deref().ok())
+                                .unwrap_or_default();
+                        Ok((body, speech_text))
                     }
                     // No dictionary entry (word not found / provider returned None) or a
                     // dictionary-lookup error: fall back to the plain translation already
                     // fetched above rather than a second network call -- `translate_result`
                     // is already the exact `Result<String, tagent::error::Error>` this
                     // function needs to return.
-                    _ => translate_result,
+                    _ => translate_result.map(|t| (t.clone(), t)),
                 }
             } else {
                 provider
                     .translate_text(&request_text, &from_code, &to_code)
                     .await
+                    .map(|t| (t.clone(), t))
             }
         });
 
         slint::invoke_from_event_loop(move || {
-            let (translation_raw, is_error) = match &result {
-                Ok(translated) => (translated.clone(), false),
-                Err(err) => (format!("Error: {err}"), true),
+            let (translation_raw, translation_speech, is_error) = match &result {
+                Ok((body, speech_text)) => (body.clone(), speech_text.clone(), false),
+                Err(err) => {
+                    let message = format!("Error: {err}");
+                    (message.clone(), message, true)
+                }
             };
 
             let entry = TranscriptEntry {
@@ -851,6 +890,15 @@ fn spawn_translation(
                 } else {
                     format_line(show_prompt, &to_lang, &translation_raw).into()
                 },
+                phrase_speech: text.clone().into(),
+                translation_speech: if is_error {
+                    String::new().into()
+                } else {
+                    translation_speech.clone().into()
+                },
+                from_code: from_code_for_entry.into(),
+                to_code: to_code_for_entry.into(),
+                translation_is_error: is_error,
             };
             let outcome = TranslationOutcome {
                 from_lang: from_lang.clone(),
@@ -1033,6 +1081,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // after `RECORDING_SUPPRESSION_TIMEOUT`.
     let recording_started_at: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
 
+    // Stage 10: the stop flag for whichever text-to-speech playback is currently
+    // in flight, if any -- `None` while nothing is speaking. Set by
+    // `on_speak_requested` when it starts a new playback, read by the same
+    // handler when the *same* row's button is clicked again (stop), and cleared
+    // by the playback thread itself once it finishes (naturally or via the flag).
+    let speech_stop_flag: Arc<Mutex<Option<Arc<AtomicBool>>>> = Arc::new(Mutex::new(None));
+
     // Whether the saved window geometry (if any) has been restored yet in this
     // run -- see `show_window_restoring_geometry`'s doc comment for why this is
     // only ever done once, not on every show.
@@ -1054,6 +1109,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     apply_style(&window, config_manager.lock().unwrap().config());
+    window.set_tts_enabled(
+        config_manager
+            .lock()
+            .unwrap()
+            .config()
+            .enable_text_to_speech,
+    );
 
     // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
     // re-shown) on every hotkey trigger rather than constructed per trigger --
@@ -1195,7 +1257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let from_code = languages::name_to_code(&from_lang).to_string();
         let to_code = languages::name_to_code(&to_lang).to_string();
 
-        let (translate_provider, show_prompt, show_dictionary, spell_check) = {
+        let (translate_provider, show_prompt, show_dictionary, spell_check, enable_text_to_speech) = {
             let mut manager = config_manager.lock().unwrap();
             manager.check_and_reload();
             let cfg = manager.config();
@@ -1204,17 +1266,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 cfg.show_prompt,
                 cfg.show_dictionary,
                 cfg.spell_check,
+                cfg.enable_text_to_speech,
             )
         };
+
+        if let Some(window) = weak.upgrade() {
+            window.set_tts_enabled(enable_text_to_speech);
+        }
 
         if to_code == "auto" {
             if let Some(window) = weak.upgrade() {
                 push_transcript_entry(
                     &window,
-                    TranscriptEntry {
-                        phrase: format_line(show_prompt, &from_lang, &text).into(),
-                        translation: "Error: \"Auto\" is not a valid target language".into(),
-                    },
+                    info_transcript_entry(
+                        format_line(show_prompt, &from_lang, &text),
+                        "Error: \"Auto\" is not a valid target language",
+                    ),
                 );
             }
             return;
@@ -1261,10 +1328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(text) => window.set_input_text(text.into()),
                         Err(err) => push_transcript_entry(
                             &window,
-                            TranscriptEntry {
-                                phrase: "[Clipboard]".into(),
-                                translation: format!("Error: {err}").into(),
-                            },
+                            info_transcript_entry("[Clipboard]", format!("Error: {err}")),
                         ),
                     }
                 }
@@ -1496,6 +1560,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 theme: theme.to_lowercase(),
                 show_dictionary: dialog.get_show_dictionary(),
                 spell_check: dialog.get_spell_check(),
+                enable_text_to_speech: dialog.get_enable_text_to_speech(),
                 background_color: color_field_hex(
                     dialog.get_background_use_default(),
                     dialog.get_background_red(),
@@ -1583,6 +1648,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             if let Some(window) = window_weak_for_save.upgrade() {
                 apply_style(&window, &new_config);
+                window.set_tts_enabled(new_config.enable_text_to_speech);
             }
             if let Some(popup) = popup_weak_for_save.upgrade() {
                 apply_popup_style(&popup, &new_config);
@@ -1605,6 +1671,96 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         dialog.show().unwrap();
+    });
+
+    // Stage 10: per-entry text-to-speech speaker buttons. `index`/`is_phrase`
+    // identify which row/side was clicked; `speaking-entry-index`/
+    // `speaking-is-phrase` (app.slint) are the single shared "who's currently
+    // speaking" state every row's button checks -- only one Sink ever plays at
+    // a time, mirroring tagent-cli's own single-Sink design.
+    let weak_for_speak = window.as_weak();
+    let config_manager_for_speak = config_manager.clone();
+    let speech_stop_flag_for_speak = speech_stop_flag.clone();
+    window.on_speak_requested(move |index, is_phrase| {
+        let Some(window) = weak_for_speak.upgrade() else {
+            return;
+        };
+
+        if window.get_speaking_entry_index() != -1 {
+            // Either a click on the currently-speaking row's own button (stop
+            // it), or -- defensively, since .slint already disables every
+            // other row's button while one is speaking -- a different row
+            // (ignored).
+            if window.get_speaking_entry_index() == index
+                && window.get_speaking_is_phrase() == is_phrase
+            {
+                if let Some(flag) = speech_stop_flag_for_speak.lock().unwrap().as_ref() {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            }
+            return;
+        }
+
+        let Some(entry) = window.get_transcript_entries().row_data(index as usize) else {
+            return;
+        };
+        let text = if is_phrase {
+            entry.phrase_speech.to_string()
+        } else {
+            entry.translation_speech.to_string()
+        };
+        let code = if is_phrase {
+            entry.from_code.to_string()
+        } else {
+            entry.to_code.to_string()
+        };
+        if text.trim().is_empty() {
+            return;
+        }
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        *speech_stop_flag_for_speak.lock().unwrap() = Some(stop_flag.clone());
+        window.set_speaking_entry_index(index);
+        window.set_speaking_is_phrase(is_phrase);
+
+        let weak = weak_for_speak.clone();
+        let config_manager = config_manager_for_speak.clone();
+        let speech_stop_flag = speech_stop_flag_for_speak.clone();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
+            let outcome: Result<(), Box<dyn std::error::Error + Send + Sync>> =
+                runtime.block_on(async {
+                    let translate_provider = {
+                        let mut manager = config_manager.lock().unwrap();
+                        manager.check_and_reload();
+                        manager.config().translate_provider.clone()
+                    };
+                    let provider = providers::create_provider(&translate_provider)?;
+                    // Pass-through no-op whenever `code` is already concrete (every
+                    // translation-side call, and every phrase-side call where the
+                    // source language wasn't "Auto") -- only issues a real
+                    // `detect_language` request when `code == "auto"`.
+                    let lang_code =
+                        providers::resolve_source_language(provider.as_ref(), &text, &code).await;
+                    speech::speak(provider.as_ref(), &text, &lang_code, stop_flag).await
+                });
+            if let Err(err) = outcome {
+                eprintln!("Speech error: {err}");
+            }
+
+            // Cleared together with speaking-entry-index, both on the UI thread --
+            // not separately here, or a click on the active ⏹ landing in the gap
+            // between this thread clearing the flag and the event-loop hop below
+            // actually running would find speaking-entry-index still set but the
+            // stop flag already gone, and silently do nothing.
+            slint::invoke_from_event_loop(move || {
+                *speech_stop_flag.lock().unwrap() = None;
+                if let Some(window) = weak.upgrade() {
+                    window.set_speaking_entry_index(-1);
+                }
+            })
+            .ok();
+        });
     });
 
     // Global hotkey (Stage 5): parse+validate once at startup from the hand-editable
@@ -1671,6 +1827,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         show_prompt,
                         show_dictionary,
                         spell_check,
+                        enable_text_to_speech,
                         popup_auto_hide_seconds,
                         popup_show_prompt,
                         popup_show_phrase,
@@ -1683,11 +1840,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             cfg.show_prompt,
                             cfg.show_dictionary,
                             cfg.spell_check,
+                            cfg.enable_text_to_speech,
                             cfg.popup_auto_hide_seconds_or_default(),
                             cfg.popup_show_prompt,
                             cfg.popup_show_phrase,
                         )
                     };
+                    window.set_tts_enabled(enable_text_to_speech);
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
                     let to_code = languages::name_to_code(&to_lang).to_string();
@@ -1695,11 +1854,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     if to_code == "auto" {
                         push_transcript_entry(
                             &window,
-                            TranscriptEntry {
-                                phrase: "[Hotkey]".into(),
-                                translation: "Error: \"Auto\" is not a valid target language"
-                                    .into(),
-                            },
+                            info_transcript_entry(
+                                "[Hotkey]",
+                                "Error: \"Auto\" is not a valid target language",
+                            ),
                         );
                         is_processing.store(false, Ordering::SeqCst);
                         return;
@@ -1744,10 +1902,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     if let Some(window) = weak2.upgrade() {
                                         push_transcript_entry(
                                             &window,
-                                            TranscriptEntry {
-                                                phrase: "[Hotkey]".into(),
-                                                translation: format!("Error: {err}").into(),
-                                            },
+                                            info_transcript_entry(
+                                                "[Hotkey]",
+                                                format!("Error: {err}"),
+                                            ),
                                         );
                                     }
                                     is_processing2.store(false, Ordering::SeqCst);

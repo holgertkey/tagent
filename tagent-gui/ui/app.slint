@@ -13,6 +13,28 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 export struct TranscriptEntry {
     phrase: string,
     translation: string,
+    // Stage 10: `phrase`/`translation` above stay exactly as before (the
+    // prompt-formatted display strings) -- these four carry what the
+    // per-entry text-to-speech buttons actually need, since the display
+    // strings already have a "[Russian]:"-style prompt baked in and can't be
+    // spoken as-is, and there's otherwise no language code stored on the
+    // entry at all.
+    //
+    // phrase-speech is the raw, unprompted phrase text. translation-speech is
+    // the raw *primary* translation only -- for a Stage 9 dictionary hit this
+    // is just the header line (see dictionary::primary_line), never the full
+    // formatted block (part-of-speech headers, synonym lists), which would
+    // read strangely out loud.
+    phrase-speech: string,
+    translation-speech: string,
+    // from-code may be "auto" (resolved lazily at speak time); to-code never
+    // is, since "Auto" as a target is already rejected before translation
+    // happens.
+    from-code: string,
+    to-code: string,
+    // Hides the translation speaker button for a failed translation without
+    // also hiding the (always-valid) phrase one.
+    translation-is-error: bool,
 }
 
 // Reusable "theme default, or pick a color" field used four times in
@@ -191,6 +213,18 @@ export component AppWindow inherits Window {
     out property <length> transcript-visible-height <=> transcript-scroll.visible-height;
     in-out property <length> transcript-viewport-y <=> transcript-scroll.viewport-y;
 
+    // Stage 10: whether the per-entry text-to-speech speaker buttons render
+    // at all -- gated by tagent-gui.json's enable_text_to_speech.
+    in-out property <bool> tts-enabled: true;
+    // Which transcript row (by index into transcript-entries) is currently
+    // speaking, and whether it's the phrase or translation side -- one
+    // shared pair of properties, not per-entry state, since only one Sink
+    // ever plays at a time (mirroring tagent-cli's own single-Sink design).
+    // -1 means nothing is speaking.
+    in-out property <int> speaking-entry-index: -1;
+    in-out property <bool> speaking-is-phrase: true;
+    callback speak-requested(int, bool);
+
     callback translate-requested(string, string, string);
     callback swap-requested();
     callback settings-requested();
@@ -250,58 +284,90 @@ export component AppWindow inherits Window {
                         wrap: word-wrap;
                     }
 
-                    for entry in transcript-entries: VerticalLayout {
+                    for entry[i] in transcript-entries: VerticalLayout {
                         spacing: phrases-spacing-px * 1px;
 
                         // No vertical padding anywhere in this pair — the gap
                         // between the phrase's last line and the
                         // translation's first line is entirely controlled by
                         // phrases-spacing-px, down to 0.
-                        Rectangle {
-                            background: phrase-background;
-                            border-radius: 3px;
-                            height: phrase-line.preferred-height;
+                        HorizontalLayout {
+                            spacing: 4px;
 
-                            phrase-line := TextInput {
-                                text: entry.phrase;
-                                font-family: phrase-font;
-                                font-size: phrase-size * 1px;
-                                color: phrase-color;
-                                selection-background-color: selection-bg;
-                                selection-foreground-color: selection-fg;
-                                wrap: word-wrap;
-                                single-line: false;
-                                read-only: true;
-                                horizontal-alignment: left;
-                                vertical-alignment: top;
-                                x: 4px;
-                                y: 0px;
-                                width: parent.width - 8px;
-                                height: self.preferred-height;
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: phrase-background;
+                                border-radius: 3px;
+                                height: phrase-line.preferred-height;
+
+                                phrase-line := TextInput {
+                                    text: entry.phrase;
+                                    font-family: phrase-font;
+                                    font-size: phrase-size * 1px;
+                                    color: phrase-color;
+                                    selection-background-color: selection-bg;
+                                    selection-foreground-color: selection-fg;
+                                    wrap: word-wrap;
+                                    single-line: false;
+                                    read-only: true;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    x: 4px;
+                                    y: 0px;
+                                    width: parent.width - 8px;
+                                    height: self.preferred-height;
+                                }
+                            }
+
+                            // Stage 10: every row's button other than the one
+                            // currently speaking is disabled (std-widgets'
+                            // own dimmed/non-clickable styling) while
+                            // speaking-entry-index != -1, rather than letting
+                            // a second click start a second, overlapping
+                            // Sink. The active row's own button stays
+                            // enabled and turns into "⏹" -- clicking it again
+                            // is how playback is stopped.
+                            if tts-enabled && entry.phrase-speech != "": Button {
+                                width: 28px;
+                                text: (speaking-entry-index == i && speaking-is-phrase) ? "⏹" : "🔊";
+                                enabled: speaking-entry-index == -1 || (speaking-entry-index == i && speaking-is-phrase);
+                                clicked => { speak-requested(i, true); }
                             }
                         }
 
-                        Rectangle {
-                            background: translation-background;
-                            border-radius: 3px;
-                            height: translation-line.preferred-height;
+                        HorizontalLayout {
+                            spacing: 4px;
 
-                            translation-line := TextInput {
-                                text: entry.translation;
-                                font-family: translation-font;
-                                font-size: translation-size * 1px;
-                                color: translation-color;
-                                selection-background-color: selection-bg;
-                                selection-foreground-color: selection-fg;
-                                wrap: word-wrap;
-                                single-line: false;
-                                read-only: true;
-                                horizontal-alignment: left;
-                                vertical-alignment: top;
-                                x: 4px;
-                                y: 0px;
-                                width: parent.width - 8px;
-                                height: self.preferred-height;
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: translation-background;
+                                border-radius: 3px;
+                                height: translation-line.preferred-height;
+
+                                translation-line := TextInput {
+                                    text: entry.translation;
+                                    font-family: translation-font;
+                                    font-size: translation-size * 1px;
+                                    color: translation-color;
+                                    selection-background-color: selection-bg;
+                                    selection-foreground-color: selection-fg;
+                                    wrap: word-wrap;
+                                    single-line: false;
+                                    read-only: true;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    x: 4px;
+                                    y: 0px;
+                                    width: parent.width - 8px;
+                                    height: self.preferred-height;
+                                }
+                            }
+
+                            if tts-enabled && !entry.translation-is-error && entry.translation-speech != "": Button {
+                                width: 28px;
+                                text: (speaking-entry-index == i && !speaking-is-phrase) ? "⏹" : "🔊";
+                                enabled: speaking-entry-index == -1 || (speaking-entry-index == i && !speaking-is-phrase);
+                                clicked => { speak-requested(i, false); }
                             }
                         }
                     }
@@ -808,6 +874,9 @@ export component SettingsDialog inherits Dialog {
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
     in-out property <bool> show-dictionary: true;
     in-out property <bool> spell-check: true;
+    // Stage 10: per-entry text-to-speech speaker buttons. Live-reloaded, same
+    // as show-dictionary/spell-check above.
+    in-out property <bool> enable-text-to-speech: true;
     in-out property <[string]> themes: ["Auto", "Light", "Dark"];
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
@@ -979,6 +1048,7 @@ export component SettingsDialog inherits Dialog {
 
                 CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }
                 CheckBox { text: "Spell check suggestions"; checked <=> spell-check; }
+                CheckBox { text: "Enable text-to-speech"; checked <=> enable-text-to-speech; }
                 Text {
                     text: "Applies to the next translation immediately — no restart needed. \"Spell check suggestions\" has no effect while \"Show dictionary\" is off.";
                     wrap: word-wrap;

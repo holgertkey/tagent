@@ -731,24 +731,61 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     live-reload and that `spell_check` has no effect while `show_dictionary`
     is off (kept as two independent checkboxes rather than one disabling the
     other).
-- **Scope**: a bare-bones translate-only prototype — no TTS button, no history
-  logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/
-  French/German), much smaller than the ~16 languages `config.rs` supports for
-  CLI/interactive mode.
+- **Text-to-speech playback** (Stage 10, shipped 2026-09-18): every transcript
+  row gets two 🔊 speaker buttons — one for the phrase, one for the translation
+  (hidden when `entry.translation-is-error` or the entry has no
+  `translation-speech`, e.g. a failed translation). `TranscriptEntry` grew four
+  fields to carry what speech needs that the existing `phrase`/`translation`
+  display strings can't (already prompt-formatted, and never had a language
+  code at all): `phrase-speech`/`translation-speech` (raw, unprompted text —
+  for a Stage 9 dictionary hit, `translation-speech` is just the primary
+  line via a new `dictionary::primary_line` helper, extracted out of
+  `format_dictionary_entry`'s own header-line logic so both agree — never the
+  full part-of-speech/synonym block) and `from-code`/`to-code` (the resolved
+  provider codes; `from-code` may be `"auto"`, `to-code` never is). New
+  `tagent-gui/src/speech.rs` module (`speak()`, ported from `tagent-cli`'s
+  `speech.rs` minus the terminal-specific Esc monitor/label printing — a
+  global Esc poll would swallow Esc app-wide in a windowed app, and
+  `tagent-gui`'s own Linux `platform::keycodes` deliberately has no
+  `is_key_pressed`) plays audio via the same `rodio` `OutputStreamBuilder` →
+  `Sink` shape `tagent-cli` already uses, with `rodio = { version = "0.21",
+  features = ["symphonia-mp3"] }` as a new, platform-independent dependency
+  (unlike the hotkey/popup/tray features, this needs no OS-specific code —
+  works on macOS too). Only one button plays at a time app-wide: `AppWindow`'s
+  `speaking-entry-index`/`speaking-is-phrase` properties are shared, single
+  state (not per-entry), so every other row's button disables itself while one
+  plays; the active button turns into "⏹" and a second click on it sets a
+  shared `Arc<Mutex<Option<Arc<AtomicBool>>>>` stop flag that the playback
+  thread polls between chunks. `from-code == "auto"` is resolved lazily at
+  speak-click time via `providers::resolve_source_language` (a no-op
+  pass-through otherwise), rather than trying to recover what Google actually
+  detected at translation time (`translate_text` doesn't hand that back). New
+  `enable_text_to_speech` `GuiConfig` field (default `true`, matching
+  `tagent-cli`'s `EnableTextToSpeech`, live-reloaded), gating a `tts-enabled`
+  window property re-set at every point that already reads config
+  (`on_translate_requested`, the hotkey path, Settings save) plus once at
+  startup; Settings checkbox on the General tab next to Stage 9's two.
+- **Scope**: a bare-bones translate-only prototype — no history logging (TTS
+  playback shipped at Stage 10, above). `app.slint` hardcodes a 6-language
+  list (Auto/English/Russian/Spanish/French/German), much smaller than the
+  ~16 languages `config.rs` supports for CLI/interactive mode.
 
 ### Known gaps in `tagent-gui`
 
-- **Language list, history logging, and TTS settings aren't configurable at
-  all yet** — no field exists for them (the 6-language list stays hardcoded).
+- **Language list and history logging aren't configurable at all yet** — no
+  field exists for either (the 6-language list stays hardcoded).
   `tagent-cli.conf` is not read at all any more (no migration path — see the
   "own configuration" concept in the development plan). (`translate_hotkey`
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
-  Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control.)
-- **No TTS UI** — it calls `TranslationProvider::translate_text`/
-  `get_dictionary_entry` directly rather than going through `tagent-cli`'s
-  `Translator` orchestrator; dictionary/spell-check display shipped at Stage 9
-  (2026-09-18) via `tagent-gui`'s own independent `dictionary.rs`, but
-  `split_for_speech`/`speak_chunk` (Stage 10) are still unwired.
+  Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control; TTS
+  settings used to be listed here too — Stage 10, shipped 2026-09-18, gave
+  `enable_text_to_speech` a General-tab checkbox.)
+- It calls `TranslationProvider::translate_text`/`get_dictionary_entry`/
+  `split_for_speech`/`speak_chunk` directly rather than going through
+  `tagent-cli`'s `Translator`/`SpeechManager` orchestrators; dictionary/
+  spell-check display shipped at Stage 9 (2026-09-18) and text-to-speech
+  playback at Stage 10 (2026-09-18), both via `tagent-gui`'s own independent
+  modules (`dictionary.rs`, `speech.rs`).
 
 ## `build.rs`: version sync
 

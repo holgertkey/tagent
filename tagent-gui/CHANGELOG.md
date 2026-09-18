@@ -12,6 +12,23 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+046] - 2026-09-18
+
+### Added
+- **Text-to-speech playback** (Stage 10): every transcript row gets its own
+  🔊 speaker buttons — one for the original phrase, one for the translation
+  (hidden for a failed translation, and for a Stage 9 dictionary hit reads
+  only the primary translation line, never the full part-of-speech/synonym
+  block). Clicking a button plays audio through the default output device via
+  a new `tagent-gui/src/speech.rs` module (duplicated from `tagent-cli`'s own
+  playback code, independent of it) and turns into a ⏹ that stops playback on
+  a second click; only one button plays at a time app-wide, with every other
+  row's button disabled meanwhile. New `enable_text_to_speech` `tagent-gui.json`
+  field (default `true`, live-reloaded — no restart needed), with a matching
+  checkbox on Settings > General. New `rodio` dependency (works on all three
+  platforms, unlike the hotkey/popup/tray features — no OS-specific code
+  needed).
+
 ## [0.14.0+045] - 2026-09-18
 
 ### Added

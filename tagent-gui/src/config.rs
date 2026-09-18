@@ -103,6 +103,12 @@ fn default_spell_check() -> bool {
     true
 }
 
+/// Default for [`GuiConfig::enable_text_to_speech`], matching `tagent-cli`'s
+/// `EnableTextToSpeech`.
+fn default_enable_text_to_speech() -> bool {
+    true
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -235,6 +241,10 @@ pub struct GuiConfig {
     /// [`Self::show_dictionary`] is `false`. Live-reloaded, no restart needed.
     #[serde(default = "default_spell_check")]
     pub spell_check: bool,
+    /// Whether per-entry text-to-speech speaker buttons are shown in the
+    /// transcript (Stage 10). Live-reloaded, no restart needed.
+    #[serde(default = "default_enable_text_to_speech")]
+    pub enable_text_to_speech: bool,
 }
 
 /// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
@@ -286,6 +296,7 @@ impl Default for GuiConfig {
             window_geometry: None,
             show_dictionary: default_show_dictionary(),
             spell_check: default_spell_check(),
+            enable_text_to_speech: default_enable_text_to_speech(),
         }
     }
 }
@@ -1028,6 +1039,21 @@ mod tests {
 
         assert!(config.show_dictionary);
         assert!(config.spell_check);
+    }
+
+    #[test]
+    fn old_file_without_speech_field_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(config.enable_text_to_speech);
     }
 
     #[test]
