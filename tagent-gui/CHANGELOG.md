@@ -12,6 +12,19 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+045] - 2026-09-18
+
+### Added
+- **Dictionary lookup for single-word input** (Stage 9): typing or selecting a
+  single word now shows definitions grouped by part of speech instead of a
+  plain translation, with a spelling-correction notice when the provider
+  silently corrected a misspelling — in both the main transcript and the
+  hotkey-triggered popup. New `tagent-gui/src/dictionary.rs` module
+  (duplicated from `tagent-cli`'s own dictionary formatting, independent of
+  it). Two new `tagent-gui.json` fields, `show_dictionary` and `spell_check`
+  (both default `true`, live-reloaded — no restart needed), with matching
+  checkboxes on Settings > General.
+
 ## [0.14.0+044] - 2026-09-17
 
 ### Changed

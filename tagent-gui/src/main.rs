@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
 mod config;
+mod dictionary;
 mod platform;
 
 use config::GuiConfigManager;
@@ -577,6 +578,8 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
         .position(|p| p.as_str() == config.translate_provider)
         .unwrap_or(0);
     dialog.set_provider_index(provider_index as i32);
+    dialog.set_show_dictionary(config.show_dictionary);
+    dialog.set_spell_check(config.spell_check);
 
     let themes = dialog.get_themes();
     let theme_index = themes
@@ -721,6 +724,8 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
 struct TranslationRequest {
     translate_provider: String,
     show_prompt: bool,
+    show_dictionary: bool,
+    spell_check: bool,
     from_lang: String,
     to_lang: String,
     from_code: String,
@@ -767,6 +772,8 @@ fn spawn_translation(
     let TranslationRequest {
         translate_provider,
         show_prompt,
+        show_dictionary,
+        spell_check,
         from_lang,
         to_lang,
         from_code,
@@ -774,14 +781,61 @@ fn spawn_translation(
         text,
     } = request;
 
+    // Trimmed here (not left to each caller) so both the button/Enter path and the
+    // hotkey path -- which passes the clipboard text untrimmed, see the hotkey
+    // callback in main() -- agree on what "the text" is before it reaches
+    // `dictionary::is_single_word` or the corrected-word comparison below. Before
+    // this fix, an untrimmed hotkey selection like "violent\n" could still take the
+    // dictionary path (is_single_word trims non-alphabetic edge characters on its
+    // own) but then spuriously report a spelling correction, since the comparison
+    // would see "violent" (from the provider) against "violent\n" (the untrimmed
+    // original) and treat them as different.
+    let text = text.trim().to_string();
+
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
         let request_text = text.clone();
         let result = runtime.block_on(async move {
             let provider = providers::create_provider(&translate_provider)?;
-            provider
-                .translate_text(&request_text, &from_code, &to_code)
-                .await
+
+            if show_dictionary && dictionary::is_single_word(&request_text) {
+                let (translate_result, dict_result) = tokio::join!(
+                    provider.translate_text(&request_text, &from_code, &to_code),
+                    provider.get_dictionary_entry(&request_text, &from_code, &to_code),
+                );
+
+                match dict_result {
+                    Ok(Some(entry)) => {
+                        let mut body = String::new();
+                        if spell_check {
+                            if let Some(corrected) = &entry.corrected_word {
+                                if corrected.to_lowercase() != request_text.to_lowercase() {
+                                    body.push_str(&dictionary::correction_notice(
+                                        corrected, &to_code,
+                                    ));
+                                    body.push_str("\n\n");
+                                }
+                            }
+                        }
+                        body.push_str(&dictionary::format_dictionary_entry(
+                            &entry,
+                            &to_code,
+                            translate_result.as_deref().ok(),
+                        ));
+                        Ok(body)
+                    }
+                    // No dictionary entry (word not found / provider returned None) or a
+                    // dictionary-lookup error: fall back to the plain translation already
+                    // fetched above rather than a second network call -- `translate_result`
+                    // is already the exact `Result<String, tagent::error::Error>` this
+                    // function needs to return.
+                    _ => translate_result,
+                }
+            } else {
+                provider
+                    .translate_text(&request_text, &from_code, &to_code)
+                    .await
+            }
         });
 
         slint::invoke_from_event_loop(move || {
@@ -1141,11 +1195,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let from_code = languages::name_to_code(&from_lang).to_string();
         let to_code = languages::name_to_code(&to_lang).to_string();
 
-        let (translate_provider, show_prompt) = {
+        let (translate_provider, show_prompt, show_dictionary, spell_check) = {
             let mut manager = config_manager.lock().unwrap();
             manager.check_and_reload();
             let cfg = manager.config();
-            (cfg.translate_provider.clone(), cfg.show_prompt)
+            (
+                cfg.translate_provider.clone(),
+                cfg.show_prompt,
+                cfg.show_dictionary,
+                cfg.spell_check,
+            )
         };
 
         if to_code == "auto" {
@@ -1166,6 +1225,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             TranslationRequest {
                 translate_provider,
                 show_prompt,
+                show_dictionary,
+                spell_check,
                 from_lang: from_lang.to_string(),
                 to_lang: to_lang.to_string(),
                 from_code,
@@ -1433,6 +1494,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let new_config = config::GuiConfig {
                 translate_provider: provider.to_string(),
                 theme: theme.to_lowercase(),
+                show_dictionary: dialog.get_show_dictionary(),
+                spell_check: dialog.get_spell_check(),
                 background_color: color_field_hex(
                     dialog.get_background_use_default(),
                     dialog.get_background_red(),
@@ -1606,6 +1669,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let (
                         translate_provider,
                         show_prompt,
+                        show_dictionary,
+                        spell_check,
                         popup_auto_hide_seconds,
                         popup_show_prompt,
                         popup_show_phrase,
@@ -1616,6 +1681,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         (
                             cfg.translate_provider.clone(),
                             cfg.show_prompt,
+                            cfg.show_dictionary,
+                            cfg.spell_check,
                             cfg.popup_auto_hide_seconds_or_default(),
                             cfg.popup_show_prompt,
                             cfg.popup_show_phrase,
@@ -1649,6 +1716,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     TranslationRequest {
                                         translate_provider,
                                         show_prompt,
+                                        show_dictionary,
+                                        spell_check,
                                         from_lang: from_lang.to_string(),
                                         to_lang: to_lang.to_string(),
                                         from_code,

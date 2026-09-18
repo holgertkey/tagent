@@ -662,10 +662,79 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     thread). Verified via the same D-Bus-driven reproduction: saved-geometry
     restore and the no-saved-geometry default both land correctly through
     the tray-click path after the fix.
-- **Scope**: a bare-bones translate-only prototype — no dictionary-entry display, no
-  spell-check notices, no TTS button, no history logging. `app.slint` hardcodes a
-  6-language list (Auto/English/Russian/Spanish/French/German), much smaller than
-  the ~16 languages `config.rs` supports for CLI/interactive mode.
+- **Dictionary lookup** (`tagent-gui/src/dictionary.rs`, Stage 9, shipped
+  2026-09-18): single-word input now takes a dictionary path instead of a plain
+  translation, when `GuiConfig.show_dictionary` (default `true`) is on. Fully
+  duplicated from `tagent-cli`'s `translator.rs`/`config.rs` rather than shared
+  (Open Question 3 in the development plan, resolved 2026-08-15 — `tagent-gui`
+  never depends on `tagent-cli`): `is_single_word`, `correction_notice`, and
+  `format_dictionary_entry` (plus its private `get_full_part_of_speech` table
+  for all 7 target languages) all live in the new module. **Key design
+  decision**: rather than a new UI surface, the dictionary result becomes the
+  *content* of the existing `translation` string — both `TranscriptEntry.translation`
+  (main window) and `TranslationOutcome.translation_raw` (the Stage 6 popup)
+  already carry arbitrary text through the same `format_line`/wrap-and-display
+  pipeline a plain translation uses, so `spawn_translation` (`main.rs`) is the
+  only place the dictionary-vs-plain-translation branch lives; both of its
+  callers (the button/Enter path and the Stage 5 global hotkey) get it for
+  free, and `TranscriptEntry`/`TranslationOutcome`/`show_popup`/the popup's
+  `.slint` layout needed no changes at all. Two pieces of earlier work had
+  already anticipated this: the Stage 6 popup's `ScrollView`+`popup-max-height`
+  cap and its fully independent `popup_font`/`popup_size`/`popup_color`/
+  `popup_background` style (both doc-commented "Stage 9" ahead of time) were
+  built to carry a multi-line dictionary block, not just a one-line
+  translation.
+  - Inside `spawn_translation`'s async block: when `show_dictionary` is on and
+    `dictionary::is_single_word` accepts the (trimmed) text, `provider.translate_text`
+    and `provider.get_dictionary_entry` run concurrently via `tokio::join!`
+    (mirroring `tagent-cli`'s `Translator::get_dictionary_entry`). On
+    `Ok(Some(entry))`, the block's text is `format_dictionary_entry`'s output,
+    with `spell_check`'s correction notice (`dictionary::correction_notice`)
+    prepended when the provider silently corrected a misspelling. On a
+    dictionary miss or lookup error, the fallback is the `translate_result`
+    already sitting in hand from the same `join!` — **not** a second network
+    call, unlike `tagent-cli`'s own fallback (which re-fetches because its
+    dictionary lookup and its regular-translation path are two separate
+    functions with no shared result to reuse — `spawn_translation` has both
+    results as the identical `Result<String, tagent::error::Error>` type from
+    one `join!`, so the miss case is just `_ => translate_result`).
+  - `format_dictionary_entry` deliberately omits the looked-up word as its own
+    line (unlike `tagent-cli`'s `cli_mode: false` branch, which is otherwise
+    unused dead code in that crate) — `tagent-gui`'s two-pane phrase/translation
+    layout already shows the word on the phrase line above, so restating it
+    would be redundant. Named tradeoff: with `popup_show_phrase` off, the
+    popup then shows *only* the translation block, so the looked-up word never
+    appears there — accepted, since the block's own header line (the plain
+    translation, or the first definition's text when that translation
+    request itself failed) is already the useful answer on its own. Each
+    popup toggle is still reasoned about independently rather than as a
+    combination, same class of tradeoff already flagged once for Stage 5's
+    hotkey vs. Record capture interaction.
+  - **Trim fix in scope, not new scope**: `spawn_translation` now trims `text`
+    unconditionally as its first step. Before this, the global hotkey path
+    passed the clipboard text through `ClipboardManager::get_text_with_copy()`
+    **untrimmed** (only its emptiness check was trimmed), while the button/
+    Enter path already trimmed before constructing its `TranslationRequest` —
+    an asymmetry invisible before Stage 9 (nothing compared the raw string to
+    anything) but one this feature would otherwise have surfaced as a real
+    bug: an untrimmed selection like `"violent\n"` still passes
+    `is_single_word` (which itself strips non-alphabetic edge characters), so
+    it takes the dictionary path, and comparing `"violent"` (from the
+    provider) against `"violent\n"` (the untrimmed original) would then
+    spuriously report a spelling correction that never happened.
+  - `show_dictionary`/`spell_check` are two new `GuiConfig` fields (both
+    default `true`, matching `tagent-cli`'s `ShowDictionary`/`SpellCheck`),
+    read under the same `check_and_reload()` lock as `translate_provider`/
+    `show_prompt` at both `spawn_translation` call sites — live-reloaded, no
+    restart needed, same as those two. Settings UI: two checkboxes on the
+    General tab, next to the provider dropdown, with an inline hint noting the
+    live-reload and that `spell_check` has no effect while `show_dictionary`
+    is off (kept as two independent checkboxes rather than one disabling the
+    other).
+- **Scope**: a bare-bones translate-only prototype — no TTS button, no history
+  logging. `app.slint` hardcodes a 6-language list (Auto/English/Russian/Spanish/
+  French/German), much smaller than the ~16 languages `config.rs` supports for
+  CLI/interactive mode.
 
 ### Known gaps in `tagent-gui`
 
@@ -675,8 +744,11 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   "own configuration" concept in the development plan). (`translate_hotkey`
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
   Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control.)
-- **No dictionary/spell-check/TTS UI** — it calls `TranslationProvider::translate_text`
-  directly rather than going through `Translator`'s richer orchestration and formatting.
+- **No TTS UI** — it calls `TranslationProvider::translate_text`/
+  `get_dictionary_entry` directly rather than going through `tagent-cli`'s
+  `Translator` orchestrator; dictionary/spell-check display shipped at Stage 9
+  (2026-09-18) via `tagent-gui`'s own independent `dictionary.rs`, but
+  `split_for_speech`/`speak_chunk` (Stage 10) are still unwired.
 
 ## `build.rs`: version sync
 

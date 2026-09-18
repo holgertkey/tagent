@@ -804,6 +804,10 @@ export component SettingsDialog inherits Dialog {
 
     in-out property <[string]> providers: ["google"];
     in-out property <int> provider-index: 0;
+    // Stage 9: dictionary lookup for single-word input. Both apply immediately
+    // (live-reloaded, no restart) -- see the General tab's own hint text below.
+    in-out property <bool> show-dictionary: true;
+    in-out property <bool> spell-check: true;
     in-out property <[string]> themes: ["Auto", "Light", "Dark"];
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
@@ -971,6 +975,13 @@ export component SettingsDialog inherits Dialog {
                 ComboBox {
                     model: providers;
                     current-index <=> provider-index;
+                }
+
+                CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }
+                CheckBox { text: "Spell check suggestions"; checked <=> spell-check; }
+                Text {
+                    text: "Applies to the next translation immediately — no restart needed. \"Spell check suggestions\" has no effect while \"Show dictionary\" is off.";
+                    wrap: word-wrap;
                 }
 
                 Button {

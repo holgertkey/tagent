@@ -93,6 +93,16 @@ fn default_remember_window_geometry() -> bool {
     true
 }
 
+/// Default for [`GuiConfig::show_dictionary`], matching `tagent-cli`'s `ShowDictionary`.
+fn default_show_dictionary() -> bool {
+    true
+}
+
+/// Default for [`GuiConfig::spell_check`], matching `tagent-cli`'s `SpellCheck`.
+fn default_spell_check() -> bool {
+    true
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -215,6 +225,16 @@ pub struct GuiConfig {
     /// starting over.
     #[serde(default)]
     pub window_geometry: Option<WindowGeometry>,
+    /// Whether single-word input triggers a dictionary lookup (definitions
+    /// grouped by part of speech) instead of a plain translation. Live-reloaded,
+    /// no restart needed.
+    #[serde(default = "default_show_dictionary")]
+    pub show_dictionary: bool,
+    /// Whether a spelling-correction notice is shown when the provider silently
+    /// corrected a misspelled word during dictionary lookup. Has no effect while
+    /// [`Self::show_dictionary`] is `false`. Live-reloaded, no restart needed.
+    #[serde(default = "default_spell_check")]
+    pub spell_check: bool,
 }
 
 /// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
@@ -264,6 +284,8 @@ impl Default for GuiConfig {
             start_minimized: default_start_minimized(),
             remember_window_geometry: default_remember_window_geometry(),
             window_geometry: None,
+            show_dictionary: default_show_dictionary(),
+            spell_check: default_spell_check(),
         }
     }
 }
@@ -990,6 +1012,22 @@ mod tests {
         let config = load_from_path(&path);
 
         assert_eq!(config.popup_border_width, 1);
+    }
+
+    #[test]
+    fn old_file_without_dictionary_fields_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(config.show_dictionary);
+        assert!(config.spell_check);
     }
 
     #[test]
