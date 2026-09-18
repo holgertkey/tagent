@@ -9,15 +9,25 @@ use windows::{
 };
 
 // Process-global state, because the hook callback is a plain `extern "system" fn` with no
-// user-data pointer. `tagent-gui` only ever has one hotkey (no speech hotkey, unlike
-// `tagent-cli`), so this is simpler than `tagent-cli`'s equivalent statics: one `HOTKEY`
-// instead of two, no speech-specific state at all.
-/// The app-supplied callback to run when the hotkey fires. Boxed so this module never
-/// needs to know about `tagent`, providers, or Slint — see [`KeyboardHook`]'s doc comment.
-static ON_TRIGGER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+// user-data pointer. Two hotkeys (translate + speech, Stage 10 follow-up) plus Escape
+// observation, mirroring `tagent-cli`'s own two-hotkey statics.
+/// The app-supplied callback to run when the translate hotkey fires. Boxed so this module
+/// never needs to know about `tagent`, providers, or Slint — see [`KeyboardHook`]'s doc
+/// comment.
+static ON_TRANSLATE_TRIGGER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+/// The app-supplied callback to run when the speech hotkey fires (Stage 10 follow-up).
+/// Only ever called if [`KeyboardHook::spawn`] was given a `Some` speech hotkey.
+static ON_SPEECH_TRIGGER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+/// The app-supplied callback to run on every Escape keydown (Stage 10 follow-up) --
+/// **never** gated on a hotkey firing, called unconditionally so Escape can cancel a
+/// speech started some other way too (e.g. a transcript speaker button). See
+/// [`KeyboardHook`]'s doc comment for the "never grabbed, only observed" invariant.
+static ON_ESCAPE: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 static MODIFIER_STATE: OnceLock<Mutex<HashMap<u32, bool>>> = OnceLock::new();
-/// The set of (normalized) modifier vk codes used by the configured hotkey, if it's a
-/// `ModifierCombo`. Drives which keydowns/keyups are intercepted centrally
+/// The set of (normalized) modifier vk codes used by either configured hotkey that's a
+/// `ModifierCombo` — the **union** of both, not just the translate hotkey's own (Stage 10
+/// follow-up: previously there was only ever one hotkey to union). Drives which
+/// keydowns/keyups are intercepted centrally
 /// (`handle_combo_modifier_keydown`/`resolve_combo_modifier_keyup`) instead of reaching
 /// `HotkeyState::handle` — see `needs_swallow_and_replay`, which narrows this further to
 /// `Alt` alone for the actual blocking behavior.
@@ -26,7 +36,11 @@ static COMBO_MODIFIER_VKS: OnceLock<HashSet<u32>> = OnceLock::new();
 /// `keyboard_hook_proc` for the full state machine). Keyed by normalized vk code. In
 /// practice only ever holds `Alt` entries — see `needs_swallow_and_replay`.
 static MODIFIER_REPLAY: OnceLock<Mutex<HashMap<u32, ModifierReplay>>> = OnceLock::new();
-static HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
+static TRANSLATE_HOTKEY: OnceLock<HotkeyState> = OnceLock::new();
+/// Always set by [`KeyboardHook::spawn`], to `Some`/`None` -- never left empty -- so a
+/// disabled/invalid speech hotkey (Stage 10 follow-up) is a plain `None` read, not an
+/// unset `OnceLock` a careless `.get().unwrap()` could panic on.
+static SPEECH_HOTKEY: OnceLock<Option<HotkeyState>> = OnceLock::new();
 
 /// State of a single modifier hold, for the swallow-and-replay mechanism.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +79,9 @@ enum ModifierKeyupAction {
     ReplayPair { raw_vk: u32 },
 }
 
-/// Encapsulates hotkey detection state for the one configured hotkey.
+/// Encapsulates hotkey detection state for one configured hotkey. Two process-global
+/// instances exist (`TRANSLATE_HOTKEY`, `SPEECH_HOTKEY`), mirroring `tagent-cli`'s own
+/// two-hotkey design (Stage 10 follow-up).
 struct HotkeyState {
     config: HotkeyType,
     last_key_time: Mutex<Option<Instant>>,
@@ -213,11 +229,33 @@ impl HotkeyState {
     }
 }
 
-/// Runs the app-supplied trigger callback, if one has been installed. A plain safe `fn()`
-/// (not `unsafe`, unlike `tagent-cli`'s equivalent) since it only ever calls the boxed
-/// `Fn() + Send + Sync` closure — no raw Win32 calls happen here directly.
-fn trigger() {
-    if let Some(cb) = ON_TRIGGER.get() {
+/// Runs the app-supplied translate-trigger callback, if one has been installed. A plain
+/// safe `fn()` (not `unsafe`, unlike `tagent-cli`'s equivalent) since it only ever calls
+/// the boxed `Fn() + Send + Sync` closure — no raw Win32 calls happen here directly.
+///
+/// A bare `fn()`, not a closure, specifically because [`HotkeyState::handle`]'s own
+/// `trigger_fn` parameter is `fn()` (it can't capture "which `ON_*_TRIGGER` to call") --
+/// see [`trigger_speech`] for the sibling this requires.
+fn trigger_translate() {
+    if let Some(cb) = ON_TRANSLATE_TRIGGER.get() {
+        cb();
+    }
+}
+
+/// Runs the app-supplied speech-trigger callback, if one has been installed (Stage 10
+/// follow-up). See [`trigger_translate`] for why this is a separate `fn()` rather than a
+/// shared closure.
+fn trigger_speech() {
+    if let Some(cb) = ON_SPEECH_TRIGGER.get() {
+        cb();
+    }
+}
+
+/// Runs the app-supplied Escape callback, if one has been installed (Stage 10 follow-up).
+/// Called directly from `keyboard_hook_proc` on every Escape keydown -- Escape isn't a
+/// configured hotkey, so it never goes through [`HotkeyState::handle`] at all.
+fn trigger_escape() {
+    if let Some(cb) = ON_ESCAPE.get() {
         cb();
     }
 }
@@ -227,10 +265,20 @@ fn trigger() {
 /// hook callback is a plain `extern "system" fn` with no user-data pointer.
 ///
 /// Fully app-agnostic: it knows nothing about `tagent`, providers, or Slint — it only
-/// calls the `on_trigger` closure passed to [`KeyboardHook::spawn`] when the configured
-/// hotkey fires. The caller (`main.rs`) is responsible for guarding against overlapping
-/// triggers, reading clipboard/UI state, and doing the actual translation — and must
-/// keep `on_trigger` itself fast and non-blocking (see the doc comment on `spawn`).
+/// calls the `on_translate_trigger`/`on_speech_trigger`/`on_escape` closures passed to
+/// [`KeyboardHook::spawn`] for the corresponding key events. The caller (`main.rs`) is
+/// responsible for guarding against overlapping triggers, reading clipboard/UI state, and
+/// doing the actual translation/speech — and must keep every one of those closures fast
+/// and non-blocking (see the doc comment on `spawn`).
+///
+/// **Invariant: Escape is only ever observed, never grabbed (Stage 10 follow-up).**
+/// `speech_hotkey` gets the same `ModifierCombo`/swallow-and-replay treatment as
+/// `translate_hotkey` below, but Escape must always reach the foreground application
+/// normally — `keyboard_hook_proc`'s Escape branch calls `trigger_escape()` and then
+/// falls through to `CallNextHookEx` like any unhandled key; it must **never**
+/// `return LRESULT(1)`. A future edit that "tidies" the Escape branch to look like the
+/// hotkey branch (which does return early) would silently break Escape system-wide for
+/// every other application for as long as `tagent-gui` runs.
 ///
 /// `ModifierCombo` hotkeys (e.g. `Alt+Q`) are detected entirely within the hook itself.
 /// Every combo modifier's keydown/keyup is intercepted centrally to keep `MODIFIER_STATE`
@@ -284,35 +332,52 @@ fn trigger() {
 pub struct KeyboardHook;
 
 impl KeyboardHook {
-    /// Install the hotkey's process-global state and start listening in a background
+    /// Install both hotkeys' process-global state and start listening in a background
     /// thread. Returns immediately; the hook runs for the lifetime of the process (no
     /// explicit shutdown, unlike `tagent-cli`'s coordinated `should_exit` handling --
     /// `tagent-gui` has no competing mode to coordinate with).
     ///
+    /// `speech_hotkey` is `None` when the speech hotkey is disabled or failed to
+    /// parse/validate -- `translate_hotkey` alone (plus Escape observation) still gets
+    /// registered in that case. `on_escape` fires on every Escape keydown regardless of
+    /// whether a speech hotkey is configured at all (see [`KeyboardHook`]'s doc comment).
+    ///
     /// Must only be called once per process (subsequent calls are ignored with a
     /// warning, since the underlying `OnceLock`s can only be set once).
     ///
-    /// `on_trigger` **must return almost instantly**: it runs on the thread that
-    /// installed the low-level keyboard hook, and Windows silently removes a
-    /// `WH_KEYBOARD_LL` hook that doesn't return within its default timeout (~300ms).
-    /// It may only do a fast atomic guard check plus `slint::invoke_from_event_loop`
-    /// (itself non-blocking) -- never clipboard I/O or network calls directly.
-    pub fn spawn(hotkey: HotkeyType, on_trigger: impl Fn() + Send + Sync + 'static) {
-        if ON_TRIGGER.set(Box::new(on_trigger)).is_err() {
+    /// `on_translate_trigger`/`on_speech_trigger`/`on_escape` **must all return almost
+    /// instantly**: they run on the thread that installed the low-level keyboard hook,
+    /// and Windows silently removes a `WH_KEYBOARD_LL` hook that doesn't return within
+    /// its default timeout (~300ms). Each may only do a fast atomic guard check /
+    /// `AtomicBool` store plus `slint::invoke_from_event_loop` (itself non-blocking) --
+    /// never clipboard I/O or network calls directly.
+    pub fn spawn(
+        translate_hotkey: HotkeyType,
+        speech_hotkey: Option<HotkeyType>,
+        on_translate_trigger: impl Fn() + Send + Sync + 'static,
+        on_speech_trigger: impl Fn() + Send + Sync + 'static,
+        on_escape: impl Fn() + Send + Sync + 'static,
+    ) {
+        if ON_TRANSLATE_TRIGGER
+            .set(Box::new(on_translate_trigger))
+            .is_err()
+        {
             eprintln!("KeyboardHook::spawn called more than once; ignoring.");
             return;
         }
+        let _ = ON_SPEECH_TRIGGER.set(Box::new(on_speech_trigger));
+        let _ = ON_ESCAPE.set(Box::new(on_escape));
 
         let _ = MODIFIER_STATE.set(Mutex::new(HashMap::new()));
         let _ = MODIFIER_REPLAY.set(Mutex::new(HashMap::new()));
 
-        let mut combo_modifiers = HashSet::new();
-        if let HotkeyType::ModifierCombo { modifiers, .. } = &hotkey {
-            combo_modifiers.extend(modifiers.iter().copied());
-        }
-        let _ = COMBO_MODIFIER_VKS.set(combo_modifiers);
+        let _ = COMBO_MODIFIER_VKS.set(union_combo_modifiers(
+            &translate_hotkey,
+            speech_hotkey.as_ref(),
+        ));
 
-        let _ = HOTKEY.set(HotkeyState::new(hotkey));
+        let _ = TRANSLATE_HOTKEY.set(HotkeyState::new(translate_hotkey));
+        let _ = SPEECH_HOTKEY.set(speech_hotkey.map(HotkeyState::new));
 
         std::thread::spawn(|| {
             if let Err(e) = unsafe { Self::run() } {
@@ -358,6 +423,25 @@ impl KeyboardHook {
         UnhookWindowsHookEx(hook)?;
         Ok(())
     }
+}
+
+/// Builds the modifier set [`KeyboardHook::spawn`] installs into `COMBO_MODIFIER_VKS` --
+/// the union of `translate_hotkey`'s modifiers (if it's a `ModifierCombo`) and
+/// `speech_hotkey`'s (if present and also a `ModifierCombo`). Split out from `spawn`
+/// itself so this decision logic can be unit-tested without touching any `OnceLock` or
+/// spawning a real hook thread.
+fn union_combo_modifiers(
+    translate_hotkey: &HotkeyType,
+    speech_hotkey: Option<&HotkeyType>,
+) -> HashSet<u32> {
+    let mut combo_modifiers = HashSet::new();
+    if let HotkeyType::ModifierCombo { modifiers, .. } = translate_hotkey {
+        combo_modifiers.extend(modifiers.iter().copied());
+    }
+    if let Some(HotkeyType::ModifierCombo { modifiers, .. }) = speech_hotkey {
+        combo_modifiers.extend(modifiers.iter().copied());
+    }
+    combo_modifiers
 }
 
 /// Returns whether `normalized_vk` is a modifier used by the active `ModifierCombo`
@@ -613,7 +697,10 @@ unsafe extern "system" fn keyboard_hook_proc(
         let normalized = normalize_vk_code(vk);
 
         if w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN {
-            if let Some(state) = HOTKEY.get() {
+            if let Some(state) = TRANSLATE_HOTKEY.get() {
+                state.mark_interrupted_if_needed(vk);
+            }
+            if let Some(Some(state)) = SPEECH_HOTKEY.get() {
                 state.mark_interrupted_if_needed(vk);
             }
 
@@ -626,13 +713,31 @@ unsafe extern "system" fn keyboard_hook_proc(
                 // Already PassedThrough for this hold (a repeat after replay) -- fall
                 // through to CallNextHookEx below like real input would.
             } else {
+                // Escape is never a configured hotkey trigger in practice, but this check
+                // is unconditional either way -- see KeyboardHook's own "never grabbed,
+                // only observed" invariant for Escape. Deliberately no early return here:
+                // Escape must always reach CallNextHookEx below, same as any other
+                // unhandled key.
+                if vk == VK_ESCAPE.0 as u32 {
+                    trigger_escape();
+                }
+
                 let mut fired = false;
                 let mut fired_modifiers: Option<Vec<u32>> = None;
 
-                if let Some(state) = HOTKEY.get() {
-                    if state.handle(vk, true, trigger) {
-                        fired = true;
-                        fired_modifiers = state.combo_modifiers();
+                for (state, trigger_fn) in [
+                    (TRANSLATE_HOTKEY.get(), trigger_translate as fn()),
+                    (
+                        SPEECH_HOTKEY.get().and_then(Option::as_ref),
+                        trigger_speech as fn(),
+                    ),
+                ] {
+                    if let Some(state) = state {
+                        if state.handle(vk, true, trigger_fn) {
+                            fired = true;
+                            fired_modifiers = state.combo_modifiers();
+                            break;
+                        }
                     }
                 }
 
@@ -645,7 +750,9 @@ unsafe extern "system" fn keyboard_hook_proc(
 
                 // Not our trigger key: if any modifier is still swallowed, replay it now
                 // so the OS/foreground app see it go down before this key, exactly as
-                // they would without the hook in the way (e.g. Alt then Tab).
+                // they would without the hook in the way (e.g. Alt then Tab). This also
+                // covers Escape arriving while a modifier is swallowed -- "some other,
+                // non-trigger key arrived" is exactly the case this call exists for.
                 replay_pending_swallowed_modifiers();
             }
         } else if w_param.0 as u32 == WM_KEYUP || w_param.0 as u32 == WM_SYSKEYUP {
@@ -654,9 +761,14 @@ unsafe extern "system" fn keyboard_hook_proc(
                 if apply_combo_modifier_keyup_action(action) {
                     return LRESULT(1);
                 }
-            } else if let Some(state) = HOTKEY.get() {
+            } else {
                 // For DoublePress repeat tracking.
-                state.handle(vk, false, trigger);
+                if let Some(state) = TRANSLATE_HOTKEY.get() {
+                    state.handle(vk, false, trigger_translate);
+                }
+                if let Some(Some(state)) = SPEECH_HOTKEY.get() {
+                    state.handle(vk, false, trigger_speech);
+                }
             }
         }
     }
@@ -815,6 +927,30 @@ mod tests {
 
         assert!(is_combo_modifier(super::super::keycodes::KEY_ALT));
         assert!(!is_combo_modifier(super::super::keycodes::KEY_CONTROL));
+    }
+
+    #[test]
+    fn test_union_combo_modifiers_combines_different_modifiers_from_both_hotkeys() {
+        // Stage 10 follow-up: the requested defaults (Alt+A translate, Alt+S speech)
+        // happen to share a modifier, which wouldn't catch a union bug -- exercise two
+        // hotkeys with *different* modifiers instead (Alt+A, Ctrl+Shift+S).
+        let translate = HotkeyParser::parse("Alt+A").unwrap();
+        let speech = HotkeyParser::parse("Ctrl+Shift+S").unwrap();
+
+        let union = union_combo_modifiers(&translate, Some(&speech));
+
+        assert!(union.contains(&super::super::keycodes::KEY_ALT));
+        assert!(union.contains(&super::super::keycodes::KEY_CONTROL));
+        assert!(union.contains(&super::super::keycodes::KEY_SHIFT));
+    }
+
+    #[test]
+    fn test_union_combo_modifiers_ignores_absent_speech_hotkey() {
+        let translate = HotkeyParser::parse("Alt+A").unwrap();
+
+        let union = union_combo_modifiers(&translate, None);
+
+        assert_eq!(union, HashSet::from([super::super::keycodes::KEY_ALT]));
     }
 
     // Regression tests for the Alt-only scoping of swallow-and-replay: Ctrl/Shift/Win

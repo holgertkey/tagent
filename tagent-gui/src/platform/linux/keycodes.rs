@@ -2,8 +2,11 @@
 // The keyboard hook implementation maps OS-specific events to these abstract codes.
 //
 // Unlike `tagent-cli`'s Linux `keycodes.rs`, this doesn't track live key-press state
-// (`set_key_state`/`is_key_pressed`) — that exists there only for Esc-cancels-speech
-// monitoring, and `tagent-gui` has no text-to-speech yet.
+// (`set_key_state`/`is_key_pressed`) — that exists there only for a 50ms-poll
+// Esc-cancels-speech monitor. `tagent-gui`'s own Esc-cancellation (Stage 10
+// follow-up) doesn't need one: `keyboard.rs`'s `KeyboardHook` already observes
+// every key event via `rdev` for hotkey detection, so Escape rides that same
+// event stream directly instead.
 
 /// Generic Control key (either side), used after normalizing [`KEY_LCONTROL`]/[`KEY_RCONTROL`].
 pub const KEY_CONTROL: u32 = 17;

@@ -3,10 +3,10 @@ use super::xgrab::XGrabManager;
 use crate::config::HotkeyType;
 use std::collections::HashMap;
 
-/// Encapsulates hotkey detection state for the one configured hotkey.
-///
-/// Unlike `tagent-cli` (translate + speech hotkeys), `tagent-gui` only has one
-/// hotkey today, so this holds a single, non-shared instance rather than a map.
+/// Encapsulates hotkey detection state for one configured hotkey. `run_x11`
+/// (below) holds two instances -- translate and, optionally, speech (Stage 10
+/// follow-up) -- rather than a map, mirroring `tagent-cli`'s own two-hotkey
+/// design now that `tagent-gui` has a second hotkey too.
 struct HotkeyState {
     config: HotkeyType,
     last_key_time: Option<std::time::Instant>,
@@ -224,27 +224,49 @@ struct KeyEvent {
 /// grabbing (see [`super::xgrab`]).
 ///
 /// Fully app-agnostic: it knows nothing about `tagent`, providers, or Slint —
-/// it only calls `on_trigger()` when the configured hotkey fires. The caller
-/// (`main.rs`) is responsible for guarding against overlapping triggers,
-/// reading clipboard/UI state, and doing the actual translation.
+/// it only calls `on_translate_trigger`/`on_speech_trigger`/`on_escape` when
+/// the corresponding key event happens. The caller (`main.rs`) is responsible
+/// for guarding against overlapping triggers, reading clipboard/UI state, and
+/// doing the actual translation/speech.
+///
+/// **Invariant: Escape is only ever observed, never grabbed.** `speech_hotkey`
+/// is grabbed via X11 like `translate_hotkey` (below), but Escape must reach
+/// every other application on the system normally the whole time `tagent-gui`
+/// runs -- it's relied on everywhere (closing dialogs, vim normal mode,
+/// canceling fields). `on_escape` rides the same passive `rdev` event stream
+/// already running for hotkey detection; nothing about it ever touches
+/// [`XGrabManager`].
 pub struct KeyboardHook;
 
 impl KeyboardHook {
-    /// Parse-and-validate the hotkey beforehand (see `config::HotkeyParser`) and
-    /// start listening for it in a background thread. Returns immediately; the
+    /// Parse-and-validate both hotkeys beforehand (see `config::HotkeyParser`)
+    /// and start listening in a background thread. Returns immediately; the
     /// listener runs for the lifetime of the process (no explicit shutdown —
     /// `tagent-gui` has no competing mode to coordinate with, unlike
     /// `tagent-cli`'s unified hotkey+interactive-terminal setup).
     ///
+    /// `speech_hotkey` is `None` when the speech hotkey is disabled or failed
+    /// to parse/validate -- `translate_hotkey` alone (plus Escape observation)
+    /// still gets registered in that case. `on_escape` fires on every Escape
+    /// keydown, regardless of whether a speech hotkey is configured at all —
+    /// it's cheap to always watch for, and lets Escape cancel a speech
+    /// started some other way (e.g. a transcript speaker button) too.
+    ///
     /// Behavior depends on the detected display server: full X11/XWayland
     /// grabbing when `DISPLAY` is set, a disabled-hotkeys no-op on pure
     /// Wayland or when no display server is detected at all.
-    pub fn spawn(hotkey: HotkeyType, on_trigger: impl Fn() + Send + Sync + 'static) {
+    pub fn spawn(
+        translate_hotkey: HotkeyType,
+        speech_hotkey: Option<HotkeyType>,
+        on_translate_trigger: impl Fn() + Send + Sync + 'static,
+        on_speech_trigger: impl Fn() + Send + Sync + 'static,
+        on_escape: impl Fn() + Send + Sync + 'static,
+    ) {
         let has_x11 = std::env::var("DISPLAY").is_ok();
         let has_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
 
         if !has_x11 && !has_wayland {
-            eprintln!("No display server detected. Global hotkey disabled.");
+            eprintln!("No display server detected. Global hotkeys disabled.");
             return;
         }
 
@@ -255,18 +277,38 @@ impl KeyboardHook {
             return;
         }
 
-        std::thread::spawn(move || Self::run_x11(hotkey, on_trigger));
+        std::thread::spawn(move || {
+            Self::run_x11(
+                translate_hotkey,
+                speech_hotkey,
+                on_translate_trigger,
+                on_speech_trigger,
+                on_escape,
+            )
+        });
     }
 
-    fn run_x11(hotkey: HotkeyType, on_trigger: impl Fn() + Send + Sync + 'static) {
-        // Grab the hotkey via X11 to prevent it from reaching other applications.
-        // _xgrab lives until the end of this function; Drop releases the grab.
+    fn run_x11(
+        translate_hotkey: HotkeyType,
+        speech_hotkey: Option<HotkeyType>,
+        on_translate_trigger: impl Fn() + Send + Sync + 'static,
+        on_speech_trigger: impl Fn() + Send + Sync + 'static,
+        on_escape: impl Fn() + Send + Sync + 'static,
+    ) {
+        // Grab both configured hotkeys via X11 to prevent them from reaching
+        // other applications. Escape is deliberately never passed to grab_hotkey
+        // -- see this struct's own doc comment. _xgrab lives until the end of
+        // this function; Drop releases both grabs.
         let mut _xgrab = XGrabManager::new();
         if let Some(ref mut xgrab) = _xgrab {
-            xgrab.grab_hotkey(&hotkey);
+            xgrab.grab_hotkey(&translate_hotkey);
+            if let Some(ref speech_hotkey) = speech_hotkey {
+                xgrab.grab_hotkey(speech_hotkey);
+            }
         }
 
-        let mut state = HotkeyState::new(hotkey);
+        let mut translate_state = HotkeyState::new(translate_hotkey);
+        let mut speech_state = speech_hotkey.map(HotkeyState::new);
         let mut modifier_state: HashMap<u32, bool> = HashMap::new();
 
         let (tx, rx) = std::sync::mpsc::channel::<KeyEvent>();
@@ -296,24 +338,47 @@ impl KeyboardHook {
         });
 
         for event in rx {
+            // Escape isn't a configured hotkey -- observed unconditionally,
+            // independent of HotkeyState/modifier bookkeeping entirely. Keydown
+            // only; firing repeatedly on OS auto-repeat while held is harmless
+            // (the caller's own on_escape is expected to be an idempotent
+            // AtomicBool store).
+            if event.is_key_down && event.vk_code == super::keycodes::KEY_ESCAPE {
+                on_escape();
+                continue;
+            }
+
             if is_modifier_key(event.vk_code) {
                 let normalized = normalize_vk_code(event.vk_code);
                 modifier_state.insert(normalized, event.is_key_down);
             }
 
             if event.is_key_down {
-                state.mark_interrupted_if_needed(event.vk_code);
+                translate_state.mark_interrupted_if_needed(event.vk_code);
+                if let Some(ref mut speech_state) = speech_state {
+                    speech_state.mark_interrupted_if_needed(event.vk_code);
+                }
 
-                if state.handle(event.vk_code, true, &modifier_state) {
+                if translate_state.handle(event.vk_code, true, &modifier_state) {
                     // Clear all modifier state: the clipboard copy that follows
                     // releases them via its own `xdotool keyup`, and rdev will
                     // see synthetic release events anyway.
                     modifier_state.clear();
-                    on_trigger();
+                    on_translate_trigger();
                     continue;
                 }
+                if let Some(ref mut speech_state) = speech_state {
+                    if speech_state.handle(event.vk_code, true, &modifier_state) {
+                        modifier_state.clear();
+                        on_speech_trigger();
+                        continue;
+                    }
+                }
             } else {
-                state.handle(event.vk_code, false, &modifier_state);
+                translate_state.handle(event.vk_code, false, &modifier_state);
+                if let Some(ref mut speech_state) = speech_state {
+                    speech_state.handle(event.vk_code, false, &modifier_state);
+                }
             }
         }
     }

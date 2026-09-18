@@ -235,7 +235,10 @@ fn resolve_color(hex: &str, default: Color) -> Color {
 /// picking either one's preset also switches the single app-wide Theme.
 fn apply_scheme_theme(dialog: &SettingsDialog, theme: &str) {
     let themes = dialog.get_themes();
-    if let Some(index) = themes.iter().position(|t| t.as_str().to_lowercase() == theme) {
+    if let Some(index) = themes
+        .iter()
+        .position(|t| t.as_str().to_lowercase() == theme)
+    {
         dialog.set_theme_index(index as i32);
     }
     dialog.invoke_apply_theme(theme.into());
@@ -256,8 +259,7 @@ fn color_field_hex(use_default: bool, r: f32, g: f32, b: f32) -> String {
 /// saved value with. Returns `""` when valid, or the parser's own error
 /// message otherwise, for direct display in the dialog's inline error `Text`.
 fn hotkey_validation_error(text: &str) -> String {
-    match config::HotkeyParser::parse(text)
-        .and_then(|h| config::HotkeyParser::validate_hotkey(&h))
+    match config::HotkeyParser::parse(text).and_then(|h| config::HotkeyParser::validate_hotkey(&h))
     {
         Ok(()) => String::new(),
         Err(err) => err,
@@ -589,8 +591,9 @@ macro_rules! wire_rgb_changed {
 /// Fills every `SettingsDialog` field from `config` -- used both to seed the
 /// dialog when Settings opens (from the current saved config) and by the
 /// General tab's "Reset to Defaults" button (from `GuiConfig::default()`).
-/// Only fills field *values*; callback wiring (`on_hotkey_edited`,
-/// `on_save_requested`, etc.) happens once per dialog instance in
+/// Only fills field *values*; callback wiring (`on_translate_hotkey_edited`,
+/// `on_speech_hotkey_edited`, `on_save_requested`, etc.) happens once per dialog
+/// instance in
 /// `on_settings_requested` and isn't repeated here.
 fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     let providers = dialog.get_providers();
@@ -650,6 +653,9 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
 
     dialog.set_translate_hotkey(config.translate_hotkey.clone().into());
     dialog.set_translate_hotkey_error(hotkey_validation_error(&config.translate_hotkey).into());
+    dialog.set_speech_hotkey(config.speech_hotkey.clone().into());
+    dialog.set_speech_hotkey_error(hotkey_validation_error(&config.speech_hotkey).into());
+    dialog.set_enable_speech_hotkey(config.enable_speech_hotkey);
     dialog.set_popup_auto_hide_seconds(config.popup_auto_hide_seconds.min(60) as i32);
 
     init_color_field!(
@@ -775,11 +781,97 @@ struct TranslationOutcome {
 /// a `&TranscriptEntry` argument for Stage 6.
 type TranslationDoneCallback = Box<dyn FnOnce(&TranscriptEntry, &TranslationOutcome) + Send>;
 
+/// Everything [`start_speaking`] needs about *what* to speak, grouped into one struct
+/// rather than passed as separate arguments -- clippy's `too_many_arguments` threshold
+/// is 7, and this is naturally past that once the shared state (`window`/
+/// `config_manager`/`speech_stop_flag`/`weak`) is included too. Mirrors
+/// [`TranslationRequest`]'s own reason for existing.
+struct SpeakRequest {
+    /// Row index into `transcript-entries` to mark as speaking.
+    index: i32,
+    /// Whether `index`'s phrase side (vs. translation side) is the one speaking.
+    is_phrase: bool,
+    /// Raw text to speak.
+    text: String,
+    /// Provider language code, possibly `"auto"` (resolved lazily).
+    code: String,
+}
+
+/// Starts speaking `request.text` in `request.code` (resolving `"auto"` lazily) and
+/// marks transcript row `request.index`'s `request.is_phrase` side as the one currently
+/// speaking, via a background thread. Extracted from `on_speak_requested`'s own "nothing
+/// is currently speaking yet, start a new playback" branch (Stage 10 follow-up) so the
+/// speech hotkey's trigger handler can reuse the exact same code path: it pushes a new
+/// transcript entry for whatever it just grabbed from the clipboard, then calls this
+/// with that entry's own (freshly assigned) index and `is_phrase: true`, exactly as if
+/// the user had clicked that row's own 🔊 button — no separate state machine for
+/// hotkey- vs. button-triggered speech.
+///
+/// Callers are expected to have already confirmed nothing else is currently speaking
+/// (`window.get_speaking_entry_index() == -1`) and that `request.text` is non-empty.
+fn start_speaking(
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+    speech_stop_flag: &Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    weak: slint::Weak<AppWindow>,
+    request: SpeakRequest,
+) {
+    let SpeakRequest {
+        index,
+        is_phrase,
+        text,
+        code,
+    } = request;
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    *speech_stop_flag.lock().unwrap() = Some(stop_flag.clone());
+    window.set_speaking_entry_index(index);
+    window.set_speaking_is_phrase(is_phrase);
+
+    let config_manager = config_manager.clone();
+    let speech_stop_flag = speech_stop_flag.clone();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
+        let outcome: Result<(), Box<dyn std::error::Error + Send + Sync>> =
+            runtime.block_on(async {
+                let translate_provider = {
+                    let mut manager = config_manager.lock().unwrap();
+                    manager.check_and_reload();
+                    manager.config().translate_provider.clone()
+                };
+                let provider = providers::create_provider(&translate_provider)?;
+                // Pass-through no-op whenever `code` is already concrete (every
+                // translation-side call, and every phrase-side call where the
+                // source language wasn't "Auto") -- only issues a real
+                // `detect_language` request when `code == "auto"`.
+                let lang_code =
+                    providers::resolve_source_language(provider.as_ref(), &text, &code).await;
+                speech::speak(provider.as_ref(), &text, &lang_code, stop_flag).await
+            });
+        if let Err(err) = outcome {
+            eprintln!("Speech error: {err}");
+        }
+
+        // Cleared together with speaking-entry-index, both on the UI thread -- not
+        // separately here, or a click on the active ⏹ landing in the gap between this
+        // thread clearing the flag and the event-loop hop below actually running
+        // would find speaking-entry-index still set but the stop flag already gone,
+        // and silently do nothing.
+        slint::invoke_from_event_loop(move || {
+            *speech_stop_flag.lock().unwrap() = None;
+            if let Some(window) = weak.upgrade() {
+                window.set_speaking_entry_index(-1);
+            }
+        })
+        .ok();
+    });
+}
+
 /// Translates `request.text` in a background thread and pushes the result (or an error)
 /// into the transcript. Shared by the Translate button/Enter key
-/// (`on_translate_requested`) and the global hotkey (Stage 5) — the only two callers,
-/// extracted here specifically to avoid duplicating the provider-call/transcript-push
-/// logic between them.
+/// (`on_translate_requested`) and the global translate hotkey (Stage 5) — the only two
+/// callers, extracted here specifically to avoid duplicating the provider-call/
+/// transcript-push logic between them.
 ///
 /// `on_done`, if given, runs on the UI thread with the resolved [`TranscriptEntry`] and
 /// the raw [`TranslationOutcome`] it was built from, before either is pushed into the
@@ -1158,7 +1250,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         slint::TimerMode::Repeated,
         std::time::Duration::from_secs(1),
         move || {
-            let config = config_manager_for_theme_poll.lock().unwrap().config().clone();
+            let config = config_manager_for_theme_poll
+                .lock()
+                .unwrap()
+                .config()
+                .clone();
             if config.theme != "auto" {
                 return;
             }
@@ -1355,23 +1451,37 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         seed_dialog_fields(&dialog, &current_config);
 
         let dialog_weak = dialog.as_weak();
-        dialog.on_hotkey_edited(move |text| {
+        dialog.on_translate_hotkey_edited(move |text| {
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.set_translate_hotkey_error(hotkey_validation_error(text.as_str()).into());
             }
         });
 
+        let dialog_weak = dialog.as_weak();
+        dialog.on_speech_hotkey_edited(move |text| {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.set_speech_hotkey_error(hotkey_validation_error(text.as_str()).into());
+            }
+        });
+
         dialog.on_map_key_to_token(|text| slint_key_text_to_hotkey_token(text.as_str()).into());
 
+        const UNRECOGNIZED_KEY_MESSAGE: &str =
+            "Couldn't recognize that key — if you're on a non-Latin keyboard \
+             layout, switch to a Latin layout while recording, or type the \
+             hotkey manually above.";
+
         let dialog_weak = dialog.as_weak();
-        dialog.on_hotkey_unrecognized(move || {
+        dialog.on_translate_hotkey_unrecognized(move || {
             if let Some(dialog) = dialog_weak.upgrade() {
-                dialog.set_translate_hotkey_error(
-                    "Couldn't recognize that key — if you're on a non-Latin keyboard \
-                     layout, switch to a Latin layout while recording, or type the \
-                     hotkey manually above."
-                        .into(),
-                );
+                dialog.set_translate_hotkey_error(UNRECOGNIZED_KEY_MESSAGE.into());
+            }
+        });
+
+        let dialog_weak = dialog.as_weak();
+        dialog.on_speech_hotkey_unrecognized(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.set_speech_hotkey_error(UNRECOGNIZED_KEY_MESSAGE.into());
             }
         });
 
@@ -1630,6 +1740,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 phrases_spacing_px: dialog.get_phrases_spacing_px(),
                 show_prompt: dialog.get_show_prompt(),
                 translate_hotkey: dialog.get_translate_hotkey().to_string(),
+                speech_hotkey: dialog.get_speech_hotkey().to_string(),
+                enable_speech_hotkey: dialog.get_enable_speech_hotkey(),
                 popup_auto_hide_seconds: dialog.get_popup_auto_hide_seconds() as u64,
                 start_minimized: dialog.get_start_minimized(),
                 remember_window_geometry: dialog.get_remember_window_geometry(),
@@ -1718,97 +1830,234 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return;
         }
 
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        *speech_stop_flag_for_speak.lock().unwrap() = Some(stop_flag.clone());
-        window.set_speaking_entry_index(index);
-        window.set_speaking_is_phrase(is_phrase);
-
-        let weak = weak_for_speak.clone();
-        let config_manager = config_manager_for_speak.clone();
-        let speech_stop_flag = speech_stop_flag_for_speak.clone();
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
-            let outcome: Result<(), Box<dyn std::error::Error + Send + Sync>> =
-                runtime.block_on(async {
-                    let translate_provider = {
-                        let mut manager = config_manager.lock().unwrap();
-                        manager.check_and_reload();
-                        manager.config().translate_provider.clone()
-                    };
-                    let provider = providers::create_provider(&translate_provider)?;
-                    // Pass-through no-op whenever `code` is already concrete (every
-                    // translation-side call, and every phrase-side call where the
-                    // source language wasn't "Auto") -- only issues a real
-                    // `detect_language` request when `code == "auto"`.
-                    let lang_code =
-                        providers::resolve_source_language(provider.as_ref(), &text, &code).await;
-                    speech::speak(provider.as_ref(), &text, &lang_code, stop_flag).await
-                });
-            if let Err(err) = outcome {
-                eprintln!("Speech error: {err}");
-            }
-
-            // Cleared together with speaking-entry-index, both on the UI thread --
-            // not separately here, or a click on the active ⏹ landing in the gap
-            // between this thread clearing the flag and the event-loop hop below
-            // actually running would find speaking-entry-index still set but the
-            // stop flag already gone, and silently do nothing.
-            slint::invoke_from_event_loop(move || {
-                *speech_stop_flag.lock().unwrap() = None;
-                if let Some(window) = weak.upgrade() {
-                    window.set_speaking_entry_index(-1);
-                }
-            })
-            .ok();
-        });
+        start_speaking(
+            &window,
+            &config_manager_for_speak,
+            &speech_stop_flag_for_speak,
+            weak_for_speak.clone(),
+            SpeakRequest {
+                index,
+                is_phrase,
+                text,
+                code,
+            },
+        );
     });
 
-    // Global hotkey (Stage 5): parse+validate once at startup from the hand-editable
-    // `translate_hotkey` config field. On failure, log a warning and leave the hotkey
-    // disabled rather than failing to start — same "log and keep running" convention
-    // `tagent-cli` uses for its own hotkeys. Changes to `translate_hotkey` take effect
-    // only on restart (no live-reload of the OS-level grab itself).
-    let hotkey_str = config_manager
-        .lock()
-        .unwrap()
-        .config()
-        .translate_hotkey
-        .clone();
+    // Global hotkeys (Stage 5; speech hotkey added Stage 10 follow-up): parse+validate
+    // both once at startup from the hand-editable `translate_hotkey`/`speech_hotkey`
+    // config fields. `translate_hotkey` stays the hard gate: if it fails to parse, the
+    // whole hook (speech hotkey and Escape observation included) stays disabled, same
+    // as before this follow-up -- unchanged behavior, not a new decision. A failed
+    // `speech_hotkey` (or `enable_speech_hotkey: false`) only disables that one hotkey;
+    // `translate_hotkey`, if valid, still gets registered. On any failure, log a
+    // warning and leave that hotkey disabled rather than failing to start — same "log
+    // and keep running" convention `tagent-cli` uses for its own hotkeys. Changes to
+    // either hotkey string take effect only on restart (no live-reload of the OS-level
+    // grab itself).
+    let (hotkey_str, speech_hotkey_str, enable_speech_hotkey) = {
+        let cfg = config_manager.lock().unwrap();
+        let cfg = cfg.config();
+        (
+            cfg.translate_hotkey.clone(),
+            cfg.speech_hotkey.clone(),
+            cfg.enable_speech_hotkey,
+        )
+    };
     match config::HotkeyParser::parse(&hotkey_str)
         .and_then(|h| config::HotkeyParser::validate_hotkey(&h).map(|_| h))
     {
         Ok(hotkey) => {
+            let speech_hotkey = if enable_speech_hotkey {
+                match config::HotkeyParser::parse(&speech_hotkey_str)
+                    .and_then(|h| config::HotkeyParser::validate_hotkey(&h).map(|_| h))
+                {
+                    Ok(h) => Some(h),
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: failed to parse/validate speech_hotkey '{}': {}",
+                            speech_hotkey_str, e
+                        );
+                        eprintln!("Speech hotkey disabled.");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             let is_processing = Arc::new(AtomicBool::new(false));
+            let is_speech_processing = Arc::new(AtomicBool::new(false));
             let weak = window.as_weak();
             let config_manager = config_manager.clone();
             let popup_weak_for_hotkey = popup_weak.clone();
             let recording_started_at = recording_started_at.clone();
-            KeyboardHook::spawn(hotkey, move || {
-                // Runs on the platform hook's own thread (on Windows, inside the
-                // WH_KEYBOARD_LL callback itself) -- must stay fast and non-blocking,
-                // hence the atomic guard and invoke_from_event_loop hand-off below
-                // rather than doing any real work here.
 
-                // Suppressed while the Settings dialog is actively recording a new
-                // hotkey -- see `recording_started_at`'s doc comment in `main()` for
-                // why (this is what stops a recorded "Ctrl+C" from ever showing up:
-                // that was this same trigger firing for real mid-capture, not a bug
-                // in the capture logic itself).
-                if let Some(started) = *recording_started_at.lock().unwrap() {
+            let recording_started_at_for_speech = recording_started_at.clone();
+            let weak_for_speech = window.as_weak();
+            let config_manager_for_speech = config_manager.clone();
+            let speech_stop_flag_for_speech_trigger = speech_stop_flag.clone();
+            let on_speech_trigger = move || {
+                // Same fast-return constraints as the translate trigger below -- runs on
+                // the platform hook's own thread.
+                if let Some(started) = *recording_started_at_for_speech.lock().unwrap() {
                     if started.elapsed() < RECORDING_SUPPRESSION_TIMEOUT {
                         return;
                     }
                 }
 
-                if is_processing.swap(true, Ordering::SeqCst) {
+                if is_speech_processing.swap(true, Ordering::SeqCst) {
                     return; // already handling a previous trigger
                 }
 
-                let is_processing = is_processing.clone();
-                let weak = weak.clone();
-                let config_manager = config_manager.clone();
-                let popup_weak = popup_weak_for_hotkey.clone();
+                let is_speech_processing = is_speech_processing.clone();
+                let weak = weak_for_speech.clone();
+                let config_manager = config_manager_for_speech.clone();
+                let speech_stop_flag = speech_stop_flag_for_speech_trigger.clone();
                 slint::invoke_from_event_loop(move || {
+                    let Some(window) = weak.upgrade() else {
+                        is_speech_processing.store(false, Ordering::SeqCst);
+                        return;
+                    };
+
+                    // Deliberately a no-op, not a stop -- Esc is the only way to cancel
+                    // this hotkey's speech (design decision 3, Stage 10 follow-up plan).
+                    // Reuses the exact same "is anything currently speaking" signal the
+                    // transcript buttons themselves check.
+                    if window.get_speaking_entry_index() != -1 {
+                        is_speech_processing.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    // translate_provider itself isn't needed here -- start_speaking
+                    // (below) re-reads it fresh from config right before it's actually
+                    // used to build a provider, same as every other speech-starting path.
+                    let enable_text_to_speech = {
+                        let mut manager = config_manager.lock().unwrap();
+                        manager.check_and_reload();
+                        manager.config().enable_text_to_speech
+                    };
+                    window.set_tts_enabled(enable_text_to_speech);
+                    if !enable_text_to_speech {
+                        is_speech_processing.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    let from_code = languages::name_to_code(
+                        &window
+                            .get_languages()
+                            .row_data(window.get_source_language_index() as usize)
+                            .unwrap_or_default(),
+                    )
+                    .to_string();
+
+                    let weak2 = weak.clone();
+                    let is_speech_processing2 = is_speech_processing.clone();
+                    let config_manager2 = config_manager.clone();
+                    let speech_stop_flag2 = speech_stop_flag.clone();
+                    std::thread::spawn(move || {
+                        match ClipboardManager::new().get_text_with_copy() {
+                            Ok(text) if !text.trim().is_empty() => {
+                                slint::invoke_from_event_loop(move || {
+                                    let Some(window) = weak2.upgrade() else {
+                                        is_speech_processing2.store(false, Ordering::SeqCst);
+                                        return;
+                                    };
+                                    push_transcript_entry(
+                                        &window,
+                                        TranscriptEntry {
+                                            phrase: format!("[Speech]: {text}").into(),
+                                            translation: "".into(),
+                                            phrase_speech: text.clone().into(),
+                                            translation_speech: "".into(),
+                                            from_code: from_code.clone().into(),
+                                            to_code: "".into(),
+                                            translation_is_error: true,
+                                        },
+                                    );
+                                    let index =
+                                        window.get_transcript_entries().row_count() as i32 - 1;
+                                    start_speaking(
+                                        &window,
+                                        &config_manager2,
+                                        &speech_stop_flag2,
+                                        weak2.clone(),
+                                        SpeakRequest {
+                                            index,
+                                            is_phrase: true,
+                                            text,
+                                            code: from_code,
+                                        },
+                                    );
+                                    is_speech_processing2.store(false, Ordering::SeqCst);
+                                })
+                                .ok();
+                            }
+                            Ok(_) => {
+                                is_speech_processing2.store(false, Ordering::SeqCst);
+                            }
+                            Err(err) => {
+                                slint::invoke_from_event_loop(move || {
+                                    if let Some(window) = weak2.upgrade() {
+                                        push_transcript_entry(
+                                            &window,
+                                            info_transcript_entry(
+                                                "[Speech]",
+                                                format!("Error: {err}"),
+                                            ),
+                                        );
+                                    }
+                                    is_speech_processing2.store(false, Ordering::SeqCst);
+                                })
+                                .ok();
+                            }
+                        }
+                    });
+                })
+                .ok();
+            };
+
+            let speech_stop_flag_for_escape = speech_stop_flag.clone();
+            let on_escape = move || {
+                // Fast enough to run directly on the platform hook thread -- an
+                // AtomicBool store, same class of operation as is_processing's own
+                // guard check. Cancels whichever entry is currently speaking, hotkey-
+                // or button-triggered, since both share this one flag (Stage 10
+                // follow-up design decision 2).
+                if let Some(flag) = speech_stop_flag_for_escape.lock().unwrap().as_ref() {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            };
+
+            KeyboardHook::spawn(
+                hotkey,
+                speech_hotkey,
+                move || {
+                    // Runs on the platform hook's own thread (on Windows, inside the
+                    // WH_KEYBOARD_LL callback itself) -- must stay fast and non-blocking,
+                    // hence the atomic guard and invoke_from_event_loop hand-off below
+                    // rather than doing any real work here.
+
+                    // Suppressed while the Settings dialog is actively recording a new
+                    // hotkey -- see `recording_started_at`'s doc comment in `main()` for
+                    // why (this is what stops a recorded "Ctrl+C" from ever showing up:
+                    // that was this same trigger firing for real mid-capture, not a bug
+                    // in the capture logic itself).
+                    if let Some(started) = *recording_started_at.lock().unwrap() {
+                        if started.elapsed() < RECORDING_SUPPRESSION_TIMEOUT {
+                            return;
+                        }
+                    }
+
+                    if is_processing.swap(true, Ordering::SeqCst) {
+                        return; // already handling a previous trigger
+                    }
+
+                    let is_processing = is_processing.clone();
+                    let weak = weak.clone();
+                    let config_manager = config_manager.clone();
+                    let popup_weak = popup_weak_for_hotkey.clone();
+                    slint::invoke_from_event_loop(move || {
                     let Some(window) = weak.upgrade() else {
                         is_processing.store(false, Ordering::SeqCst);
                         return;
@@ -1916,14 +2165,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     });
                 })
                 .ok();
-            });
+                },
+                on_speech_trigger,
+                on_escape,
+            );
         }
         Err(e) => {
             eprintln!(
                 "Warning: failed to parse/validate translate_hotkey '{}': {}",
                 hotkey_str, e
             );
-            eprintln!("Global hotkey disabled.");
+            eprintln!("Global hotkeys disabled.");
         }
     }
 

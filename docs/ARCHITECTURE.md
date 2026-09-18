@@ -377,24 +377,29 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   Either way, a change only takes effect after restarting `tagent-gui` (no
   live-reload of the OS-level grab itself). `config::HotkeyType`/`HotkeyParser` are ported from
   `tagent-cli/src/config.rs` verbatim (same string grammar: `F1`-`F12` single
-  keys, `Modifier+Key` combos, `Key+Key` double-press), and each OS's
-  `keycodes.rs` drops the `KEY_STATES`/`set_key_state`/`is_key_pressed`
-  ESC-tracking pieces `tagent-cli`'s exist only for its text-to-speech
-  ESC-cancels-speech feature, which `tagent-gui` doesn't have yet. **Linux**:
-  `platform::KeyboardHook::spawn(hotkey, on_trigger)` grabs the hotkey via
+  keys, `Modifier+Key` combos, `Key+Key` double-press). As of Stage 10 follow-up
+  (below), `KeyboardHook` tracks two hotkeys (translate + speech) plus Escape
+  observation, matching `tagent-cli`'s own two-hotkey shape — but each OS's
+  `keycodes.rs` still has no `KEY_STATES`/`set_key_state`/`is_key_pressed`
+  poll-based ESC-tracking, unlike `tagent-cli`'s: `tagent-gui`'s Escape
+  cancellation rides the same passive key-event stream `KeyboardHook` already
+  runs for hotkey detection, rather than a separate poll. **Linux**:
+  `platform::KeyboardHook::spawn(translate_hotkey, speech_hotkey, on_translate_trigger,
+  on_speech_trigger, on_escape)` grabs both configured hotkeys via
   `xgrab::XGrabManager` (ported from `tagent-cli` near-verbatim — `XGrabKey`
-  with CapsLock/NumLock variants and an AltGr/Mod5 fallback for Alt combos) and
-  runs a single-hotkey `HotkeyState` (simpler than `tagent-cli`'s, which tracks
-  translate *and* speech) fed by an `rdev::listen` thread over a plain
+  with CapsLock/NumLock variants and an AltGr/Mod5 fallback for Alt combos;
+  Escape is never grabbed) and runs two `HotkeyState` instances (translate,
+  and optionally speech) fed by an `rdev::listen` thread over a plain
   `std::sync::mpsc` channel — no `tokio` needed here, unlike `tagent-cli`'s
   `tokio::select!`-based loop, since there's no second async task to interleave
   with. **Windows**: a `WH_KEYBOARD_LL` hook with the same process-global
   `OnceLock` statics and Alt-only swallow-and-replay mechanism as `tagent-cli`'s
   (see that module's own doc comment, copied into `keyboard.rs` here too, for
-  the five hard-won invariants from `tagent-cli`'s past failed attempts) —
-  simplified to one hotkey instead of two, and with `TRANSLATOR: OnceLock<Arc<Translator>>`
-  replaced by `ON_TRIGGER: OnceLock<Box<dyn Fn() + Send + Sync>>` so this module
-  stays as ignorant of `tagent`/providers/Slint as `ClipboardManager` already is.
+  the five hard-won invariants from `tagent-cli`'s past failed attempts) — now
+  two hotkeys (`TRANSLATE_HOTKEY`, `SPEECH_HOTKEY`) plus Escape, matching
+  `tagent-cli`'s own two-hotkey statics, and with `TRANSLATOR: OnceLock<Arc<Translator>>`
+  replaced by `ON_TRANSLATE_TRIGGER`/`ON_SPEECH_TRIGGER`/`ON_ESCAPE: OnceLock<Box<dyn Fn() + Send + Sync>>`
+  so this module stays as ignorant of `tagent`/providers/Slint as `ClipboardManager` already is.
   **Both platforms' hook code is fully app-agnostic**: `KeyboardHook::spawn`
   only ever calls the `on_trigger` closure `main.rs` supplies — the "only one
   translation at a time" guard, clipboard read, provider call, and transcript
@@ -765,6 +770,75 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   window property re-set at every point that already reads config
   (`on_translate_requested`, the hotkey path, Settings save) plus once at
   startup; Settings checkbox on the General tab next to Stage 9's two.
+- **Speech hotkey** (Stage 10 follow-up, shipped 2026-09-18): a second global
+  hotkey (default `Alt+S`, diverging from `tagent-cli`'s own `Alt+E` default
+  by explicit user request) that speaks the current selection directly, with
+  Esc cancellation and the event logged to the transcript. `KeyboardHook`
+  (Linux/Windows/macOS) grew from one hotkey to two plus an Escape-observation
+  callback:
+  - **Invariant: Escape is only ever observed, never grabbed.** On Linux,
+    `XGrabManager::grab_hotkey` is only ever called with the two *configured*
+    hotkeys; Escape rides the same passive `rdev` event stream already running
+    for hotkey detection, never touching `XGrabKey`. On Windows,
+    `keyboard_hook_proc`'s Escape branch calls the new escape callback and
+    always falls through to `CallNextHookEx` — it must never `return
+    LRESULT(1)`, or Escape would stop reaching every other application on the
+    system for as long as `tagent-gui` runs. Also must still trigger
+    `replay_pending_swallowed_modifiers()` if a combo modifier (Alt) is
+    mid-swallow -- Escape arriving is exactly "some other, non-trigger key
+    arrived while Alt was held."
+  - **Windows statics**: `HOTKEY`/`ON_TRIGGER` renamed
+    `TRANSLATE_HOTKEY`/`ON_TRANSLATE_TRIGGER`; new
+    `SPEECH_HOTKEY: OnceLock<Option<HotkeyState>>` (always set, to `Some`/
+    `None`, never left empty), `ON_SPEECH_TRIGGER`, `ON_ESCAPE`.
+    `COMBO_MODIFIER_VKS` becomes the **union** of both hotkeys' modifiers
+    (`union_combo_modifiers`, split out as its own pure function so the union
+    logic is unit-testable without touching any `OnceLock` or spawning a real
+    hook thread) — for the requested defaults (`Alt+A`, `Alt+S`) the union is
+    still just `{Alt}`, but the code computes it generically.
+    `HotkeyState::handle`'s `trigger_fn: fn()` parameter is a bare function
+    pointer (existing design, can't capture "which `ON_*_TRIGGER`"), so
+    `trigger_translate`/`trigger_speech`/`trigger_escape` are three separate
+    top-level `fn`s rather than one shared closure.
+  - **`tagent-gui/src/main.rs`**: `on_speak_requested`'s "nothing is
+    currently speaking, start a new playback" branch was extracted into a
+    standalone `start_speaking(window, config_manager, speech_stop_flag,
+    weak, SpeakRequest { .. })` function (params grouped into a struct once
+    the extraction pushed the count past clippy's `too_many_arguments`
+    threshold, mirroring `TranslationRequest`'s own reason for existing) —
+    the speech hotkey's trigger handler pushes a new `[Speech]: <text>`
+    transcript entry for whatever it grabbed from the clipboard, then calls
+    `start_speaking` with that entry's own freshly-assigned index and
+    `is_phrase: true`, exactly as if the user had clicked that row's own 🔊
+    button. This means Esc cancelling *any* currently-speaking entry (not
+    just hotkey-triggered ones) and re-pressing the speech hotkey while
+    something is already speaking being a no-op (deliberately asymmetric
+    with the transcript buttons' toggle-to-stop -- the user asked
+    specifically for Esc-cancellation) both fall out of reusing Stage 10's
+    single shared `speech_stop_flag`/`speaking-entry-index` state, rather
+    than being separately implemented. `enable_text_to_speech` is read fresh
+    at trigger time (a deliberate improvement over `tagent-cli`'s own
+    speech-hotkey path, which only checks its equivalent gate once, at
+    startup); `speech_hotkey`/`enable_speech_hotkey` themselves stay
+    restart-gated for *registration*, like `translate_hotkey`.
+    `recording_started_at`'s Settings-recording suppression (Stage 8
+    follow-up) now guards the speech trigger too, not just translate --  the
+    same interference bug applies symmetrically to a second hotkey.
+  - **`app.slint`**: `HotkeyRecorder` (already a generic, reusable component,
+    not translate-specific) gets a second instantiation on the "Hotkeys &
+    Tray" tab. `is-recording`/`hotkey-edited`/`hotkey-unrecognized` renamed
+    `is-recording-translate`/`translate-hotkey-edited`/
+    `translate-hotkey-unrecognized` for symmetry with the new
+    `is-recording-speech`/`speech-hotkey-edited`/`speech-hotkey-unrecognized`;
+    `map-key-to-token` stays a single, shared callback (a stateless key-name
+    lookup with no per-field behavior); `recording-changed(bool)` stays a
+    single callback, now fired with "is *either* field currently recording."
+  - New `TranscriptEntry` for a `[Speech]` row deliberately does **not**
+    reuse `info_transcript_entry` (which zeroes `phrase_speech` too) --
+    `phrase_speech` is set to the spoken text itself, giving the row a
+    genuinely working replay button; `translation`/`translation_speech` stay
+    empty with `translation_is_error: true` to hide the (inapplicable)
+    translation button.
 - **Scope**: a bare-bones translate-only prototype — no history logging (TTS
   playback shipped at Stage 10, above). `app.slint` hardcodes a 6-language
   list (Auto/English/Russian/Spanish/French/German), much smaller than the

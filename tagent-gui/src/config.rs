@@ -76,6 +76,18 @@ fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
 }
 
+/// Default speech hotkey (Stage 10 follow-up) -- deliberately `Alt+S`, diverging
+/// from `tagent-cli`'s own `SpeechHotkey` default of `Alt+E`, per explicit user
+/// request rather than drift.
+fn default_speech_hotkey() -> String {
+    "Alt+S".to_string()
+}
+
+/// Default for [`GuiConfig::enable_speech_hotkey`]: on.
+fn default_enable_speech_hotkey() -> bool {
+    true
+}
+
 /// Default delay (seconds) before the hotkey-triggered popup auto-hides, same
 /// default as `tagent-cli`'s `AutoHideTerminalSeconds`.
 fn default_popup_auto_hide_seconds() -> u64 {
@@ -196,6 +208,18 @@ pub struct GuiConfig {
     /// only on restart. Linux and Windows only — no effect on macOS yet.
     #[serde(default = "default_translate_hotkey")]
     pub translate_hotkey: String,
+    /// Global hotkey that speaks the current selection directly, with no
+    /// translation step (Stage 10 follow-up; see [`HotkeyParser`] for the
+    /// supported string formats). Takes effect only on restart. Linux and
+    /// Windows only — no effect on macOS yet.
+    #[serde(default = "default_speech_hotkey")]
+    pub speech_hotkey: String,
+    /// Enable the speech hotkey. When `false`, it isn't registered at all —
+    /// unlike [`Self::enable_text_to_speech`], which only gates whether *any*
+    /// speech plays, this gates hotkey *registration* specifically. Takes
+    /// effect only on restart.
+    #[serde(default = "default_enable_speech_hotkey")]
+    pub enable_speech_hotkey: bool,
     /// Delay (seconds) before the hotkey-triggered popup (Stage 6) auto-hides,
     /// once the cursor is no longer over it. Live-reloaded, no restart needed.
     /// `0` is treated the same as the default (`3`) rather than "never
@@ -290,6 +314,8 @@ impl Default for GuiConfig {
             phrases_spacing_px: default_phrases_spacing_px(),
             show_prompt: default_show_prompt(),
             translate_hotkey: default_translate_hotkey(),
+            speech_hotkey: default_speech_hotkey(),
+            enable_speech_hotkey: default_enable_speech_hotkey(),
             popup_auto_hide_seconds: default_popup_auto_hide_seconds(),
             start_minimized: default_start_minimized(),
             remember_window_geometry: default_remember_window_geometry(),
@@ -843,6 +869,22 @@ mod tests {
         let config = load_from_path(&path);
 
         assert_eq!(config.translate_hotkey, "Alt+A");
+    }
+
+    #[test]
+    fn old_file_without_speech_hotkey_fields_defaults_to_alt_s_and_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.speech_hotkey, "Alt+S");
+        assert!(config.enable_speech_hotkey);
     }
 
     #[test]

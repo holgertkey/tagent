@@ -985,22 +985,39 @@ export component SettingsDialog inherits Dialog {
     // Stage 8: the global hotkey string (Stage 5) and the popup auto-hide
     // delay (Stage 6), now editable here instead of only by hand in
     // tagent-gui.json. `translate-hotkey-error` is set from Rust (not
-    // dialog-owned) after validating every edit via `hotkey-edited` --
-    // non-empty disables the OK button below.
+    // dialog-owned) after validating every edit via `translate-hotkey-edited`
+    // -- non-empty disables the OK button below.
     in-out property <string> translate-hotkey: "Alt+A";
     in property <string> translate-hotkey-error: "";
-    callback hotkey-edited(string);
+    callback translate-hotkey-edited(string);
     in-out property <int> popup-auto-hide-seconds: 3;
+
+    // Stage 10 follow-up: a second, independent global hotkey that speaks the
+    // current selection directly (no translation). Same field/error/edited
+    // shape as translate-hotkey above -- see speech-hotkey-error's own
+    // enabled-OK-button check below.
+    in-out property <string> speech-hotkey: "Alt+S";
+    in property <string> speech-hotkey-error: "";
+    callback speech-hotkey-edited(string);
+    in-out property <bool> enable-speech-hotkey: true;
 
     // Stage 8 follow-up: "Record" button -- press-the-actual-keys capture,
     // as an addition next to the plain text field above, not a replacement.
-    // `is-recording` is session-only UI state, never persisted.
-    in-out property <bool> is-recording: false;
-    callback hotkey-unrecognized();
+    // `is-recording-translate`/`is-recording-speech` are session-only UI
+    // state, never persisted -- split into two (Stage 10 follow-up, renamed
+    // from a single `is-recording`) since each hotkey field gets its own
+    // independent Record button/HotkeyRecorder instance.
+    in-out property <bool> is-recording-translate: false;
+    in-out property <bool> is-recording-speech: false;
+    callback translate-hotkey-unrecognized();
+    callback speech-hotkey-unrecognized();
+    // Shared by both HotkeyRecorder instances -- a stateless key-name lookup
+    // with no per-field behavior, so one Rust handler suffices for both.
     callback map-key-to-token(string) -> string;
-    // Fired on every `is-recording` transition (both directions) -- lets
-    // main.rs suppress the global hotkey while a recording is in progress.
-    // See `recording_started_at`'s doc comment in `main()` for why.
+    // Fired whenever *either* field's recording state changes, with "is either
+    // one currently recording" (not which one) -- lets main.rs suppress both
+    // global hotkeys while any recording is in progress. See
+    // `recording_started_at`'s doc comment in `main()` for why.
     callback recording-changed(bool);
 
     // Stage 7: whether the app launches straight into the tray with no window
@@ -1129,41 +1146,41 @@ export component SettingsDialog inherits Dialog {
             VerticalBox {
                 alignment: start;
 
-                Text { text: "Global hotkey:"; }
+                Text { text: "Global hotkey (translate):"; }
                 HorizontalLayout {
                     spacing: 8px;
                     LineEdit {
-                        visible: !is-recording;
+                        visible: !is-recording-translate;
                         text <=> translate-hotkey;
-                        edited(text) => { hotkey-edited(text); }
+                        edited(text) => { translate-hotkey-edited(text); }
                     }
-                    recorder := HotkeyRecorder {
-                        visible: is-recording;
+                    translate-recorder := HotkeyRecorder {
+                        visible: is-recording-translate;
                         height: 32px;
                         map-key-to-token(text) => { root.map-key-to-token(text) }
                         captured(hotkey) => {
-                            is-recording = false;
-                            root.recording-changed(false);
+                            is-recording-translate = false;
+                            root.recording-changed(is-recording-speech);
                             translate-hotkey = hotkey;
-                            hotkey-edited(hotkey);
+                            translate-hotkey-edited(hotkey);
                         }
                         unrecognized => {
-                            is-recording = false;
-                            root.recording-changed(false);
-                            root.hotkey-unrecognized();
+                            is-recording-translate = false;
+                            root.recording-changed(is-recording-speech);
+                            root.translate-hotkey-unrecognized();
                         }
                         cancelled => {
-                            is-recording = false;
-                            root.recording-changed(false);
+                            is-recording-translate = false;
+                            root.recording-changed(is-recording-speech);
                         }
                     }
                     Button {
-                        text: is-recording ? "Cancel" : "Record";
+                        text: is-recording-translate ? "Cancel" : "Record";
                         clicked => {
-                            is-recording = !is-recording;
-                            root.recording-changed(is-recording);
-                            if is-recording {
-                                recorder.focus();
+                            is-recording-translate = !is-recording-translate;
+                            root.recording-changed(is-recording-translate || is-recording-speech);
+                            if is-recording-translate {
+                                translate-recorder.focus();
                             }
                         }
                     }
@@ -1175,6 +1192,53 @@ export component SettingsDialog inherits Dialog {
                     visible: translate-hotkey-error != "";
                 }
 
+                Text { text: "Global hotkey (speech):"; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        visible: !is-recording-speech;
+                        text <=> speech-hotkey;
+                        edited(text) => { speech-hotkey-edited(text); }
+                    }
+                    speech-recorder := HotkeyRecorder {
+                        visible: is-recording-speech;
+                        height: 32px;
+                        map-key-to-token(text) => { root.map-key-to-token(text) }
+                        captured(hotkey) => {
+                            is-recording-speech = false;
+                            root.recording-changed(is-recording-translate);
+                            speech-hotkey = hotkey;
+                            speech-hotkey-edited(hotkey);
+                        }
+                        unrecognized => {
+                            is-recording-speech = false;
+                            root.recording-changed(is-recording-translate);
+                            root.speech-hotkey-unrecognized();
+                        }
+                        cancelled => {
+                            is-recording-speech = false;
+                            root.recording-changed(is-recording-translate);
+                        }
+                    }
+                    Button {
+                        text: is-recording-speech ? "Cancel" : "Record";
+                        clicked => {
+                            is-recording-speech = !is-recording-speech;
+                            root.recording-changed(is-recording-translate || is-recording-speech);
+                            if is-recording-speech {
+                                speech-recorder.focus();
+                            }
+                        }
+                    }
+                }
+                Text {
+                    text: speech-hotkey-error;
+                    color: #e05252;
+                    wrap: word-wrap;
+                    visible: speech-hotkey-error != "";
+                }
+                CheckBox { text: "Enable speech hotkey"; checked <=> enable-speech-hotkey; }
+
                 CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                 CheckBox {
                     text: "Remember window size and position";
@@ -1182,7 +1246,7 @@ export component SettingsDialog inherits Dialog {
                 }
 
                 Text {
-                    text: "The global hotkey takes effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts.";
+                    text: "The global hotkeys take effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts. Pressing Esc while the speech hotkey (or a transcript speaker button) is playing stops it, even if Tagent isn't the focused window.";
                     wrap: word-wrap;
                 }
             }
@@ -1258,7 +1322,7 @@ export component SettingsDialog inherits Dialog {
 
     StandardButton {
         kind: ok;
-        enabled: translate-hotkey-error == "";
+        enabled: translate-hotkey-error == "" && speech-hotkey-error == "";
         clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
     // `kind` alone only affects the button's label/position -- unlike OK's

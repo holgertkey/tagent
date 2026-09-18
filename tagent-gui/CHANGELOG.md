@@ -12,6 +12,24 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+047] - 2026-09-18
+
+### Added
+- **Speech hotkey** (Stage 10 follow-up): a second global hotkey (default
+  `Alt+S`, Linux and Windows only — macOS is a stub) that speaks the current
+  text selection directly, with no translation step, via a new
+  `[Speech]: ...` transcript row (with its own working 🔊 replay button). Esc
+  cancels playback unconditionally — from any application, not just Tagent's
+  own window — and this also cancels a transcript speaker button's playback,
+  not just the hotkey's, since both share one "who's currently speaking"
+  mechanism. New `speech_hotkey`/`enable_speech_hotkey` `tagent-gui.json`
+  fields (defaults `"Alt+S"`/`true`, restart-required like `translate_hotkey`),
+  with a second hotkey field + Record button + checkbox on Settings >
+  "Hotkeys & Tray". `KeyboardHook::spawn` on Linux/Windows/macOS all grew a
+  second hotkey slot plus an Escape-observation callback; Escape is never
+  suppressed system-wide, only observed alongside the existing hotkey
+  detection.
+
 ## [0.14.0+046] - 2026-09-18
 
 ### Added
