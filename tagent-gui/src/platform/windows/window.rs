@@ -31,6 +31,22 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     }
 }
 
+/// Returns the bounding box of the whole desktop (all monitors) as
+/// `(x, y, width, height)`, in physical screen coordinates, or `None` if the
+/// query reports an empty area. `x`/`y` can be negative when a monitor sits left
+/// of or above the primary one. It's the bounding box, not the union of the
+/// monitors' own rectangles: on a layout with differently-sized monitors, a point
+/// in the empty corner between them still counts as "inside".
+pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
+    unsafe {
+        let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        (width > 0 && height > 0).then_some((x, y, width, height))
+    }
+}
+
 /// Returns the currently focused (foreground) window, if any.
 pub fn foreground_window() -> Option<WindowHandle> {
     unsafe {

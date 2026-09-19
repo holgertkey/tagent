@@ -63,6 +63,28 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     }
 }
 
+/// Returns the bounding box of the whole desktop as `(x, y, width, height)`, in
+/// physical screen coordinates, or `None` if the X11 display can't be opened.
+///
+/// On X11 the default screen already spans every monitor (RandR merges them into
+/// one virtual screen), so this is its full size anchored at the origin. It's the
+/// bounding box, not the union of the monitors' own rectangles: on a layout with
+/// differently-sized monitors, a point in the empty corner between them still
+/// counts as "inside".
+pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
+    unsafe {
+        let display = xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() {
+            return None;
+        }
+        let screen = xlib::XDefaultScreen(display);
+        let width = xlib::XDisplayWidth(display, screen);
+        let height = xlib::XDisplayHeight(display, screen);
+        xlib::XCloseDisplay(display);
+        (width > 0 && height > 0).then_some((0, 0, width, height))
+    }
+}
+
 /// Returns the currently focused (foreground) window, if any window manager
 /// reports one via `_NET_ACTIVE_WINDOW`.
 pub fn foreground_window() -> Option<WindowHandle> {

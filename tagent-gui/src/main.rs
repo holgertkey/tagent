@@ -8,6 +8,7 @@ use tagent::{languages, providers};
 mod config;
 mod dictionary;
 mod platform;
+mod popup_position;
 mod speech;
 
 use config::GuiConfigManager;
@@ -455,6 +456,7 @@ fn show_popup(
     show_prompt: bool,
     show_phrase: bool,
     auto_hide_seconds: u64,
+    remembered_position: Option<config::PopupPosition>,
 ) {
     let Some(popup) = popup_weak.upgrade() else {
         return;
@@ -482,14 +484,134 @@ fn show_popup(
     // stage -- accepted limitation, see the Stage 6 plan. A `None` cursor
     // position (unsupported window manager) just leaves the popup wherever
     // show() placed it.
-    if let Some((x, y)) = platform::window::cursor_position() {
+    //
+    // A remembered position (`remember_popup_position`, from the last drag) wins
+    // over the cursor, but is clamped back onto the current desktop first: the
+    // monitor layout or resolution may have changed since it was saved, and this
+    // window has no frame or close button to recover a popup stranded off-screen
+    // (only the auto-hide would eventually dismiss it).
+    let target = match remembered_position {
+        Some(saved) => {
+            let size = popup.window().size();
+            Some(match platform::window::virtual_screen_bounds() {
+                Some(bounds) => popup_position::clamp_to_bounds(
+                    (saved.x, saved.y),
+                    (size.width as i32, size.height as i32),
+                    bounds,
+                ),
+                None => (saved.x, saved.y),
+            })
+        }
+        None => platform::window::cursor_position().map(|(x, y)| (x + 16, y + 16)),
+    };
+    if let Some((x, y)) = target {
         popup
             .window()
-            .set_position(slint::PhysicalPosition::new(x + 16, y + 16));
+            .set_position(slint::PhysicalPosition::new(x, y));
     }
 
     popup.set_auto_hide_seconds(auto_hide_seconds.min(i32::MAX as u64) as i32);
     popup.invoke_start_hide_timer();
+}
+
+/// Where a popup drag started, and how far it has got. Lives from the button going
+/// down to it coming back up; see [`wire_popup_drag`].
+#[derive(Clone, Copy)]
+struct PopupDrag {
+    /// Global cursor position when the button went down.
+    start_cursor: (i32, i32),
+    /// The popup's top-left corner when the button went down.
+    start_position: (i32, i32),
+    /// The last position the popup was moved to.
+    last_position: (i32, i32),
+    /// Whether the pointer has travelled far enough to count as a drag rather
+    /// than a click.
+    moved: bool,
+}
+
+/// Lets the user move the hotkey popup by dragging it, and -- if
+/// `remember_popup_position` is on -- saves where it was dropped so later popups
+/// reappear there instead of next to the cursor.
+///
+/// The three callbacks come from the popup's `TouchArea` (`drag-started`/`drag-moved`/
+/// `drag-ended` in app.slint) and carry no coordinates, since Slint only reports
+/// pointer positions relative to the popup, which itself moves under the pointer
+/// with every step. Instead each step reads the *global* cursor position
+/// ([`platform::window::cursor_position`]) and places the popup at its
+/// drag-start position plus the pointer's travel since, which is jitter-free.
+///
+/// Dragging works whether or not the setting is on -- the popup just moves for as
+/// long as it stays open; only the save at drag end is conditional. That save
+/// re-reads the setting from the live config, so toggling it in Settings applies
+/// to the very next drag.
+///
+/// The popup keeps the OS focus it took when shown until it auto-hides, at which
+/// point `on_hide_requested` hands focus back to the window that had it before (see
+/// [`show_popup`]) -- a drag doesn't change that, so no focus handling is needed
+/// here.
+fn wire_popup_drag(popup: &TranslationPopup, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+    let drag: Rc<Cell<Option<PopupDrag>>> = Rc::new(Cell::new(None));
+
+    let popup_weak = popup.as_weak();
+    let drag_for_start = drag.clone();
+    popup.on_drag_started(move || {
+        let Some(popup) = popup_weak.upgrade() else {
+            return;
+        };
+        let position = popup.window().position();
+        drag_for_start.set(
+            platform::window::cursor_position().map(|start_cursor| PopupDrag {
+                start_cursor,
+                start_position: (position.x, position.y),
+                last_position: (position.x, position.y),
+                moved: false,
+            }),
+        );
+    });
+
+    let popup_weak = popup.as_weak();
+    let drag_for_move = drag.clone();
+    popup.on_drag_moved(move || {
+        let (Some(popup), Some(mut state)) = (popup_weak.upgrade(), drag_for_move.get()) else {
+            return;
+        };
+        let Some(cursor) = platform::window::cursor_position() else {
+            return;
+        };
+        if !state.moved && !popup_position::exceeds_drag_threshold(state.start_cursor, cursor) {
+            return;
+        }
+        state.moved = true;
+        state.last_position =
+            popup_position::dragged_position(state.start_position, state.start_cursor, cursor);
+        popup.window().set_position(slint::PhysicalPosition::new(
+            state.last_position.0,
+            state.last_position.1,
+        ));
+        drag_for_move.set(Some(state));
+    });
+
+    let config_manager = config_manager.clone();
+    popup.on_drag_ended(move || {
+        let Some(state) = drag.take() else {
+            return;
+        };
+        if !state.moved {
+            return;
+        }
+        let mut manager = config_manager.lock().unwrap();
+        if !manager.config().remember_popup_position {
+            return;
+        }
+        let mut new_config = manager.config().clone();
+        new_config.popup_position = Some(config::PopupPosition {
+            x: state.last_position.0,
+            y: state.last_position.1,
+        });
+        if let Err(err) = manager.update(new_config) {
+            eprintln!("Warning: failed to save tagent-gui.json: {err}");
+        }
+    });
 }
 
 /// Formats one transcript line, with or without its "[Auto]:"-style prompt.
@@ -657,6 +779,7 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_speech_hotkey_error(hotkey_validation_error(&config.speech_hotkey).into());
     dialog.set_enable_speech_hotkey(config.enable_speech_hotkey);
     dialog.set_popup_auto_hide_seconds(config.popup_auto_hide_seconds.min(60) as i32);
+    dialog.set_remember_popup_position(config.remember_popup_position);
 
     init_color_field!(
         dialog,
@@ -1299,6 +1422,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
+    wire_popup_drag(&popup, &config_manager);
+
     // Stage 7: persistent tray icon -- same "must stay alive for the rest of
     // main()" reasoning as `popup` above. Its own `.show()`/`.hide()` are
     // deliberately never called (see TrayIcon's doc comment in app.slint):
@@ -1764,6 +1889,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // (see save_window_geometry) -- so carried through unchanged, same
                 // treatment as translate_hotkey/popup_auto_hide_seconds above.
                 window_geometry: current_config.window_geometry,
+                remember_popup_position: dialog.get_remember_popup_position(),
+                // Also not dialog-editable (captured by dragging the popup), but read
+                // fresh from the live config rather than from `current_config`: a drag
+                // can land while the dialog is open, and its position mustn't be
+                // overwritten with the stale copy taken when the dialog opened.
+                popup_position: config_manager_for_save
+                    .lock()
+                    .unwrap()
+                    .config()
+                    .popup_position,
                 // Hand-editable only (no Settings dropdown yet, Stage 11) -- carried
                 // through unchanged so saving the dialog doesn't reset it to "google".
                 speech_provider: current_config.speech_provider.clone(),
@@ -2099,6 +2234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         popup_auto_hide_seconds,
                         popup_show_prompt,
                         popup_show_phrase,
+                        remembered_popup_position,
                     ) = {
                         let mut manager = config_manager.lock().unwrap();
                         manager.check_and_reload();
@@ -2112,6 +2248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             cfg.popup_auto_hide_seconds_or_default(),
                             cfg.popup_show_prompt,
                             cfg.popup_show_phrase,
+                            cfg.remember_popup_position
+                                .then_some(cfg.popup_position)
+                                .flatten(),
                         )
                     };
                     window.set_tts_enabled(enable_text_to_speech);
@@ -2158,6 +2297,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             popup_show_prompt,
                                             popup_show_phrase,
                                             popup_auto_hide_seconds,
+                                            remembered_popup_position,
                                         );
                                     })),
                                 );

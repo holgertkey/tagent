@@ -16,6 +16,12 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     None
 }
 
+/// Always `None` on macOS: not yet implemented (a remembered popup position is
+/// then applied as-is, unclamped).
+pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
+    None
+}
+
 /// Always `None` on macOS: not yet implemented.
 pub fn foreground_window() -> Option<WindowHandle> {
     None

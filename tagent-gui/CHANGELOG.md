@@ -12,6 +12,22 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+049] - 2026-09-19
+
+### Added
+- **Draggable popup**: the hotkey popup can be moved with the mouse by dragging
+  any part of it (the cursor turns into a move cursor while the button is held). Dragging restarts the auto-hide
+  countdown, and the popup no longer auto-hides while the button is held.
+- **`remember_popup_position`** (`tagent-gui.json`, default `false`,
+  live-reloaded; checkbox "Remember position after dragging" on Settings >
+  "Popup"): when on, the position where the popup was dropped is saved
+  (`popup_position`) and later popups reappear there instead of next to the
+  mouse cursor. With it off (the default) the popup is still draggable, but
+  each new popup opens next to the cursor as before. The saved position is
+  clamped back onto the current desktop before use, so a changed monitor layout
+  can't strand the popup off-screen (`platform::window::virtual_screen_bounds`,
+  new on Linux/Windows; unclamped on macOS).
+
 ## [0.14.0+048] - 2026-09-19
 
 ### Changed

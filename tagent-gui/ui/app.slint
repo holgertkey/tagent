@@ -605,11 +605,26 @@ export component TranslationPopup inherits Window {
     in-out property <int> auto-hide-seconds: 3;
     callback hide-requested();
 
+    // Dragging the popup by any point of its surface (it has no buttons, and its
+    // text isn't selectable, so nothing else competes for the press). The window
+    // itself is moved from Rust (`wire_popup_drag` in main.rs) -- Slint can't
+    // set a window's position from .slint -- and Rust follows the pointer using
+    // global screen coordinates, so these carry no payload. `drag-ended` also
+    // fires for a plain click; Rust tells the two apart by how far the pointer
+    // travelled in between.
+    callback drag-started();
+    callback drag-moved();
+    callback drag-ended();
+
     hide-timer := Timer {
         interval: 3s;
         running: false;
         triggered => {
-            if (touch-area.has-hover) {
+            // `pressed` as well as `has-hover`: while the button is held for a
+            // drag the pointer is grabbed, and hover tracking over this
+            // TouchArea is not reliable in that state (same grab that made
+            // wheel-scrolling report "not hovering", see `scroll-event` below).
+            if (touch-area.has-hover || touch-area.pressed) {
                 // Mirrors tagent-cli's `hide_terminal_and_restore` polling
                 // loop (`translator.rs`): once the initial delay has passed,
                 // keep re-checking every second for as long as the cursor
@@ -665,6 +680,23 @@ export component TranslationPopup inherits Window {
         touch-area := TouchArea {
             width: 100%;
             height: 100%;
+            mouse-cursor: self.pressed ? MouseCursor.move : MouseCursor.default;
+
+            // Drag-to-move. Each press/move also restarts the auto-hide
+            // countdown: a drag is proof of engagement, same reasoning as
+            // `scroll-event` below.
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                    root.start-hide-timer();
+                    root.drag-started();
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    root.drag-ended();
+                }
+            }
+            moved => {
+                root.start-hide-timer();
+                root.drag-moved();
+            }
 
             // Wheel-scrolling flips `has-hover` to false -- even with the
             // cursor never actually leaving the popup -- because
@@ -991,6 +1023,7 @@ export component SettingsDialog inherits Dialog {
     in property <string> translate-hotkey-error: "";
     callback translate-hotkey-edited(string);
     in-out property <int> popup-auto-hide-seconds: 3;
+    in-out property <bool> remember-popup-position: false;
 
     // Stage 10 follow-up: a second, independent global hotkey that speaks the
     // current selection directly (no translation). Same field/error/edited
@@ -1260,12 +1293,16 @@ export component SettingsDialog inherits Dialog {
                     alignment: start;
 
                     Text {
-                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection.";
+                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection. Drag it with the mouse to move it; with \"Remember position after dragging\" on, it reappears where you left it instead of next to the cursor.";
                         wrap: word-wrap;
                     }
 
                     CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
                     CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }
+                    CheckBox {
+                        text: "Remember position after dragging";
+                        checked <=> remember-popup-position;
+                    }
 
                     HorizontalLayout {
                         spacing: 8px;

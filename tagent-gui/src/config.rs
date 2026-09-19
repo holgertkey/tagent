@@ -111,6 +111,12 @@ fn default_remember_window_geometry() -> bool {
     true
 }
 
+/// Default for [`GuiConfig::remember_popup_position`]: off — the popup appears
+/// next to the mouse cursor, as it always has.
+fn default_remember_popup_position() -> bool {
+    false
+}
+
 /// Default for [`GuiConfig::show_dictionary`], matching `tagent-cli`'s `ShowDictionary`.
 fn default_show_dictionary() -> bool {
     true
@@ -261,6 +267,20 @@ pub struct GuiConfig {
     /// starting over.
     #[serde(default)]
     pub window_geometry: Option<WindowGeometry>,
+    /// Whether the hotkey popup reappears where the user last dragged it,
+    /// instead of next to the mouse cursor. Default `false`. Dragging the popup
+    /// works either way; this only controls whether the dropped position is saved
+    /// ([`Self::popup_position`]) and used for later popups. Live-reloaded, no
+    /// restart needed.
+    #[serde(default = "default_remember_popup_position")]
+    pub remember_popup_position: bool,
+    /// Where the popup's top-left corner was last dropped after a drag, in
+    /// physical pixels — `None` until it's been dragged at least once with
+    /// [`Self::remember_popup_position`] on. Ignored (the popup follows the cursor)
+    /// while that setting is `false`, but kept on disk either way, same as
+    /// [`Self::window_geometry`].
+    #[serde(default)]
+    pub popup_position: Option<PopupPosition>,
     /// Whether single-word input triggers a dictionary lookup (definitions
     /// grouped by part of speech) instead of a plain translation. Live-reloaded,
     /// no restart needed.
@@ -299,6 +319,17 @@ pub struct WindowGeometry {
     pub height: u32,
 }
 
+/// A popup position, in physical pixels — the same coordinate space
+/// [`slint::PhysicalPosition`] uses, so no conversion is needed at the call sites
+/// that read or write this.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PopupPosition {
+    /// Horizontal position of the popup's top-left corner.
+    pub x: i32,
+    /// Vertical position of the popup's top-left corner.
+    pub y: i32,
+}
+
 impl Default for GuiConfig {
     fn default() -> Self {
         Self {
@@ -332,6 +363,8 @@ impl Default for GuiConfig {
             start_minimized: default_start_minimized(),
             remember_window_geometry: default_remember_window_geometry(),
             window_geometry: None,
+            remember_popup_position: default_remember_popup_position(),
+            popup_position: None,
             show_dictionary: default_show_dictionary(),
             spell_check: default_spell_check(),
             enable_text_to_speech: default_enable_text_to_speech(),
@@ -971,6 +1004,42 @@ mod tests {
                 width: 480,
                 height: 480
             })
+        );
+    }
+
+    #[test]
+    fn old_file_without_popup_position_fields_defaults_to_following_the_cursor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(!config.remember_popup_position);
+        assert_eq!(config.popup_position, None);
+    }
+
+    #[test]
+    fn popup_position_round_trips_through_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        let config = GuiConfig {
+            remember_popup_position: true,
+            popup_position: Some(PopupPosition { x: -40, y: 300 }),
+            ..Default::default()
+        };
+        save_to_path(&path, &config).unwrap();
+
+        let loaded = load_from_path(&path);
+
+        assert!(loaded.remember_popup_position);
+        assert_eq!(
+            loaded.popup_position,
+            Some(PopupPosition { x: -40, y: 300 })
         );
     }
 

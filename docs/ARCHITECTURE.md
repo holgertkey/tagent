@@ -506,17 +506,18 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     weak already crosses this exact boundary for the transcript push), so it's what
     `show_popup()` actually carries across; the `Timer` itself never leaves
     `app.slint`.
-  - **Focus-stealing fix**: `popup.show()` takes OS focus on most window managers,
-    same as Stage 4's "📋" button did — but here it recurs in a worse form, since the
-    popup's default 3-second visible window is long enough for a user to select new
-    text and press the hotkey again. `show_popup()` captures the current foreground
-    window via `platform::window::foreground_window()` *before* calling
-    `popup.show()`, then calls `platform::window::set_foreground_window()`
-    immediately after positioning — not deferred to when the popup later auto-hides
-    — so the popup never actually holds keyboard focus even while visible, and a
-    hotkey re-trigger while it's on screen still copies from the real source app.
-    Because focus is restored this early, the auto-hide path (above) never needs to
-    touch focus again.
+  - **Focus handling**: `popup.show()` takes OS focus on most window managers.
+    `show_popup()` captures the current foreground window via
+    `platform::window::foreground_window()` *before* calling `popup.show()` and
+    stores it in the `POPUP_RESTORE_TARGET` thread-local; `on_hide_requested`
+    hands focus back via `set_foreground_window()` when the popup auto-hides.
+    Restoring right after `show()` was the original design (so a hotkey re-trigger
+    while the popup is on screen would still copy from the real source app), but
+    on Linux `set_foreground_window` also raises the target via `XMapRaised`, and
+    since the popup sits right over the app the user was just using, that put the
+    source app straight back on top of it and hid it. The narrower gap this
+    reopens (a re-trigger while the popup is still visible can copy from the
+    popup) is the same one `tagent-cli`'s terminal popup already lives with.
   - **`popup_auto_hide_seconds`** (`GuiConfig`, default `3`, live-reloaded — read
     fresh via `check_and_reload()` on every hotkey trigger, unlike `translate_hotkey`
     which is parsed once at startup): `0` is clamped to the default
@@ -529,6 +530,31 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     "(0 = default 3s)" hint, keeping that same normalization rather than fighting
     it — the dialog shows the raw stored value, not `3`, so a hand-edited `0`
     isn't silently rewritten just by opening and re-saving Settings.
+  - **Dragging and remembered position**: the popup's `TouchArea` reports
+    `drag-started`/`drag-moved`/`drag-ended` (no payload) and `wire_popup_drag()` in
+    `main.rs` moves the window from Rust, since Slint can't set a window's position
+    from `.slint`. Pointer positions from Slint are relative to the popup, which
+    moves under the pointer with every step, so each step instead reads the
+    *global* cursor (`platform::window::cursor_position`) and places the popup at
+    `position at press + (cursor now − cursor at press)` — no feedback, no jitter.
+    A 3px threshold (`popup_position::DRAG_THRESHOLD_PX`) separates a drag from a
+    click, so a shaky click neither nudges the popup nor saves a position. Each
+    press/move calls `start-hide-timer()` and the hide timer also treats
+    `touch-area.pressed` as engagement, because hover tracking isn't reliable while
+    the button is held (the same pointer grab behind the wheel-scroll fix). Dragging
+    always works; `remember_popup_position` (default off — cursor placement, as
+    before) only controls whether `drag-ended` saves the last position to
+    `popup_position`, re-reading the setting from the live config at that moment.
+    `show_popup()` then prefers that saved position over the cursor, clamped with
+    `popup_position::clamp_to_bounds` against `platform::window::virtual_screen_bounds`
+    (X11 default screen size; `SM_*VIRTUALSCREEN` on Windows; `None` on macOS, i.e.
+    unclamped) since the monitor layout may have changed and the no-frame popup has
+    no way to be recovered by hand. The bounds are the *bounding box* of all
+    monitors, so a saved point in the empty corner of an L-shaped layout is not
+    caught; and cursor placement itself is still unclamped, as before. Saving the
+    Settings dialog reads `popup_position` fresh from the live config rather than
+    from the copy taken when the dialog opened, so a drag made while the dialog
+    was open isn't overwritten.
   - **`platform::window` module** (`tagent-gui/src/platform/{linux,windows,macos}/window.rs`):
     three free functions — `cursor_position`, `foreground_window`,
     `set_foreground_window` — rather than a struct with a cached `Display`/handle
