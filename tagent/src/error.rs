@@ -29,9 +29,10 @@ pub enum Error {
     /// The provider's response body could not be decoded into the expected shape.
     #[error("failed to decode provider response: {0}")]
     Decode(String),
-    /// [`create_provider`](crate::providers::create_provider) was called with a name
-    /// that does not match any known provider.
-    #[error("unknown translation provider: {0}")]
+    /// [`create_provider`](crate::providers::create_provider) or
+    /// [`create_speech_provider`](crate::providers::create_speech_provider) was called
+    /// with a name that does not match any known provider.
+    #[error("unknown provider: {0}")]
     UnknownProvider(String),
 }
 

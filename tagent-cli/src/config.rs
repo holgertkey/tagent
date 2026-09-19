@@ -54,6 +54,9 @@ pub struct Config {
     pub enable_speech_hotkey: bool,
     /// Name of the translation backend to use, e.g. `"google"`.
     pub translate_provider: String,
+    /// Name of the text-to-speech backend to use, e.g. `"google"`. Independent of
+    /// `translate_provider`.
+    pub speech_provider: String,
 }
 
 impl Default for Config {
@@ -86,6 +89,7 @@ impl Default for Config {
             speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
             enable_speech_hotkey: true,                          // Enable speech hotkey by default
             translate_provider: "google".to_string(),            // Default translation provider
+            speech_provider: "google".to_string(),               // Default speech provider
         }
     }
 }
@@ -324,6 +328,11 @@ SpeechHotkey = {}
 ; Set to true to enable the speech hotkey
 ; Set to false to disable speech hotkey
 EnableSpeechHotkey = {}
+
+; Speech synthesis backend, independent of TranslateProvider
+; Supported values: google
+; Default: google
+SpeechProvider = {}
 "#,
             config.translate_provider,
             config.source_language,
@@ -341,7 +350,8 @@ EnableSpeechHotkey = {}
             config.translate_hotkey,
             config.enable_text_to_speech,
             config.speech_hotkey,
-            config.enable_speech_hotkey
+            config.enable_speech_hotkey,
+            config.speech_provider
         )
     }
 
@@ -471,6 +481,12 @@ EnableSpeechHotkey = {}
             .cloned()
             .unwrap_or_else(|| "google".to_string());
 
+        let speech_provider = parsed_config
+            .get("Speech")
+            .and_then(|section| section.get("SpeechProvider"))
+            .cloned()
+            .unwrap_or_else(|| "google".to_string());
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -489,6 +505,7 @@ EnableSpeechHotkey = {}
             speech_hotkey,
             enable_speech_hotkey,
             translate_provider,
+            speech_provider,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -668,6 +685,7 @@ EnableSpeechHotkey = {}
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
         println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+E, F10, etc.)");
+        println!("  - SpeechProvider: Text-to-speech backend (google)");
         println!("  - SaveTranslationHistory: Save all translations to file");
         println!();
 
@@ -695,6 +713,7 @@ EnableSpeechHotkey = {}
         println!();
         println!("=== Current Configuration ===");
         println!("Translation Provider: {}", config.translate_provider);
+        println!("Speech Provider: {}", config.speech_provider);
         println!();
         println!(
             "Source Language: {} ({})",
@@ -1317,6 +1336,59 @@ mod tests {
         manager.load_config().unwrap();
 
         assert!(manager.get_config().enable_text_to_speech);
+        assert_eq!(manager.get_config().speech_provider, "google");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_config_explicit_speech_provider_is_respected() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_explicit_speech_provider_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Speech]\nSpeechProvider = other\n").unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+
+        assert_eq!(manager.get_config().speech_provider, "other");
+        // Independent of the translate provider.
+        assert_eq!(manager.get_config().translate_provider, "google");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_generated_config_roundtrips_speech_provider() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_roundtrip_speech_provider_{}.conf",
+            std::process::id()
+        ));
+        let config = Config {
+            speech_provider: "roundtrip".to_string(),
+            ..Config::default()
+        };
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        fs::write(&path, manager.create_ini_content(&config)).unwrap();
+        manager.load_config().unwrap();
+
+        let loaded = manager.get_config();
+        assert_eq!(loaded.speech_provider, "roundtrip");
+        // Every other value must survive the positional `format!` template unshifted.
+        assert_eq!(loaded.translate_provider, config.translate_provider);
+        assert_eq!(loaded.enable_text_to_speech, config.enable_text_to_speech);
+        assert_eq!(loaded.speech_hotkey, config.speech_hotkey);
+        assert_eq!(loaded.enable_speech_hotkey, config.enable_speech_hotkey);
+        assert_eq!(loaded.translate_hotkey, config.translate_hotkey);
 
         let _ = fs::remove_file(&path);
     }

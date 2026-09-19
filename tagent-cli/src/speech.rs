@@ -8,12 +8,14 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tagent::providers::{create_provider, resolve_source_language, TranslationProvider};
+use tagent::providers::{
+    create_provider, create_speech_provider, resolve_source_language, SpeechProvider,
+};
 
-/// Plays back text as speech via a [`tagent::providers::TranslationProvider`].
+/// Plays back text as speech via a [`tagent::providers::SpeechProvider`].
 ///
 /// Text is split into provider-sized chunks internally (see
-/// [`TranslationProvider::split_for_speech`]).
+/// [`SpeechProvider::split_for_speech`]).
 pub struct SpeechManager;
 
 impl Default for SpeechManager {
@@ -31,7 +33,7 @@ impl SpeechManager {
     /// Speak text with cancellation support
     pub async fn speak_text_with_cancel(
         &self,
-        provider: &dyn TranslationProvider,
+        provider: &dyn SpeechProvider,
         text: &str,
         lang_code: &str,
         stop_flag: Arc<AtomicBool>,
@@ -92,6 +94,33 @@ impl SpeechManager {
     }
 
     /// Print speech label with optional color
+    /// Resolves the language to speak `text` in, given the configured `source_code`.
+    ///
+    /// A concrete `source_code` is returned as-is without touching any translate
+    /// provider: speech only needs one when language auto-detection (`"auto"`) is
+    /// requested, so a translate provider that fails to construct never blocks speech
+    /// in the common non-`"auto"` case. If construction fails for `"auto"`, falls back
+    /// to `"en"` with a warning, matching [`resolve_source_language`]'s own
+    /// detection-failure fallback.
+    pub async fn resolve_speech_language(
+        translate_provider_name: &str,
+        text: &str,
+        source_code: &str,
+    ) -> String {
+        if source_code != "auto" {
+            return source_code.to_string();
+        }
+        match create_provider(translate_provider_name) {
+            Ok(translate_provider) => {
+                resolve_source_language(translate_provider.as_ref(), text, "auto").await
+            }
+            Err(e) => {
+                eprintln!("Language detection unavailable ({e}); using 'en'");
+                "en".to_string()
+            }
+        }
+    }
+
     pub fn print_speech_label(text: &str, label_color: Option<&str>) {
         let speech_label = "[Speech]: ";
         if let Some(color) = label_color.and_then(ConfigManager::parse_color) {
@@ -106,7 +135,7 @@ impl SpeechManager {
     /// Returns true if speech was cancelled by user, false otherwise
     pub async fn speak_with_esc_monitor(
         &self,
-        provider: &dyn TranslationProvider,
+        provider: &dyn SpeechProvider,
         text: &str,
         lang_code: &str,
     ) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -159,11 +188,12 @@ impl SpeechManager {
         let (source_code, _) = config_manager.get_language_codes();
         let config = config_manager.get_config();
 
-        let provider = create_provider(&config.translate_provider)
+        let provider = create_speech_provider(&config.speech_provider)
             .map_err(|e| format!("Speech error: {}", e))?;
 
-        // Detect language
-        let speech_lang = resolve_source_language(provider.as_ref(), text, &source_code).await;
+        // Detect language (constructs a translate provider only for "auto")
+        let speech_lang =
+            Self::resolve_speech_language(&config.translate_provider, text, &source_code).await;
 
         // Print speech label
         Self::print_speech_label(text, Some(&config.target_prompt_color));
@@ -173,5 +203,25 @@ impl SpeechManager {
         self.speak_with_esc_monitor(provider.as_ref(), text, &speech_lang)
             .await
             .map_err(|e| format!("Speech error: {}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A translate provider name that fails to construct must not block speech when the
+    // source language is concrete -- the whole point of constructing it lazily.
+    #[tokio::test]
+    async fn resolve_speech_language_concrete_code_never_builds_translate_provider() {
+        let lang = SpeechManager::resolve_speech_language("no-such-provider", "Привет", "ru").await;
+        assert_eq!(lang, "ru");
+    }
+
+    #[tokio::test]
+    async fn resolve_speech_language_auto_with_unknown_translate_provider_falls_back_to_en() {
+        let lang =
+            SpeechManager::resolve_speech_language("no-such-provider", "Привет", "auto").await;
+        assert_eq!(lang, "en");
     }
 }

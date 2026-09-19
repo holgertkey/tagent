@@ -9,6 +9,12 @@ fn default_translate_provider() -> String {
     "google".to_string()
 }
 
+/// Default for [`GuiConfig::speech_provider`], matching `tagent-cli`'s own
+/// `SpeechProvider` default.
+fn default_speech_provider() -> String {
+    "google".to_string()
+}
+
 fn default_theme() -> String {
     "auto".to_string()
 }
@@ -269,6 +275,12 @@ pub struct GuiConfig {
     /// transcript (Stage 10). Live-reloaded, no restart needed.
     #[serde(default = "default_enable_text_to_speech")]
     pub enable_text_to_speech: bool,
+    /// Name of the text-to-speech backend (Stage 11), independent of
+    /// [`Self::translate_provider`]. Hand-editable only for now (no Settings
+    /// dropdown while `"google"` is the only registered backend); live-reloaded,
+    /// no restart needed.
+    #[serde(default = "default_speech_provider")]
+    pub speech_provider: String,
 }
 
 /// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
@@ -323,6 +335,7 @@ impl Default for GuiConfig {
             show_dictionary: default_show_dictionary(),
             spell_check: default_spell_check(),
             enable_text_to_speech: default_enable_text_to_speech(),
+            speech_provider: default_speech_provider(),
         }
     }
 }
@@ -1096,6 +1109,23 @@ mod tests {
         let config = load_from_path(&path);
 
         assert!(config.enable_text_to_speech);
+    }
+
+    #[test]
+    fn old_file_without_speech_provider_field_defaults_to_google() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "deepl", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.speech_provider, "google");
+        // Independent of the translate provider.
+        assert_eq!(config.translate_provider, "deepl");
     }
 
     #[test]

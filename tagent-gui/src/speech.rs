@@ -14,14 +14,14 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tagent::providers::TranslationProvider;
+use tagent::providers::SpeechProvider;
 
 /// Speaks `text` in `lang_code` through the default audio output device,
-/// chunked via [`TranslationProvider::split_for_speech`]. Checked against
+/// chunked via [`SpeechProvider::split_for_speech`]. Checked against
 /// `stop_flag` between chunks and while waiting for playback to finish, same
 /// granularity as `tagent-cli`'s own `speak_text_with_cancel`.
 pub async fn speak(
-    provider: &dyn TranslationProvider,
+    provider: &dyn SpeechProvider,
     text: &str,
     lang_code: &str,
     stop_flag: Arc<AtomicBool>,

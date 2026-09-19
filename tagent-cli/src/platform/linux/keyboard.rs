@@ -595,9 +595,10 @@ async fn speak_clipboard(
 
     let (source_code, _) = config_manager.get_language_codes();
     let speech_manager = SpeechManager::new();
-    let provider = tagent::providers::create_provider(&config.translate_provider)?;
+    let provider = tagent::providers::create_speech_provider(&config.speech_provider)?;
     let lang_code =
-        tagent::providers::resolve_source_language(provider.as_ref(), &text, &source_code).await;
+        SpeechManager::resolve_speech_language(&config.translate_provider, &text, &source_code)
+            .await;
 
     print!("\r");
     io::stdout().flush().ok();

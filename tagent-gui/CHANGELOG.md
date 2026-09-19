@@ -12,6 +12,29 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+048] - 2026-09-19
+
+### Changed
+- **Text-to-speech uses its own provider, independent of `translate_provider`**
+  (Stage 11, `SpeechProvider`): `speech::speak()` now takes a
+  `&dyn tagent::providers::SpeechProvider` instead of a `TranslationProvider`
+  (`split_for_speech`/`speak_chunk` moved to the new trait in the `tagent`
+  library, shared with `tagent-cli`). `start_speaking` builds the speech
+  provider from the new `speech_provider` field and only constructs a
+  translate provider when the source language is `"auto"` (for
+  `detect_language`) — a concrete language no longer depends on
+  `translate_provider` at all, and a translate provider that fails to construct
+  on the `"auto"` path falls back to `"en"` with a warning instead of failing
+  speech. Saving Settings preserves a hand-edited `speech_provider` rather than
+  resetting it.
+
+### Added
+- **`speech_provider` `tagent-gui.json` field** (default `"google"`,
+  live-reloaded, hand-editable): selects the text-to-speech backend. No Settings
+  dropdown yet — with `"google"` the only registered backend it would have a
+  single entry, same precedent as `translate_provider` shipping hand-editable for
+  two stages before Settings grew a dropdown for it.
+
 ## [0.14.0+047] - 2026-09-18
 
 ### Added

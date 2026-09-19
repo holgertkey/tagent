@@ -834,19 +834,34 @@ fn start_speaking(
         let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
         let outcome: Result<(), Box<dyn std::error::Error + Send + Sync>> =
             runtime.block_on(async {
-                let translate_provider = {
+                let (translate_provider, speech_provider) = {
                     let mut manager = config_manager.lock().unwrap();
                     manager.check_and_reload();
-                    manager.config().translate_provider.clone()
+                    let cfg = manager.config();
+                    (cfg.translate_provider.clone(), cfg.speech_provider.clone())
                 };
-                let provider = providers::create_provider(&translate_provider)?;
-                // Pass-through no-op whenever `code` is already concrete (every
-                // translation-side call, and every phrase-side call where the
-                // source language wasn't "Auto") -- only issues a real
-                // `detect_language` request when `code == "auto"`.
-                let lang_code =
-                    providers::resolve_source_language(provider.as_ref(), &text, &code).await;
-                speech::speak(provider.as_ref(), &text, &lang_code, stop_flag).await
+                let speech_provider = providers::create_speech_provider(&speech_provider)?;
+                // Speech has its own provider, independent of `translate_provider`: a
+                // translate provider is only constructed when `code == "auto"` actually
+                // needs `detect_language`, so a broken/unimplemented translate provider
+                // never blocks speaking a concrete language (every translation-side
+                // call, and every phrase-side call where the source language wasn't
+                // "Auto").
+                let lang_code = if code == "auto" {
+                    match providers::create_provider(&translate_provider) {
+                        Ok(translate) => {
+                            providers::resolve_source_language(translate.as_ref(), &text, "auto")
+                                .await
+                        }
+                        Err(err) => {
+                            eprintln!("Language detection unavailable ({err}); using 'en'");
+                            "en".to_string()
+                        }
+                    }
+                } else {
+                    code
+                };
+                speech::speak(speech_provider.as_ref(), &text, &lang_code, stop_flag).await
             });
         if let Err(err) = outcome {
             eprintln!("Speech error: {err}");
@@ -1749,6 +1764,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // (see save_window_geometry) -- so carried through unchanged, same
                 // treatment as translate_hotkey/popup_auto_hide_seconds above.
                 window_geometry: current_config.window_geometry,
+                // Hand-editable only (no Settings dropdown yet, Stage 11) -- carried
+                // through unchanged so saving the dialog doesn't reset it to "google".
+                speech_provider: current_config.speech_provider.clone(),
             };
 
             if let Err(err) = config_manager_for_save
@@ -1929,9 +1947,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return;
                     }
 
-                    // translate_provider itself isn't needed here -- start_speaking
-                    // (below) re-reads it fresh from config right before it's actually
-                    // used to build a provider, same as every other speech-starting path.
+                    // translate_provider/speech_provider themselves aren't needed here --
+                    // start_speaking (below) re-reads both fresh from config right
+                    // before they're actually used to build providers, same as every
+                    // other speech-starting path.
                     let enable_text_to_speech = {
                         let mut manager = config_manager.lock().unwrap();
                         manager.check_and_reload();

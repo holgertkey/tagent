@@ -1,4 +1,4 @@
-use super::{Definition, DictionaryEntry, PartOfSpeechEntry, TranslationProvider};
+use super::{Definition, DictionaryEntry, PartOfSpeechEntry, SpeechProvider, TranslationProvider};
 use crate::error::Error;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -6,31 +6,13 @@ use serde_json::Value;
 use std::time::Duration;
 use url::form_urlencoded;
 
-/// Base URL for Google's unofficial text-to-speech endpoint.
-const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
-/// Maximum characters accepted per TTS request; longer text must be split first
-/// via [`GoogleTranslateProvider::split_for_speech`].
-const MAX_TTS_TEXT_LENGTH: usize = 100;
 /// Shared User-Agent sent with every request to Google's translate/TTS endpoints.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
-/// Rounds `index` down to the nearest UTF-8 character boundary in `s`.
-///
-/// Clamps to `s.len()` when `index` is out of range, so callers can pass an
-/// unclamped `start + MAX_TTS_TEXT_LENGTH` directly.
-fn floor_char_boundary(s: &str, mut index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
-    }
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
 /// [`TranslationProvider`] implementation backed by the unofficial Google Translate
-/// web API (`translate.googleapis.com/translate_a/single`) and Google's unofficial
-/// text-to-speech endpoint (`translate.google.com/translate_tts`).
+/// web API (`translate.googleapis.com/translate_a/single`).
+///
+/// Text-to-speech lives in the separate [`GoogleSpeechProvider`].
 pub struct GoogleTranslateProvider {
     client: Client,
 }
@@ -321,6 +303,61 @@ impl TranslationProvider for GoogleTranslateProvider {
         }
     }
 
+    fn name(&self) -> &str {
+        "Google Translate"
+    }
+}
+
+/// Base URL for Google's unofficial text-to-speech endpoint.
+const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
+/// Maximum characters accepted per TTS request; longer text must be split first
+/// via [`GoogleSpeechProvider::split_for_speech`].
+const MAX_TTS_TEXT_LENGTH: usize = 100;
+
+/// Rounds `index` down to the nearest UTF-8 character boundary in `s`.
+///
+/// Clamps to `s.len()` when `index` is out of range, so callers can pass an
+/// unclamped `start + MAX_TTS_TEXT_LENGTH` directly.
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// [`SpeechProvider`] implementation backed by Google's unofficial text-to-speech
+/// endpoint (`translate.google.com/translate_tts`).
+///
+/// Independent of [`GoogleTranslateProvider`]: constructing one never touches the other.
+/// The endpoint accepts at most 100 characters per request, so
+/// [`split_for_speech`](SpeechProvider::split_for_speech) chunks longer text.
+pub struct GoogleSpeechProvider {
+    client: Client,
+}
+
+impl Default for GoogleSpeechProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GoogleSpeechProvider {
+    /// Create a new provider with a fresh HTTP client (10s request timeout).
+    pub fn new() -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("Failed to create HTTP client for Google TTS"),
+        }
+    }
+}
+
+#[async_trait]
+impl SpeechProvider for GoogleSpeechProvider {
     fn split_for_speech(&self, text: &str) -> Vec<String> {
         // Text within the per-request limit is sent verbatim (preserving punctuation
         // exactly as given) rather than run through sentence-splitting below, which
@@ -457,7 +494,7 @@ impl TranslationProvider for GoogleTranslateProvider {
     }
 
     fn name(&self) -> &str {
-        "Google Translate"
+        "Google TTS"
     }
 }
 
@@ -503,112 +540,6 @@ mod tests {
         let entry = provider.parse_dictionary_response(&response);
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().corrected_word, None);
-    }
-
-    #[test]
-    fn test_split_text_short() {
-        let provider = GoogleTranslateProvider::new();
-        let text = "Hello world";
-        let chunks = provider.split_for_speech(text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], "Hello world");
-    }
-
-    #[test]
-    fn test_split_text_short_preserves_trailing_punctuation() {
-        // Text within MAX_TTS_TEXT_LENGTH hits the early-return in split_for_speech and
-        // must be sent verbatim, not run through sentence-splitting (which trims/rejoins
-        // and would otherwise drop the period).
-        let provider = GoogleTranslateProvider::new();
-        let text = "Hello world.";
-        let chunks = provider.split_for_speech(text);
-        assert_eq!(chunks, vec!["Hello world.".to_string()]);
-    }
-
-    #[test]
-    fn test_split_text_long() {
-        let provider = GoogleTranslateProvider::new();
-        let text = "a".repeat(250);
-        let chunks = provider.split_for_speech(&text);
-        assert!(chunks.len() >= 3);
-        for chunk in chunks {
-            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
-        }
-    }
-
-    #[test]
-    fn test_split_text_sentences() {
-        let provider = GoogleTranslateProvider::new();
-        // Long enough to exceed MAX_TTS_TEXT_LENGTH (100 bytes) so this actually exercises
-        // sentence-splitting instead of the short-text verbatim early-return.
-        let text = "First sentence is here. Second sentence follows along. \
-                     Third sentence wraps it up nicely. Fourth sentence for good measure.";
-        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
-        let chunks = provider.split_for_speech(text);
-        assert!(
-            chunks.len() > 1,
-            "expected multiple chunks, got {:?}",
-            chunks
-        );
-        for chunk in chunks {
-            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
-        }
-    }
-
-    #[test]
-    fn test_floor_char_boundary_ascii() {
-        let s = "Hello world";
-        assert_eq!(floor_char_boundary(s, 5), 5);
-    }
-
-    #[test]
-    fn test_floor_char_boundary_multibyte() {
-        // "д" (Cyrillic) is a 2-byte character starting at byte offset 0.
-        let s = "дом";
-        // Index 1 is in the middle of "д" (bytes 0..2), so it must round down to 0.
-        assert_eq!(floor_char_boundary(s, 1), 0);
-    }
-
-    #[test]
-    fn test_floor_char_boundary_out_of_range() {
-        let s = "hello";
-        assert_eq!(floor_char_boundary(s, 100), s.len());
-    }
-
-    #[test]
-    fn test_split_text_multibyte_no_whitespace() {
-        let provider = GoogleTranslateProvider::new();
-        // Cyrillic text longer than MAX_TTS_TEXT_LENGTH bytes with no whitespace/punctuation.
-        let text = "слово".repeat(30);
-        let chunks = provider.split_for_speech(&text);
-
-        assert!(!chunks.is_empty());
-        let mut rebuilt = String::new();
-        for chunk in &chunks {
-            assert!(!chunk.is_empty());
-            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
-            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
-            rebuilt.push_str(chunk);
-        }
-        assert_eq!(rebuilt, text);
-    }
-
-    #[test]
-    fn test_split_text_mixed_ascii_multibyte() {
-        let provider = GoogleTranslateProvider::new();
-        let text = "Hello мир this is тест of mixed текст content здесь and more слов \
-                     to pad it out well past the single-chunk limit for this test to mean anything";
-        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
-        let chunks = provider.split_for_speech(text);
-
-        assert!(
-            chunks.len() > 1,
-            "expected multiple chunks, got {:?}",
-            chunks
-        );
-        for chunk in &chunks {
-            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
-        }
     }
 
     /// Integration test: checks that both spell-correction scenarios work end-to-end.
@@ -725,10 +656,121 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "fr");
     }
+}
+
+#[cfg(test)]
+mod speech_tests {
+    use super::*;
+
+    #[test]
+    fn test_split_text_short() {
+        let provider = GoogleSpeechProvider::new();
+        let text = "Hello world";
+        let chunks = provider.split_for_speech(text);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "Hello world");
+    }
+
+    #[test]
+    fn test_split_text_short_preserves_trailing_punctuation() {
+        // Text within MAX_TTS_TEXT_LENGTH hits the early-return in split_for_speech and
+        // must be sent verbatim, not run through sentence-splitting (which trims/rejoins
+        // and would otherwise drop the period).
+        let provider = GoogleSpeechProvider::new();
+        let text = "Hello world.";
+        let chunks = provider.split_for_speech(text);
+        assert_eq!(chunks, vec!["Hello world.".to_string()]);
+    }
+
+    #[test]
+    fn test_split_text_long() {
+        let provider = GoogleSpeechProvider::new();
+        let text = "a".repeat(250);
+        let chunks = provider.split_for_speech(&text);
+        assert!(chunks.len() >= 3);
+        for chunk in chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn test_split_text_sentences() {
+        let provider = GoogleSpeechProvider::new();
+        // Long enough to exceed MAX_TTS_TEXT_LENGTH (100 bytes) so this actually exercises
+        // sentence-splitting instead of the short-text verbatim early-return.
+        let text = "First sentence is here. Second sentence follows along. \
+                     Third sentence wraps it up nicely. Fourth sentence for good measure.";
+        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
+        let chunks = provider.split_for_speech(text);
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {:?}",
+            chunks
+        );
+        for chunk in chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn test_floor_char_boundary_ascii() {
+        let s = "Hello world";
+        assert_eq!(floor_char_boundary(s, 5), 5);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_multibyte() {
+        // "д" (Cyrillic) is a 2-byte character starting at byte offset 0.
+        let s = "дом";
+        // Index 1 is in the middle of "д" (bytes 0..2), so it must round down to 0.
+        assert_eq!(floor_char_boundary(s, 1), 0);
+    }
+
+    #[test]
+    fn test_floor_char_boundary_out_of_range() {
+        let s = "hello";
+        assert_eq!(floor_char_boundary(s, 100), s.len());
+    }
+
+    #[test]
+    fn test_split_text_multibyte_no_whitespace() {
+        let provider = GoogleSpeechProvider::new();
+        // Cyrillic text longer than MAX_TTS_TEXT_LENGTH bytes with no whitespace/punctuation.
+        let text = "слово".repeat(30);
+        let chunks = provider.split_for_speech(&text);
+
+        assert!(!chunks.is_empty());
+        let mut rebuilt = String::new();
+        for chunk in &chunks {
+            assert!(!chunk.is_empty());
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+            rebuilt.push_str(chunk);
+        }
+        assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn test_split_text_mixed_ascii_multibyte() {
+        let provider = GoogleSpeechProvider::new();
+        let text = "Hello мир this is тест of mixed текст content здесь and more слов \
+                     to pad it out well past the single-chunk limit for this test to mean anything";
+        assert!(text.len() > MAX_TTS_TEXT_LENGTH);
+        let chunks = provider.split_for_speech(text);
+
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {:?}",
+            chunks
+        );
+        for chunk in &chunks {
+            assert!(chunk.len() <= MAX_TTS_TEXT_LENGTH);
+        }
+    }
 
     #[test]
     fn test_speak_chunk_rejects_text_over_limit() {
-        let provider = GoogleTranslateProvider::new();
+        let provider = GoogleSpeechProvider::new();
         let text = "a".repeat(MAX_TTS_TEXT_LENGTH + 1);
         let result = tokio::runtime::Runtime::new()
             .unwrap()

@@ -42,10 +42,12 @@ to by that convention in `CLAUDE.md` — `tagent-cli` and `tagent-gui` are appli
 built on it, not libraries themselves, so the attribute lives here now instead of on
 the old single-crate `tagent`).
 
-- **`providers`** — the `TranslationProvider` trait and `create_provider()` factory,
-  moved essentially unchanged from the old `src/providers/`. Every method returns
-  `Result<_, tagent::error::Error>` instead of the old `Box<dyn Error + Send + Sync>`.
-  `GoogleTranslateProvider` also implements the trait's two TTS methods,
+- **`providers`** — two independent provider axes: the `TranslationProvider` trait +
+  `create_provider()` factory (translate, dictionary, `detect_language`), moved
+  essentially unchanged from the old `src/providers/`, and the `SpeechProvider` trait +
+  `create_speech_provider()` factory (see "Speech Provider Architecture" below). Every
+  method returns `Result<_, tagent::error::Error>` instead of the old `Box<dyn Error +
+  Send + Sync>`. `GoogleSpeechProvider` implements `SpeechProvider`'s two TTS methods,
   `split_for_speech(text) -> Vec<String>` and `async fn speak_chunk(text, lang) ->
   Result<Vec<u8>, Error>` — this two-method split (rather than one `speak()` returning
   every chunk's audio up front) exists specifically so `tagent-cli`'s playback loop can
@@ -54,7 +56,39 @@ the old single-crate `tagent`).
   `split_for_speech` returns short input (≤100 chars, Google TTS's per-request limit)
   verbatim as a single chunk without running it through sentence-splitting, preserving
   exact punctuation for the common case.
-- **`languages`** — `name_to_code()` / `code_to_name()`, a straight move of what used
+- **Speech Provider Architecture** (Stage 11, 2026-09-19) — TTS used to be two extra
+  methods on `TranslationProvider`, so which backend *spoke* was hard-coupled to
+  which one *translated*, even though Google's `translate_tts` endpoint has nothing
+  structurally to do with `translate_a/single` beyond sharing a Rust struct. They are
+  now two independent traits selected by two independent config keys
+  (`TranslateProvider`/`translate_provider` × `SpeechProvider`/`speech_provider`,
+  any combination), done deliberately *now* while only `"google"` implements either —
+  `SpeechProvider`'s shape (exactly `split_for_speech` + `speak_chunk` + `name`) was
+  already fully known, so the redo risk is low and migrating one provider is cheaper
+  than migrating N later. (The same reasoning was deliberately *not* applied to a
+  parallel `DictionaryProvider` split: its shape — language pairs, data-model
+  richness, credentials — still has open questions.)
+  - `GoogleSpeechProvider` is a separate struct from `GoogleTranslateProvider` (same
+    `google.rs` file, but its own `reqwest::Client` — constructing it never touches
+    anything translate-related). `split_for_speech`'s 100-char chunking is *Google's*
+    per-request limit, not a general constraint: a backend with no limit returns
+    `vec![text.to_string()]`.
+  - `detect_language` stays on `TranslationProvider` (auto-detection is a translate
+    capability an OS-native/third-party speech backend has no reason to implement). So
+    speaking `"auto"`-source text is the one case genuinely needing both providers —
+    a permanent, correct asymmetry. To avoid reintroducing the coupling through the
+    back door, **the translate provider is constructed lazily, only when the source
+    language is `"auto"`** (`SpeechManager::resolve_speech_language` in `tagent-cli`
+    — used by `speak_text_full` and both platforms' `speak_clipboard` — and an inline
+    equivalent in `tagent-gui`'s `start_speaking`). A concrete source language never
+    builds a translate provider at all; if construction fails on the `"auto"` path
+    (which nothing else on that call chain has already proven works, unlike before),
+    it logs a warning and falls back to `"en"`, matching `resolve_source_language`'s
+    own detection-failure fallback. `resolve_source_language` itself is unchanged.
+  - `tagent`'s version stays `1.0.0` despite removing two methods from a public trait
+    (source-breaking for any implementor): the crate isn't published externally, and
+    the change is recorded in both apps' changelogs instead.
+- **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
   makes it safe for `tagent-gui` to depend on without pulling in `ConfigManager`.
@@ -763,7 +797,8 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   shared `Arc<Mutex<Option<Arc<AtomicBool>>>>` stop flag that the playback
   thread polls between chunks. `from-code == "auto"` is resolved lazily at
   speak-click time via `providers::resolve_source_language` (a no-op
-  pass-through otherwise), rather than trying to recover what Google actually
+  pass-through otherwise; since Stage 11 the translate provider it needs is
+  only constructed for `"auto"` — see "Speech Provider Architecture" above), rather than trying to recover what Google actually
   detected at translation time (`translate_text` doesn't hand that back). New
   `enable_text_to_speech` `GuiConfig` field (default `true`, matching
   `tagent-cli`'s `EnableTextToSpeech`, live-reloaded), gating a `tts-enabled`
@@ -853,9 +888,12 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
   Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control; TTS
   settings used to be listed here too — Stage 10, shipped 2026-09-18, gave
-  `enable_text_to_speech` a General-tab checkbox.)
-- It calls `TranslationProvider::translate_text`/`get_dictionary_entry`/
-  `split_for_speech`/`speak_chunk` directly rather than going through
+  `enable_text_to_speech` a General-tab checkbox.) `speech_provider` (Stage 11,
+  2026-09-19) is currently hand-edit-only: no Settings dropdown while `"google"` is
+  the only registered speech backend, same precedent as `translate_provider` itself
+  before Stage 3. Saving Settings carries it through unchanged.
+- It calls `TranslationProvider::translate_text`/`get_dictionary_entry` and
+  `SpeechProvider::split_for_speech`/`speak_chunk` directly rather than going through
   `tagent-cli`'s `Translator`/`SpeechManager` orchestrators; dictionary/
   spell-check display shipped at Stage 9 (2026-09-18) and text-to-speech
   playback at Stage 10 (2026-09-18), both via `tagent-gui`'s own independent

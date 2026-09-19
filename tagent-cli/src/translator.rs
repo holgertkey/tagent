@@ -685,18 +685,6 @@ mod tests {
             Ok("en".to_string())
         }
 
-        fn split_for_speech(&self, text: &str) -> Vec<String> {
-            vec![text.to_string()]
-        }
-
-        async fn speak_chunk(
-            &self,
-            _text: &str,
-            _lang: &str,
-        ) -> Result<Vec<u8>, tagent::error::Error> {
-            Ok(Vec::new())
-        }
-
         fn name(&self) -> &str {
             "mock"
         }

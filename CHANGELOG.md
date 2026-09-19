@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+014] - 2026-09-19
+
+### Changed
+- **Text-to-speech now has its own, independent provider** (`SpeechProvider`
+  in the `tagent` library, Stage 11 of the `tagent-gui` development plan —
+  the first stage that touches the shared library and this application):
+  `split_for_speech`/`speak_chunk` moved off `TranslationProvider` onto a new
+  `SpeechProvider` trait with its own `create_speech_provider()` factory and
+  `GoogleSpeechProvider` implementation, so the backend that translates and the
+  backend that speaks are separate choices. `SpeechManager` (`speech.rs`) and
+  both platforms' `speak_clipboard` (`platform/{linux,windows}/keyboard.rs`)
+  now take a `&dyn SpeechProvider`. **Behavior change:** a translate provider
+  is now only constructed when the source language is `Auto` (needed for
+  `detect_language`); a concrete `SourceLanguage` never touches
+  `TranslateProvider` for speech, and if it fails to construct on the `Auto`
+  path, speech falls back to `en` with a warning instead of failing. The
+  `tagent` library itself stays at `1.0.0` despite removing two methods from
+  the public `TranslationProvider` trait (the crate isn't published
+  externally); this entry and `tagent-gui`'s record the change instead.
+  `MockProvider` in `translator.rs` lost its two unused TTS stubs.
+- `tagent::error::Error::UnknownProvider` now displays `unknown provider: {name}`
+  (was `unknown translation provider: {name}`), since it now covers speech
+  providers too.
+
+### Added
+- **`SpeechProvider` config key** (`[Speech]` section of `tagent-cli.conf`,
+  default `google`): selects the text-to-speech backend independently of
+  `TranslateProvider`. Optional — a config file without it behaves exactly as
+  before. Shown by `--config` and in the generated config template.
+
 ## [0.16.0+013] - 2026-09-16
 
 ### Changed
