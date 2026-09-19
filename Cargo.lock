@@ -5627,7 +5627,7 @@ dependencies = [
 
 [[package]]
 name = "tagent"
-version = "1.0.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "reqwest",

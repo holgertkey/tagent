@@ -75,7 +75,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           # Extract section between current version header and next version header
-          changelog=$(awk "/^## \\[${version//./\\.}/ {found=1; next} /^## \\[/ {if(found) exit} /^---$/ {if(found) exit} found {print}" CHANGELOG.md)
+          changelog=$(awk "/^## \\[${version//./\\.}/ {found=1; next} /^## \\[/ {if(found) exit} /^---$/ {if(found) exit} found {print}" tagent-cli/CHANGELOG.md)
           # Write to file for gh-release body
           echo "$changelog" > release_notes.md
 

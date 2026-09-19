@@ -544,7 +544,7 @@ dirs = "5.0"
 
 ## Version History
 
-See [CHANGELOG.md](../CHANGELOG.md) for detailed version history and release notes.
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
 **Current Version**: v0.16.0+014
 

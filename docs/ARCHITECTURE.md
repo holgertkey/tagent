@@ -85,9 +85,10 @@ the old single-crate `tagent`).
     (which nothing else on that call chain has already proven works, unlike before),
     it logs a warning and falls back to `"en"`, matching `resolve_source_language`'s
     own detection-failure fallback. `resolve_source_language` itself is unchanged.
-  - `tagent`'s version stays `1.0.0` despite removing two methods from a public trait
-    (source-breaking for any implementor): the crate isn't published externally, and
-    the change is recorded in both apps' changelogs instead.
+  - Removing two methods from a public trait is source-breaking for any implementor.
+    `tagent` is pre-1.0 (`0.17.0`), where a breaking change is what a minor bump is
+    for; this one is recorded in `tagent/CHANGELOG.md` as part of the `0.17.0`
+    baseline, and in both apps' changelogs.
 - **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
@@ -190,8 +191,7 @@ plan.md`](../.debug/tagent-gui%20development%20plan.md)): `tagent-gui` is a full
 independent application from `tagent-cli`** — own interface, own configuration (its
 own `tagent-gui.json`; see "Reading `translate_provider`" below), own feature set (no
 obligation to reach parity with `tagent-cli`), and own versioning/changelog
-(`tagent-gui/CHANGELOG.md`, independent of the root `CHANGELOG.md` which belongs to
-`tagent-cli`, and using the same `MAJOR.MINOR.PATCH+BUILD` format/increment rules as
+(`tagent-gui/CHANGELOG.md`, independent of `tagent-cli/CHANGELOG.md`, and using the same `MAJOR.MINOR.PATCH+BUILD` format/increment rules as
 `tagent-cli` but its own independent counter — decided 2026-09-11). The only thing the
 two share is the `tagent` library. This sharpens, rather than changes, the dependency
 rule already in place below (`tagent-gui` depends on `tagent` only, never on
@@ -910,11 +910,12 @@ and:
    `MAJOR.MINOR.PATCH[+BUILD]`).
 2. `sync_version_in_docs()`: pattern-matches and rewrites version strings in
    `tagent-cli/README.md` (its own package-local README, since the move to a
-   three-crate workspace — see "Workspace layout" above), `../CLAUDE.md`, and
-   `../CHANGELOG.md` — the latter two paths are relative to `tagent-cli/` (the
+   three-crate workspace — see "Workspace layout" above), `CHANGELOG.md` (also
+   package-local; it used to be the workspace-root `CHANGELOG.md` until each crate got
+   its own changelog), and `../CLAUDE.md` — paths are relative to `tagent-cli/` (the
    package's manifest dir, where `build.rs` actually runs from), *not* the workspace
-   root, since those two files live at the workspace root, one level up from the
-   package. (The thin root `README.md` and the new `tagent/README.md` /
+   root, so `CLAUDE.md` is the one file that lives one level up from the package.
+   (The thin root `README.md` and the new `tagent/README.md` /
    `tagent-gui/README.md` are version-agnostic signposts — none of them contain a
    version string, so none are build.rs sync targets.) Skips the write if the value is
    already current, to avoid needless rebuilds/timestamp churn. The `CHANGELOG.md`
@@ -938,14 +939,19 @@ anything. As of the 2026-08-15 independence decision (see "Concept" at the top o
 `tagent-gui` section above), this is deliberate rather than merely unaddressed:
 `tagent-gui` versions on its own plain-semver track — no `+BUILD` suffix, since that
 convention is specific to `tagent-cli`'s dev-iteration tracking — and logs its history
-in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from the
-root `CHANGELOG.md` that `tagent-cli/build.rs` syncs into (which is `tagent-cli`'s
-changelog, not the workspace's). The `tagent` library crate's version (`1.0.0`) is
-likewise standalone, plain semver with no `+BUILD` suffix. `1.0.0` was chosen
-deliberately: it needs to sort above whatever version the old single-crate `tagent`
-application last published to crates.io, so that `cargo install tagent` / `cargo add
-tagent` resolve to the library once it is actually published (not done as part of this
-restructuring), not the old app.
+in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
+[`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
+syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
+workspace-root one. The `tagent` library crate's version (`0.17.0`) is likewise
+standalone, plain semver with no `+BUILD` suffix, with history in
+[`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
+still moving (two provider traits, more providers to come), and under semver's `0.y.z`
+rules a minor bump is the place for breaking changes, so `0.17` → `0.18` for a breaking
+change and `0.17.0` → `0.17.1` for a compatible addition or fix. It is bumped manually.
+`1.0.0` waits until the API settles and the crate is published. `0.17.0` still sorts
+above `0.12.0`, the last version the old single-crate `tagent` application published to
+crates.io (checked 2026-09-19), so `cargo add tagent` will resolve to the library rather
+than the old app once it is published (not done yet).
 
 ## Other known gaps worth knowing about
 

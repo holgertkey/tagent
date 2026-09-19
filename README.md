@@ -13,8 +13,9 @@ neither. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full breakdo
 
 `tagent-gui` is a fully independent application from `tagent-cli` — its own interface,
 configuration, feature set, versioning, and [changelog](tagent-gui/CHANGELOG.md); the
-`tagent` library is the only thing the two share. This root `CHANGELOG.md` tracks
-`tagent-cli` only.
+`tagent` library is the only thing the two share. Each crate keeps its own changelog
+next to its `Cargo.toml`: [`tagent-cli`](tagent-cli/CHANGELOG.md),
+[`tagent-gui`](tagent-gui/CHANGELOG.md), and [`tagent`](tagent/CHANGELOG.md).
 
 **Most users want [`tagent-cli`](tagent-cli/README.md)** — that's the actual
 translator application, including installation and usage instructions.
@@ -30,5 +31,5 @@ cargo build --release
 Builds all three crates. The `tagent-cli` package's binary is named `tagent-cli`, so
 it lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe` on Windows).
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and [LICENSE](LICENSE) for
-license terms (MIT).
+See each crate's `CHANGELOG.md` (linked above) for version history and [LICENSE](LICENSE)
+for license terms (MIT).

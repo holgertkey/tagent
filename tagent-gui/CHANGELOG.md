@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 `tagent-gui` versions independently of `tagent-cli` (see the root
-[CHANGELOG.md](../CHANGELOG.md) for that application's history) and independently of
+[CHANGELOG.md](../tagent-cli/CHANGELOG.md) for that application's history) and independently of
 the `tagent` library. See [`tagent-gui development plan.md`](../.debug/tagent-gui%20development%20plan.md)
 for the roadmap and design decisions behind this project.
 
@@ -475,7 +475,7 @@ for the roadmap and design decisions behind this project.
   layout/group binds to that position. Detection and suppression now agree
   on the exact same physical-key identification, regardless of keyboard
   layout. Same fix ported independently to `tagent-cli`'s copy of this file
-  (see the root [`CHANGELOG.md`](../CHANGELOG.md)).
+  (see [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md)).
 
 ## [0.14.0+018] - 2026-09-14
 

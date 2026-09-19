@@ -304,7 +304,7 @@ fn trigger_escape() {
 /// **Ported from `tagent-cli`'s `platform/windows/keyboard.rs`**, whose module doc
 /// records that getting this mechanism right took five prior failed attempts across
 /// several versions (`RegisterHotKey`+`WM_HOTKEY`, `WM_CANCELMODE`, `wScan`, `WM_COPY`,
-/// retry-with-verification — see `tagent-cli`'s `CHANGELOG.md`, `0.16.0+004` through
+/// retry-with-verification — see `tagent-cli/CHANGELOG.md`, `0.16.0+004` through
 /// `+007`). Before changing anything in this module, preserve these invariants:
 /// - **Never reintroduce `RegisterHotKey` for `ModifierCombo` hotkeys.** It structurally
 ///   cannot suppress the modifier's own keydown, only the trigger key -- that's the exact

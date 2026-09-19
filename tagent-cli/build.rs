@@ -73,7 +73,7 @@ fn sync_version_in_docs(version: &str) {
         ),
         ("../CLAUDE.md", vec![("(v", ") built in Rust")]),
         (
-            "../CHANGELOG.md",
+            "CHANGELOG.md",
             vec![
                 ("## [", "] - "), // Changelog section header: ## [VERSION] - DATE
             ],

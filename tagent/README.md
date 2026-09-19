@@ -7,9 +7,11 @@ config files, clipboards, hotkeys, or any other application concern.
 
 ## What's here
 
-- **`providers`** — the `TranslationProvider` trait (translate, dictionary lookup,
-  language detection, text-to-speech) and `create_provider()` factory. Ships a Google
-  Translate implementation (`providers::google::GoogleTranslateProvider`).
+- **`providers`** — two independent provider axes: the `TranslationProvider` trait
+  (translate, dictionary lookup, language detection) with its `create_provider()`
+  factory, and the `SpeechProvider` trait (text-to-speech) with `create_speech_provider()`.
+  Ships Google implementations of both (`providers::google::GoogleTranslateProvider`,
+  `providers::google::GoogleSpeechProvider`).
 - **`languages`** — human-readable language name ↔ BCP-47 code mapping
   (`name_to_code` / `code_to_name`).
 - **`error`** — unified `Error` type (via `thiserror`) used across the crate.
@@ -30,5 +32,6 @@ Run `cargo doc -p tagent --open` for the full API reference.
 
 ## Status
 
-Not yet published to crates.io. Versioned independently of `tagent-cli` (plain semver,
-starting at `1.0.0` — see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for why).
+Not yet published to crates.io. Versioned independently of `tagent-cli` and
+`tagent-gui` (plain semver, currently pre-1.0 — see
+[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)); history in [CHANGELOG.md](CHANGELOG.md).

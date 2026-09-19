@@ -1,6 +1,6 @@
 [package]
 name = "tagent"
-version = "1.0.0"
+version = "0.17.0"
 edition = "2021"
 description = "Translation, dictionary, and text-to-speech library powering Tagent."
 authors = ["Holgert K"]
