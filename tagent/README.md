@@ -28,7 +28,21 @@ async fn main() -> Result<(), tagent::error::Error> {
 }
 ```
 
-Run `cargo doc -p tagent --open` for the full API reference.
+Run `cargo doc -p tagent --open` for the full API reference. The crate and `providers`
+module documentation cover the shared contracts (language codes, the `"auto"` source
+language, the error variants) and how to write a new provider; the `google` module
+documentation lists the caveats of the built-in providers, which use unofficial endpoints.
+
+## Examples
+
+Runnable examples live in [`examples/`](examples/):
+
+```bash
+cargo run -p tagent --example translate -- "Hello world" ru   # needs network
+cargo run -p tagent --example dictionary -- vialent           # needs network
+cargo run -p tagent --example speak -- "Hello world" en       # needs network, writes a temp-dir .mp3
+cargo run -p tagent --example custom_provider                 # offline: both traits on a toy backend
+```
 
 ## Status
 

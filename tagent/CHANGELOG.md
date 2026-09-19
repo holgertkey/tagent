@@ -17,6 +17,25 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+### Added
+- **`examples/`**: `translate`, `dictionary`, `speak` (built-in Google providers, need
+  network) and `custom_provider` (both provider traits on a toy backend, fully
+  offline). Built by `cargo test`, so they can't drift from the API.
+- **Guide-level API documentation.** The crate docs now cover quick-start snippets and
+  the shared concepts (language codes, the `"auto"` source language, errors). The
+  `providers` module docs hold the error contract, guidance for writing a translation
+  or a speech provider (with a compiled, offline example), and how factories relate to
+  provider construction. The `google` module docs list the caveats of the unofficial
+  endpoints, and `create_provider` / `resolve_source_language` gained examples.
+
+### Fixed
+- **Documentation corrections.** `DictionaryEntry::corrected_word` is `Some` whenever
+  the provider echoes the looked-up word, *including for correctly spelled input*, not
+  only after a correction; the field docs said otherwise and now say to compare it with
+  the input. The Google TTS request limit is 100 *bytes*, not characters (the docs and
+  a constant's comment said characters). The "adding a provider" steps named a
+  non-existent `tagent.conf` and now name `tagent-cli.conf` / `tagent-gui.json`.
+
 ## [0.17.0] - 2026-09-19
 
 First entry in this changelog. It also resets the crate's version from `1.0.0` to a

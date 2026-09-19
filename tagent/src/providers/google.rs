@@ -1,3 +1,41 @@
+//! Google Translate and Google text-to-speech provider implementations.
+//!
+//! [`GoogleTranslateProvider`] implements [`TranslationProvider`] and
+//! [`GoogleSpeechProvider`] implements [`SpeechProvider`]. They are independent: constructing
+//! one never touches the other.
+//!
+//! # Read this before depending on them
+//!
+//! Both talk to **unofficial** Google web endpoints — the ones behind the Google Translate
+//! web page — not to the paid Cloud Translation or Cloud Text-to-Speech APIs:
+//!
+//! - There is no API key, no quota you can raise, and no service guarantee. Google can
+//!   rate-limit or block a client, and can change a response format without notice; such a
+//!   change surfaces as [`Error::Decode`] or [`Error::Api`].
+//! - Requests use a fixed browser-like `User-Agent` and a 10-second timeout, after which
+//!   the call fails with [`Error::Network`].
+//! - The response parsing is positional (it reads fixed indices of a JSON array), which is
+//!   why the parsers are the first suspect if a lookup suddenly returns nothing.
+//!
+//! Treat them as a convenient default for personal tools, not as infrastructure for a
+//! service. A production system should implement [`TranslationProvider`] /
+//! [`SpeechProvider`] over an official API instead — see the [`providers`](super) module
+//! for how.
+//!
+//! # Behavior worth knowing
+//!
+//! - **Dictionary lookup** ([`GoogleTranslateProvider::get_dictionary_entry`]) returns at
+//!   most five definitions per part of speech. A word Google silently corrects (`"violnt"`)
+//!   comes back with [`DictionaryEntry::corrected_word`] set; a word it only *suggests* a
+//!   correction for (`"vialent"`) costs a second request with the suggested word. A word
+//!   with no entry is `Ok(None)`.
+//! - **Language detection** ([`GoogleTranslateProvider::detect_language`]) falls back to
+//!   `"en"`, with a note on standard error, when the response has an unexpected shape rather
+//!   than failing.
+//! - **Speech** accepts at most 100 *bytes* of text per request (not characters: Cyrillic
+//!   is two bytes per letter, so roughly 50 letters), returns MP3 audio, and needs the text
+//!   split first with [`SpeechProvider::split_for_speech`].
+
 use super::{Definition, DictionaryEntry, PartOfSpeechEntry, SpeechProvider, TranslationProvider};
 use crate::error::Error;
 use async_trait::async_trait;
@@ -12,7 +50,22 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 /// [`TranslationProvider`] implementation backed by the unofficial Google Translate
 /// web API (`translate.googleapis.com/translate_a/single`).
 ///
-/// Text-to-speech lives in the separate [`GoogleSpeechProvider`].
+/// Text-to-speech lives in the separate [`GoogleSpeechProvider`]. See the
+/// [module documentation](self) for the caveats of using an unofficial endpoint.
+///
+/// # Examples
+///
+/// ```no_run
+/// use tagent::providers::{google::GoogleTranslateProvider, TranslationProvider};
+///
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), tagent::error::Error> {
+/// let provider = GoogleTranslateProvider::new();
+/// let translated = provider.translate_text("Hello world", "auto", "ru").await?;
+/// println!("{translated}");
+/// # Ok(())
+/// # }
+/// ```
 pub struct GoogleTranslateProvider {
     client: Client,
 }
@@ -310,8 +363,8 @@ impl TranslationProvider for GoogleTranslateProvider {
 
 /// Base URL for Google's unofficial text-to-speech endpoint.
 const TTS_API_URL: &str = "https://translate.google.com/translate_tts";
-/// Maximum characters accepted per TTS request; longer text must be split first
-/// via [`GoogleSpeechProvider::split_for_speech`].
+/// Maximum bytes (`str::len`, not characters) accepted per TTS request; longer text must
+/// be split first via [`GoogleSpeechProvider::split_for_speech`].
 const MAX_TTS_TEXT_LENGTH: usize = 100;
 
 /// Rounds `index` down to the nearest UTF-8 character boundary in `s`.
@@ -332,8 +385,31 @@ fn floor_char_boundary(s: &str, mut index: usize) -> usize {
 /// endpoint (`translate.google.com/translate_tts`).
 ///
 /// Independent of [`GoogleTranslateProvider`]: constructing one never touches the other.
-/// The endpoint accepts at most 100 characters per request, so
-/// [`split_for_speech`](SpeechProvider::split_for_speech) chunks longer text.
+/// The endpoint accepts at most 100 bytes of text per request, so
+/// [`split_for_speech`](SpeechProvider::split_for_speech) chunks longer text: text within
+/// the limit is returned as a single chunk exactly as given; longer text is split on
+/// sentence terminators (`.`, `!`, `?`), then on words, then — for a single word over the
+/// limit — on character boundaries. Sentences packed into one chunk are re-joined with
+/// `". "`, so the original terminator characters are not preserved in multi-sentence
+/// chunks. [`speak_chunk`](SpeechProvider::speak_chunk) returns MP3 audio and rejects an
+/// empty or over-limit chunk with [`Error::EmptyText`] / [`Error::TextTooLong`].
+/// See the [module documentation](self) for the caveats of using an unofficial endpoint.
+///
+/// # Examples
+///
+/// Splitting is pure and needs no network:
+///
+/// ```
+/// use tagent::providers::{google::GoogleSpeechProvider, SpeechProvider};
+///
+/// let provider = GoogleSpeechProvider::new();
+/// assert_eq!(provider.split_for_speech("Hello"), vec!["Hello".to_string()]);
+///
+/// let long = "word ".repeat(60);
+/// let chunks = provider.split_for_speech(&long);
+/// assert!(chunks.len() > 1);
+/// assert!(chunks.iter().all(|c| c.len() <= 100));
+/// ```
 pub struct GoogleSpeechProvider {
     client: Client,
 }
