@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0+001] - 2026-09-20
+## [0.16.0] - 2026-09-20
 
 ### Changed
 - **The default `SpeechHotkey` is now `Alt+S`** (was `Alt+E`), matching `tagent-gui`. It
@@ -15,10 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files (and their comments, `--config` help and the README). An existing
   `tagent-cli.conf` that sets `SpeechHotkey` keeps its value; one that never set it
   switches from `Alt+E` to `Alt+S` on upgrade.
-
-## [0.16.0] - 2026-09-20
-
-### Changed
 - **The `Supported values:` comments in a newly generated `tagent-cli.conf`** (for
   `TranslateProvider`, `DictionaryProvider` and `SpeechProvider`) and `--help` now list
   the names the `tagent` library actually offers, instead of a hardcoded `google`.

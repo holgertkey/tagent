@@ -1060,7 +1060,7 @@ There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`
 prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it was
 removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
 `tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
-(currently `0.14.0+001`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
+(currently `0.14.0`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
 `tagent-gui` section above), this is deliberate rather than merely unaddressed:
 `tagent-gui` versions on its own track — `MAJOR.MINOR.PATCH+BUILD` like `tagent-cli`, but with
 its own independent counter, and the `+BUILD` is stripped at release — and logs its history

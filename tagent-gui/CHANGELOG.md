@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-20
+
+### Added
+- **Windows executable icon**: `tagent-gui.exe` now carries the Tagent "a" icon
+  (`assets/icons/tagent-gui.ico`, 16-256 px, made from `tray.png`) plus version info
+  (product name, description, original filename), so Explorer, shortcuts and a pinned
+  taskbar button no longer show the generic executable icon. Embedded by `build.rs` through
+  the `winresource` build-dependency (Windows targets only). The window and tray icons are
+  unchanged.
+
 ### Changed
 - **Main window header**: the transcript header now reads `=== Tagent v<version> ===` and
   lists the active hotkeys (`Translation: Alt+A`, `Speech: Alt+S`), matching `tagent-cli`'s
@@ -26,18 +36,6 @@ decisions behind this project.
   and macOS. `cmd` and PowerShell don't wait for a GUI-subsystem program, so run it as
   `.\tagent-gui.exe | Out-Host` (or `cargo run -p tagent-gui`) to keep the output in order;
   see the README.
-
-### Added
-- **Windows executable icon**: `tagent-gui.exe` now carries the Tagent "a" icon
-  (`assets/icons/tagent-gui.ico`, 16-256 px, made from `tray.png`) plus version info
-  (product name, description, original filename), so Explorer, shortcuts and a pinned
-  taskbar button no longer show the generic executable icon. Embedded by `build.rs` through
-  the `winresource` build-dependency (Windows targets only). The window and tray icons are
-  unchanged.
-
-## [0.14.0] - 2026-09-20
-
-### Changed
 - The three provider dropdowns in Settings > "General" are now filled from the `tagent`
   library's own name lists (`TRANSLATION_PROVIDERS`/`DICTIONARY_PROVIDERS`/
   `SPEECH_PROVIDERS`, `tagent` `0.18.1`) each time the dialog opens, instead of lists
