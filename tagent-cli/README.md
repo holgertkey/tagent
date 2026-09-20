@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0
+# Tagent Text Translator v0.16.0+001
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -24,7 +24,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 ### 🔊 **Text-to-Speech (TTS)**
 - Built-in speech synthesis using Google TTS API
 - Available in all modes (GUI, Interactive, CLI)
-- Speech hotkey for selected text (default: Alt+E)
+- Speech hotkey for selected text (default: Alt+S)
 - Press Esc to cancel speech playback
 - Automatic language detection for speech
 - Supports long text with automatic chunking
@@ -132,9 +132,9 @@ tagent-cli --config
 3. Translation appears in terminal and copies to clipboard
 4. Paste anywhere with Ctrl+V
 
-**Speech Hotkey** (default: Alt+E)
+**Speech Hotkey** (default: Alt+S)
 1. Select any text in any Windows application
-2. Press the speech hotkey (Alt+E by default)
+2. Press the speech hotkey (Alt+S by default)
 3. Text is spoken aloud using Google TTS
 4. Press Esc to cancel playback
 
@@ -220,7 +220,7 @@ HistoryFile = C:\Users\<YourName>\AppData\Roaming\tagent-cli\translation_history
 TranslateHotkey = Alt+A
 
 ; Text-to-speech hotkey (same formats as TranslateHotkey)
-SpeechHotkey = Alt+E
+SpeechHotkey = Alt+S
 
 ; Enable or disable the speech hotkey
 EnableSpeechHotkey = true
@@ -253,7 +253,7 @@ TranslateHotkey = F8+F8         # Double-press F8
 
 **Speech Hotkey Examples**
 ```ini
-SpeechHotkey = Alt+E          # Alt + E (default)
+SpeechHotkey = Alt+S          # Alt + S (default)
 SpeechHotkey = F10            # Function key F10
 SpeechHotkey = Ctrl+Shift+S   # Ctrl + Shift + S
 SpeechHotkey = Win+S          # Windows key + S
@@ -342,7 +342,7 @@ The notice is shown in the target language. Works with both minor typos ("violnt
 **GUI Mode - Speech Hotkey**
 ```bash
 # 1. Select text in any application
-# 2. Press Alt+E (or your configured speech hotkey)
+# 2. Press Alt+S (or your configured speech hotkey)
 # 3. Text is spoken aloud
 # 4. Press Esc to cancel playback
 ```
@@ -363,7 +363,7 @@ tagent-cli --speech "Привет, как дела?"
 ```
 
 **Speech Notes:**
-- **GUI Speech Hotkey**: Select text → Press Alt+E (or configured key)
+- **GUI Speech Hotkey**: Select text → Press Alt+S (or configured key)
 - Press **Esc** anytime to cancel speech playback
 - Speech language determined by `SourceLanguage` config setting
 - Long text is automatically chunked (100 char limit per chunk)
@@ -383,7 +383,7 @@ tagent-cli --config
 # Save Translation History: Disabled
 # History File: translation_history.txt
 # Translation Hotkey: Alt+A
-# Speech Hotkey: Alt+E
+# Speech Hotkey: Alt+S
 # Speech Hotkey Enabled: Yes
 ```
 
@@ -426,7 +426,7 @@ TranslateHotkey = F9            # Or use function key
 TranslateHotkey = Shift+Shift   # Or double-press Shift
 
 ; Speech hotkeys
-SpeechHotkey = Alt+S            # Change speech hotkey to Alt+S
+SpeechHotkey = Alt+E            # Change speech hotkey to Alt+E
 SpeechHotkey = F10              # Or use F10
 EnableSpeechHotkey = false      # Disable speech hotkey if not needed
 ```
@@ -549,7 +549,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0
+**Current Version**: v0.16.0+001
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -582,4 +582,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+001** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

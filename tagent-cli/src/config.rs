@@ -51,7 +51,7 @@ pub struct Config {
     pub translate_hotkey: String,
     /// Enable text-to-speech playback of translations.
     pub enable_text_to_speech: bool,
-    /// Hotkey string for triggering speech playback, e.g. `"Alt+E"`.
+    /// Hotkey string for triggering speech playback, e.g. `"Alt+S"`.
     pub speech_hotkey: String,
     /// Enable the speech hotkey. When `false`, the hotkey is registered but inactive.
     pub enable_speech_hotkey: bool,
@@ -90,7 +90,7 @@ impl Default for Config {
             source_prompt_color: "None".to_string(),             // Default no color for source
             translate_hotkey: "Alt+A".to_string(),               // Default translation hotkey
             enable_text_to_speech: true,                         // TTS enabled by default
-            speech_hotkey: "Alt+E".to_string(),                  // Default speech hotkey
+            speech_hotkey: "Alt+S".to_string(),                  // Default speech hotkey
             enable_speech_hotkey: true,                          // Enable speech hotkey by default
             translate_provider: "google".to_string(),            // Default translation provider
             speech_provider: "google".to_string(),               // Default speech provider
@@ -343,10 +343,10 @@ EnableTextToSpeech = {}
 ; Hotkey for text-to-speech
 ; Supported formats (same as alternative hotkey):
 ;   - Single keys: F1-F12 ONLY
-;   - Modifier combinations: Alt+E, Ctrl+Shift+S, etc.
+;   - Modifier combinations: Alt+S, Ctrl+Shift+S, etc.
 ;   - Double-press: Alt+Alt, Shift+Shift, etc.
 ; Examples:
-;   SpeechHotkey = Alt+E
+;   SpeechHotkey = Alt+S
 ;   SpeechHotkey = F10
 ;   SpeechHotkey = Ctrl+Shift+S
 ; Note: Hotkey changes require application restart to take effect
@@ -505,7 +505,7 @@ SpeechProvider = {}
             .get("Speech")
             .and_then(|section| section.get("SpeechHotkey"))
             .cloned()
-            .unwrap_or_else(|| "Alt+E".to_string());
+            .unwrap_or_else(|| "Alt+S".to_string());
 
         let enable_speech_hotkey = parsed_config
             .get("Speech")
@@ -732,7 +732,7 @@ SpeechProvider = {}
         );
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
-        println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+E, F10, etc.)");
+        println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+S, F10, etc.)");
         println!(
             "  - SpeechProvider: Text-to-speech backend ({})",
             tagent::providers::SPEECH_PROVIDERS.join(", ")
@@ -1391,6 +1391,35 @@ mod tests {
         assert_eq!(manager.get_config().speech_provider, "google");
 
         let _ = fs::remove_file(&path);
+    }
+
+    /// The speech hotkey default is `Alt+S` (the same as `tagent-gui`'s) and must agree in every
+    /// place that spells it out: `Config::default()`, the fallback for a config file without the
+    /// key, and the comments of a freshly generated config file.
+    #[test]
+    fn test_speech_hotkey_default_is_alt_s_everywhere() {
+        assert_eq!(Config::default().speech_hotkey, "Alt+S");
+
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_speech_hotkey_default_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Speech]\nEnableTextToSpeech = true\n").unwrap();
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+        assert_eq!(manager.get_config().speech_hotkey, "Alt+S");
+        let _ = fs::remove_file(&path);
+
+        let generated = manager.create_ini_content(&Config::default());
+        assert!(generated.contains("SpeechHotkey = Alt+S\n"));
+        assert!(
+            !generated.contains("Alt+E"),
+            "generated config still mentions the old Alt+E default"
+        );
     }
 
     #[test]

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+001] - 2026-09-20
+
+### Changed
+- **The default `SpeechHotkey` is now `Alt+S`** (was `Alt+E`), matching `tagent-gui`. It
+  applies to a config file that has no `SpeechHotkey` yet and to newly generated config
+  files (and their comments, `--config` help and the README). An existing
+  `tagent-cli.conf` that sets `SpeechHotkey` keeps its value; one that never set it
+  switches from `Alt+E` to `Alt+S` on upgrade.
+
 ## [0.16.0] - 2026-09-20
 
 ### Changed

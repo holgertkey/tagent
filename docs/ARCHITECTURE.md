@@ -919,8 +919,8 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   (`on_translate_requested`, the hotkey path, Settings save) plus once at
   startup; Settings checkbox on the General tab next to Stage 9's two.
 - **Speech hotkey** (Stage 10 follow-up, shipped 2026-09-18): a second global
-  hotkey (default `Alt+S`, diverging from `tagent-cli`'s own `Alt+E` default
-  by explicit user request) that speaks the current selection directly, with
+  hotkey (default `Alt+S`; `tagent-cli`'s default was `Alt+E` at the time and
+  was changed to `Alt+S` too in `tagent-cli` `0.16.0+001`) that speaks the current selection directly, with
   Esc cancellation and the event logged to the transcript. `KeyboardHook`
   (Linux/Windows/macOS) grew from one hotkey to two plus an Escape-observation
   callback:
