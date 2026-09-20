@@ -115,7 +115,14 @@ impl SpeechManager {
                 resolve_source_language(translate_provider.as_ref(), text, "auto").await
             }
             Err(e) => {
-                eprintln!("Language detection unavailable ({e}); using 'en'");
+                eprintln!(
+                    "Language detection unavailable: {}; using 'en'",
+                    crate::config::provider_error_message(
+                        &e,
+                        "TranslateProvider",
+                        tagent::providers::TRANSLATION_PROVIDERS
+                    )
+                );
                 "en".to_string()
             }
         }
@@ -188,8 +195,16 @@ impl SpeechManager {
         let (source_code, _) = config_manager.get_language_codes();
         let config = config_manager.get_config();
 
-        let provider = create_speech_provider(&config.speech_provider)
-            .map_err(|e| format!("Speech error: {}", e))?;
+        let provider = create_speech_provider(&config.speech_provider).map_err(|e| {
+            format!(
+                "Speech error: {}",
+                crate::config::provider_error_message(
+                    &e,
+                    "SpeechProvider",
+                    tagent::providers::SPEECH_PROVIDERS
+                )
+            )
+        })?;
 
         // Detect language (constructs a translate provider only for "auto")
         let speech_lang =

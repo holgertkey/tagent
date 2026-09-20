@@ -68,7 +68,13 @@ impl Translator {
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         // Create translation provider based on config
         let config = config_manager.get_config();
-        let provider = providers::create_provider(&config.translate_provider)?;
+        let provider = providers::create_provider(&config.translate_provider).map_err(|e| {
+            config::provider_error_message(
+                &e,
+                "TranslateProvider",
+                providers::TRANSLATION_PROVIDERS,
+            )
+        })?;
 
         // A bad dictionary provider must never break translation: warn once and disable
         // dictionary lookups instead of failing to start (unlike the translate provider).
@@ -76,7 +82,14 @@ impl Translator {
             match providers::create_dictionary_provider(&config.dictionary_provider) {
                 Ok(dictionary) => Some(Arc::from(dictionary)),
                 Err(e) => {
-                    eprintln!("Dictionary provider unavailable ({e}); dictionary lookups disabled");
+                    eprintln!(
+                        "Dictionary provider unavailable: {}; dictionary lookups disabled",
+                        config::provider_error_message(
+                            &e,
+                            "DictionaryProvider",
+                            providers::DICTIONARY_PROVIDERS
+                        )
+                    );
                     None
                 }
             };

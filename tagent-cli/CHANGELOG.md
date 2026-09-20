@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+017] - 2026-09-20
+
+### Changed
+- **The `Supported values:` comments in a newly generated `tagent-cli.conf`** (for
+  `TranslateProvider`, `DictionaryProvider` and `SpeechProvider`) and `--help` now list
+  the names the `tagent` library actually offers, instead of a hardcoded `google`.
+  `--help` also gained the `TranslateProvider` line it was missing. Existing config
+  files are not rewritten.
+- **An unknown provider name now says what is supported.** A bad `TranslateProvider`
+  (startup error), `DictionaryProvider` (warning) or `SpeechProvider` (speech error)
+  reads e.g. `unknown provider: bogus (supported values for SpeechProvider: google)`
+  instead of only echoing the bad name. Done in this application
+  (`provider_error_message` in `config.rs`); the library's own error is unchanged.
+
 ## [0.16.0+016] - 2026-09-20
 
 ### Changed

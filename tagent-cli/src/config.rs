@@ -98,6 +98,24 @@ impl Default for Config {
     }
 }
 
+/// Formats a provider factory error for display. When the configured name is unknown, it
+/// appends the supported values and the setting to change (`setting` is the config key,
+/// e.g. `"SpeechProvider"`), because `tagent`'s own message only echoes the bad name.
+/// Any other error is shown as is.
+pub fn provider_error_message(
+    error: &tagent::error::Error,
+    setting: &str,
+    supported: &[&str],
+) -> String {
+    match error {
+        tagent::error::Error::UnknownProvider(_) => format!(
+            "{error} (supported values for {setting}: {})",
+            supported.join(", ")
+        ),
+        _ => error.to_string(),
+    }
+}
+
 /// Thread-safe configuration manager with live-reload support.
 ///
 /// `ConfigManager` loads `tagent-cli.conf` on construction and can reload it at
@@ -212,7 +230,7 @@ impl ConfigManager {
 
 [Provider]
 ; Translation service provider
-; Supported values: google (more providers will be added in the future)
+; Supported values: {translate_providers}
 ; Default: google
 TranslateProvider = {}
 
@@ -240,7 +258,7 @@ ShowDictionary = {}
 SpellCheck = {}
 
 ; Dictionary lookup backend, independent of TranslateProvider
-; Supported values: google
+; Supported values: {dictionary_providers}
 ; Default: google
 ; Note: Requires application restart to take effect
 DictionaryProvider = {}
@@ -340,7 +358,7 @@ SpeechHotkey = {}
 EnableSpeechHotkey = {}
 
 ; Speech synthesis backend, independent of TranslateProvider
-; Supported values: google
+; Supported values: {speech_providers}
 ; Default: google
 SpeechProvider = {}
 "#,
@@ -362,7 +380,11 @@ SpeechProvider = {}
             config.enable_text_to_speech,
             config.speech_hotkey,
             config.enable_speech_hotkey,
-            config.speech_provider
+            config.speech_provider,
+            // Named (not positional) so adding them can't shift the positional values.
+            translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
+            dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
+            speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
         )
     }
 
@@ -699,6 +721,10 @@ SpeechProvider = {}
         println!("  Edit 'tagent-cli.conf' to change translation settings:");
         println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
+        println!(
+            "  - TranslateProvider: Translation backend ({})",
+            tagent::providers::TRANSLATION_PROVIDERS.join(", ")
+        );
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
         println!(
             "  - DictionaryProvider: Dictionary backend ({})",
@@ -1549,6 +1575,45 @@ mod tests {
         assert_eq!(loaded.enable_speech_hotkey, config.enable_speech_hotkey);
         assert_eq!(loaded.translate_provider, config.translate_provider);
         assert_eq!(loaded.speech_provider, config.speech_provider);
+    }
+
+    #[test]
+    fn provider_error_message_lists_supported_values_for_unknown_provider() {
+        let error = tagent::error::Error::UnknownProvider("bogus".to_string());
+        assert_eq!(
+            provider_error_message(&error, "SpeechProvider", &["google", "other"]),
+            "unknown provider: bogus (supported values for SpeechProvider: google, other)"
+        );
+    }
+
+    #[test]
+    fn provider_error_message_leaves_other_errors_unchanged() {
+        let error = tagent::error::Error::Network("down".to_string());
+        assert_eq!(
+            provider_error_message(&error, "SpeechProvider", &["google"]),
+            error.to_string()
+        );
+    }
+
+    /// The `Supported values:` comments in a generated config come from `tagent`'s own
+    /// lists, so they can't go stale when a backend is added.
+    #[test]
+    fn generated_config_comments_list_the_providers_tagent_offers() {
+        let manager = ConfigManager {
+            config_path: "unused.conf".to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        let ini = manager.create_ini_content(&Config::default());
+        for list in [
+            tagent::providers::TRANSLATION_PROVIDERS,
+            tagent::providers::DICTIONARY_PROVIDERS,
+            tagent::providers::SPEECH_PROVIDERS,
+        ] {
+            let line = format!("; Supported values: {}\n", list.join(", "));
+            assert!(ini.contains(&line), "missing {line:?} in generated config");
+        }
+        assert!(!ini.contains("{translate_providers}"));
     }
 
     #[test]
