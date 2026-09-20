@@ -1,6 +1,6 @@
 [package]
 name = "tagent-cli"
-version = "0.16.0+017"
+version = "0.16.0"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]
@@ -20,7 +20,9 @@ name = "tagent-cli"
 path = "src/main.rs"
 
 [dependencies]
-tagent = { path = "../tagent" }
+# `version` is what crates.io resolves after publishing; keep it at (or below) the
+# `tagent` version this app actually needs. `path` is used for local development.
+tagent = { path = "../tagent", version = "0.18.1" }
 # Cross-platform dependencies
 tokio = { version = "1.0", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }

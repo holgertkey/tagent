@@ -1,10 +1,15 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0+052"
+version = "0.14.0"
 edition = "2021"
-description = "Tagent GUI — cross-platform text translator with Slint"
-publish = false
+description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
+authors = ["Holgert K"]
+license = "MIT"
+repository = "https://github.com/holgertkey/tagent"
+homepage = "https://github.com/holgertkey/tagent"
 readme = "README.md"
+keywords = ["translation", "translate", "gui", "slint", "dictionary"]
+categories = ["gui", "internationalization"]
 build = "build.rs"
 
 [[bin]]
@@ -12,7 +17,9 @@ name = "tagent-gui"
 path = "src/main.rs"
 
 [dependencies]
-tagent = { path = "../tagent" }
+# `version` is what crates.io resolves after publishing; keep it at (or below) the
+# `tagent` version this app actually needs. `path` is used for local development.
+tagent = { path = "../tagent", version = "0.18.1" }
 dirs = "5.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

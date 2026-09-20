@@ -1,60 +1,134 @@
 # tagent-gui
 
-A [Slint](https://slint.dev/) desktop GUI translator, built directly on the
-[`tagent`](../tagent/README.md) library. Currently a **translate-only prototype**.
+A [Slint](https://slint.dev/) desktop GUI translator with a global "translate my
+selection" hotkey, a system-tray icon, dictionary lookups and text-to-speech, built
+directly on the [`tagent`](https://github.com/holgertkey/tagent/tree/main/tagent)
+library (Google Translate by default).
 
 `tagent-gui` is a fully independent application from
-[`tagent-cli`](../tagent-cli/README.md) — its own interface, its own configuration
-(roadmap; see below), its own feature set, and its own versioning and
+[`tagent-cli`](https://github.com/holgertkey/tagent/tree/main/tagent-cli) — its own
+interface, its own configuration file, its own feature set, and its own versioning and
 [CHANGELOG.md](CHANGELOG.md). The only thing the two share is the `tagent` library
-underneath. See [`tagent-gui development plan.md`](../.debug/tagent-gui%20development%20plan.md)
-for the reasoning and roadmap.
+underneath. It is not held to feature parity with `tagent-cli`.
 
-## Running
+## Install and run
+
+```bash
+cargo install tagent-gui        # from crates.io
+tagent-gui
+```
+
+or, from a checkout of the repository:
 
 ```bash
 cargo run -p tagent-gui
 ```
 
-Pick a source/target language, type text, press Enter (or click Translate). The ⇄
-button swaps source and target. The ⚙ button (top-right) opens a Settings dialog.
+Building on Linux needs the X11, XTest, ALSA and fontconfig development packages, e.g.
+on Debian/Ubuntu:
 
-## What it does and doesn't do
+```bash
+sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev
+```
 
-- Reads `translate_provider` from its own `tagent-gui.json` config file (see
-  [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)), defaulting to `"google"` and
-  creating the file with that default on first run. Plain, pretty-printed JSON,
-  meant to be hand-editable. Changes are live-reloaded (checked before each
-  translation), no restart needed. A missing file gets a fresh default written; a
-  present-but-invalid file is left untouched and the app logs a warning and keeps
-  using its last valid config in memory. Location:
-  `~/.config/tagent-gui/tagent-gui.json` on Linux/macOS,
-  `%APPDATA%\tagent-gui\tagent-gui.json` on Windows.
-- The ⚙ Settings dialog is organized into tabs — `General` (`translate_provider`,
-  as a dropdown of known providers, defaulting to `"google"`, the only one
-  `tagent::providers::create_provider()` currently supports), `View` (`theme`:
-  `Auto`/`Light`/`Dark`, defaulting to `Auto`), and `Hotkeys & Tray` (a placeholder
-  for settings a later stage will add). The provider dropdown is a convenience, not
-  a validation gate: `tagent-gui.json` still accepts any string by hand, even one
-  not listed in the dialog. OK saves, applies the theme live (no restart), and
-  closes; Cancel (or the window's own close button) discards the change and closes
-  without saving.
-- **Theme**: `Light`/`Dark` apply to the whole UI, not just buttons and dropdowns —
-  the transcript and input panels re-color too, since they're built from `Palette`'s
-  semantic color roles rather than fixed hex values. `Auto` follows the system
-  setting — on Linux, a fresh window may briefly flash light before settling into
-  dark; this is an upstream Slint/winit limitation
-  ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392)), not
-  specific to `tagent-gui`. Pick `Light`/`Dark` explicitly to avoid it.
-- Hardcodes a 6-language list (Auto/English/Russian/Spanish/French/German). Not
-  required to match `tagent-cli`'s ~16 — `tagent-gui` sets its own feature roadmap.
-- No dictionary/spell-check display, no text-to-speech, no clipboard integration, no
-  global hotkeys, no history logging yet. These are independent roadmap items, not a
-  parity checklist against `tagent-cli` — see the development plan for what's
-  actually planned.
+The "translate the current selection" hotkey also needs the `xdotool` program at run
+time (it simulates Ctrl+C in the source application).
+
+By default the app starts minimized to the tray; click the tray icon (or use the hotkey)
+to bring it up. Set `start_minimized` to `false` in `tagent-gui.json`, or untick it in
+Settings > "Hotkeys & Tray", to open the window at launch.
+
+## What it does
+
+- **Translate.** Pick a source and target language, type text, press Enter (or click
+  Translate); Shift+Enter inserts a newline. The ⇄ button swaps the languages, and 📋
+  pulls the clipboard contents into the input box. Results accumulate in a selectable,
+  copyable transcript. The language list is fixed at Auto/English/Russian/Spanish/French/German.
+- **Dictionary.** A single word gets a dictionary entry instead of a plain translation
+  (definitions grouped by part of speech, with a notice when the provider silently
+  corrected a misspelling). Toggle with `show_dictionary` / `spell_check`.
+- **Text-to-speech.** Every transcript row has 🔊 buttons for the phrase and for the
+  translation. Only one plays at a time; the playing button turns into ⏹ and a second
+  click stops it. Toggle with `enable_text_to_speech`.
+- **Global hotkeys** (Linux and Windows):
+  - `Alt+A` copies whatever you have selected in any application and translates it into
+    the transcript, and shows the result in a small always-on-top popup next to the
+    mouse cursor. The popup hides itself after `popup_auto_hide_seconds` (default 3)
+    unless the cursor rests on it, and can be dragged; with
+    `remember_popup_position` on, it reappears where you dropped it.
+  - `Alt+S` speaks the current selection aloud, and adds a row with a replay button to
+    the transcript. `Esc` stops whatever is speaking, from any application.
+  - Both are configurable (see below) and take effect after a restart.
+- **System tray.** A tray icon with "Show Tagent", "Settings…" and "Quit". Closing the
+  main window hides it to the tray; "Quit" in the tray menu is the only way to exit.
+  The hotkeys keep working while the window and tray are hidden — on a desktop without a
+  tray host, that is the way back in.
+- **Settings** (the ⚙ button, or "Settings…" in the tray menu):
+  - *General* — translate, dictionary and speech providers (each an independent
+    choice), and the dictionary/spell-check/text-to-speech switches.
+  - *View* — theme (`Auto`/`Light`/`Dark`, applied live), color scheme, fonts, sizes and
+    colors of the transcript, spacing.
+  - *Hotkeys & Tray* — the two hotkeys (with a "Record" button that validates them
+    live), the switch for the speech hotkey, start minimized, and remembering the window's
+    size and position.
+  - *Popup* — the popup's font, colors, auto-hide delay, size limits and border, and
+    whether it remembers where you dragged it.
+  - *About*.
+
+## Platforms
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Translate, dictionary, text-to-speech, tray, Settings | ✅ | ✅ | ✅ |
+| Global hotkeys and selection popup | ✅ X11 / XWayland | ✅ | not implemented |
+
+On Linux the hotkeys use X11 key grabbing, so they need X11 or XWayland; on a pure Wayland
+session everything else still works. On macOS the window, dictionary, text-to-speech and
+tray work, but the global hotkeys and the selection popup are stubs.
+
+## Configuration
+
+Settings live in a plain, pretty-printed JSON file that is meant to be hand-editable:
+
+- Linux/macOS: `~/.config/tagent-gui/tagent-gui.json`
+- Windows: `%APPDATA%\tagent-gui\tagent-gui.json`
+
+A missing file is created with defaults on first run. Changes are live-reloaded (checked
+before each translation), except for the hotkeys, `start_minimized` and the tray, which
+are read at startup. A file that is present but invalid is left untouched: the app logs
+a warning and keeps using its last valid settings. It does not read `tagent-cli`'s
+`tagent-cli.conf`.
+
+The main keys:
+
+| Key | Default | |
+|---|---|---|
+| `translate_provider` / `dictionary_provider` / `speech_provider` | `"google"` | Three independent backends |
+| `theme` | `"Auto"` | `Auto`, `Light` or `Dark` |
+| `translate_hotkey` / `speech_hotkey` | `"Alt+A"` / `"Alt+S"` | `F1`–`F12`, `Modifier+Key`, or a double press like `Ctrl+Ctrl` |
+| `enable_speech_hotkey` | `true` | |
+| `show_dictionary` / `spell_check` | `true` | |
+| `enable_text_to_speech` | `true` | Shows the 🔊 buttons |
+| `popup_auto_hide_seconds` | `3` | `0` means the default, not "never" |
+| `remember_popup_position` | `false` | |
+| `start_minimized` | `true` | |
+| `remember_window_geometry` | `true` | |
+
+The provider dropdowns are filled from the `tagent` library, so a new backend appears in
+Settings as soon as the library offers it. The file also accepts any provider name by
+hand, and a bad or missing hotkey only disables that hotkey.
+
+## Notes
+
+- `Auto` theme follows the system setting. On Linux, a fresh window may briefly flash
+  light before settling into dark; this is an upstream Slint/winit limitation
+  ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392)). Pick `Light`
+  or `Dark` explicitly to avoid it.
+- No translation history logging yet (`tagent-cli` has one).
 
 ## Status
 
-Prototype — not linked from `tagent-cli`, no shared launch path between the two, and
-no obligation to reach feature parity with it. See
-[CHANGELOG.md](CHANGELOG.md) for its own version history.
+Early (`0.x`): usable day to day, but settings and behavior may still change between
+releases. See [CHANGELOG.md](CHANGELOG.md) for the version history and the
+[architecture notes](https://github.com/holgertkey/tagent/blob/main/docs/ARCHITECTURE.md)
+for how it works.

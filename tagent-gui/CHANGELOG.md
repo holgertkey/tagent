@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 `tagent-gui` versions independently of `tagent-cli` (see the root
 [CHANGELOG.md](../tagent-cli/CHANGELOG.md) for that application's history) and independently of
-the `tagent` library. See [`tagent-gui development plan.md`](../.debug/tagent-gui%20development%20plan.md)
-for the roadmap and design decisions behind this project.
+the `tagent` library. See [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the design
+decisions behind this project.
 
 ## [Unreleased]
 
-## [0.14.0+052] - 2026-09-20
+## [0.14.0] - 2026-09-20
 
 ### Changed
 - The three provider dropdowns in Settings > "General" are now filled from the `tagent`
@@ -20,6 +20,10 @@ for the roadmap and design decisions behind this project.
   `SPEECH_PROVIDERS`, `tagent` `0.18.1`) each time the dialog opens, instead of lists
   hardcoded in `app.slint`. A backend added to `tagent` is offered in Settings
   automatically; the lists in `app.slint` are only placeholders now.
+- **Now publishable to crates.io**: dropped `publish = false` and added the package metadata
+  (license, authors, repository, keywords, categories); the `tagent` dependency carries a
+  `version` next to its `path`. `README.md` rewritten: it still described a translate-only
+  prototype with no dictionary, text-to-speech, hotkeys or tray.
 
 ## [0.14.0+051] - 2026-09-20
 

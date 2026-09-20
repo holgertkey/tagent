@@ -1,0 +1,14 @@
+name: Install Linux build dependencies
+description: >
+  System packages the workspace needs on Ubuntu: X11/XTest/xdo for the hotkey and
+  clipboard code (tagent-cli, tagent-gui), ALSA for rodio, fontconfig for Slint's text
+  rendering (tagent-gui). Does nothing on other operating systems.
+runs:
+  using: composite
+  steps:
+    - name: Install system dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libx11-dev libasound2-dev libxdo-dev libxtst-dev libfontconfig1-dev

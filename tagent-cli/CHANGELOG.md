@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0+017] - 2026-09-20
+## [0.16.0] - 2026-09-20
 
 ### Changed
 - **The `Supported values:` comments in a newly generated `tagent-cli.conf`** (for
@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads e.g. `unknown provider: bogus (supported values for SpeechProvider: google)`
   instead of only echoing the bad name. Done in this application
   (`provider_error_message` in `config.rs`); the library's own error is unchanged.
+- The `tagent` dependency now carries a `version` next to its `path`, which crates.io
+  requires to publish this crate.
 
 ## [0.16.0+016] - 2026-09-20
 

@@ -263,8 +263,7 @@ tagent instead of leaking through. Notable details:
 `tagent-cli` binary. There is no flag or code path in `tagent-cli`'s own
 `main.rs`/`cli.rs` that launches it.
 
-**Concept (decided 2026-08-15, see [`.debug/tagent-gui development
-plan.md`](../.debug/tagent-gui%20development%20plan.md)): `tagent-gui` is a fully
+**Concept (decided 2026-08-15, see the local, untracked `.debug/tagent-gui development plan.md`): `tagent-gui` is a fully
 independent application from `tagent-cli`** — own interface, own configuration (its
 own `tagent-gui.json`; see "Reading `translate_provider`" below), own feature set (no
 obligation to reach parity with `tagent-cli`), and own versioning/changelog
@@ -1051,11 +1050,10 @@ There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`
 prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it was
 removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
 `tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
-(currently `0.13.0`, unlinked from `tagent-cli`'s `0.13.0+003`) and is not synced by
-anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
+(currently `0.14.0`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
 `tagent-gui` section above), this is deliberate rather than merely unaddressed:
-`tagent-gui` versions on its own plain-semver track — no `+BUILD` suffix, since that
-convention is specific to `tagent-cli`'s dev-iteration tracking — and logs its history
+`tagent-gui` versions on its own track — `MAJOR.MINOR.PATCH+BUILD` like `tagent-cli`, but with
+its own independent counter, and the `+BUILD` is stripped at release — and logs its history
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
