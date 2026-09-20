@@ -302,16 +302,15 @@ pub struct GuiConfig {
     #[serde(default = "default_enable_text_to_speech")]
     pub enable_text_to_speech: bool,
     /// Name of the text-to-speech backend (Stage 11), independent of
-    /// [`Self::translate_provider`]. Hand-editable only for now (no Settings
-    /// dropdown while `"google"` is the only registered backend); live-reloaded,
-    /// no restart needed.
+    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "General"
+    /// (or hand-edited); live-reloaded, no restart needed.
     #[serde(default = "default_speech_provider")]
     pub speech_provider: String,
     /// Name of the dictionary backend (Stage 12), independent of
-    /// [`Self::translate_provider`]. Hand-editable only for now (no Settings
-    /// dropdown while `"google"` is the only registered backend); live-reloaded,
-    /// no restart needed. A bad name disables dictionary lookups (single words fall
-    /// back to a plain translation) rather than breaking translation.
+    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "General"
+    /// (or hand-edited); live-reloaded, no restart needed. A bad name disables
+    /// dictionary lookups (single words fall back to a plain translation) rather than
+    /// breaking translation.
     #[serde(default = "default_dictionary_provider")]
     pub dictionary_provider: String,
 }

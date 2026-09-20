@@ -700,11 +700,17 @@ SpeechProvider = {}
         println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
-        println!("  - DictionaryProvider: Dictionary backend (google)");
+        println!(
+            "  - DictionaryProvider: Dictionary backend ({})",
+            tagent::providers::DICTIONARY_PROVIDERS.join(", ")
+        );
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
         println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+E, F10, etc.)");
-        println!("  - SpeechProvider: Text-to-speech backend (google)");
+        println!(
+            "  - SpeechProvider: Text-to-speech backend ({})",
+            tagent::providers::SPEECH_PROVIDERS.join(", ")
+        );
         println!("  - SaveTranslationHistory: Save all translations to file");
         println!();
 

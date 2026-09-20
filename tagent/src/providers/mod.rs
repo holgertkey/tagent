@@ -288,7 +288,8 @@ impl Definition {
 ///
 /// 1. Create `src/providers/yourprovider.rs` and implement this trait.
 /// 2. Add `pub mod yourprovider;` here and register it in [`create_provider`] with a
-///    matching name string.
+///    matching name string, and add that name to [`TRANSLATION_PROVIDERS`] so pickers
+///    offer it.
 /// 3. Users select it with `TranslateProvider = yourprovider` in `tagent-cli.conf`, or
 ///    `translate_provider` in `tagent-gui.json`.
 #[async_trait]
@@ -350,7 +351,8 @@ pub trait TranslationProvider: Send + Sync {
 ///
 /// 1. Implement this trait (in a new `src/providers/yourprovider.rs`, or alongside an
 ///    existing backend in the same file).
-/// 2. Register it in [`create_dictionary_provider`] with a matching name string.
+/// 2. Register it in [`create_dictionary_provider`] with a matching name string, and add
+///    that name to [`DICTIONARY_PROVIDERS`] so pickers offer it.
 /// 3. Users set `DictionaryProvider = yourprovider` in `tagent-cli.conf`'s `[Dictionary]`
 ///    section (or `dictionary_provider` in `tagent-gui.json`).
 ///
@@ -429,7 +431,8 @@ pub trait DictionaryProvider: Send + Sync {
 ///
 /// 1. Implement this trait (in a new `src/providers/yourprovider.rs`, or alongside an
 ///    existing backend in the same file).
-/// 2. Register it in [`create_speech_provider`] with a matching name string.
+/// 2. Register it in [`create_speech_provider`] with a matching name string, and add that
+///    name to [`SPEECH_PROVIDERS`] so pickers offer it.
 /// 3. Users set `SpeechProvider = yourprovider` in `tagent-cli.conf` (or `speech_provider`
 ///    in `tagent-gui.json`).
 ///
@@ -496,6 +499,33 @@ pub trait SpeechProvider: Send + Sync {
     fn name(&self) -> &str;
 }
 
+/// Names [`create_provider`] accepts, in the canonical (lowercase) spelling, for building
+/// a picker or listing the choices in a message.
+///
+/// Matching is case-insensitive, so `"Google"` also works; this list holds one spelling per
+/// provider. A test checks that every name here is accepted by the factory.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::{create_provider, TRANSLATION_PROVIDERS};
+///
+/// for name in TRANSLATION_PROVIDERS {
+///     assert!(create_provider(name).is_ok());
+/// }
+/// ```
+pub const TRANSLATION_PROVIDERS: &[&str] = &["google"];
+
+/// Names [`create_dictionary_provider`] accepts, in the canonical (lowercase) spelling.
+///
+/// See [`TRANSLATION_PROVIDERS`]; the same rules apply.
+pub const DICTIONARY_PROVIDERS: &[&str] = &["google"];
+
+/// Names [`create_speech_provider`] accepts, in the canonical (lowercase) spelling.
+///
+/// See [`TRANSLATION_PROVIDERS`]; the same rules apply.
+pub const SPEECH_PROVIDERS: &[&str] = &["google"];
+
 /// Instantiate a translation provider by name.
 ///
 /// # Supported names
@@ -503,6 +533,8 @@ pub trait SpeechProvider: Send + Sync {
 /// | Name       | Provider              |
 /// |------------|-----------------------|
 /// | `"google"` | Google Translate API  |
+///
+/// The same names are listed in [`TRANSLATION_PROVIDERS`].
 ///
 /// # Errors
 ///
@@ -538,6 +570,8 @@ pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvide
 /// |------------|---------------------------------------------------|
 /// | `"google"` | Google Translate's dictionary (`bd`) data          |
 ///
+/// The same names are listed in [`DICTIONARY_PROVIDERS`].
+///
 /// # Errors
 ///
 /// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider.
@@ -569,6 +603,8 @@ pub fn create_dictionary_provider(
 /// | Name       | Provider                                  |
 /// |------------|-------------------------------------------|
 /// | `"google"` | Google's `translate_tts` text-to-speech   |
+///
+/// The same names are listed in [`SPEECH_PROVIDERS`].
 ///
 /// # Errors
 ///
@@ -632,6 +668,40 @@ pub async fn resolve_source_language(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The name lists are what pickers are built from, so each one must stay in step with
+    /// its factory: a provider added to a factory but not to its list would silently never
+    /// be offered, and a listed name the factory rejects would be a broken choice.
+    #[test]
+    fn every_listed_provider_name_is_accepted_by_its_factory() {
+        for name in TRANSLATION_PROVIDERS {
+            assert!(create_provider(name).is_ok(), "translation: {name}");
+        }
+        for name in DICTIONARY_PROVIDERS {
+            assert!(
+                create_dictionary_provider(name).is_ok(),
+                "dictionary: {name}"
+            );
+        }
+        for name in SPEECH_PROVIDERS {
+            assert!(create_speech_provider(name).is_ok(), "speech: {name}");
+        }
+    }
+
+    #[test]
+    fn provider_name_lists_are_canonical_lowercase_and_unique() {
+        for list in [
+            TRANSLATION_PROVIDERS,
+            DICTIONARY_PROVIDERS,
+            SPEECH_PROVIDERS,
+        ] {
+            assert!(!list.is_empty());
+            for (i, name) in list.iter().enumerate() {
+                assert_eq!(*name, name.to_lowercase());
+                assert!(!list[..i].contains(name), "duplicate {name}");
+            }
+        }
+    }
 
     #[test]
     fn create_dictionary_provider_google_succeeds() {

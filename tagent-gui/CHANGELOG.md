@@ -12,6 +12,27 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+052] - 2026-09-20
+
+### Changed
+- The three provider dropdowns in Settings > "General" are now filled from the `tagent`
+  library's own name lists (`TRANSLATION_PROVIDERS`/`DICTIONARY_PROVIDERS`/
+  `SPEECH_PROVIDERS`, `tagent` `0.18.1`) each time the dialog opens, instead of lists
+  hardcoded in `app.slint`. A backend added to `tagent` is offered in Settings
+  automatically; the lists in `app.slint` are only placeholders now.
+
+## [0.14.0+051] - 2026-09-20
+
+### Added
+- **Dictionary provider and Speech provider dropdowns** on Settings > "General",
+  beside the existing Translate provider one (now a label/dropdown grid, so the tab
+  doesn't grow by two lines per axis). They set `dictionary_provider` and
+  `speech_provider`, which were hand-editable only until now; like the other General
+  settings they apply to the next translation/speech immediately, no restart. Only
+  `google` is listed for each today. "Reset to Defaults" covers them.
+  A hand-edited name the dropdown doesn't list is shown as the first entry and replaced
+  by it on the next Settings save (same as `translate_provider` always did).
+
 ## [0.14.0+050] - 2026-09-20
 
 ### Added

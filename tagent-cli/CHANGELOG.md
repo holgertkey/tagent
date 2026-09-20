@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+016] - 2026-09-20
+
+### Changed
+- `--config`'s help lists the supported `DictionaryProvider`/`SpeechProvider` values from
+  the `tagent` library (`DICTIONARY_PROVIDERS`/`SPEECH_PROVIDERS`, `tagent` `0.18.1`)
+  instead of a hardcoded `google`.
+
 ## [0.16.0+015] - 2026-09-20
 
 ### Changed

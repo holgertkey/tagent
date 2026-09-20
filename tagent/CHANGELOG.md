@@ -17,6 +17,15 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-09-20
+
+### Added
+- **`TRANSLATION_PROVIDERS`, `DICTIONARY_PROVIDERS` and `SPEECH_PROVIDERS`**: the names
+  each factory accepts (canonical lowercase spelling), so a picker or a message can list
+  the choices without hardcoding them. A test checks that every listed name is accepted
+  by its factory, so a list can't drift from the `match` it describes. The factories stay
+  closed `match`es — this is a list of names, not a registration mechanism.
+
 ## [0.18.0] - 2026-09-20
 
 Dictionary lookup becomes its own provider axis — `TranslationProvider` ×

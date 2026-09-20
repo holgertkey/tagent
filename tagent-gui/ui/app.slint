@@ -900,8 +900,19 @@ export component SettingsDialog inherits Dialog {
             : ColorScheme.unknown;
     }
 
+    // Translation, dictionary and speech backends are three independent
+    // choices (`tagent`'s three provider axes), each with its own list. All
+    // three apply immediately (live-reloaded, no restart), like the
+    // checkboxes below. The lists below are only placeholders: main.rs's
+    // `seed_dialog_fields` replaces them with `tagent`'s own
+    // `TRANSLATION_PROVIDERS`/`DICTIONARY_PROVIDERS`/`SPEECH_PROVIDERS`
+    // whenever the dialog opens, so a new backend needs no edit here.
     in-out property <[string]> providers: ["google"];
     in-out property <int> provider-index: 0;
+    in-out property <[string]> dictionary-providers: ["google"];
+    in-out property <int> dictionary-provider-index: 0;
+    in-out property <[string]> speech-providers: ["google"];
+    in-out property <int> speech-provider-index: 0;
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
     in-out property <bool> show-dictionary: true;
@@ -1090,10 +1101,31 @@ export component SettingsDialog inherits Dialog {
             VerticalBox {
                 alignment: start;
 
-                Text { text: "Translate provider:"; }
-                ComboBox {
-                    model: providers;
-                    current-index <=> provider-index;
+                // Label/dropdown pairs share a row, so the General tab doesn't
+                // grow by two lines per provider axis.
+                GridLayout {
+                    spacing: 8px;
+                    Row {
+                        Text { text: "Translate provider:"; vertical-alignment: center; }
+                        ComboBox {
+                            model: providers;
+                            current-index <=> provider-index;
+                        }
+                    }
+                    Row {
+                        Text { text: "Dictionary provider:"; vertical-alignment: center; }
+                        ComboBox {
+                            model: dictionary-providers;
+                            current-index <=> dictionary-provider-index;
+                        }
+                    }
+                    Row {
+                        Text { text: "Speech provider:"; vertical-alignment: center; }
+                        ComboBox {
+                            model: speech-providers;
+                            current-index <=> speech-provider-index;
+                        }
+                    }
                 }
 
                 CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }

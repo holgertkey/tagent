@@ -1,4 +1,4 @@
-use slint::{Color, ComponentHandle, Model, ModelRc, VecModel};
+use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -710,6 +710,39 @@ macro_rules! wire_rgb_changed {
     }};
 }
 
+/// Index of `name` in a provider dropdown's `model` (case-insensitive, like the provider
+/// factories), or `0` when it isn't listed -- e.g. a hand-edited `tagent-gui.json` naming
+/// a backend the dropdown doesn't offer, which a Settings save then replaces with the
+/// first entry rather than keeping a value the dropdown can't display.
+fn combo_index(model: &ModelRc<SharedString>, name: &str) -> i32 {
+    model
+        .iter()
+        .position(|p| p.as_str().eq_ignore_ascii_case(name))
+        .unwrap_or(0) as i32
+}
+
+/// The entry `index` selects in a dropdown's `model`, or `fallback` if the index is out
+/// of range (which the `ComboBox` itself never produces).
+fn combo_selection(model: &ModelRc<SharedString>, index: i32, fallback: &str) -> String {
+    usize::try_from(index)
+        .ok()
+        .and_then(|i| model.row_data(i))
+        .map_or_else(|| fallback.to_string(), |name| name.to_string())
+}
+
+/// A provider dropdown's model built from `names` (one of `tagent`'s `*_PROVIDERS` lists),
+/// with the index of the currently configured provider `current` selected.
+fn provider_choices(names: &[&str], current: &str) -> (ModelRc<SharedString>, i32) {
+    let model = ModelRc::new(VecModel::from(
+        names
+            .iter()
+            .map(|name| SharedString::from(*name))
+            .collect::<Vec<_>>(),
+    ));
+    let index = combo_index(&model, current);
+    (model, index)
+}
+
 /// Fills every `SettingsDialog` field from `config` -- used both to seed the
 /// dialog when Settings opens (from the current saved config) and by the
 /// General tab's "Reset to Defaults" button (from `GuiConfig::default()`).
@@ -718,12 +751,19 @@ macro_rules! wire_rgb_changed {
 /// instance in
 /// `on_settings_requested` and isn't repeated here.
 fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
-    let providers = dialog.get_providers();
-    let provider_index = providers
-        .iter()
-        .position(|p| p.as_str() == config.translate_provider)
-        .unwrap_or(0);
-    dialog.set_provider_index(provider_index as i32);
+    // The dropdown lists come from `tagent` itself (one per provider axis), so a backend
+    // added there is offered here without touching `app.slint`.
+    let (model, index) =
+        provider_choices(providers::TRANSLATION_PROVIDERS, &config.translate_provider);
+    dialog.set_providers(model);
+    dialog.set_provider_index(index);
+    let (model, index) =
+        provider_choices(providers::DICTIONARY_PROVIDERS, &config.dictionary_provider);
+    dialog.set_dictionary_providers(model);
+    dialog.set_dictionary_provider_index(index);
+    let (model, index) = provider_choices(providers::SPEECH_PROVIDERS, &config.speech_provider);
+    dialog.set_speech_providers(model);
+    dialog.set_speech_provider_index(index);
     dialog.set_show_dictionary(config.show_dictionary);
     dialog.set_spell_check(config.spell_check);
     dialog.set_enable_text_to_speech(config.enable_text_to_speech);
@@ -1928,12 +1968,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .unwrap()
                     .config()
                     .popup_position,
-                // Hand-editable only (no Settings dropdown yet, Stage 11) -- carried
-                // through unchanged so saving the dialog doesn't reset it to "google".
-                speech_provider: current_config.speech_provider.clone(),
-                // Same treatment (Stage 12): hand-editable only, carried through so a
-                // Settings save doesn't reset it to "google".
-                dictionary_provider: current_config.dictionary_provider.clone(),
+                dictionary_provider: combo_selection(
+                    &dialog.get_dictionary_providers(),
+                    dialog.get_dictionary_provider_index(),
+                    &current_config.dictionary_provider,
+                ),
+                speech_provider: combo_selection(
+                    &dialog.get_speech_providers(),
+                    dialog.get_speech_provider_index(),
+                    &current_config.speech_provider,
+                ),
             };
 
             if let Err(err) = config_manager_for_save
@@ -2385,4 +2429,73 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     slint::run_event_loop_until_quit()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(items: &[&str]) -> ModelRc<SharedString> {
+        ModelRc::new(VecModel::from(
+            items
+                .iter()
+                .map(|s| SharedString::from(*s))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    #[test]
+    fn combo_index_finds_entry_case_insensitively() {
+        let m = model(&["google", "other"]);
+        assert_eq!(combo_index(&m, "other"), 1);
+        assert_eq!(combo_index(&m, "Google"), 0);
+        assert_eq!(combo_index(&m, "OTHER"), 1);
+    }
+
+    #[test]
+    fn combo_index_defaults_to_first_entry_for_unknown_name() {
+        let m = model(&["google", "other"]);
+        assert_eq!(combo_index(&m, "bogus"), 0);
+        assert_eq!(combo_index(&m, ""), 0);
+        assert_eq!(combo_index(&model(&[]), "google"), 0);
+    }
+
+    #[test]
+    fn provider_choices_lists_the_names_and_selects_the_configured_one() {
+        let (model, index) = provider_choices(&["google", "other"], "other");
+        assert_eq!(model.row_count(), 2);
+        assert_eq!(index, 1);
+        assert_eq!(combo_selection(&model, index, ""), "other");
+    }
+
+    /// A fresh config must land on a real entry of every dropdown, not on the "unlisted
+    /// name falls back to index 0" path.
+    #[test]
+    fn default_config_providers_are_all_offered_by_tagent() {
+        let config = config::GuiConfig::default();
+        for (names, current) in [
+            (providers::TRANSLATION_PROVIDERS, &config.translate_provider),
+            (providers::DICTIONARY_PROVIDERS, &config.dictionary_provider),
+            (providers::SPEECH_PROVIDERS, &config.speech_provider),
+        ] {
+            assert!(
+                names.iter().any(|n| n.eq_ignore_ascii_case(current)),
+                "{current} missing from {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn combo_selection_returns_selected_entry() {
+        let m = model(&["google", "other"]);
+        assert_eq!(combo_selection(&m, 0, "fallback"), "google");
+        assert_eq!(combo_selection(&m, 1, "fallback"), "other");
+    }
+
+    #[test]
+    fn combo_selection_falls_back_when_index_is_out_of_range() {
+        let m = model(&["google"]);
+        assert_eq!(combo_selection(&m, 5, "fallback"), "fallback");
+        assert_eq!(combo_selection(&m, -1, "fallback"), "fallback");
+    }
 }

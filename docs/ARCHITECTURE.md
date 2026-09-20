@@ -367,7 +367,18 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   self-inflicted reload on the next `check_and_reload()`. If the current
   `translate_provider` isn't one of `providers` (e.g. a hand-edited, not-yet-listed
   value), the dialog falls back to preselecting index 0 rather than erroring —
-  accepted, since only `"google"` is a supported value today.
+  accepted, since only `"google"` is a supported value today. `dictionary_provider` and
+  `speech_provider` have their own dropdowns beside it (2026-09-20, `dictionary-providers`
+  / `speech-providers` in `app.slint`; the three axes are independent), seeded and read
+  through the shared `combo_index`/`combo_selection` helpers in `main.rs`, with the same
+  fall-back-to-index-0 behavior — so a hand-edited unknown value is replaced by the first
+  entry the next time Settings is saved. The lists come from `tagent`
+  (`TRANSLATION_PROVIDERS`/`DICTIONARY_PROVIDERS`/`SPEECH_PROVIDERS`, `0.18.1`), set on the
+  dialog by `seed_dialog_fields` each time it opens, so a backend added to `tagent` is
+  offered in Settings with no edit to `app.slint` (its own lists are placeholders). These
+  are plain name lists next to the factories, not a registration mechanism — the factories
+  stay closed `match`es — and a test checks that every listed name is accepted by its
+  factory, which is what keeps a list from drifting from the `match` it describes.
 - **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
   `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
   (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling
@@ -994,9 +1005,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `enable_text_to_speech` a General-tab checkbox.) `speech_provider` (Stage 11,
   2026-09-19) is currently hand-edit-only: no Settings dropdown while `"google"` is
   the only registered speech backend, same precedent as `translate_provider` itself
-  before Stage 3. Saving Settings carries it through unchanged. `dictionary_provider`
-  (Stage 12, 2026-09-20) is the same: hand-edit-only, live-reloaded, carried through a
-  Settings save from the dialog's opening snapshot.
+  before Stage 3. `dictionary_provider` (Stage 12, 2026-09-20) was hand-edit-only in the
+  same way. Both got General-tab dropdowns on 2026-09-20, next to the translate-provider
+  one (see the Settings dialog section above), so no `GuiConfig` field is carried through
+  a Settings save any more for lack of a control.
 - It calls `TranslationProvider::translate_text`, `DictionaryProvider::lookup` and
   `SpeechProvider::split_for_speech`/`speak_chunk` directly rather than going through
   `tagent-cli`'s `Translator`/`SpeechManager` orchestrators; dictionary/
@@ -1047,7 +1059,7 @@ convention is specific to `tagent-cli`'s dev-iteration tracking — and logs its
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
-workspace-root one. The `tagent` library crate's version (`0.18.0`) is likewise
+workspace-root one. The `tagent` library crate's version (`0.18.1`) is likewise
 standalone, plain semver with no `+BUILD` suffix, with history in
 [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
 still moving (three provider traits, more providers to come), and under semver's `0.y.z`
