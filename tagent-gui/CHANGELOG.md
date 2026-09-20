@@ -12,6 +12,17 @@ decisions behind this project.
 
 ## [Unreleased]
 
+### Changed
+- **Windows: no terminal window on launch.** `tagent-gui.exe` is now a GUI-subsystem
+  executable (`windows_subsystem = "windows"`, debug and release alike), so starting it from
+  Explorer, a shortcut or autostart no longer opens a console behind the app. When it is
+  started from a terminal instead, `platform::windows::console::attach_parent()` (new, uses
+  `AttachConsole`) reconnects `println!`/`eprintln!` to that terminal, and leaves a stream
+  alone if the caller redirected it (`tagent-gui.exe 2> log.txt`). Nothing changes on Linux
+  and macOS. `cmd` and PowerShell don't wait for a GUI-subsystem program, so run it as
+  `.\tagent-gui.exe | Out-Host` (or `cargo run -p tagent-gui`) to keep the output in order;
+  see the README.
+
 ### Added
 - **Windows executable icon**: `tagent-gui.exe` now carries the Tagent "a" icon
   (`assets/icons/tagent-gui.ico`, 16-256 px, made from `tray.png`) plus version info

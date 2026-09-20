@@ -24,6 +24,23 @@ or, from a checkout of the repository:
 cargo run -p tagent-gui
 ```
 
+On Windows the app has no console window of its own, so starting it from Explorer or a
+shortcut shows only the GUI. Its diagnostics (config warnings, "Global hotkeys disabled",
+speech errors) go to `stderr`, and they still appear if you start it from a terminal:
+
+```powershell
+cargo run -p tagent-gui                 # output stays in the terminal, in order
+.\tagent-gui.exe | Out-Host             # PowerShell: waits for the app, keeps the output in order
+.\tagent-gui.exe 2> gui.log             # or capture it in a file
+```
+
+```bat
+start /wait tagent-gui.exe
+```
+
+Plain `.\tagent-gui.exe` also prints to the terminal, but `cmd` and PowerShell don't wait
+for a GUI program, so the prompt returns at once and the output interleaves with it.
+
 Building on Linux needs the X11, XTest, ALSA and fontconfig development packages, e.g.
 on Debian/Ubuntu:
 

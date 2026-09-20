@@ -1,3 +1,8 @@
+// Windows: no terminal window when the exe is started from Explorer or a shortcut.
+// `platform::windows::console::attach_parent()` (first thing in `main`) brings the
+// `eprintln!` output back when it is started from a terminal instead.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -1350,6 +1355,9 @@ fn apply_window_geometry(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    #[cfg(target_os = "windows")]
+    platform::windows::console::attach_parent();
+
     let window = AppWindow::new()?;
 
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));

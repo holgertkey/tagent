@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0+001"
+version = "0.14.0+002"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -41,6 +41,7 @@ windows = { version = "0.52", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_LibraryLoader",
+    "Win32_System_Console",
 ] }
 
 # Linux-only dependencies
