@@ -15,6 +15,12 @@ fn default_speech_provider() -> String {
     "google".to_string()
 }
 
+/// Default for [`GuiConfig::dictionary_provider`], matching `tagent-cli`'s own
+/// `DictionaryProvider` default.
+fn default_dictionary_provider() -> String {
+    "google".to_string()
+}
+
 fn default_theme() -> String {
     "auto".to_string()
 }
@@ -301,6 +307,13 @@ pub struct GuiConfig {
     /// no restart needed.
     #[serde(default = "default_speech_provider")]
     pub speech_provider: String,
+    /// Name of the dictionary backend (Stage 12), independent of
+    /// [`Self::translate_provider`]. Hand-editable only for now (no Settings
+    /// dropdown while `"google"` is the only registered backend); live-reloaded,
+    /// no restart needed. A bad name disables dictionary lookups (single words fall
+    /// back to a plain translation) rather than breaking translation.
+    #[serde(default = "default_dictionary_provider")]
+    pub dictionary_provider: String,
 }
 
 /// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
@@ -369,6 +382,7 @@ impl Default for GuiConfig {
             spell_check: default_spell_check(),
             enable_text_to_speech: default_enable_text_to_speech(),
             speech_provider: default_speech_provider(),
+            dictionary_provider: default_dictionary_provider(),
         }
     }
 }
@@ -1178,6 +1192,36 @@ mod tests {
         let config = load_from_path(&path);
 
         assert!(config.enable_text_to_speech);
+    }
+
+    #[test]
+    fn old_file_without_dictionary_provider_field_defaults_to_google() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "deepl", "speech_provider": "other", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.dictionary_provider, "google");
+        // Independent of the other two provider axes.
+        assert_eq!(config.translate_provider, "deepl");
+        assert_eq!(config.speech_provider, "other");
+    }
+
+    #[test]
+    fn explicit_dictionary_provider_is_respected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"dictionary_provider": "other"}"#).unwrap();
+
+        let config = load_from_path(&path);
+
+        assert_eq!(config.dictionary_provider, "other");
+        assert_eq!(config.translate_provider, "google");
     }
 
     #[test]

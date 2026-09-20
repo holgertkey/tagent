@@ -1,12 +1,13 @@
-//! Google Translate and Google text-to-speech provider implementations.
+//! Google Translate, Google dictionary and Google text-to-speech provider implementations.
 //!
-//! [`GoogleTranslateProvider`] implements [`TranslationProvider`] and
+//! [`GoogleTranslateProvider`] implements [`TranslationProvider`],
+//! [`GoogleDictionaryProvider`] implements [`DictionaryProvider`] and
 //! [`GoogleSpeechProvider`] implements [`SpeechProvider`]. They are independent: constructing
-//! one never touches the other.
+//! one never touches the others.
 //!
 //! # Read this before depending on them
 //!
-//! Both talk to **unofficial** Google web endpoints — the ones behind the Google Translate
+//! All three talk to **unofficial** Google web endpoints — the ones behind the Google Translate
 //! web page — not to the paid Cloud Translation or Cloud Text-to-Speech APIs:
 //!
 //! - There is no API key, no quota you can raise, and no service guarantee. Google can
@@ -19,12 +20,12 @@
 //!
 //! Treat them as a convenient default for personal tools, not as infrastructure for a
 //! service. A production system should implement [`TranslationProvider`] /
-//! [`SpeechProvider`] over an official API instead — see the [`providers`](super) module
+//! [`DictionaryProvider`] / [`SpeechProvider`] over an official API instead — see the [`providers`](super) module
 //! for how.
 //!
 //! # Behavior worth knowing
 //!
-//! - **Dictionary lookup** ([`GoogleTranslateProvider::get_dictionary_entry`]) returns at
+//! - **Dictionary lookup** ([`GoogleDictionaryProvider::lookup`]) returns at
 //!   most five definitions per part of speech. A word Google silently corrects (`"violnt"`)
 //!   comes back with [`DictionaryEntry::corrected_word`] set; a word it only *suggests* a
 //!   correction for (`"vialent"`) costs a second request with the suggested word. A word
@@ -36,7 +37,10 @@
 //!   is two bytes per letter, so roughly 50 letters), returns MP3 audio, and needs the text
 //!   split first with [`SpeechProvider::split_for_speech`].
 
-use super::{Definition, DictionaryEntry, PartOfSpeechEntry, SpeechProvider, TranslationProvider};
+use super::{
+    Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry, SpeechProvider,
+    TranslationProvider,
+};
 use crate::error::Error;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -84,98 +88,6 @@ impl GoogleTranslateProvider {
                 .timeout(Duration::from_secs(10))
                 .build()
                 .expect("Failed to create HTTP client for Google Translate"),
-        }
-    }
-
-    /// Parse Google Translate dictionary response into DictionaryEntry
-    fn parse_dictionary_response(&self, json: &Value) -> Option<DictionaryEntry> {
-        let mut definitions = Vec::new();
-
-        // Dictionary definitions (at index 1)
-        if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
-            for entry in dict_data {
-                if let Some(entry_array) = entry.as_array() {
-                    if entry_array.len() >= 3 {
-                        // Part of speech (first element)
-                        if let Some(pos) = entry_array.first().and_then(|v| v.as_str()) {
-                            // Detailed definitions with synonyms (third element)
-                            if let Some(detailed_defs) =
-                                entry_array.get(2).and_then(|v| v.as_array())
-                            {
-                                let mut defs = Vec::new();
-
-                                for def in detailed_defs.iter().take(5) {
-                                    // Limit to 5 definitions per part of speech
-                                    if let Some(def_array) = def.as_array() {
-                                        if def_array.len() >= 2 {
-                                            if let Some(definition) =
-                                                def_array.first().and_then(|v| v.as_str())
-                                            {
-                                                // Get synonyms if available
-                                                let synonyms = if let Some(syn_array) =
-                                                    def_array.get(1).and_then(|v| v.as_array())
-                                                {
-                                                    syn_array
-                                                        .iter()
-                                                        .filter_map(|s| s.as_str())
-                                                        .map(|s| s.to_string())
-                                                        .collect()
-                                                } else {
-                                                    Vec::new()
-                                                };
-
-                                                defs.push(Definition {
-                                                    text: definition.to_string(),
-                                                    synonyms,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !defs.is_empty() {
-                                    definitions.push(PartOfSpeechEntry {
-                                        part_of_speech: pos.to_string(),
-                                        definitions: defs,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if definitions.is_empty() {
-            None
-        } else {
-            // Get the word from translation (index 0)
-            let word = json
-                .get(0)
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|v| v.get(0))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            // json[0][0][1] is the actual source word Google used for translation.
-            // When Google silently auto-corrects a misspelling (e.g. "violnt" → "violent"),
-            // this field holds the corrected word, which differs from the original input.
-            let corrected_word = json
-                .get(0)
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|v| v.get(1))
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-
-            Some(DictionaryEntry {
-                word,
-                corrected_word,
-                definitions,
-            })
         }
     }
 }
@@ -234,95 +146,6 @@ impl TranslationProvider for GoogleTranslateProvider {
         }
     }
 
-    async fn get_dictionary_entry(
-        &self,
-        word: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<Option<DictionaryEntry>, Error> {
-        let url = "https://translate.googleapis.com/translate_a/single";
-
-        let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
-        let from_param = if from == "auto" { "auto" } else { from };
-
-        // Request additional data types for dictionary information
-        let params = format!(
-            "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
-            from_param, to, encoded_word
-        );
-
-        let full_url = format!("{}{}", url, params);
-
-        let response = self
-            .client
-            .get(&full_url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Api(format!("HTTP error: {}", response.status())));
-        }
-
-        let body = response.text().await?;
-        let json: Value = serde_json::from_str(&body)?;
-
-        // Try parsing dictionary from the primary response.
-        if let Some(entry) = self.parse_dictionary_response(&json) {
-            return Ok(Some(entry));
-        }
-
-        // No dictionary entries found (badly misspelled or unknown word).
-        // Check json[7] for a spell-correction suggestion.
-        // Structure when present: json[7] = ["<b><i>word</i></b>", "word", [flag]]
-        //   json[7][1] = clean corrected word
-        let suggestion = json
-            .get(7)
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.get(1))
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty() && s.to_lowercase() != word.to_lowercase());
-
-        if let Some(corrected) = suggestion {
-            // Retry the dictionary lookup with the corrected word.
-            let encoded_corrected =
-                form_urlencoded::byte_serialize(corrected.as_bytes()).collect::<String>();
-            let retry_params = format!(
-                "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
-                from_param, to, encoded_corrected
-            );
-            let retry_url = format!("{}{}", url, retry_params);
-
-            let retry_response = self
-                .client
-                .get(&retry_url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await?;
-
-            if retry_response.status().is_success() {
-                let retry_body = retry_response.text().await?;
-                let retry_json: Value = serde_json::from_str(&retry_body)?;
-                if let Some(mut entry) = self.parse_dictionary_response(&retry_json) {
-                    // Override corrected_word with the explicit suggestion (more reliable
-                    // than what parse_dictionary_response would extract from retry_json).
-                    entry.corrected_word = Some(corrected);
-                    return Ok(Some(entry));
-                }
-                // Retry succeeded but still no dictionary entries for the corrected
-                // word — a genuine "not found", not an error.
-            } else {
-                return Err(Error::Api(format!(
-                    "HTTP error on retry: {}",
-                    retry_response.status()
-                )));
-            }
-        }
-
-        Ok(None)
-    }
-
     async fn detect_language(&self, text: &str) -> Result<String, Error> {
         let url = "https://translate.googleapis.com/translate_a/single";
 
@@ -358,6 +181,224 @@ impl TranslationProvider for GoogleTranslateProvider {
 
     fn name(&self) -> &str {
         "Google Translate"
+    }
+}
+
+/// [`DictionaryProvider`] implementation backed by the dictionary data of the unofficial
+/// Google Translate web API (`translate.googleapis.com/translate_a/single`, the `bd` block).
+///
+/// Independent of [`GoogleTranslateProvider`]: constructing one never touches the other, so a
+/// dictionary lookup works whichever translation provider is selected. A lookup returns at
+/// most five definitions per part of speech. A word Google silently corrects (`"violnt"`)
+/// comes back with [`DictionaryEntry::corrected_word`] set; a word it only *suggests* a
+/// correction for (`"vialent"`) costs a second request with the suggested word, and
+/// [`DictionaryEntry::word`] stays the original input either way. See the
+/// [module documentation](self) for the caveats of using an unofficial endpoint.
+///
+/// # Examples
+///
+/// ```no_run
+/// use tagent::providers::{google::GoogleDictionaryProvider, DictionaryProvider};
+///
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), tagent::error::Error> {
+/// let provider = GoogleDictionaryProvider::new();
+/// if let Some(entry) = provider.lookup("violent", "en", "ru").await? {
+///     println!("{} part-of-speech groups", entry.definitions.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub struct GoogleDictionaryProvider {
+    client: Client,
+}
+
+impl Default for GoogleDictionaryProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GoogleDictionaryProvider {
+    /// Create a new provider with a fresh HTTP client (10s request timeout).
+    pub fn new() -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("Failed to create HTTP client for Google Dictionary"),
+        }
+    }
+
+    /// Parses a Google Translate dictionary response into a [`DictionaryEntry`] for `word`,
+    /// the caller's original input (stored as [`DictionaryEntry::word`]).
+    fn parse_dictionary_response(&self, json: &Value, word: &str) -> Option<DictionaryEntry> {
+        let mut definitions = Vec::new();
+
+        // Dictionary definitions (at index 1)
+        if let Some(dict_data) = json.get(1).and_then(|v| v.as_array()) {
+            for entry in dict_data {
+                if let Some(entry_array) = entry.as_array() {
+                    if entry_array.len() >= 3 {
+                        // Part of speech (first element)
+                        if let Some(pos) = entry_array.first().and_then(|v| v.as_str()) {
+                            // Detailed definitions with synonyms (third element)
+                            if let Some(detailed_defs) =
+                                entry_array.get(2).and_then(|v| v.as_array())
+                            {
+                                let mut defs = Vec::new();
+
+                                for def in detailed_defs.iter().take(5) {
+                                    // Limit to 5 definitions per part of speech
+                                    if let Some(def_array) = def.as_array() {
+                                        if def_array.len() >= 2 {
+                                            if let Some(definition) =
+                                                def_array.first().and_then(|v| v.as_str())
+                                            {
+                                                // Get synonyms if available
+                                                let synonyms = if let Some(syn_array) =
+                                                    def_array.get(1).and_then(|v| v.as_array())
+                                                {
+                                                    syn_array
+                                                        .iter()
+                                                        .filter_map(|s| s.as_str())
+                                                        .map(|s| s.to_string())
+                                                        .collect()
+                                                } else {
+                                                    Vec::new()
+                                                };
+
+                                                defs.push(Definition::new(definition, synonyms));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if !defs.is_empty() {
+                                    definitions.push(PartOfSpeechEntry::new(pos, defs));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if definitions.is_empty() {
+            None
+        } else {
+            // json[0][0][1] is the actual source word Google used for translation.
+            // When Google silently auto-corrects a misspelling (e.g. "violnt" → "violent"),
+            // this field holds the corrected word, which differs from the original input.
+            let corrected_word = json
+                .get(0)
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|v| v.get(1))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+
+            let mut entry = DictionaryEntry::new(word, definitions);
+            entry.corrected_word = corrected_word;
+            Some(entry)
+        }
+    }
+}
+
+#[async_trait]
+impl DictionaryProvider for GoogleDictionaryProvider {
+    async fn lookup(
+        &self,
+        word: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<Option<DictionaryEntry>, Error> {
+        let url = "https://translate.googleapis.com/translate_a/single";
+
+        let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
+        let from_param = if from == "auto" { "auto" } else { from };
+
+        // Request additional data types for dictionary information
+        let params = format!(
+            "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
+            from_param, to, encoded_word
+        );
+
+        let full_url = format!("{}{}", url, params);
+
+        let response = self
+            .client
+            .get(&full_url)
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api(format!("HTTP error: {}", response.status())));
+        }
+
+        let body = response.text().await?;
+        let json: Value = serde_json::from_str(&body)?;
+
+        // Try parsing dictionary from the primary response.
+        if let Some(entry) = self.parse_dictionary_response(&json, word) {
+            return Ok(Some(entry));
+        }
+
+        // No dictionary entries found (badly misspelled or unknown word).
+        // Check json[7] for a spell-correction suggestion.
+        // Structure when present: json[7] = ["<b><i>word</i></b>", "word", [flag]]
+        //   json[7][1] = clean corrected word
+        let suggestion = json
+            .get(7)
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.get(1))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s.to_lowercase() != word.to_lowercase());
+
+        if let Some(corrected) = suggestion {
+            // Retry the dictionary lookup with the corrected word.
+            let encoded_corrected =
+                form_urlencoded::byte_serialize(corrected.as_bytes()).collect::<String>();
+            let retry_params = format!(
+                "?client=gtx&sl={}&tl={}&dt=t&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q={}",
+                from_param, to, encoded_corrected
+            );
+            let retry_url = format!("{}{}", url, retry_params);
+
+            let retry_response = self
+                .client
+                .get(&retry_url)
+                .header("User-Agent", USER_AGENT)
+                .send()
+                .await?;
+
+            if retry_response.status().is_success() {
+                let retry_body = retry_response.text().await?;
+                let retry_json: Value = serde_json::from_str(&retry_body)?;
+                if let Some(mut entry) = self.parse_dictionary_response(&retry_json, word) {
+                    // Override corrected_word with the explicit suggestion (more reliable
+                    // than what parse_dictionary_response would extract from retry_json).
+                    entry.corrected_word = Some(corrected);
+                    return Ok(Some(entry));
+                }
+                // Retry succeeded but still no dictionary entries for the corrected
+                // word — a genuine "not found", not an error.
+            } else {
+                return Err(Error::Api(format!(
+                    "HTTP error on retry: {}",
+                    retry_response.status()
+                )));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn name(&self) -> &str {
+        "Google Dictionary"
     }
 }
 
@@ -581,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_parse_corrected_word_silent_correction() {
-        let provider = GoogleTranslateProvider::new();
+        let provider = GoogleDictionaryProvider::new();
         // Scenario B: Google silently corrected "violnt" -> "violent" and returned dict entries.
         // json[0][0][1] = "violent" (the word Google actually translated).
         let response = json!([
@@ -593,7 +634,7 @@ mod tests {
             ]]
         ]);
 
-        let entry = provider.parse_dictionary_response(&response);
+        let entry = provider.parse_dictionary_response(&response, "violnt");
         assert!(entry.is_some());
         let entry = entry.unwrap();
         // corrected_word comes from json[0][0][1]
@@ -602,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_parse_corrected_word_no_source_field() {
-        let provider = GoogleTranslateProvider::new();
+        let provider = GoogleDictionaryProvider::new();
         // Response where json[0][0][1] is absent — corrected_word should be None
         let response = json!([
             [["жестокий"]],
@@ -613,9 +654,57 @@ mod tests {
             ]]
         ]);
 
-        let entry = provider.parse_dictionary_response(&response);
+        let entry = provider.parse_dictionary_response(&response, "violent");
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().corrected_word, None);
+    }
+
+    /// Regression test: `DictionaryEntry::word` is documented as "the word as supplied by the
+    /// caller", but the parser used to fill it from `json[0][0][0]` — Google's *translation*
+    /// of the input (`"жестокий"`), not the input itself.
+    #[test]
+    fn test_parse_word_is_callers_input_not_the_translation() {
+        let provider = GoogleDictionaryProvider::new();
+        let response = json!([
+            [["жестокий", "violent", null, null, 10]],
+            [[
+                "adjective",
+                null,
+                [["жестокий", ["violent"], null, null, null, null, null, []]]
+            ]]
+        ]);
+
+        let entry = provider
+            .parse_dictionary_response(&response, "violnt")
+            .expect("response has dictionary entries");
+        assert_eq!(entry.word, "violnt");
+        // ...while the corrected word Google reported is kept separately.
+        assert_eq!(entry.corrected_word.as_deref(), Some("violent"));
+    }
+
+    #[test]
+    fn test_parse_without_definitions_is_none() {
+        let provider = GoogleDictionaryProvider::new();
+        let response = json!([[["ксиззик", "xyzzyq", null, null, 1]]]);
+        assert!(provider
+            .parse_dictionary_response(&response, "xyzzyq")
+            .is_none());
+    }
+
+    #[test]
+    fn test_parse_limits_definitions_per_part_of_speech() {
+        let provider = GoogleDictionaryProvider::new();
+        let defs: Vec<_> = (0..8)
+            .map(|i| json!([format!("def{i}"), ["syn"], null, null, null, null, null, []]))
+            .collect();
+        let response = json!([[["x", "x"]], [["noun", null, defs]]]);
+
+        let entry = provider
+            .parse_dictionary_response(&response, "x")
+            .expect("response has dictionary entries");
+        assert_eq!(entry.definitions[0].definitions.len(), 5);
+        assert_eq!(entry.definitions[0].definitions[0].text, "def0");
+        assert_eq!(entry.definitions[0].definitions[0].synonyms, ["syn"]);
     }
 
     /// Integration test: checks that both spell-correction scenarios work end-to-end.
@@ -623,10 +712,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_spell_correction_integration() {
-        let provider = GoogleTranslateProvider::new();
+        let provider = GoogleDictionaryProvider::new();
 
         // Scenario A: badly misspelled — no dict entries in primary response, json[7][1] has suggestion
-        let result_a = provider.get_dictionary_entry("vialent", "en", "ru").await;
+        let result_a = provider.lookup("vialent", "en", "ru").await;
         println!(
             "Scenario A (vialent): {:?}",
             result_a
@@ -634,6 +723,8 @@ mod tests {
                 .map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word)))
         );
         if let Ok(Some(entry)) = &result_a {
+            // `word` stays the caller's original input on the spell-suggestion retry path.
+            assert_eq!(entry.word, "vialent");
             assert_eq!(
                 entry.corrected_word.as_deref().map(|s| s.to_lowercase()),
                 Some("violent".to_string())
@@ -641,7 +732,7 @@ mod tests {
         }
 
         // Scenario B: slightly misspelled — Google auto-corrects, json[0][0][1] has the correction
-        let result_b = provider.get_dictionary_entry("violnt", "en", "ru").await;
+        let result_b = provider.lookup("violnt", "en", "ru").await;
         println!(
             "Scenario B (violnt): {:?}",
             result_b
@@ -649,6 +740,7 @@ mod tests {
                 .map(|e| e.as_ref().map(|x| (&x.word, &x.corrected_word)))
         );
         if let Ok(Some(entry)) = &result_b {
+            assert_eq!(entry.word, "violnt");
             assert_eq!(
                 entry.corrected_word.as_deref().map(|s| s.to_lowercase()),
                 Some("violent".to_string())
@@ -656,7 +748,7 @@ mod tests {
         }
 
         // Correctly spelled — corrected_word should equal the input (no notice will be shown)
-        let result_c = provider.get_dictionary_entry("violent", "en", "ru").await;
+        let result_c = provider.lookup("violent", "en", "ru").await;
         println!(
             "Scenario C (violent): {:?}",
             result_c

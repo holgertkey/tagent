@@ -4,7 +4,7 @@ use rustyline::ExternalPrinter;
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
-use tagent::providers::{self, TranslationProvider};
+use tagent::providers::{self, DictionaryProvider, TranslationProvider};
 
 /// Shared slot for the rustyline external printer used to route hotkey-triggered
 /// translation output safely while the interactive prompt may be mid-read on another
@@ -14,13 +14,16 @@ type SharedPrinter = Arc<Mutex<Option<Box<dyn ExternalPrinter + Send>>>>;
 
 /// High-level translation orchestrator.
 ///
-/// `Translator` ties together a [`TranslationProvider`] (from the [`tagent`] library
-/// crate), the system clipboard, and optional window management to provide the full
+/// `Translator` ties together a [`TranslationProvider`] and a [`DictionaryProvider`] (from
+/// the [`tagent`] library crate), the system clipboard, and optional window management to provide the full
 /// Tagent translation experience. Use [`Translator::new_cli`] when window management
 /// is not needed (e.g. one-off CLI translations).
 #[derive(Clone)]
 pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
+    /// `None` when the configured `DictionaryProvider` could not be created; dictionary
+    /// lookups then fail immediately and callers fall back to plain translation.
+    dictionary_provider: Option<Arc<dyn DictionaryProvider>>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Option<Arc<WindowManager>>,
@@ -67,8 +70,20 @@ impl Translator {
         let config = config_manager.get_config();
         let provider = providers::create_provider(&config.translate_provider)?;
 
+        // A bad dictionary provider must never break translation: warn once and disable
+        // dictionary lookups instead of failing to start (unlike the translate provider).
+        let dictionary_provider =
+            match providers::create_dictionary_provider(&config.dictionary_provider) {
+                Ok(dictionary) => Some(Arc::from(dictionary)),
+                Err(e) => {
+                    eprintln!("Dictionary provider unavailable ({e}); dictionary lookups disabled");
+                    None
+                }
+            };
+
         Ok(Self {
             provider: Arc::from(provider),
+            dictionary_provider,
             clipboard: ClipboardManager::new(),
             config_manager,
             window_manager,
@@ -354,10 +369,17 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<(String, Option<String>), Box<dyn Error + Send + Sync>> {
+        // No dictionary provider: fail before any network call so the caller's fallback to
+        // plain translation runs exactly once.
+        let dictionary_provider = self
+            .dictionary_provider
+            .as_ref()
+            .ok_or("Dictionary provider unavailable")?;
+
         // Run regular translation and dictionary lookup concurrently
         let (translation_result, dict_result) = tokio::join!(
             self.translate_text_internal(word, from, to),
-            self.provider.get_dictionary_entry(word, from, to)
+            dictionary_provider.lookup(word, from, to)
         );
 
         let primary_translation = translation_result.ok();
@@ -655,10 +677,43 @@ impl Translator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tagent::providers::DictionaryEntry;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tagent::providers::{Definition, DictionaryEntry, PartOfSpeechEntry};
 
     struct MockProvider {
         translation: String,
+        /// Counts `translate_text` calls, to assert a code path never reached the network.
+        translate_calls: Arc<AtomicUsize>,
+    }
+
+    impl MockProvider {
+        fn new(translation: &str) -> Self {
+            Self {
+                translation: translation.to_string(),
+                translate_calls: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    /// Returns a canned entry, or a miss when `entry` is `None`.
+    struct MockDictionary {
+        entry: Option<DictionaryEntry>,
+    }
+
+    #[async_trait::async_trait]
+    impl DictionaryProvider for MockDictionary {
+        async fn lookup(
+            &self,
+            _word: &str,
+            _from: &str,
+            _to: &str,
+        ) -> Result<Option<DictionaryEntry>, tagent::error::Error> {
+            Ok(self.entry.clone())
+        }
+
+        fn name(&self) -> &str {
+            "mock dictionary"
+        }
     }
 
     #[async_trait::async_trait]
@@ -669,16 +724,8 @@ mod tests {
             _from: &str,
             _to: &str,
         ) -> Result<String, tagent::error::Error> {
+            self.translate_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.translation.clone())
-        }
-
-        async fn get_dictionary_entry(
-            &self,
-            _word: &str,
-            _from: &str,
-            _to: &str,
-        ) -> Result<Option<DictionaryEntry>, tagent::error::Error> {
-            Ok(None)
         }
 
         async fn detect_language(&self, _text: &str) -> Result<String, tagent::error::Error> {
@@ -745,11 +792,12 @@ mod tests {
     #[tokio::test]
     async fn hotkey_translation_emits_label_and_text_in_one_printer_call() {
         let config_manager = test_config_manager("label_line");
-        let provider: Arc<dyn TranslationProvider> = Arc::new(MockProvider {
-            translation: "Добавлена постоянная дедуплицированная история ввода".to_string(),
-        });
+        let provider: Arc<dyn TranslationProvider> = Arc::new(MockProvider::new(
+            "Добавлена постоянная дедуплицированная история ввода",
+        ));
         let translator = Translator {
             provider,
+            dictionary_provider: None,
             clipboard: ClipboardManager::new(),
             config_manager: config_manager.clone(),
             window_manager: None,
@@ -799,5 +847,78 @@ mod tests {
             "a label was emitted as its own print() call, split from its content: {:?}",
             *messages
         );
+    }
+
+    fn translator_with(
+        provider: MockProvider,
+        dictionary: Option<MockDictionary>,
+        unique: &str,
+    ) -> Translator {
+        Translator {
+            provider: Arc::new(provider),
+            dictionary_provider: dictionary.map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>),
+            clipboard: ClipboardManager::new(),
+            config_manager: test_config_manager(unique),
+            window_manager: None,
+            stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
+            printer: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// The `Translator`/`DictionaryProvider` seam had no coverage before the provider split:
+    /// the old mock's `get_dictionary_entry` always returned `None`.
+    #[tokio::test]
+    async fn dictionary_entry_is_formatted_and_reports_corrected_word() {
+        let entry = DictionaryEntry::new(
+            "violnt",
+            vec![PartOfSpeechEntry::new(
+                "adjective",
+                vec![Definition::new("жестокий", vec!["violent".to_string()])],
+            )],
+        )
+        .with_corrected_word("violent");
+        let translator = translator_with(
+            MockProvider::new("насилие"),
+            Some(MockDictionary { entry: Some(entry) }),
+            "dict_entry",
+        );
+
+        let (formatted, corrected) = translator
+            .get_dictionary_entry("violnt", "en", "ru")
+            .await
+            .unwrap();
+
+        assert_eq!(corrected.as_deref(), Some("violent"));
+        // Terminal mode: the translate provider's result is the header line.
+        assert!(formatted.starts_with("насилие"), "got: {formatted:?}");
+        assert!(formatted.contains("жестокий"), "got: {formatted:?}");
+        assert!(formatted.contains("[violent]"), "got: {formatted:?}");
+    }
+
+    #[tokio::test]
+    async fn dictionary_miss_is_an_error_so_callers_fall_back_to_translation() {
+        let translator = translator_with(
+            MockProvider::new("ксиззик"),
+            Some(MockDictionary { entry: None }),
+            "dict_miss",
+        );
+
+        let result = translator.get_dictionary_entry("xyzzyq", "en", "ru").await;
+
+        assert!(result.is_err());
+    }
+
+    /// A bad `DictionaryProvider` must never break translation: with none available the
+    /// lookup fails immediately, without touching the translate provider.
+    #[tokio::test]
+    async fn missing_dictionary_provider_fails_without_any_network_call() {
+        let provider = MockProvider::new("не должно вызываться");
+        let calls = provider.translate_calls.clone();
+        let translator = translator_with(provider, None, "dict_none");
+
+        let result = translator.get_dictionary_entry("violent", "en", "ru").await;
+
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 }

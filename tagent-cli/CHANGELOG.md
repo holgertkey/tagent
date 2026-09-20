@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+015] - 2026-09-20
+
+### Changed
+- **Dictionary lookup now has its own, independent provider** (`DictionaryProvider`
+  in the `tagent` library, `0.18.0`; Stage 12 of the `tagent-gui` development plan):
+  `get_dictionary_entry` moved off `TranslationProvider` onto a new `DictionaryProvider`
+  trait with its own `create_dictionary_provider()` factory and `GoogleDictionaryProvider`
+  implementation, so the backend that translates, the one that looks words up and the one
+  that speaks are three separate choices. No user-visible change: only `google` exists and
+  every output is unchanged. `Translator` builds the dictionary provider next to the
+  translate provider, but **not fatally**: an unknown `DictionaryProvider` value prints
+  one warning (`Dictionary provider unavailable (...); dictionary lookups disabled`) and
+  single words fall back to plain translation, instead of failing to start.
+  `MockProvider` in `translator.rs` lost its unused dictionary stub, and the
+  `Translator`/`DictionaryProvider` seam gained its first tests (formatted entry with a
+  `corrected_word`, a miss, and a missing provider).
+
+### Added
+- **`DictionaryProvider`** key in the `[Dictionary]` section of `tagent-cli.conf`
+  (default `google`, next to `ShowDictionary`/`SpellCheck`). Read once when the
+  translator is built, so changing it requires a restart, like `TranslateProvider`.
+  Shown in `--config` and its help text.
+
 ## [0.16.0+014] - 2026-09-19
 
 ### Changed

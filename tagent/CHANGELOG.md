@@ -17,9 +17,27 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-20
+
+Dictionary lookup becomes its own provider axis — `TranslationProvider` ×
+`DictionaryProvider` × `SpeechProvider`, any combination — with no change to what the
+built-in Google backend returns for a lookup, apart from the `DictionaryEntry::word`
+fix below. Breaking, hence the minor bump.
+
 ### Added
+- **`DictionaryProvider`** trait (`lookup(word, from, to)` + `name()`), its
+  **`create_dictionary_provider(name)`** factory (case-insensitive, `"google"` only,
+  `Error::UnknownProvider` otherwise) and **`google::GoogleDictionaryProvider`**, a
+  separate provider with its own HTTP client: selecting it never instantiates anything
+  translate-related. The trait documentation now spells out the contract every backend
+  inherits (bilingual field semantics, lowercase-English part-of-speech labels, when to
+  return `Ok(None)`, `"auto"` sources, `corrected_word`), and the `providers` module
+  docs gained a "Writing a dictionary provider" section with a compiled, offline
+  example.
+- **Constructors** `Definition::new`, `PartOfSpeechEntry::new`, `DictionaryEntry::new`
+  and `DictionaryEntry::with_corrected_word`.
 - **`examples/`**: `translate`, `dictionary`, `speak` (built-in Google providers, need
-  network) and `custom_provider` (both provider traits on a toy backend, fully
+  network) and `custom_provider` (all three provider traits on toy backends, fully
   offline). Built by `cargo test`, so they can't drift from the API.
 - **Guide-level API documentation.** The crate docs now cover quick-start snippets and
   the shared concepts (language codes, the `"auto"` source language, errors). The
@@ -27,6 +45,27 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   or a speech provider (with a compiled, offline example), and how factories relate to
   provider construction. The `google` module docs list the caveats of the unofficial
   endpoints, and `create_provider` / `resolve_source_language` gained examples.
+
+### Changed
+- **`DictionaryEntry`, `PartOfSpeechEntry` and `Definition` are `#[non_exhaustive]`**, so
+  a richer backend can add fields (confidence, pronunciation, examples, …) later without
+  breaking callers. Their fields stay `pub`; outside this crate a struct literal no
+  longer compiles — use the new constructors.
+- **`DictionaryEntry::word` is now the word exactly as the caller passed it to
+  `lookup`** (also on the spell-suggestion retry path, where `corrected_word` holds the
+  suggestion). It used to hold Google's *translation* of the input (`"жестокий"` for
+  `violent`), contradicting its own documentation. The field docs for
+  `PartOfSpeechEntry::part_of_speech` and `Definition::{text, synonyms}` now state what
+  the bilingual data actually is (`text` is a translation into the target language,
+  `synonyms` are source-language words).
+- `Error::UnknownProvider` also documents `create_dictionary_provider`.
+
+### Removed
+- **`TranslationProvider::get_dictionary_entry`** (and its `GoogleTranslateProvider`
+  implementation), with no compatibility shim: use
+  `create_dictionary_provider(..)?.lookup(..)` /
+  `GoogleDictionaryProvider::lookup`. `TranslationProvider` keeps `translate_text`,
+  `detect_language` and `name`.
 
 ### Fixed
 - **Documentation corrections.** `DictionaryEntry::corrected_word` is `Some` whenever

@@ -1,25 +1,26 @@
-//! Implement both provider traits for a toy backend, fully offline.
+//! Implement all three provider traits for toy backends, fully offline.
 //!
-//! Shows what a new backend has to provide and how the two provider axes fit together,
+//! Shows what a new backend has to provide and how the three provider axes fit together,
 //! without any network access:
 //!
 //! ```text
 //! cargo run -p tagent --example custom_provider
 //! ```
 //!
-//! A real backend would replace the bodies with calls to its own HTTP API. To make it
+//! A real backend would replace the bodies with calls to its own HTTP API. To make one
 //! selectable by name (`create_provider("reverse")`), add a branch to
-//! `tagent::providers::create_provider` in the library; using it directly, as here, needs no
+//! `tagent::providers::create_provider` (or `create_dictionary_provider` /
+//! `create_speech_provider`) in the library; using it directly, as here, needs no
 //! registration.
 
 use async_trait::async_trait;
 use tagent::error::Error;
 use tagent::providers::{
-    resolve_source_language, Definition, DictionaryEntry, PartOfSpeechEntry, SpeechProvider,
-    TranslationProvider,
+    resolve_source_language, Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry,
+    SpeechProvider, TranslationProvider,
 };
 
-/// A "translator" that reverses its input and knows exactly one dictionary word.
+/// A "translator" that reverses its input.
 struct Reverse;
 
 #[async_trait]
@@ -31,7 +32,21 @@ impl TranslationProvider for Reverse {
         Ok(text.chars().rev().collect())
     }
 
-    async fn get_dictionary_entry(
+    async fn detect_language(&self, _text: &str) -> Result<String, Error> {
+        Ok("en".to_string())
+    }
+
+    fn name(&self) -> &str {
+        "Reverse"
+    }
+}
+
+/// A "dictionary" that knows exactly one word.
+struct Glossary;
+
+#[async_trait]
+impl DictionaryProvider for Glossary {
+    async fn lookup(
         &self,
         word: &str,
         _from: &str,
@@ -41,25 +56,23 @@ impl TranslationProvider for Reverse {
         if !word.eq_ignore_ascii_case("hello") {
             return Ok(None);
         }
-        Ok(Some(DictionaryEntry {
-            word: word.to_string(),
-            corrected_word: Some(word.to_string()),
-            definitions: vec![PartOfSpeechEntry {
-                part_of_speech: "interjection".to_string(),
-                definitions: vec![Definition {
-                    text: "used as a greeting".to_string(),
-                    synonyms: vec!["hi".to_string(), "hey".to_string()],
-                }],
-            }],
-        }))
-    }
-
-    async fn detect_language(&self, _text: &str) -> Result<String, Error> {
-        Ok("en".to_string())
+        // Part-of-speech labels are lowercase English words; `text` is a translation into the
+        // target language and `synonyms` are source-language words (both trivially "English"
+        // here, since this toy backend does not translate).
+        Ok(Some(DictionaryEntry::new(
+            word,
+            vec![PartOfSpeechEntry::new(
+                "interjection",
+                vec![Definition::new(
+                    "used as a greeting",
+                    vec!["hi".to_string(), "hey".to_string()],
+                )],
+            )],
+        )))
     }
 
     fn name(&self) -> &str {
-        "Reverse"
+        "Glossary"
     }
 }
 
@@ -110,6 +123,7 @@ impl SpeechProvider for Echo {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let translator: Box<dyn TranslationProvider> = Box::new(Reverse);
+    let dictionary: Box<dyn DictionaryProvider> = Box::new(Glossary);
     let speaker: Box<dyn SpeechProvider> = Box::new(Echo);
 
     println!(
@@ -119,7 +133,7 @@ async fn main() -> Result<(), Error> {
             .await?
     );
 
-    match translator.get_dictionary_entry("hello", "en", "en").await? {
+    match dictionary.lookup("hello", "en", "en").await? {
         Some(entry) => println!(
             "{}: {} part(s) of speech",
             entry.word,
@@ -129,13 +143,10 @@ async fn main() -> Result<(), Error> {
     }
     println!(
         "missing word -> {:?}",
-        translator
-            .get_dictionary_entry("zzz", "en", "en")
-            .await?
-            .map(|e| e.word)
+        dictionary.lookup("zzz", "en", "en").await?.map(|e| e.word)
     );
 
-    // The two axes meet only here: speaking "auto" text needs the translator to detect the
+    // Two axes meet only here: speaking "auto" text needs the translator to detect the
     // language first; a concrete code (like "de") would skip the translator entirely.
     let lang = resolve_source_language(translator.as_ref(), "Hello world", "auto").await;
     for chunk in speaker.split_for_speech("Hello wonderful world") {

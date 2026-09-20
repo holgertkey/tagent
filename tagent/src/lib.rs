@@ -3,13 +3,15 @@
 //! Translation, dictionary lookup, and text-to-speech library, powered by the
 //! Google Translate API.
 //!
-//! The crate is provider-agnostic. It has two independent provider axes, so the
-//! backend that translates and the backend that speaks are separate choices:
+//! The crate is provider-agnostic. It has three independent provider axes, so the
+//! backend that translates, the one that looks words up, and the one that speaks are
+//! separate choices, usable in any combination:
 //!
-//! | Axis        | Trait                            | Factory                                | Built-in                                  |
-//! |-------------|----------------------------------|----------------------------------------|-------------------------------------------|
-//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]         | [`providers::google::GoogleTranslateProvider`] |
-//! | Speech      | [`providers::SpeechProvider`]      | [`providers::create_speech_provider`]  | [`providers::google::GoogleSpeechProvider`]    |
+//! | Axis        | Trait                              | Factory                                 | Built-in                                        |
+//! |-------------|------------------------------------|-----------------------------------------|-------------------------------------------------|
+//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`]  |
+//! | Dictionary  | [`providers::DictionaryProvider`]  | [`providers::create_dictionary_provider`] | [`providers::google::GoogleDictionaryProvider`] |
+//! | Speech      | [`providers::SpeechProvider`]      | [`providers::create_speech_provider`]   | [`providers::google::GoogleSpeechProvider`]     |
 //!
 //! The crate has no knowledge of configuration files, clipboards, hotkeys, or any
 //! other application concern — those live in the `tagent-cli` and `tagent-gui`
@@ -34,8 +36,8 @@
 //! ```no_run
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), tagent::error::Error> {
-//! let provider = tagent::providers::create_provider("google")?;
-//! match provider.get_dictionary_entry("vialent", "en", "ru").await? {
+//! let dictionary = tagent::providers::create_dictionary_provider("google")?;
+//! match dictionary.lookup("vialent", "en", "ru").await? {
 //!     Some(entry) => {
 //!         // `corrected_word` is the word the provider actually looked up; compare it
 //!         // with your input to decide whether to show a "did you mean" notice.
@@ -81,10 +83,10 @@
 //!   [`languages::name_to_code`] / [`languages::code_to_name`] to convert from and to
 //!   human-readable names such as `"Russian"`.
 //! - **`"auto"` source language.** [`providers::TranslationProvider::translate_text`] and
-//!   [`providers::TranslationProvider::get_dictionary_entry`] accept `"auto"` as the source
-//!   and detect it themselves. [`providers::SpeechProvider::speak_chunk`] does *not*: it
+//!   [`providers::DictionaryProvider::lookup`] accept `"auto"` as the source and detect it
+//!   themselves (a dictionary backend that cannot returns `Ok(None)`). [`providers::SpeechProvider::speak_chunk`] does *not*: it
 //!   needs a concrete code, so resolve `"auto"` first with
-//!   [`providers::resolve_source_language`]. That is the only place the two provider axes
+//!   [`providers::resolve_source_language`]. That is the only place two provider axes
 //!   meet, which is why a translation provider is only needed for speech when the source
 //!   language is `"auto"`.
 //! - **Errors.** Every fallible call returns [`error::Error`], a plain enum with no
@@ -97,8 +99,8 @@
 //!
 //! ## Modules
 //!
-//! - [`providers`] — Translation and speech provider traits and factories, plus the
-//!   Google implementations. Start here to use, or to extend, the crate.
+//! - [`providers`] — Translation, dictionary and speech provider traits and factories,
+//!   plus the Google implementations. Start here to use, or to extend, the crate.
 //! - [`languages`] — Human-readable language name ↔ BCP-47 code mapping.
 //! - [`error`] — Unified error type used throughout this crate.
 //!

@@ -874,6 +874,7 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
 /// provider codes.
 struct TranslationRequest {
     translate_provider: String,
+    dictionary_provider: String,
     show_prompt: bool,
     show_dictionary: bool,
     spell_check: bool,
@@ -1023,6 +1024,7 @@ fn spawn_translation(
 ) {
     let TranslationRequest {
         translate_provider,
+        dictionary_provider,
         show_prompt,
         show_dictionary,
         spell_check,
@@ -1060,10 +1062,28 @@ fn spawn_translation(
         let result = runtime.block_on(async move {
             let provider = providers::create_provider(&translate_provider)?;
 
-            if show_dictionary && dictionary::is_single_word(&request_text) {
+            // Built only when a dictionary lookup is actually about to happen, and never
+            // fatally: a bad `dictionary_provider` value must not break translation, so
+            // it warns and takes the plain-translation path below instead.
+            let dictionary_provider =
+                if show_dictionary && dictionary::is_single_word(&request_text) {
+                    match providers::create_dictionary_provider(&dictionary_provider) {
+                        Ok(dictionary) => Some(dictionary),
+                        Err(e) => {
+                            eprintln!(
+                                "Dictionary provider unavailable ({e}); dictionary lookups disabled"
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+            if let Some(dictionary_provider) = dictionary_provider {
                 let (translate_result, dict_result) = tokio::join!(
                     provider.translate_text(&request_text, &from_code, &to_code),
-                    provider.get_dictionary_entry(&request_text, &from_code, &to_code),
+                    dictionary_provider.lookup(&request_text, &from_code, &to_code),
                 );
 
                 match dict_result {
@@ -1493,12 +1513,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let from_code = languages::name_to_code(&from_lang).to_string();
         let to_code = languages::name_to_code(&to_lang).to_string();
 
-        let (translate_provider, show_prompt, show_dictionary, spell_check, enable_text_to_speech) = {
+        let (
+            translate_provider,
+            dictionary_provider,
+            show_prompt,
+            show_dictionary,
+            spell_check,
+            enable_text_to_speech,
+        ) = {
             let mut manager = config_manager.lock().unwrap();
             manager.check_and_reload();
             let cfg = manager.config();
             (
                 cfg.translate_provider.clone(),
+                cfg.dictionary_provider.clone(),
                 cfg.show_prompt,
                 cfg.show_dictionary,
                 cfg.spell_check,
@@ -1527,6 +1555,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             weak.clone(),
             TranslationRequest {
                 translate_provider,
+                dictionary_provider,
                 show_prompt,
                 show_dictionary,
                 spell_check,
@@ -1902,6 +1931,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // Hand-editable only (no Settings dropdown yet, Stage 11) -- carried
                 // through unchanged so saving the dialog doesn't reset it to "google".
                 speech_provider: current_config.speech_provider.clone(),
+                // Same treatment (Stage 12): hand-editable only, carried through so a
+                // Settings save doesn't reset it to "google".
+                dictionary_provider: current_config.dictionary_provider.clone(),
             };
 
             if let Err(err) = config_manager_for_save
@@ -2227,6 +2259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     let (
                         translate_provider,
+                        dictionary_provider,
                         show_prompt,
                         show_dictionary,
                         spell_check,
@@ -2241,6 +2274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let cfg = manager.config();
                         (
                             cfg.translate_provider.clone(),
+                            cfg.dictionary_provider.clone(),
                             cfg.show_prompt,
                             cfg.show_dictionary,
                             cfg.spell_check,
@@ -2280,6 +2314,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     weak2,
                                     TranslationRequest {
                                         translate_provider,
+                                        dictionary_provider,
                                         show_prompt,
                                         show_dictionary,
                                         spell_check,

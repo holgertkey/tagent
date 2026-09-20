@@ -21,18 +21,17 @@ async fn main() -> Result<(), tagent::error::Error> {
     let source = args.next().unwrap_or_else(|| "en".to_string());
     let target = args.next().unwrap_or_else(|| "ru".to_string());
 
-    let provider = providers::create_provider("google")?;
+    // Dictionary lookup and translation are separate provider axes, each chosen by name.
+    let dictionary = providers::create_dictionary_provider("google")?;
 
     // A dictionary miss is `Ok(None)`, not an error. Callers usually fall back to a plain
     // translation for it (and for multi-word input, which is not a dictionary lookup).
-    let Some(entry) = provider
-        .get_dictionary_entry(&word, &source, &target)
-        .await?
-    else {
+    let Some(entry) = dictionary.lookup(&word, &source, &target).await? else {
         println!("no dictionary entry for {word:?}; falling back to a plain translation:");
+        let translator = providers::create_provider("google")?;
         println!(
             "{}",
-            provider.translate_text(&word, &source, &target).await?
+            translator.translate_text(&word, &source, &target).await?
         );
         return Ok(());
     };
@@ -50,6 +49,7 @@ fn print_entry(original: &str, entry: &DictionaryEntry) {
         }
     }
 
+    // `entry.word` is the word exactly as it was passed to `lookup`.
     println!("{}", entry.word);
     for pos in &entry.definitions {
         println!("  {}", pos.part_of_speech);

@@ -12,6 +12,26 @@ for the roadmap and design decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+050] - 2026-09-20
+
+### Added
+- **`dictionary_provider`** (`tagent-gui.json`, default `"google"`, live-reloaded,
+  hand-editable only — no Settings dropdown while `"google"` is the only backend), the
+  dictionary counterpart of `translate_provider`/`speech_provider`. A Settings save
+  carries it through unchanged.
+
+### Changed
+- **Dictionary lookup now has its own, independent provider** (`DictionaryProvider`
+  in the `tagent` library, `0.18.0`; Stage 12): `get_dictionary_entry` moved off
+  `TranslationProvider` onto a new `DictionaryProvider` trait with a
+  `create_dictionary_provider()` factory. No user-visible change. The provider is built
+  only when a single-word lookup is actually about to happen, and a bad
+  `dictionary_provider` value never breaks translation: it logs
+  `Dictionary provider unavailable (...)` to stderr and the word gets a plain translation.
+  The dictionary formatting tests build their fixtures with the new
+  `DictionaryEntry::new`/`PartOfSpeechEntry::new`/`Definition::new` constructors, since
+  those structs are now `#[non_exhaustive]`.
+
 ## [0.14.0+049] - 2026-09-19
 
 ### Added

@@ -32,6 +32,9 @@ pub struct Config {
     pub show_dictionary: bool,
     /// Automatically correct spelling of single-word input before looking up.
     pub spell_check: bool,
+    /// Name of the dictionary backend to use, e.g. `"google"`. Independent of
+    /// `translate_provider`.
+    pub dictionary_provider: String,
     /// Copy the translation result to the system clipboard automatically.
     pub copy_to_clipboard: bool,
     /// Append every translation to the history file.
@@ -78,6 +81,7 @@ impl Default for Config {
             auto_hide_terminal_seconds: 3,
             show_dictionary: true,
             spell_check: true,
+            dictionary_provider: "google".to_string(), // Default dictionary provider
             copy_to_clipboard: false,
             save_translation_history: false,
             history_file: default_history,
@@ -235,6 +239,12 @@ ShowDictionary = {}
 ; Set to false to disable spell checking (typos will fall back to simple translation)
 SpellCheck = {}
 
+; Dictionary lookup backend, independent of TranslateProvider
+; Supported values: google
+; Default: google
+; Note: Requires application restart to take effect
+DictionaryProvider = {}
+
 [Interface]
 ; Show terminal window on top when translating
 ; Set to true to show terminal window during translation
@@ -339,6 +349,7 @@ SpeechProvider = {}
             config.target_language,
             config.show_dictionary,
             config.spell_check,
+            config.dictionary_provider,
             config.show_terminal_on_translate,
             config.auto_hide_terminal_seconds,
             config.copy_to_clipboard,
@@ -383,6 +394,12 @@ SpeechProvider = {}
             .and_then(|section| section.get("SpellCheck"))
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(true);
+
+        let dictionary_provider = parsed_config
+            .get("Dictionary")
+            .and_then(|section| section.get("DictionaryProvider"))
+            .cloned()
+            .unwrap_or_else(|| "google".to_string());
 
         let show_terminal = parsed_config
             .get("Interface")
@@ -493,6 +510,7 @@ SpeechProvider = {}
             copy_to_clipboard,
             show_dictionary,
             spell_check,
+            dictionary_provider,
             show_terminal_on_translate: show_terminal,
             auto_hide_terminal_seconds: auto_hide_seconds,
             save_translation_history,
@@ -682,6 +700,7 @@ SpeechProvider = {}
         println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
         println!("  - TargetLanguage: Target language (Russian, English, etc.)");
         println!("  - ShowDictionary: Enable dictionary lookup for single words");
+        println!("  - DictionaryProvider: Dictionary backend (google)");
         println!("  - CopyToClipboard: Copy results to clipboard");
         println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
         println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+E, F10, etc.)");
@@ -713,6 +732,7 @@ SpeechProvider = {}
         println!();
         println!("=== Current Configuration ===");
         println!("Translation Provider: {}", config.translate_provider);
+        println!("Dictionary Provider: {}", config.dictionary_provider);
         println!("Speech Provider: {}", config.speech_provider);
         println!();
         println!(
@@ -1391,6 +1411,138 @@ mod tests {
         assert_eq!(loaded.translate_hotkey, config.translate_hotkey);
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_config_dictionary_provider_defaults_when_absent() {
+        // Both when the whole `[Dictionary]` section is missing and when the section is
+        // present without the key (an older config file).
+        for (label, content) in [
+            ("no_section", "[Translation]\nSourceLanguage = Auto\n"),
+            ("no_key", "[Dictionary]\nShowDictionary = false\n"),
+        ] {
+            let path = std::env::temp_dir().join(format!(
+                "tagent_test_dictionary_provider_default_{}_{}.conf",
+                label,
+                std::process::id()
+            ));
+            fs::write(&path, content).unwrap();
+
+            let manager = ConfigManager {
+                config_path: path.to_str().unwrap().to_string(),
+                config: Arc::new(Mutex::new(Config::default())),
+                last_modified: Arc::new(Mutex::new(None)),
+            };
+            manager.load_config().unwrap();
+
+            assert_eq!(
+                manager.get_config().dictionary_provider,
+                "google",
+                "{label}"
+            );
+
+            let _ = fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn test_load_config_explicit_dictionary_provider_is_respected() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_explicit_dictionary_provider_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Dictionary]\nDictionaryProvider = other\n").unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+
+        assert_eq!(manager.get_config().dictionary_provider, "other");
+        // Independent of the other two provider axes.
+        assert_eq!(manager.get_config().translate_provider, "google");
+        assert_eq!(manager.get_config().speech_provider, "google");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    /// `create_ini_content` is one positional `format!`, and `[Dictionary]` sits in the
+    /// middle of the template, so a placeholder/argument pair inserted out of step would
+    /// shift every later value by one slot. Every field here is deliberately non-default
+    /// (bools flipped, strings unique sentinels), because a shifted value that happens to
+    /// equal the default would otherwise pass unnoticed.
+    #[test]
+    fn test_generated_config_roundtrips_every_field_with_distinct_values() {
+        let defaults = Config::default();
+        let config = Config {
+            source_language: "src-sentinel".to_string(),
+            target_language: "tgt-sentinel".to_string(),
+            show_terminal_on_translate: !defaults.show_terminal_on_translate,
+            auto_hide_terminal_seconds: 17,
+            show_dictionary: !defaults.show_dictionary,
+            spell_check: !defaults.spell_check,
+            dictionary_provider: "dict-sentinel".to_string(),
+            copy_to_clipboard: !defaults.copy_to_clipboard,
+            save_translation_history: !defaults.save_translation_history,
+            history_file: "history-sentinel.txt".to_string(),
+            target_prompt_color: "target-color-sentinel".to_string(),
+            dictionary_prompt_color: "dict-color-sentinel".to_string(),
+            source_prompt_color: "source-color-sentinel".to_string(),
+            translate_hotkey: "translate-hotkey-sentinel".to_string(),
+            enable_text_to_speech: !defaults.enable_text_to_speech,
+            speech_hotkey: "speech-hotkey-sentinel".to_string(),
+            enable_speech_hotkey: !defaults.enable_speech_hotkey,
+            translate_provider: "translate-sentinel".to_string(),
+            speech_provider: "speech-sentinel".to_string(),
+        };
+
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_roundtrip_all_fields_{}.conf",
+            std::process::id()
+        ));
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        fs::write(&path, manager.create_ini_content(&config)).unwrap();
+        manager.load_config().unwrap();
+        let _ = fs::remove_file(&path);
+
+        let loaded = manager.get_config();
+        assert_eq!(loaded.source_language, config.source_language);
+        assert_eq!(loaded.target_language, config.target_language);
+        assert_eq!(
+            loaded.show_terminal_on_translate,
+            config.show_terminal_on_translate
+        );
+        assert_eq!(
+            loaded.auto_hide_terminal_seconds,
+            config.auto_hide_terminal_seconds
+        );
+        assert_eq!(loaded.show_dictionary, config.show_dictionary);
+        assert_eq!(loaded.spell_check, config.spell_check);
+        assert_eq!(loaded.dictionary_provider, config.dictionary_provider);
+        assert_eq!(loaded.copy_to_clipboard, config.copy_to_clipboard);
+        assert_eq!(
+            loaded.save_translation_history,
+            config.save_translation_history
+        );
+        assert_eq!(loaded.history_file, config.history_file);
+        assert_eq!(loaded.target_prompt_color, config.target_prompt_color);
+        assert_eq!(
+            loaded.dictionary_prompt_color,
+            config.dictionary_prompt_color
+        );
+        assert_eq!(loaded.source_prompt_color, config.source_prompt_color);
+        assert_eq!(loaded.translate_hotkey, config.translate_hotkey);
+        assert_eq!(loaded.enable_text_to_speech, config.enable_text_to_speech);
+        assert_eq!(loaded.speech_hotkey, config.speech_hotkey);
+        assert_eq!(loaded.enable_speech_hotkey, config.enable_speech_hotkey);
+        assert_eq!(loaded.translate_provider, config.translate_provider);
+        assert_eq!(loaded.speech_provider, config.speech_provider);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+014
+# Tagent Text Translator v0.16.0+015
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -188,6 +188,9 @@ ShowDictionary = true
 
 ; Detect and correct spelling errors, show correction notice
 SpellCheck = true
+
+; Dictionary lookup backend, independent of TranslateProvider (google; restart required)
+DictionaryProvider = google
 
 [Interface]
 ; Show terminal window during GUI translation
@@ -546,7 +549,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+014
+**Current Version**: v0.16.0+015
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -579,4 +582,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+014** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+015** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

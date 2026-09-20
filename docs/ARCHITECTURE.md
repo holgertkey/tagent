@@ -42,9 +42,11 @@ to by that convention in `CLAUDE.md` — `tagent-cli` and `tagent-gui` are appli
 built on it, not libraries themselves, so the attribute lives here now instead of on
 the old single-crate `tagent`).
 
-- **`providers`** — two independent provider axes: the `TranslationProvider` trait +
-  `create_provider()` factory (translate, dictionary, `detect_language`), moved
-  essentially unchanged from the old `src/providers/`, and the `SpeechProvider` trait +
+- **`providers`** — three independent provider axes: the `TranslationProvider` trait +
+  `create_provider()` factory (translate, `detect_language`), moved essentially
+  unchanged from the old `src/providers/` (minus the dictionary method, see "Dictionary
+  Provider Architecture" below), the `DictionaryProvider` trait +
+  `create_dictionary_provider()` factory, and the `SpeechProvider` trait +
   `create_speech_provider()` factory (see "Speech Provider Architecture" below). Every
   method returns `Result<_, tagent::error::Error>` instead of the old `Box<dyn Error +
   Send + Sync>`. `GoogleSpeechProvider` implements `SpeechProvider`'s two TTS methods,
@@ -65,9 +67,10 @@ the old single-crate `tagent`).
   any combination), done deliberately *now* while only `"google"` implements either —
   `SpeechProvider`'s shape (exactly `split_for_speech` + `speak_chunk` + `name`) was
   already fully known, so the redo risk is low and migrating one provider is cheaper
-  than migrating N later. (The same reasoning was deliberately *not* applied to a
-  parallel `DictionaryProvider` split: its shape — language pairs, data-model
-  richness, credentials — still has open questions.)
+  than migrating N later. (Dictionary lookup was held back at the time because its
+  shape — language pairs, data-model richness, credentials — still had open questions;
+  Stage 12 answered enough of them to build the same seam, see "Dictionary Provider
+  Architecture" below.)
   - `GoogleSpeechProvider` is a separate struct from `GoogleTranslateProvider` (same
     `google.rs` file, but its own `reqwest::Client` — constructing it never touches
     anything translate-related). `split_for_speech`'s 100-char chunking is *Google's*
@@ -89,6 +92,80 @@ the old single-crate `tagent`).
     `tagent` is pre-1.0 (`0.17.0`), where a breaking change is what a minor bump is
     for; this one is recorded in `tagent/CHANGELOG.md` as part of the `0.17.0`
     baseline, and in both apps' changelogs.
+- **Dictionary Provider Architecture** (Stage 12, 2026-09-20) — the same split for
+  dictionary lookup: `get_dictionary_entry` left `TranslationProvider` (`tagent`
+  `0.17.0` → `0.18.0`, no compatibility shim) for a `DictionaryProvider` trait
+  (`lookup(word, from, to)` + `name()`), a `create_dictionary_provider()` factory
+  (`"google"` only) and `GoogleDictionaryProvider`. The three axes —
+  `TranslateProvider` × `DictionaryProvider` × `SpeechProvider` in `tagent-cli.conf`,
+  `translate_provider` × `dictionary_provider` × `speech_provider` in `tagent-gui.json` —
+  combine freely. Zero user-visible change; the point is that the next backend is "add a
+  file + one `match` arm" instead of a cross-crate refactor.
+  - **The trait keeps the positional `word + from + to` signature; extensibility lives on
+    the return type.** A 2026-09-19 survey of online bilingual backends (Microsoft
+    Translator Dictionary Lookup, Wiktionary-based APIs, Yandex, ABBYY Lingvo, PONS,
+    Lexicala) showed they all take those three inputs and differ in what they *return*
+    (confidence, gender prefix, IPA, forms, examples) and in credentials. So
+    `DictionaryEntry`, `PartOfSpeechEntry` and `Definition` are `#[non_exhaustive]`
+    with constructors (`::new`, `DictionaryEntry::with_corrected_word`); new fields can
+    arrive later as a non-breaking patch. Struct literals outside `tagent` stopped
+    compiling at `0.18.0` (`tagent-gui`'s dictionary tests and the `custom_provider`
+    example were the only ones).
+  - **The trait's documentation is the contract every backend inherits**: `Definition::text`
+    is a translation into `to` and `synonyms` are words in `from` (the field names read
+    like a monolingual dictionary; they are not); part-of-speech labels are lowercase
+    English full words, because both apps localize through a table keyed on them
+    (`get_full_part_of_speech`), so a backend normalizes tags or foreign labels inside
+    the provider; `Ok(None)` means "no entry" (a miss, an unsupported pair, input the
+    backend can't handle), never `Some` with an empty list, and `Error::NotFound` stays
+    unused; `from == "auto"` is valid, and a backend that can't look up with it returns
+    `Ok(None)` (making one work would need the caller to resolve `"auto"` first with
+    `resolve_source_language`, the way speech does — to be decided when the first such
+    backend arrives); `corrected_word` *should* be set only when a different word was
+    looked up, but callers keep comparing it with their input case-insensitively, so
+    Google's "always `Some`" behavior remains legal.
+  - `GoogleDictionaryProvider` is a separate struct with its own `reqwest::Client`
+    (same `google.rs` file, as `GoogleSpeechProvider`), not `GoogleTranslateProvider`
+    implementing a second trait: selecting `dictionary_provider = "google"` with a
+    different `translate_provider` instantiates nothing translate-related. The
+    two-request spell-suggestion retry (`json[7]`) and the positional
+    `parse_dictionary_response` moved verbatim, except that the parser now takes the
+    caller's word.
+  - **`DictionaryEntry::word` was fixed, not re-documented.** Its doc said "as supplied
+    by the caller" but the parser filled it from `json[0][0][0]` — Google's *translation*
+    of the input (`"жестокий"` for `violent`). It is now the caller's original input,
+    also on the retry path (where `corrected_word` holds the suggestion). No shipped
+    output changed: its only consumer was the `!cli_mode` branch of
+    `Translator::format_dictionary_entry`, which is dead (its one caller passes
+    `cli_mode = true`).
+  - **Failure isolation: a bad `DictionaryProvider` value never breaks translation.**
+    `tagent-cli`'s `Translator::build` still `?`s the translate provider but builds the
+    dictionary provider non-fatally — one warning (`Dictionary provider unavailable
+    (...); dictionary lookups disabled`) and `dictionary_provider: None`; its
+    `get_dictionary_entry` (signature unchanged, so `cli.rs`/`interactive.rs` are
+    untouched) then returns `Err` before any network call, and the callers' existing
+    fallback to plain translation runs. `tagent-gui`'s `spawn_translation` builds it only
+    inside the `show_dictionary && is_single_word` branch and, on `Err`, warns to stderr
+    and takes the plain-`translate_text` path (no `join!`). An `Err` or `Ok(None)` from a
+    lookup that did run still reuses the translation fetched by the same `join!`, never a
+    second request.
+  - **Deliberately left out**: a second backend or any enrichment of Google's parse (its
+    `ex`/`md`/`ss`/`rw`/`rm`/`ld` blocks stay unparsed); credentials/options plumbing
+    (`create_dictionary_provider(name)` stays name-only; a keyed backend adds an
+    additive `..._with(name, &options)` later); a shared "translate + dictionary +
+    fallback" helper in `tagent` (the two apps' shapes differ and the shared part is a few
+    lines); monolingual or offline dictionaries (online, bilingual only, so `lookup` takes
+    both `from` and `to`); new `Error` variants; a Settings dropdown for
+    `dictionary_provider` (a one-entry dropdown, same as `speech_provider`); and a fix
+    for `Translator::get_dictionary_entry` fetching the translation twice on a dictionary
+    miss (its `join!` result is discarded and the caller translates again — pre-existing,
+    unrelated to the seam).
+  - Mechanical trap worth remembering: `create_ini_content` is one positional `format!`
+    and `[Dictionary]` is mid-template, so the new placeholder and its argument had to be
+    inserted together (Stage 11's `[Speech]` block was last, so its argument just
+    appended). `test_generated_config_roundtrips_every_field_with_distinct_values` sets
+    every `Config` field to a non-default value and reads it back, so a shifted value
+    can't hide by coinciding with a default.
 - **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
@@ -751,7 +828,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   translation.
   - Inside `spawn_translation`'s async block: when `show_dictionary` is on and
     `dictionary::is_single_word` accepts the (trimmed) text, `provider.translate_text`
-    and `provider.get_dictionary_entry` run concurrently via `tokio::join!`
+    and `dictionary_provider.lookup` run concurrently via `tokio::join!`
     (mirroring `tagent-cli`'s `Translator::get_dictionary_entry`). On
     `Ok(Some(entry))`, the block's text is `format_dictionary_entry`'s output,
     with `spell_check`'s correction notice (`dictionary::correction_notice`)
@@ -917,8 +994,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `enable_text_to_speech` a General-tab checkbox.) `speech_provider` (Stage 11,
   2026-09-19) is currently hand-edit-only: no Settings dropdown while `"google"` is
   the only registered speech backend, same precedent as `translate_provider` itself
-  before Stage 3. Saving Settings carries it through unchanged.
-- It calls `TranslationProvider::translate_text`/`get_dictionary_entry` and
+  before Stage 3. Saving Settings carries it through unchanged. `dictionary_provider`
+  (Stage 12, 2026-09-20) is the same: hand-edit-only, live-reloaded, carried through a
+  Settings save from the dialog's opening snapshot.
+- It calls `TranslationProvider::translate_text`, `DictionaryProvider::lookup` and
   `SpeechProvider::split_for_speech`/`speak_chunk` directly rather than going through
   `tagent-cli`'s `Translator`/`SpeechManager` orchestrators; dictionary/
   spell-check display shipped at Stage 9 (2026-09-18) and text-to-speech
@@ -968,10 +1047,10 @@ convention is specific to `tagent-cli`'s dev-iteration tracking — and logs its
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
-workspace-root one. The `tagent` library crate's version (`0.17.0`) is likewise
+workspace-root one. The `tagent` library crate's version (`0.18.0`) is likewise
 standalone, plain semver with no `+BUILD` suffix, with history in
 [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
-still moving (two provider traits, more providers to come), and under semver's `0.y.z`
+still moving (three provider traits, more providers to come), and under semver's `0.y.z`
 rules a minor bump is the place for breaking changes, so `0.17` → `0.18` for a breaking
 change and `0.17.0` → `0.17.1` for a compatible addition or fix. It is bumped manually.
 `1.0.0` waits until the API settles and the crate is published. `0.17.0` still sorts

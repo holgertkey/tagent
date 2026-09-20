@@ -259,23 +259,19 @@ mod tests {
     }
 
     fn sample_entry() -> DictionaryEntry {
-        DictionaryEntry {
-            word: "violent".to_string(),
-            corrected_word: None,
-            definitions: vec![PartOfSpeechEntry {
-                part_of_speech: "adjective".to_string(),
-                definitions: vec![
-                    Definition {
-                        text: "using or involving physical force".to_string(),
-                        synonyms: vec!["fierce".to_string(), "brutal".to_string()],
-                    },
-                    Definition {
-                        text: "extremely strong".to_string(),
-                        synonyms: vec![],
-                    },
+        DictionaryEntry::new(
+            "violent",
+            vec![PartOfSpeechEntry::new(
+                "adjective",
+                vec![
+                    Definition::new(
+                        "using or involving physical force",
+                        vec!["fierce".to_string(), "brutal".to_string()],
+                    ),
+                    Definition::new("extremely strong", vec![]),
                 ],
-            }],
-        }
+            )],
+        )
     }
 
     #[test]
@@ -296,11 +292,7 @@ mod tests {
 
     #[test]
     fn primary_line_returns_none_when_no_definitions_and_no_primary_translation() {
-        let empty_entry = DictionaryEntry {
-            word: "violent".to_string(),
-            corrected_word: None,
-            definitions: vec![],
-        };
+        let empty_entry = DictionaryEntry::new("violent", vec![]);
         assert_eq!(primary_line(&empty_entry, None), None);
     }
 
