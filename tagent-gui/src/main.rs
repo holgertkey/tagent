@@ -1406,6 +1406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         slint::CloseRequestResponse::HideWindow
     });
 
+    window.set_app_version(env!("CARGO_PKG_VERSION").into());
     apply_style(&window, config_manager.lock().unwrap().config());
     window.set_tts_enabled(
         config_manager
@@ -2122,6 +2123,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             } else {
                 None
             };
+
+            // Shown in the transcript header: only what is actually registered.
+            window.set_active_translate_hotkey(hotkey_str.clone().into());
+            if speech_hotkey.is_some() {
+                window.set_active_speech_hotkey(speech_hotkey_str.clone().into());
+            }
 
             let is_processing = Arc::new(AtomicBool::new(false));
             let is_speech_processing = Arc::new(AtomicBool::new(false));

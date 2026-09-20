@@ -13,6 +13,10 @@ decisions behind this project.
 ## [Unreleased]
 
 ### Changed
+- **Main window header**: the transcript header now reads `=== Tagent v<version> ===` and
+  lists the active hotkeys (`Translation: Alt+A`, `Speech: Alt+S`), matching `tagent-cli`'s
+  startup banner. Only hotkeys that were actually registered at startup are listed (a
+  disabled or invalid one is left out), and the speech line also follows "Enable text-to-speech".
 - **Windows: no terminal window on launch.** `tagent-gui.exe` is now a GUI-subsystem
   executable (`windows_subsystem = "windows"`, debug and release alike), so starting it from
   Explorer, a shortcut or autostart no longer opens a console behind the app. When it is

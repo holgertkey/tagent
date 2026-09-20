@@ -178,6 +178,20 @@ export component AppWindow inherits Window {
     // pattern as phrase-background/translation-background.
     in-out property <color> panel-background: #000000;
 
+    // Transcript header ("=== Tagent vX ===" plus the active hotkeys). The two
+    // hotkey properties are set once from Rust, at startup, to the hotkeys the
+    // keyboard hook actually registered (empty = not registered, so no line);
+    // the speech line additionally follows tts-enabled, which is live.
+    in-out property <string> app-version: "";
+    in-out property <string> active-translate-hotkey: "";
+    in-out property <string> active-speech-hotkey: "";
+    property <string> header-text: "=== Tagent v" + app-version + " ===\nType text and press Enter to translate."
+        + (active-translate-hotkey != ""
+            ? "\n\nActive Hotkeys:\n  Translation: " + active-translate-hotkey
+                + (active-speech-hotkey != "" && tts-enabled ? "\n  Speech: " + active-speech-hotkey : "")
+            : "")
+        + "\n\n";
+
     in-out property <string> input-text: "";
     in-out property <[TranscriptEntry]> transcript-entries: [];
     in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
@@ -277,7 +291,7 @@ export component AppWindow inherits Window {
                     alignment: start;
 
                     Text {
-                        text: "=== Tagent ===\nType text and press Enter to translate.\n\n";
+                        text: header-text;
                         font-family: "monospace";
                         font-size: 13px;
                         color: panel-foreground;
