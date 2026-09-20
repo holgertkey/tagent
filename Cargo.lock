@@ -5662,7 +5662,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0"
+version = "0.14.0+001"
 dependencies = [
  "arboard",
  "clipboard-win",
@@ -5677,6 +5677,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "windows 0.52.0",
+ "winresource",
  "x11",
 ]
 
@@ -7207,6 +7208,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
 dependencies = [
  "toml 0.5.11",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0986a8b1d586b7d3e4fe3d9ea39fb451ae22869dcea4aa109d287a374d866087"
+dependencies = [
+ "toml 1.0.6+spec-1.1.0",
+ "version_check",
 ]
 
 [[package]]

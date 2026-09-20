@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0"
+version = "0.14.0+001"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -48,3 +48,7 @@ windows = { version = "0.52", features = [
 arboard = "3.4"
 rdev = "0.5"
 x11 = { version = "2.21", features = ["xlib"] }
+
+# Windows-only build dependencies
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1"

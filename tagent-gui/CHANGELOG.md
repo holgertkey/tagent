@@ -12,6 +12,14 @@ decisions behind this project.
 
 ## [Unreleased]
 
+### Added
+- **Windows executable icon**: `tagent-gui.exe` now carries the Tagent "a" icon
+  (`assets/icons/tagent-gui.ico`, 16-256 px, made from `tray.png`) plus version info
+  (product name, description, original filename), so Explorer, shortcuts and a pinned
+  taskbar button no longer show the generic executable icon. Embedded by `build.rs` through
+  the `winresource` build-dependency (Windows targets only). The window and tray icons are
+  unchanged.
+
 ## [0.14.0] - 2026-09-20
 
 ### Changed

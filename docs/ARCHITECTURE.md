@@ -673,6 +673,16 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   - `AppWindow` also gets an `icon: @image-url(...)` property now, pointing at
     the same PNG the tray icon uses — the window previously had no
     window/taskbar icon at all.
+  - **Executable icon (Windows)**: `tagent-gui/build.rs` embeds
+    `assets/icons/tagent-gui.ico` (7 PNG-compressed sizes, 16-256 px, downscaled from
+    `tray.png`) and a version resource through `winresource` (the maintained fork of
+    `winres`, a Windows-only build-dependency), so Explorer, shortcuts and a pinned
+    taskbar button show the app icon. It is independent of the window/tray icon above,
+    which reaches the OS at runtime from `tray.png`. Unlike `tagent-cli`, there is no
+    `binary-resources` feature gate: that gate existed to avoid a duplicate VERSION
+    resource when a GUI crate depended on the CLI crate, and `tagent-gui` never does.
+    To change the icon, regenerate the `.ico` from the new master PNG (all sizes in one
+    file) and rebuild.
   - **Known limitation, confirmed by the user right after this stage shipped**:
     on GNOME (this dev machine's desktop), the dock/taskbar still shows a
     generic gear icon for the running app instead of this one. Confirmed via
@@ -1050,7 +1060,7 @@ There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`
 prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it was
 removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
 `tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
-(currently `0.14.0`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
+(currently `0.14.0+001`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
 `tagent-gui` section above), this is deliberate rather than merely unaddressed:
 `tagent-gui` versions on its own track — `MAJOR.MINOR.PATCH+BUILD` like `tagent-cli`, but with
 its own independent counter, and the `+BUILD` is stripped at release — and logs its history
