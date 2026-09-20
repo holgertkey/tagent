@@ -311,6 +311,21 @@ mod tests {
         assert_eq!(lines[0], "using or involving physical force");
     }
 
+    /// Pins `format_dictionary_entry`'s exact output (Stage 13 step 0): the plain
+    /// formatter feeds the popup and `translation_raw`, so it must stay byte-identical
+    /// while a separate styled renderer is introduced next to it.
+    #[test]
+    fn format_dictionary_entry_golden_output() {
+        assert_eq!(
+            format_dictionary_entry(&sample_entry(), "en", Some("furious")),
+            "furious\nAdjective\n  using or involving physical force [fierce, brutal]\n  extremely strong"
+        );
+        assert_eq!(
+            format_dictionary_entry(&sample_entry(), "ru", None),
+            "using or involving physical force\nПрилагательное\n  using or involving physical force [fierce, brutal]\n  extremely strong"
+        );
+    }
+
     #[test]
     fn format_dictionary_entry_formats_synonyms_and_plain_definitions() {
         let formatted = format_dictionary_entry(&sample_entry(), "en", Some("furious"));
