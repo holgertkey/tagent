@@ -1415,7 +1415,9 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         let generated = manager.create_ini_content(&Config::default());
-        assert!(generated.contains("SpeechHotkey = Alt+S\n"));
+        // Anchored to the start of a line so the commented example (`;   SpeechHotkey = ...`)
+        // cannot satisfy it: this must be the live setting.
+        assert!(generated.contains("\nSpeechHotkey = Alt+S\n"));
         assert!(
             !generated.contains("Alt+E"),
             "generated config still mentions the old Alt+E default"

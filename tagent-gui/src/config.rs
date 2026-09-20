@@ -88,9 +88,9 @@ fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
 }
 
-/// Default speech hotkey (Stage 10 follow-up) -- deliberately `Alt+S`, diverging
-/// from `tagent-cli`'s own `SpeechHotkey` default of `Alt+E`, per explicit user
-/// request rather than drift.
+/// Default speech hotkey (Stage 10 follow-up), same default value as `tagent-cli`'s
+/// `SpeechHotkey` (which was `Alt+E` until `tagent-cli` `0.16.0+001`, when it was
+/// aligned with this one).
 fn default_speech_hotkey() -> String {
     "Alt+S".to_string()
 }
