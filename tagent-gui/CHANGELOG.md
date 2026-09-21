@@ -12,6 +12,14 @@ decisions behind this project.
 
 ## [Unreleased]
 
+### Fixed
+- **Transcript now scrolls to the newest entry**: adding an entry left the view one entry short
+  of the bottom, because the scroll was computed from the content height before the new row had
+  been laid out. It is now done in `app.slint` from `changed` handlers on the transcript's
+  content and visible heights, so the view also stays at the end when the input box is resized or
+  the text re-wraps. Covered by a headless regression test (`i-slint-backend-testing`, a new
+  dev-dependency).
+
 ## [0.14.0] - 2026-09-20
 
 ### Added

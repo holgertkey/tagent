@@ -227,6 +227,20 @@ export component AppWindow inherits Window {
     out property <length> transcript-visible-height <=> transcript-scroll.visible-height;
     in-out property <length> transcript-viewport-y <=> transcript-scroll.viewport-y;
 
+    // Keeps the transcript pinned to its end. Done here, from `changed`
+    // handlers, rather than by Rust right after it pushes an entry: the
+    // `for` rows below are only instantiated (and their wrapped text
+    // measured) on the next layout pass, so `viewport-height` read straight
+    // after the model changes is still the *previous* height and the view
+    // stopped one entry short of the bottom. These fire once the new height
+    // is real -- and also when the visible height changes (dragging the
+    // input resize handle) or the text re-wraps (window resize).
+    function scroll-to-transcript-end() {
+        transcript-viewport-y = min(0px, transcript-visible-height - transcript-viewport-height);
+    }
+    changed transcript-viewport-height => { scroll-to-transcript-end(); }
+    changed transcript-visible-height => { scroll-to-transcript-end(); }
+
     // Stage 10: whether the per-entry text-to-speech speaker buttons render
     // at all -- gated by tagent-gui.json's enable_text_to_speech.
     in-out property <bool> tts-enabled: true;

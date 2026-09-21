@@ -891,12 +891,11 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     );
 }
 
-fn scroll_transcript_to_bottom(window: &AppWindow) {
-    let overflow = window.get_transcript_viewport_height() - window.get_transcript_visible_height();
-    window.set_transcript_viewport_y(if overflow > 0.0 { -overflow } else { 0.0 });
-}
-
-/// Appends one entry to the transcript and scrolls to show it.
+/// Appends one entry to the transcript; `app.slint` then scrolls to show it.
+///
+/// The scroll happens on the `.slint` side (`scroll-to-transcript-end`, driven by
+/// `changed` handlers), not here: the new row isn't laid out until the next layout
+/// pass, so any height read from Rust at this point is stale.
 ///
 /// Rebuilds the backing model rather than mutating a shared `VecModel`
 /// because the new entry is produced on a background translation thread and
@@ -908,7 +907,6 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
     let mut entries: Vec<TranscriptEntry> = window.get_transcript_entries().iter().collect();
     entries.push(entry);
     window.set_transcript_entries(ModelRc::new(VecModel::from(entries)));
-    scroll_transcript_to_bottom(window);
 }
 
 /// Everything [`spawn_translation`] needs, grouped into one struct rather than passed as
@@ -2457,6 +2455,49 @@ mod tests {
                 .map(|s| SharedString::from(*s))
                 .collect::<Vec<_>>(),
         ))
+    }
+
+    /// Regression: appending an entry must leave the transcript scrolled to its very
+    /// end. The scroll used to be computed in Rust right after the model changed, before
+    /// the new row was laid out, so the view stopped one entry short of the bottom.
+    #[test]
+    fn push_transcript_entry_scrolls_to_the_end() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+        window.window().set_size(slint::PhysicalSize::new(480, 480));
+        window.show().unwrap();
+
+        for i in 0..30 {
+            push_transcript_entry(
+                &window,
+                info_transcript_entry(
+                    format!("phrase {i} with enough words to wrap onto a second line of the pane"),
+                    format!("translation {i}\nsecond line"),
+                ),
+            );
+            // The headless backend never renders; a pointer event walks the item tree,
+            // which is what instantiates the new row, and the timer tick then runs the
+            // `changed` handlers, as one event-loop iteration would.
+            window
+                .window()
+                .dispatch_event(slint::platform::WindowEvent::PointerMoved {
+                    position: slint::LogicalPosition::new(5.0, 5.0),
+                });
+            slint::platform::update_timers_and_animations();
+
+            let overflow =
+                window.get_transcript_viewport_height() - window.get_transcript_visible_height();
+            let expected = if overflow > 0.0 { -overflow } else { 0.0 };
+            assert_eq!(
+                window.get_transcript_viewport_y(),
+                expected,
+                "not scrolled to the end after entry {i}"
+            );
+        }
+        assert!(
+            window.get_transcript_viewport_height() > window.get_transcript_visible_height(),
+            "test never overflowed the transcript"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0"
+version = "0.14.0+001"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -29,6 +29,8 @@ rodio = { version = "0.21", features = ["symphonia-mp3"] }
 
 [dev-dependencies]
 tempfile = "3"
+# Headless Slint backend for the transcript auto-scroll test; keep in step with `slint`.
+i-slint-backend-testing = "1.17"
 
 [build-dependencies]
 slint-build = "1"

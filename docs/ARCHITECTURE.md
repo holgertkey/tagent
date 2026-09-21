@@ -316,9 +316,14 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   Language names from the UI are resolved to codes via `tagent::languages::name_to_code`.
 - **Transcript pane** (`transcript-scroll` / `transcript-text` in `app.slint`): a
   read-only, multi-line `TextInput` (not a plain `Text`), so its content is
-  mouse-selectable and copyable. `scroll_transcript_to_bottom()` in `main.rs` sets
-  `transcript-viewport-y` to the negative overflow after every new entry so the pane
-  auto-scrolls to the latest translation.
+  mouse-selectable and copyable. It stays pinned to its end: `scroll-to-transcript-end()`
+  in `app.slint` sets `transcript-viewport-y` to the negative overflow from `changed`
+  handlers on `transcript-viewport-height` / `transcript-visible-height`, so the pane
+  auto-scrolls to the latest translation. This is deliberately not done from Rust right
+  after `push_transcript_entry` changes the model: the new `for` row is only instantiated
+  on the next layout pass, so a height read at that moment is stale and the view stops one
+  entry short. `push_transcript_entry_scrolls_to_the_end` (`i-slint-backend-testing`,
+  headless) guards it.
 - **Input box** (`input-field` in `app.slint`): a multi-line `TextInput` inside its own
   `ScrollView`, wrapped in a resizable container — a 6px drag handle above the box lets
   the user set `input-user-height` between `input-min-height` (32px) and
