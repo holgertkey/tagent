@@ -717,6 +717,48 @@ export component TranslationPopup inherits Window {
 
     in property <string> phrase-text: "";
     in property <string> translation-text: "";
+    // Right-click copy (2026-09-22, redesigned twice same day). `phrase-copy`/
+    // `translation-copy` are the plain, unprompted text to copy -- exactly
+    // `TranslationOutcome.phrase_raw`/`translation_raw`, already raw, so
+    // `show_popup` sets these with no extra derivation.
+    //
+    // First version (a `show-context-menu`-gated choice between a popup-wide
+    // `ContextMenuArea`+`Menu` and extending the drag `touch-area`'s own
+    // `pointer-event`) didn't work live: with the menu on, it opened immediately
+    // when the popup appeared, not on right-click, and was clipped on a small
+    // popup; with it off, right-click copied nothing. Replaced outright, no menu
+    // at all any more (the transcript's `show_context_menu` has no effect on the
+    // popup) -- a `TouchArea` inside each of the phrase/translation `Rectangle`s
+    // below, right-button-up triggers `popup-copy-requested` for that block.
+    //
+    // That meant a new nested interactive element over the same text `touch-area`
+    // used for drag-by-any-point-of-the-surface, and dragging was temporarily
+    // disabled outright rather than ship a half-working compromise. Restored the
+    // same day, gated behind Ctrl (a plain left-click-drag would have re-created
+    // the exact conflict this whole redesign exists to avoid, since a plain left
+    // press on one of these `TouchArea`s is indistinguishable from one meant to
+    // start a drag): the drag logic lives in these same two `TouchArea`s now
+    // (not `touch-area`, which no longer receives any events over the text), on
+    // `event.modifiers.control` -- see each block's own `TouchArea` below. Drag
+    // only works from the two blocks, not `touch-area`'s own thin margin
+    // (`content-layout`'s 8px padding plus the popup's border) -- a deliberately
+    // accepted, minor gap rather than tripling this same logic into a third
+    // place for a sliver of surface.
+    in property <string> phrase-copy: "";
+    in property <string> translation-copy: "";
+    // Feedback since there's no menu-click to see: a brief colored outline on
+    // the copied block, same shape as the transcript's own copy-flash-index but
+    // split into two properties (no index needed -- exactly one phrase and one
+    // translation block).
+    in-out property <bool> copy-flash-active: false;
+    in-out property <bool> copy-flash-is-phrase: true;
+    popup-copy-flash-timer := Timer {
+        interval: 220ms;
+        running: copy-flash-active;
+        triggered => { copy-flash-active = false; }
+    }
+    // true = phrase, false = translation.
+    callback popup-copy-requested(bool);
     // Stage 13-style prompt highlighting (2026-09-22): rendered `styled-text`
     // values `phrase-line`/`translation-line` actually bind to, built in Rust
     // from a role-tagged template (`styled::phrase_template`/
@@ -840,22 +882,15 @@ export component TranslationPopup inherits Window {
         touch-area := TouchArea {
             width: 100%;
             height: 100%;
-            mouse-cursor: self.pressed ? MouseCursor.move : MouseCursor.default;
 
-            // Drag-to-move. Each press/move also restarts the auto-hide
-            // countdown: a drag is proof of engagement, same reasoning as
-            // `scroll-event` below.
-            pointer-event(event) => {
-                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
-                    root.start-hide-timer();
-                    root.drag-started();
-                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                    root.drag-ended();
-                }
-            }
+            // Dragging no longer starts from here (2026-09-22) -- see phrase-copy's
+            // own doc comment above for why it moved into the phrase/translation
+            // blocks' own `TouchArea`s instead. This element only ever sees
+            // pointer events over the popup's thin margin now (`content-layout`'s
+            // padding plus the border), where there's no text to either copy or
+            // drag-start from, so it keeps just the hover/engagement bookkeeping.
             moved => {
                 root.start-hide-timer();
-                root.drag-moved();
             }
 
             // Wheel-scrolling flips `has-hover` to false -- even with the
@@ -894,6 +929,9 @@ export component TranslationPopup inherits Window {
                         background: popup-background;
                         border-radius: 3px;
                         height: phrase-line.preferred-height;
+                        border-width: (copy-flash-active && copy-flash-is-phrase) ? 2px : 0px;
+                        border-color: popup-prompt-accent;
+                        animate border-width { duration: 220ms; easing: ease-out; }
 
                         phrase-line := StyledText {
                             text: phrase-styled;
@@ -903,12 +941,53 @@ export component TranslationPopup inherits Window {
                             x: 4px;
                             width: parent.width - 8px;
                         }
+
+                        // Right-click copies this block; Ctrl+left-click drags the
+                        // popup -- see phrase-copy's own doc comment above for why
+                        // both live in this one nested TouchArea (mirroring the
+                        // transcript's own per-block design for the copy half)
+                        // rather than anything menu-based, and why dragging needs
+                        // the Ctrl gate specifically. `drag-moved`/`drag-ended`
+                        // fire unconditionally on every `moved`/up-or-cancel --
+                        // harmless when no drag is in progress, since
+                        // `wire_popup_drag` in main.rs (unchanged since dragging
+                        // was first added) only acts on them when its own
+                        // in-progress-drag state is `Some`.
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down
+                                    && event.button == PointerEventButton.left
+                                    && event.modifiers.control {
+                                    root.start-hide-timer();
+                                    root.drag-started();
+                                } else if event.kind == PointerEventKind.up
+                                    && event.button == PointerEventButton.right
+                                    && phrase-copy != "" {
+                                    root.start-hide-timer();
+                                    copy-flash-active = true;
+                                    copy-flash-is-phrase = true;
+                                    popup-copy-requested(true);
+                                } else if event.kind == PointerEventKind.up
+                                    || event.kind == PointerEventKind.cancel {
+                                    root.drag-ended();
+                                }
+                            }
+                            moved => {
+                                root.start-hide-timer();
+                                root.drag-moved();
+                            }
+                        }
                     }
 
                     Rectangle {
                         background: popup-background;
                         border-radius: 3px;
                         height: translation-line.preferred-height;
+                        border-width: (copy-flash-active && !copy-flash-is-phrase) ? 2px : 0px;
+                        border-color: popup-prompt-accent;
+                        animate border-width { duration: 220ms; easing: ease-out; }
 
                         translation-line := StyledText {
                             text: translation-styled;
@@ -917,6 +996,34 @@ export component TranslationPopup inherits Window {
                             default-font-size: popup-size * 1px;
                             x: 4px;
                             width: parent.width - 8px;
+                        }
+
+                        // See the phrase block's own TouchArea above.
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down
+                                    && event.button == PointerEventButton.left
+                                    && event.modifiers.control {
+                                    root.start-hide-timer();
+                                    root.drag-started();
+                                } else if event.kind == PointerEventKind.up
+                                    && event.button == PointerEventButton.right
+                                    && translation-copy != "" {
+                                    root.start-hide-timer();
+                                    copy-flash-active = true;
+                                    copy-flash-is-phrase = false;
+                                    popup-copy-requested(false);
+                                } else if event.kind == PointerEventKind.up
+                                    || event.kind == PointerEventKind.cancel {
+                                    root.drag-ended();
+                                }
+                            }
+                            moved => {
+                                root.start-hide-timer();
+                                root.drag-moved();
+                            }
                         }
                     }
                 }

@@ -405,6 +405,46 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   color in each of those three palettes' own accent sets was checked by hand and none does
   better there without abandoning the palette's own look, so this was accepted rather than
   substituting an inauthentic color.
+- **Right-click copy in the popup** (2026-09-22, redesigned same day). The first version
+  (`show_context_menu`-gated: a popup-wide `ContextMenuArea`+`Menu` when on, an extra branch in
+  `touch-area`'s own `pointer-event` when off) did not survive contact with the real app: with
+  the menu on, it opened as soon as the popup appeared rather than on right-click, and was
+  clipped out of view on a small popup; with it off, right-click copied nothing. Root cause not
+  chased down -- replaced outright with the user's own simpler proposal instead of debugging the
+  broken version further:
+  - **No menu at all any more**, regardless of the transcript's own `show_context_menu`
+    setting -- that setting has no effect on the popup now.
+  - **Per-block `TouchArea`s**, mirroring the transcript's own design exactly: one nested inside
+    each of the phrase/translation `Rectangle`s, reacting to `PointerEventKind.up` +
+    `PointerEventButton.right` to fire `popup-copy-requested(is_phrase)` and set
+    `copy-flash-active`/`copy-flash-is-phrase` (a `border-width` flash on whichever block was
+    clicked, `popup-prompt-accent`-colored, same as the transcript's own copy-flash-index but
+    split into two properties since there's no index -- exactly one phrase and one translation
+    block).
+  - **Dragging the popup was temporarily disabled**, then restored the same day gated behind
+    Ctrl: a `TouchArea` nested over the phrase/translation text captures pointer events for
+    that screen region regardless of which button a callback reacts to, so a *plain*
+    left-click-drag there would compete with right-click-copy for the same surface -- the exact
+    conflict this whole redesign exists to avoid. Rather than ship that half-working compromise,
+    dragging was first removed outright (`touch-area`'s `pointer-event` handler and its
+    `mouse-cursor` "move" binding deleted, `drag-started`/`drag-moved`/`drag-ended` left declared
+    and `wire_popup_drag` in `main.rs` left fully wired to them, unused), then brought back into
+    the *same* two per-block `TouchArea`s that already handle copy: `PointerEventKind.down` +
+    `PointerEventButton.left` + `event.modifiers.control` calls `drag-started()`; `moved` always
+    calls `drag-moved()`; any `up`/`cancel` not matched by the copy branch always calls
+    `drag-ended()` -- both unconditional calls are safe no-ops when `wire_popup_drag`'s own
+    in-progress-drag state is `None`, the same shape the pre-disable code already had. Drag only
+    works from the two blocks now, not `touch-area`'s own thin margin (`content-layout`'s 8px
+    padding plus the border) -- accepted rather than tripling the same handler into a third
+    place for a sliver of surface. `touch-area` itself still exists for hover tracking
+    (auto-hide) and the wheel-scroll-hover-loss workaround (`scroll-event`), but no longer ever
+    sees a click over the text.
+  - `phrase-copy`/`translation-copy` (`TranslationPopup` properties) are set directly from
+    `TranslationOutcome.phrase_raw`/`translation_raw` in `show_popup` -- both already the raw,
+    unprompted text the transcript's own `*-copy` fields are built to match, so no extra
+    derivation was needed. The clipboard write itself (`wire_popup_copy`, a function alongside
+    `wire_popup_drag`) mirrors `on_copy_block_requested` but is simpler: the popup shows exactly
+    one phrase/translation pair, so there's no row/index to look up.
 - **Input box** (`input-field` in `app.slint`): a multi-line `TextInput` inside its own
   `ScrollView`, wrapped in a resizable container — a 6px drag handle above the box lets
   the user set `input-user-height` between `input-min-height` (32px) and

@@ -12,6 +12,47 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+007] - 2026-09-22
+
+### Added
+- **The popup can be dragged again**, gated behind holding Ctrl (Ctrl+left-click-drag)
+  instead of a plain click, so it no longer conflicts with right-click-to-copy over the same
+  phrase/translation text -- `0.14.0+006` had disabled dragging entirely to make room for that
+  feature. Works over the phrase/translation text itself; the popup's thin outer margin still
+  doesn't support it.
+
+## [0.14.0+006] - 2026-09-22
+
+### Fixed
+- **Right-click copy in the popup, redesigned** -- `0.14.0+005`'s version (below) didn't work as
+  built: with the menu on, it opened as soon as the popup appeared instead of on right-click, and
+  was clipped out of view on a small popup; with it off, right-click copied nothing. Replaced
+  with a simpler design instead of debugging the broken one further: no menu at all any more
+  (the "Show menu on right-click" setting no longer affects the popup), right-click a specific
+  line (phrase or translation) to copy just that one, same border-flash feedback as before.
+
+### Changed
+- **The popup can no longer be dragged.** Temporarily disabled to make room for the fix above:
+  copying a specific line needs to know which one the cursor is over, which needs its own
+  click-handling area on each line -- the same surface dragging already used for
+  "drag from anywhere, including the text". The two would compete for the same clicks, so
+  dragging is off for now rather than shipping a fix for one broken feature that quietly breaks
+  another.
+
+## [0.14.0+005] - 2026-09-22
+
+### Added
+- **Right-click copy in the hotkey popup**, reusing the same "Show menu on right-click" setting
+  as the transcript. With the menu off (default), right-click anywhere on the popup copies the
+  translation, with a brief border flash confirming it. With the menu on, right-click opens a
+  menu with "Copy phrase" and "Copy translation" (phrase omitted when the popup isn't showing
+  it). The no-menu path always targets the translation -- copying the phrase there would need
+  identifying which line was clicked without a new element competing with the popup's own
+  drag-anywhere-on-its-surface behavior, and it's rarely wanted anyway (you already had the
+  phrase; you selected it to trigger the popup).
+  **Superseded the same day by `0.14.0+006` above** -- this version didn't work as intended;
+  see that entry.
+
 ## [0.14.0+004] - 2026-09-22
 
 ### Added

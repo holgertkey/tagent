@@ -605,6 +605,12 @@ fn show_popup(
     });
     popup.set_show_phrase(show_phrase);
 
+    // Right-click copy (2026-09-22): plain, unprompted text -- exactly what
+    // `TranslationOutcome` already carries, no extra derivation needed (unlike
+    // the transcript, which builds its `*-copy` fields alongside its templates).
+    popup.set_phrase_copy(outcome.phrase_raw.clone().into());
+    popup.set_translation_copy(outcome.translation_raw.clone().into());
+
     // Prompt highlighting (2026-09-22): the popup's own "[Lang]:" prefix, in
     // popup-prompt-accent -- no dictionary-structure highlighting here (out of
     // scope; a dictionary hit's translation_raw is rendered as one plain, escaped
@@ -768,6 +774,33 @@ fn wire_popup_drag(popup: &TranslationPopup, config_manager: &Arc<Mutex<GuiConfi
         if let Err(err) = manager.update(new_config) {
             eprintln!("Warning: failed to save tagent-gui.json: {err}");
         }
+    });
+}
+
+/// Wires the popup's right-click copy (2026-09-22) -- `is_phrase` selects
+/// `phrase-copy`/`translation-copy` (both already plain text, see `show_popup`),
+/// written to the clipboard on a spawned thread same as the transcript's own
+/// `on_copy_block_requested`. No row/index to look up (the popup shows exactly one
+/// phrase/translation pair), so this is simpler than that handler.
+fn wire_popup_copy(popup: &TranslationPopup) {
+    let popup_weak = popup.as_weak();
+    popup.on_popup_copy_requested(move |is_phrase| {
+        let Some(popup) = popup_weak.upgrade() else {
+            return;
+        };
+        let text = if is_phrase {
+            popup.get_phrase_copy().to_string()
+        } else {
+            popup.get_translation_copy().to_string()
+        };
+        if text.is_empty() {
+            return;
+        }
+        std::thread::spawn(move || {
+            if let Err(err) = ClipboardManager::new().set_text(&text) {
+                eprintln!("Warning: failed to copy popup text to clipboard: {err}");
+            }
+        });
     });
 }
 
@@ -1761,6 +1794,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     wire_popup_drag(&popup, &config_manager);
+    wire_popup_copy(&popup);
 
     // Stage 7: persistent tray icon -- same "must stay alive for the rest of
     // main()" reasoning as `popup` above. Its own `.show()`/`.hide()` are
