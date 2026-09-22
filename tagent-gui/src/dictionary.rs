@@ -4,6 +4,7 @@
 //! (Open Question 3, `.debug/tagent-gui development plan.md`) rather than
 //! shared, since `tagent-gui` never depends on `tagent-cli`.
 
+use crate::styled::{self, Role};
 use tagent::providers::DictionaryEntry;
 
 /// Check if text is a single word (no spaces, punctuation at edges allowed).
@@ -49,6 +50,118 @@ pub fn primary_line(entry: &DictionaryEntry, primary_translation: Option<&str>) 
     })
 }
 
+/// One span of text within an [`article_lines`] [`Line`], tagged with the
+/// [`Role`] it should be highlighted with (Stage 13).
+pub struct Span {
+    /// The span's semantic role -- see [`crate::styled::Role`].
+    pub role: Role,
+    /// The span's raw, unescaped text.
+    pub text: String,
+}
+
+impl Span {
+    fn new(role: Role, text: impl Into<String>) -> Span {
+        Span {
+            role,
+            text: text.into(),
+        }
+    }
+}
+
+/// One line of a dictionary article: a header, a part-of-speech label, or an
+/// indented definition -- see [`article_lines`].
+pub struct Line {
+    /// Whether this line gets the two-space (or, in a template, two-NBSP)
+    /// definition indent.
+    pub indent: bool,
+    /// The line's spans, concatenated in order with no separator (any spacing
+    /// between them is baked into a span's own text, e.g. a trailing space
+    /// before a synonym bracket).
+    pub spans: Vec<Span>,
+}
+
+/// Builds `entry`'s single traversal: a header line (the primary
+/// translation, or the first definition text -- see [`primary_line`] -- when
+/// there isn't one), then for each part of speech a label line followed by
+/// one indented line per definition, with `[synonyms]` as its own
+/// [`Role::Synonym`] span. Both [`format_dictionary_entry`] (`to_plain`) and
+/// the Stage 13 styled renderer (`to_template`) are derived from this one
+/// traversal, so they can never drift apart.
+pub fn article_lines(
+    entry: &DictionaryEntry,
+    target_lang: &str,
+    primary_translation: Option<&str>,
+) -> Vec<Line> {
+    let mut lines = Vec::new();
+
+    if let Some(h) = primary_line(entry, primary_translation) {
+        lines.push(Line {
+            indent: false,
+            spans: vec![Span::new(Role::Header, h)],
+        });
+    }
+
+    for pos_entry in &entry.definitions {
+        let pos_full = get_full_part_of_speech(&pos_entry.part_of_speech, target_lang);
+        lines.push(Line {
+            indent: false,
+            spans: vec![Span::new(Role::PartOfSpeech, pos_full.to_string())],
+        });
+
+        for def in &pos_entry.definitions {
+            let spans = if def.synonyms.is_empty() {
+                vec![Span::new(Role::Plain, def.text.clone())]
+            } else {
+                vec![
+                    Span::new(Role::Plain, format!("{} ", def.text)),
+                    Span::new(Role::Synonym, format!("[{}]", def.synonyms.join(", "))),
+                ]
+            };
+            lines.push(Line {
+                indent: true,
+                spans,
+            });
+        }
+    }
+
+    lines
+}
+
+/// Renders [`article_lines`] as plain text: two-space indent, spans
+/// concatenated with no highlighting, lines joined with `\n`.
+fn to_plain(lines: &[Line]) -> String {
+    lines
+        .iter()
+        .map(|line| {
+            let indent = if line.indent { "  " } else { "" };
+            let body: String = line.spans.iter().map(|s| s.text.as_str()).collect();
+            format!("{indent}{body}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Renders [`article_lines`] as a Stage 13 template: two-NBSP indent (a
+/// literal two-space indent would be stripped by Markdown), each span
+/// escaped and wrapped in its own role's `<font color="@role">` (or left
+/// plain for [`Role::Header`]/[`Role::Plain`]), lines joined with `\n` --
+/// a single line break within one paragraph, not a blank-paragraph gap.
+pub fn to_template(lines: &[Line]) -> String {
+    lines
+        .iter()
+        .map(|line| {
+            let indent = if line.indent { "\u{a0}\u{a0}" } else { "" };
+            let body: String = line
+                .spans
+                .iter()
+                .map(|s| styled::span(s.role, &styled::escape_markdown(&s.text)))
+                .collect();
+            format!("{indent}{body}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Formats a dictionary entry for display.
 ///
 /// Unlike `tagent-cli`'s CLI-mode formatting, this never repeats the looked-up
@@ -58,31 +171,16 @@ pub fn primary_line(entry: &DictionaryEntry, primary_translation: Option<&str>) 
 /// concurrently alongside the dictionary lookup) is used as the header line
 /// when available, falling back to the first part-of-speech's first
 /// definition text otherwise -- see [`primary_line`].
+///
+/// Feeds the popup and `translation_raw` (Stage 6/9), so this stays
+/// byte-identical to what it returned before Stage 13 introduced
+/// [`to_template`] alongside it -- see `format_dictionary_entry_golden_output`.
 pub fn format_dictionary_entry(
     entry: &DictionaryEntry,
     target_lang: &str,
     primary_translation: Option<&str>,
 ) -> String {
-    let mut result = Vec::new();
-
-    if let Some(h) = primary_line(entry, primary_translation) {
-        result.push(h);
-    }
-
-    for pos_entry in &entry.definitions {
-        let pos_full = get_full_part_of_speech(&pos_entry.part_of_speech, target_lang);
-        result.push(pos_full.to_string());
-
-        for def in &pos_entry.definitions {
-            if !def.synonyms.is_empty() {
-                result.push(format!("  {} [{}]", def.text, def.synonyms.join(", ")));
-            } else {
-                result.push(format!("  {}", def.text));
-            }
-        }
-    }
-
-    result.join("\n")
+    to_plain(&article_lines(entry, target_lang, primary_translation))
 }
 
 /// Get full part of speech name in target language.
@@ -332,5 +430,54 @@ mod tests {
         assert!(formatted.contains("  using or involving physical force [fierce, brutal]"));
         assert!(formatted.contains("  extremely strong"));
         assert!(!formatted.contains("extremely strong ["));
+    }
+
+    /// `to_template`'s output, once its `<font>` tags are stripped and its
+    /// backslash-escapes and NBSP indentation are undone, must equal `to_plain`'s --
+    /// the two are derived from the same `article_lines` traversal (Stage 13, decision
+    /// 2) and must never drift apart.
+    fn assert_template_matches_plain(
+        entry: &DictionaryEntry,
+        target_lang: &str,
+        primary_translation: Option<&str>,
+    ) {
+        let lines = article_lines(entry, target_lang, primary_translation);
+        let plain = to_plain(&lines);
+        let template = to_template(&lines);
+        let normalized = styled::strip_template(&template).replace('\u{a0}', " ");
+        assert_eq!(
+            normalized, plain,
+            "to_template/to_plain diverged for target_lang {target_lang:?}"
+        );
+    }
+
+    #[test]
+    fn to_template_matches_to_plain_after_stripping_and_unescaping() {
+        assert_template_matches_plain(&sample_entry(), "en", Some("furious"));
+        assert_template_matches_plain(&sample_entry(), "ru", None);
+
+        let no_synonyms = DictionaryEntry::new(
+            "quick",
+            vec![PartOfSpeechEntry::new(
+                "adjective",
+                vec![Definition::new("fast", vec![])],
+            )],
+        );
+        assert_template_matches_plain(&no_synonyms, "en", None);
+
+        let hostile = DictionaryEntry::new(
+            "test",
+            vec![PartOfSpeechEntry::new(
+                "noun",
+                vec![Definition::new(
+                    "a *test* <thing> [bracket]",
+                    vec!["exam*ple".to_string()],
+                )],
+            )],
+        );
+        assert_template_matches_plain(&hostile, "en", Some("*primary*"));
+
+        let empty = DictionaryEntry::new("x", vec![]);
+        assert_template_matches_plain(&empty, "en", None);
     }
 }

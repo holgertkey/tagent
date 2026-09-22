@@ -15,6 +15,7 @@ mod dictionary;
 mod platform;
 mod popup_position;
 mod speech;
+mod styled;
 
 use config::GuiConfigManager;
 use platform::window::WindowHandle;
@@ -389,6 +390,65 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 
     window.set_block_spacing_px(config.block_spacing_px);
     window.set_phrases_spacing_px(config.phrases_spacing_px);
+
+    restyle_transcript(window);
+}
+
+thread_local! {
+    /// The (phrase, translation) `RoleColors` pair [`restyle_transcript`] last
+    /// rendered every row against -- `None` until its first call. UI-thread-only
+    /// state, same reasoning as this file's other `thread_local!`s (`slint::Timer`
+    /// and friends aren't `Send`, so this can't just be a field threaded through
+    /// `apply_style`'s callers, several of which cross a thread boundary first).
+    static LAST_TRANSCRIPT_ROLE_COLORS: Cell<Option<(styled::RoleColors, styled::RoleColors)>> =
+        const { Cell::new(None) };
+}
+
+/// Whether [`restyle_transcript`] needs to actually re-render every row: `true` on
+/// the first call (`last: None`) or whenever either resolved `RoleColors` changed
+/// since then. Split out as a pure function so the decision itself -- as opposed to
+/// the `set_row_data` loop that acts on it, which needs a live `AppWindow` and isn't
+/// verifiable in this environment -- has a test.
+fn role_colors_changed(
+    last: Option<(styled::RoleColors, styled::RoleColors)>,
+    current: (styled::RoleColors, styled::RoleColors),
+) -> bool {
+    last != Some(current)
+}
+
+/// Re-renders every transcript row's `phrase-styled`/`translation-styled` fields
+/// (Stage 13) against `window`'s current, already-resolved `phrase-background`/
+/// `translation-background` -- called from [`apply_style`], which already runs on
+/// settings change, config live-reload, first show, and the auto-theme poll timer
+/// (`main`'s `theme_poll_timer`), so this needs no separate trigger of its own.
+///
+/// A no-op unless [`role_colors_changed`] says the colors actually moved, so the
+/// once-a-second `Auto`-theme poll doesn't re-parse and re-lay-out every row on
+/// every tick for nothing. Writes each row back individually via `set_row_data`
+/// rather than rebuilding the model with `set_transcript_entries` (as
+/// [`push_transcript_entry`] does), which would reset the scroll position.
+fn restyle_transcript(window: &AppWindow) {
+    let phrase_colors = styled::RoleColors::for_background(window.get_phrase_background());
+    let translation_colors =
+        styled::RoleColors::for_background(window.get_translation_background());
+    let current = (phrase_colors, translation_colors);
+
+    let changed = LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| role_colors_changed(cell.get(), current));
+    if !changed {
+        return;
+    }
+    LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| cell.set(Some(current)));
+
+    let entries = window.get_transcript_entries();
+    for i in 0..entries.row_count() {
+        let Some(mut entry) = entries.row_data(i) else {
+            continue;
+        };
+        entry.phrase_styled = styled::render_template(&entry.phrase_template, &phrase_colors);
+        entry.translation_styled =
+            styled::render_template(&entry.translation_template, &translation_colors);
+        entries.set_row_data(i, entry);
+    }
 }
 
 /// Applies the theme and display style to the Stage 6 popup — its own
@@ -644,14 +704,36 @@ fn info_transcript_entry(
     phrase: impl Into<slint::SharedString>,
     translation: impl Into<slint::SharedString>,
 ) -> TranscriptEntry {
+    let phrase = phrase.into();
+    let translation = translation.into();
+    // Stage 13: these rows are one-off system messages (a clipboard error, the
+    // "Auto"-as-target guard, a "[Speech]"/"[Hotkey]" label, ...), not a real
+    // phrase/translation pair with a language attached -- rendered as plain,
+    // literal, unhighlighted text. No role ever colors a Plain-only template, so
+    // the `RoleColors` passed to `entry_fields` doesn't matter here; see
+    // `styled::RoleColors`'s `Default` impl.
+    let fields = styled::entry_fields(
+        styled::escape_markdown(&phrase),
+        styled::escape_markdown(&translation),
+        phrase.to_string(),
+        translation.to_string(),
+        &styled::RoleColors::default(),
+        &styled::RoleColors::default(),
+    );
     TranscriptEntry {
-        phrase: phrase.into(),
-        translation: translation.into(),
+        phrase,
+        translation,
         phrase_speech: String::new().into(),
         translation_speech: String::new().into(),
         from_code: String::new().into(),
         to_code: String::new().into(),
         translation_is_error: true,
+        phrase_template: fields.phrase_template.into(),
+        translation_template: fields.translation_template.into(),
+        phrase_styled: fields.phrase_styled,
+        translation_styled: fields.translation_styled,
+        phrase_copy: fields.phrase_copy.into(),
+        translation_copy: fields.translation_copy.into(),
     }
 }
 
@@ -1131,50 +1213,112 @@ fn spawn_translation(
 
                 match dict_result {
                     Ok(Some(entry)) => {
+                        let primary = translate_result.as_deref().ok();
+                        // Stage 13: `article_template` and `body` (the plain-text
+                        // equivalent used unchanged since before this stage) are both
+                        // derived from `entry` independently -- see
+                        // `dictionary::article_lines`'s own doc comment for why that
+                        // can never let the two drift apart.
+                        let article_template = dictionary::to_template(&dictionary::article_lines(
+                            &entry, &to_code, primary,
+                        ));
                         let mut body = String::new();
+                        let mut template = article_template;
                         if spell_check {
                             if let Some(corrected) = &entry.corrected_word {
                                 if corrected.to_lowercase() != request_text.to_lowercase() {
-                                    body.push_str(&dictionary::correction_notice(
-                                        corrected, &to_code,
-                                    ));
+                                    let notice_text =
+                                        dictionary::correction_notice(corrected, &to_code);
+                                    body.push_str(&notice_text);
                                     body.push_str("\n\n");
+                                    let notice_template = styled::span(
+                                        styled::Role::Notice,
+                                        &styled::escape_markdown(&notice_text),
+                                    );
+                                    template =
+                                        styled::join_with_blank_line(&notice_template, &template);
                                 }
                             }
                         }
                         body.push_str(&dictionary::format_dictionary_entry(
-                            &entry,
-                            &to_code,
-                            translate_result.as_deref().ok(),
+                            &entry, &to_code, primary,
                         ));
                         let speech_text =
-                            dictionary::primary_line(&entry, translate_result.as_deref().ok())
-                                .unwrap_or_default();
-                        Ok((body, speech_text))
+                            dictionary::primary_line(&entry, primary).unwrap_or_default();
+                        Ok((body, speech_text, template))
                     }
                     // No dictionary entry (word not found / provider returned None) or a
                     // dictionary-lookup error: fall back to the plain translation already
                     // fetched above rather than a second network call -- `translate_result`
                     // is already the exact `Result<String, tagent::error::Error>` this
                     // function needs to return.
-                    _ => translate_result.map(|t| (t.clone(), t)),
+                    _ => translate_result.map(|t| {
+                        let template = styled::escape_markdown(&t);
+                        (t.clone(), t, template)
+                    }),
                 }
             } else {
                 provider
                     .translate_text(&request_text, &from_code, &to_code)
                     .await
-                    .map(|t| (t.clone(), t))
+                    .map(|t| {
+                        let template = styled::escape_markdown(&t);
+                        (t.clone(), t, template)
+                    })
             }
         });
 
         slint::invoke_from_event_loop(move || {
-            let (translation_raw, translation_speech, is_error) = match &result {
-                Ok((body, speech_text)) => (body.clone(), speech_text.clone(), false),
-                Err(err) => {
-                    let message = format!("Error: {err}");
-                    (message.clone(), message, true)
-                }
-            };
+            let (translation_raw, translation_speech, is_error, translation_full_template) =
+                match &result {
+                    Ok((body, speech_text, body_template)) => {
+                        let full_template = styled::translation_template_from_body(
+                            show_prompt,
+                            &to_lang,
+                            body_template,
+                            false,
+                        );
+                        (body.clone(), speech_text.clone(), false, full_template)
+                    }
+                    Err(err) => {
+                        let message = format!("Error: {err}");
+                        let full_template = styled::translation_template_from_body(
+                            show_prompt,
+                            &to_lang,
+                            &styled::escape_markdown(&message),
+                            true,
+                        );
+                        (message.clone(), message, true, full_template)
+                    }
+                };
+            let phrase_full_template = styled::phrase_template(show_prompt, &from_lang, &text);
+
+            // Stage 13: each block's role colors are derived from *that block's own*
+            // resolved background (decision 5) -- read from the window when it's still
+            // alive; the fallback only matters in the rare case the window was closed
+            // in the moment between the translation finishing and this callback
+            // running, since the entry built below is then never actually pushed.
+            let window = weak.upgrade();
+            let phrase_colors = styled::RoleColors::for_background(
+                window
+                    .as_ref()
+                    .map(|w| w.get_phrase_background())
+                    .unwrap_or_default(),
+            );
+            let translation_colors = styled::RoleColors::for_background(
+                window
+                    .as_ref()
+                    .map(|w| w.get_translation_background())
+                    .unwrap_or_default(),
+            );
+            let fields = styled::entry_fields(
+                phrase_full_template,
+                translation_full_template,
+                text.clone(),
+                translation_raw.clone(),
+                &phrase_colors,
+                &translation_colors,
+            );
 
             let entry = TranscriptEntry {
                 phrase: format_line(show_prompt, &from_lang, &text).into(),
@@ -1192,6 +1336,12 @@ fn spawn_translation(
                 from_code: from_code_for_entry.into(),
                 to_code: to_code_for_entry.into(),
                 translation_is_error: is_error,
+                phrase_template: fields.phrase_template.into(),
+                translation_template: fields.translation_template.into(),
+                phrase_styled: fields.phrase_styled,
+                translation_styled: fields.translation_styled,
+                phrase_copy: fields.phrase_copy.into(),
+                translation_copy: fields.translation_copy.into(),
             };
             let outcome = TranslationOutcome {
                 from_lang: from_lang.clone(),
@@ -1203,7 +1353,7 @@ fn spawn_translation(
             if let Some(on_done) = on_done {
                 on_done(&entry, &outcome);
             }
-            if let Some(window) = weak.upgrade() {
+            if let Some(window) = window {
                 push_transcript_entry(&window, entry);
             }
         })
@@ -2080,6 +2230,36 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     });
 
+    // Stage 13: right-click "Copy" on one transcript block (`app.slint`'s
+    // `ContextMenuArea`, one per phrase/translation Rectangle) -- index into
+    // transcript-entries, is_phrase selecting which side. Row lookup mirrors
+    // on_speak_requested's own; clipboard access can block, so it runs on a
+    // spawned thread same as the 📋 button, but (unlike speaking) needs no
+    // window-state update afterward, so there's nothing to hand back to the UI
+    // thread.
+    let weak_for_copy = window.as_weak();
+    window.on_copy_block_requested(move |index, is_phrase| {
+        let Some(window) = weak_for_copy.upgrade() else {
+            return;
+        };
+        let Some(entry) = window.get_transcript_entries().row_data(index as usize) else {
+            return;
+        };
+        let text = if is_phrase {
+            entry.phrase_copy.to_string()
+        } else {
+            entry.translation_copy.to_string()
+        };
+        if text.is_empty() {
+            return;
+        }
+        std::thread::spawn(move || {
+            if let Err(err) = ClipboardManager::new().set_text(&text) {
+                eprintln!("Warning: failed to copy block to clipboard: {err}");
+            }
+        });
+    });
+
     // Global hotkeys (Stage 5; speech hotkey added Stage 10 follow-up): parse+validate
     // both once at startup from the hand-editable `translate_hotkey`/`speech_hotkey`
     // config fields. `translate_hotkey` stays the hard gate: if it fails to parse, the
@@ -2206,6 +2386,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         is_speech_processing2.store(false, Ordering::SeqCst);
                                         return;
                                     };
+                                    // Stage 13: "[Speech]" plays the same role a real
+                                    // language name does in `phrase_template`'s
+                                    // `[Lang]:` prompt, so it gets the same
+                                    // `Role::Prompt` highlighting -- the produced
+                                    // string is exactly `format!("[Speech]: {text}")`,
+                                    // matching the plain `phrase` field below.
+                                    let phrase_colors = styled::RoleColors::for_background(
+                                        window.get_phrase_background(),
+                                    );
+                                    let fields = styled::entry_fields(
+                                        styled::phrase_template(true, "Speech", &text),
+                                        String::new(),
+                                        text.clone(),
+                                        String::new(),
+                                        &phrase_colors,
+                                        &styled::RoleColors::default(),
+                                    );
                                     push_transcript_entry(
                                         &window,
                                         TranscriptEntry {
@@ -2216,6 +2413,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             from_code: from_code.clone().into(),
                                             to_code: "".into(),
                                             translation_is_error: true,
+                                            phrase_template: fields.phrase_template.into(),
+                                            translation_template: fields
+                                                .translation_template
+                                                .into(),
+                                            phrase_styled: fields.phrase_styled,
+                                            translation_styled: fields.translation_styled,
+                                            phrase_copy: fields.phrase_copy.into(),
+                                            translation_copy: fields.translation_copy.into(),
                                         },
                                     );
                                     let index =
@@ -2455,6 +2660,27 @@ mod tests {
                 .map(|s| SharedString::from(*s))
                 .collect::<Vec<_>>(),
         ))
+    }
+
+    #[test]
+    fn role_colors_changed_is_true_on_first_call() {
+        let colors = (styled::RoleColors::default(), styled::RoleColors::default());
+        assert!(role_colors_changed(None, colors));
+    }
+
+    #[test]
+    fn role_colors_changed_is_false_when_pair_is_unchanged() {
+        let light = styled::RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
+        let dark = styled::RoleColors::for_background(Color::from_rgb_u8(0, 0, 0));
+        assert!(!role_colors_changed(Some((light, dark)), (light, dark)));
+    }
+
+    #[test]
+    fn role_colors_changed_is_true_when_either_side_changes() {
+        let light = styled::RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
+        let dark = styled::RoleColors::for_background(Color::from_rgb_u8(0, 0, 0));
+        assert!(role_colors_changed(Some((light, light)), (light, dark)));
+        assert!(role_colors_changed(Some((light, dark)), (dark, dark)));
     }
 
     /// Regression: appending an entry must leave the transcript scrolled to its very

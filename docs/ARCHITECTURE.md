@@ -314,16 +314,53 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   the reload/spawn (both the target `ComboBox` and the ⇄ swap button can otherwise
   produce one), appending an in-transcript error instead of calling the provider.
   Language names from the UI are resolved to codes via `tagent::languages::name_to_code`.
-- **Transcript pane** (`transcript-scroll` / `transcript-text` in `app.slint`): a
-  read-only, multi-line `TextInput` (not a plain `Text`), so its content is
-  mouse-selectable and copyable. It stays pinned to its end: `scroll-to-transcript-end()`
-  in `app.slint` sets `transcript-viewport-y` to the negative overflow from `changed`
-  handlers on `transcript-viewport-height` / `transcript-visible-height`, so the pane
-  auto-scrolls to the latest translation. This is deliberately not done from Rust right
-  after `push_transcript_entry` changes the model: the new `for` row is only instantiated
-  on the next layout pass, so a height read at that moment is stale and the view stops one
-  entry short. `push_transcript_entry_scrolls_to_the_end` (`i-slint-backend-testing`,
-  headless) guards it.
+- **Transcript pane** (`transcript-scroll` in `app.slint`, `phrase-line`/`translation-line`
+  per row): **view-only since Stage 13** (2026-09-22) -- each block is a `StyledText`
+  (Slint's rich-text element, a CommonMark subset plus `<font color="...">`), not a
+  `TextInput`, so there is no mouse selection or Ctrl+C in the transcript any more. It
+  stays pinned to its end: `scroll-to-transcript-end()` in `app.slint` sets
+  `transcript-viewport-y` to the negative overflow from `changed` handlers on
+  `transcript-viewport-height` / `transcript-visible-height`, so the pane auto-scrolls to
+  the latest translation. This is deliberately not done from Rust right after
+  `push_transcript_entry` changes the model: the new `for` row is only instantiated on the
+  next layout pass, so a height read at that moment is stale and the view stops one entry
+  short. `push_transcript_entry_scrolls_to_the_end` (`i-slint-backend-testing`, headless)
+  guards it -- and, being driven purely by layout `changed` handlers rather than anything
+  `TextInput`-specific, needed no change for the Stage 13 `StyledText` swap.
+  - **Highlighting (`tagent-gui/src/styled.rs`)**: each block carries a *template* --
+    markdown where a colored span is `<font color="@role">...</font>`, the role name
+    (`prompt`/`pos`/`synonym`/`notice`/`error`, never a literal color) after `@` -- and a
+    separately stored, already-rendered `styled-text` value the `StyledText` element
+    actually binds to. Keeping both lets a theme flip re-render existing rows without
+    needing their original text again. Every user- or provider-derived string is run
+    through `styled::escape_markdown` before being placed in a template (backslash-escapes
+    all ASCII punctuation, turns leading/trailing whitespace and blank lines into NBSP so
+    Markdown doesn't reinterpret them) -- this is also what keeps a literal `color="@pos"`
+    embedded in hostile input from ever matching `render_template`'s naive
+    find-and-replace substitution of a role token for its actual hex color.
+    `RoleColors::for_background` picks a light- or dark-background palette (both
+    WCAG-AA-contrast-checked in tests) from the *resolved* `phrase-background`/
+    `translation-background` (not the raw OS theme), so highlighting stays legible even
+    under a customized background. `dictionary.rs` gained a small role-tagged
+    intermediate representation (`article_lines`, a `Vec<Line>` of role-tagged `Span`s)
+    that both `format_dictionary_entry` (`to_plain`, unchanged output, pinned by a golden
+    test -- still what the popup and history-adjacent `translation_raw` use) and the new
+    `to_template` derive from, so plain and styled output can't drift apart.
+  - **Live restyle**: `main.rs`'s `restyle_transcript`, called at the end of
+    `apply_style` (which already runs on settings change, config live-reload, first show,
+    and the `Auto`-theme poll timer), re-renders every row's `styled-text` fields against
+    the current colors -- but only when they actually changed since the last call
+    (`role_colors_changed`, a pure function with its own tests), so the once-a-second
+    theme poll doesn't re-parse and re-lay-out every row for nothing. Rows are written
+    back individually with `set_row_data`, not `set_transcript_entries` (which rebuilds
+    the model and would reset the scroll position).
+  - **Copying**: a right-click "Copy" menu per block (`ContextMenuArea` + `Menu` +
+    `MenuItem`, one pair per phrase/translation `Rectangle`) replaces the lost selection --
+    `copy-block-requested(index, is_phrase)` reads that row's `phrase-copy`/
+    `translation-copy` (plain text, no prefix, no markup -- a dictionary hit copies the
+    whole article) and writes it via `ClipboardManager::set_text` on a spawned thread, same
+    as the existing 📋 button. Deliberately a different callback from `copy-requested`
+    (the unrelated "paste clipboard into input" button).
 - **Input box** (`input-field` in `app.slint`): a multi-line `TextInput` inside its own
   `ScrollView`, wrapped in a resizable container — a 6px drag handle above the box lets
   the user set `input-user-height` between `input-min-height` (32px) and
@@ -1023,6 +1060,14 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   same way. Both got General-tab dropdowns on 2026-09-20, next to the translate-provider
   one (see the Settings dialog section above), so no `GuiConfig` field is carried through
   a Settings save any more for lack of a control.
+- **macOS has no way to copy transcript text** since Stage 13 (2026-09-22) made the
+  transcript view-only: `platform::macos::clipboard::ClipboardManager::set_text` is a stub
+  that always returns `Err`, so the new right-click "Copy" menu silently fails there (a
+  warning is logged) where it works on Linux/Windows. Before Stage 13, Ctrl+C worked in the
+  transcript's plain `TextInput` via Slint's own built-in clipboard handling, independent of
+  `ClipboardManager`; that path is gone along with the `TextInput`. Accepted and documented
+  rather than fixed (`tagent-gui development plan.md`'s Stage 13 open item 1) -- macOS is a
+  stub platform throughout the GUI already.
 - It calls `TranslationProvider::translate_text`, `DictionaryProvider::lookup` and
   `SpeechProvider::split_for_speech`/`speak_chunk` directly rather than going through
   `tagent-cli`'s `Translator`/`SpeechManager` orchestrators; dictionary/

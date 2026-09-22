@@ -24,10 +24,11 @@ impl ClipboardManager {
 
     /// Set text on the clipboard. Always errors on macOS: not yet implemented.
     ///
-    /// Not yet called by any `tagent-gui` UI path — kept for API parity with
-    /// `tagent-cli`'s `ClipboardManager` and for future use (e.g. copying a
-    /// translation result back to the clipboard).
-    #[allow(dead_code)]
+    /// Called by the Stage 13 transcript's right-click "Copy" menu (`main.rs`'s
+    /// `on_copy_block_requested`), same as every other platform -- it just always
+    /// fails here, so macOS has no way to extract transcript text until this is
+    /// implemented (see `.debug/tagent-gui development plan.md`'s Stage 13 open
+    /// item 1).
     pub fn set_text(&self, _text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         Err("Clipboard not yet implemented for macOS".into())
     }

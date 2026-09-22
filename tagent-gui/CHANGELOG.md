@@ -12,6 +12,33 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+002] - 2026-09-22
+
+### Changed
+- **The transcript is now view-only**: no mouse selection, no Ctrl+C. Right-click a phrase or
+  translation block and choose "Copy" instead -- it copies just that block, as clean text (no
+  `[Language]:` prefix, no markup; a dictionary hit copies the whole article). This is the
+  tradeoff for the highlighting below: Slint's `StyledText` (needed to color parts of one
+  wrapped paragraph differently) has no selection of its own. The input box, Settings, popup
+  and tray are unaffected.
+
+### Added
+- **Semantic highlighting** in the transcript: a dictionary article's structure (part-of-speech
+  labels, `[synonyms]`), a spelling-correction notice, the `[Language]:` prompt prefix, and error
+  rows each get their own color, automatically derived from the block's own background (no new
+  config or Settings controls). Colors re-render live if the desktop theme flips while `tagent-gui`
+  is running (`Auto` theme) or the phrase/translation background is changed in Settings.
+- New `tagent-gui/src/styled.rs`: markdown templates with role-tagged `<font color="@role">`
+  spans (colors substituted in at render time, never baked into a saved template), a mandatory
+  `escape_markdown` every user- or provider-derived string goes through first, and
+  `RoleColors::for_background` (WCAG-contrast-checked light/dark palettes). `dictionary.rs` gained
+  a small role-tagged intermediate representation (`article_lines`) that both the existing plain
+  formatter and the new template renderer derive from, so the two can't drift apart --
+  `format_dictionary_entry`'s output (what the popup and history still use) is unchanged, pinned
+  by a golden test.
+
+## [0.14.0+001] - 2026-09-21
+
 ### Fixed
 - **Transcript now scrolls to the newest entry**: adding an entry left the view one entry short
   of the bottom, because the scroll was computed from the content height before the new row had

@@ -3,13 +3,11 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 // One translation round-trip in the transcript: the original phrase and its
 // translation (or an error message), each rendered with its own independently
 // configurable font/size/color/background — see AppWindow's phrase-*/translation-*
-// style properties below. Each string already includes its "[Auto]:"-style
-// prompt (or not, per show-prompt in config.rs) — baked in by main.rs when
-// the entry is created, rather than rendered as a separately styled element,
-// since Slint's plain Text/TextInput
-// can't mix two styles within one wrapped paragraph; splitting the prompt out
-// as its own element made it wrap flush under the text instead of the line
-// wrapping flush from the left margin like a normal paragraph.
+// style properties below. The transcript is view-only (Stage 13): each block
+// renders as a `StyledText` bound to its `*-styled` field below, not a
+// selectable `TextInput` -- there is no mouse selection or Ctrl+C in the
+// transcript any more, only a right-click "Copy" menu per block (see
+// `copy-block-requested`).
 export struct TranscriptEntry {
     phrase: string,
     translation: string,
@@ -35,6 +33,23 @@ export struct TranscriptEntry {
     // Hides the translation speaker button for a failed translation without
     // also hiding the (always-valid) phrase one.
     translation-is-error: bool,
+    // Stage 13: semantic highlighting. `phrase`/`translation` above are kept as
+    // a plain-text fallback (currently unrendered) rather than deleted -- see
+    // `.debug/tagent-gui development plan.md`'s Stage 13 open item 4.
+    //
+    // `*-template` is markdown with role-tagged `<font color="@role">` spans
+    // (never a literal color -- see `tagent-gui/src/styled.rs`), kept
+    // alongside the already-rendered `*-styled` value so a theme change can
+    // re-render it without needing the original text again (`main.rs`'s
+    // `restyle_transcript`). `*-styled` is what the `StyledText` elements
+    // below actually bind to. `*-copy` is the plain text (no prefix, no
+    // markup) the right-click "Copy" menu item for that block copies.
+    phrase-template: string,
+    translation-template: string,
+    phrase-styled: styled-text,
+    translation-styled: styled-text,
+    phrase-copy: string,
+    translation-copy: string,
 }
 
 // Reusable "theme default, or pick a color" field used four times in
@@ -257,6 +272,11 @@ export component AppWindow inherits Window {
     callback swap-requested();
     callback settings-requested();
     callback copy-requested();
+    // Stage 13: right-click "Copy" on one transcript block -- index into
+    // transcript-entries, then true for the phrase block / false for the
+    // translation block. Deliberately not named copy-requested (above),
+    // which is the unrelated 📋 "paste clipboard into input" button.
+    callback copy-block-requested(int, bool);
 
     VerticalBox {
         HorizontalBox {
@@ -328,22 +348,31 @@ export component AppWindow inherits Window {
                                 border-radius: 3px;
                                 height: phrase-line.preferred-height;
 
-                                phrase-line := TextInput {
-                                    text: entry.phrase;
-                                    font-family: phrase-font;
-                                    font-size: phrase-size * 1px;
-                                    color: phrase-color;
-                                    selection-background-color: selection-bg;
-                                    selection-foreground-color: selection-fg;
-                                    wrap: word-wrap;
-                                    single-line: false;
-                                    read-only: true;
+                                // Stage 13: view-only, no selection/Ctrl+C -- see
+                                // TranscriptEntry's own comment. Copying is a
+                                // right-click "Copy" menu instead (ContextMenuArea
+                                // below), of the block's plain `phrase-copy` text.
+                                phrase-line := StyledText {
+                                    text: entry.phrase-styled;
+                                    default-color: phrase-color;
+                                    default-font-family: phrase-font;
+                                    default-font-size: phrase-size * 1px;
                                     horizontal-alignment: left;
                                     vertical-alignment: top;
                                     x: 4px;
                                     y: 0px;
                                     width: parent.width - 8px;
                                     height: self.preferred-height;
+                                }
+
+                                ContextMenuArea {
+                                    Menu {
+                                        MenuItem {
+                                            title: "Copy";
+                                            enabled: entry.phrase-copy != "";
+                                            activated => { copy-block-requested(i, true); }
+                                        }
+                                    }
                                 }
                             }
 
@@ -372,22 +401,28 @@ export component AppWindow inherits Window {
                                 border-radius: 3px;
                                 height: translation-line.preferred-height;
 
-                                translation-line := TextInput {
-                                    text: entry.translation;
-                                    font-family: translation-font;
-                                    font-size: translation-size * 1px;
-                                    color: translation-color;
-                                    selection-background-color: selection-bg;
-                                    selection-foreground-color: selection-fg;
-                                    wrap: word-wrap;
-                                    single-line: false;
-                                    read-only: true;
+                                // Stage 13: see phrase-line's own comment above.
+                                translation-line := StyledText {
+                                    text: entry.translation-styled;
+                                    default-color: translation-color;
+                                    default-font-family: translation-font;
+                                    default-font-size: translation-size * 1px;
                                     horizontal-alignment: left;
                                     vertical-alignment: top;
                                     x: 4px;
                                     y: 0px;
                                     width: parent.width - 8px;
                                     height: self.preferred-height;
+                                }
+
+                                ContextMenuArea {
+                                    Menu {
+                                        MenuItem {
+                                            title: "Copy";
+                                            enabled: entry.translation-copy != "";
+                                            activated => { copy-block-requested(i, false); }
+                                        }
+                                    }
                                 }
                             }
 

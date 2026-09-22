@@ -47,11 +47,6 @@ impl ClipboardManager {
     }
 
     /// Set text to clipboard
-    ///
-    /// Not yet called by any `tagent-gui` UI path — kept for API parity with
-    /// `tagent-cli`'s `ClipboardManager` and for future use (e.g. copying a
-    /// translation result back to the clipboard).
-    #[allow(dead_code)]
     pub fn set_text(&self, text: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let text = text.to_string();
         Self::with_clipboard(move |clipboard| clipboard.set_text(text))
