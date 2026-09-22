@@ -36,6 +36,13 @@
 //! - **Speech** accepts at most 100 *bytes* of text per request (not characters: Cyrillic
 //!   is two bytes per letter, so roughly 50 letters), returns MP3 audio, and needs the text
 //!   split first with [`SpeechProvider::split_for_speech`].
+//! - **Translations and dictionary text can contain U+200B (zero-width space)**, invisible in
+//!   most renderers but visible (as literal escape notation, e.g. an editor's "reveal
+//!   whitespace" mode) in some -- an artifact of the web UI's per-word "show alternate
+//!   translations" click targets, observed around individual words the endpoint considers
+//!   ambiguous. `strip_invisible_markers` removes it from every plain-text field this module
+//!   returns (translations, definitions, synonyms, part-of-speech labels, corrected words) so
+//!   it never reaches a caller.
 
 use super::{
     Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry, SpeechProvider,
@@ -50,6 +57,44 @@ use url::form_urlencoded;
 
 /// Shared User-Agent sent with every request to Google's translate/TTS endpoints.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+/// Strips zero-width space (U+200B) characters from `text` -- see the [module
+/// documentation](self)'s "Behavior worth knowing" for why the endpoint puts them there.
+/// Every plain-text field this module extracts from a response goes through this before it
+/// reaches a caller.
+fn strip_invisible_markers(text: &str) -> String {
+    text.chars().filter(|&c| c != '\u{200b}').collect()
+}
+
+/// Parses a translate-endpoint response's `json[0]` (a list of `[translated_chunk, ...]`
+/// entries) into the joined, [`strip_invisible_markers`]-cleaned translation string. Split out
+/// from [`GoogleTranslateProvider::translate_text`] as a pure function so it's unit-testable
+/// without a live request, mirroring [`GoogleDictionaryProvider::parse_dictionary_response`]'s
+/// own split.
+fn extract_translation(json: &Value) -> Result<String, Error> {
+    if let Some(translations) = json.get(0).and_then(|v| v.as_array()) {
+        let mut result = String::new();
+
+        for translation in translations {
+            if let Some(text) = translation.get(0).and_then(|v| v.as_str()) {
+                result.push_str(text);
+            }
+        }
+
+        let result = strip_invisible_markers(&result);
+        if result.is_empty() {
+            return Err(Error::Decode(
+                "failed to extract translation from response".to_string(),
+            ));
+        }
+
+        Ok(result)
+    } else {
+        Err(Error::Decode(
+            "invalid response format from Google Translate".to_string(),
+        ))
+    }
+}
 
 /// [`TranslationProvider`] implementation backed by the unofficial Google Translate
 /// web API (`translate.googleapis.com/translate_a/single`).
@@ -123,27 +168,7 @@ impl TranslationProvider for GoogleTranslateProvider {
 
         let json: Value = serde_json::from_str(&body)?;
 
-        if let Some(translations) = json.get(0).and_then(|v| v.as_array()) {
-            let mut result = String::new();
-
-            for translation in translations {
-                if let Some(text) = translation.get(0).and_then(|v| v.as_str()) {
-                    result.push_str(text);
-                }
-            }
-
-            if result.is_empty() {
-                return Err(Error::Decode(
-                    "failed to extract translation from response".to_string(),
-                ));
-            }
-
-            Ok(result)
-        } else {
-            Err(Error::Decode(
-                "invalid response format from Google Translate".to_string(),
-            ))
-        }
+        extract_translation(&json)
     }
 
     async fn detect_language(&self, text: &str) -> Result<String, Error> {
@@ -262,20 +287,26 @@ impl GoogleDictionaryProvider {
                                                     syn_array
                                                         .iter()
                                                         .filter_map(|s| s.as_str())
-                                                        .map(|s| s.to_string())
+                                                        .map(strip_invisible_markers)
                                                         .collect()
                                                 } else {
                                                     Vec::new()
                                                 };
 
-                                                defs.push(Definition::new(definition, synonyms));
+                                                defs.push(Definition::new(
+                                                    strip_invisible_markers(definition),
+                                                    synonyms,
+                                                ));
                                             }
                                         }
                                     }
                                 }
 
                                 if !defs.is_empty() {
-                                    definitions.push(PartOfSpeechEntry::new(pos, defs));
+                                    definitions.push(PartOfSpeechEntry::new(
+                                        strip_invisible_markers(pos),
+                                        defs,
+                                    ));
                                 }
                             }
                         }
@@ -296,7 +327,7 @@ impl GoogleDictionaryProvider {
                 .and_then(|arr| arr.first())
                 .and_then(|v| v.get(1))
                 .and_then(|v| v.as_str())
-                .map(|s| s.trim().to_string())
+                .map(|s| strip_invisible_markers(s.trim()))
                 .filter(|s| !s.is_empty());
 
             let mut entry = DictionaryEntry::new(word, definitions);
@@ -355,7 +386,7 @@ impl DictionaryProvider for GoogleDictionaryProvider {
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.get(1))
             .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
+            .map(|s| strip_invisible_markers(s.trim()))
             .filter(|s| !s.is_empty() && s.to_lowercase() != word.to_lowercase());
 
         if let Some(corrected) = suggestion {
@@ -619,6 +650,105 @@ impl SpeechProvider for GoogleSpeechProvider {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn strip_invisible_markers_removes_zero_width_spaces() {
+        assert_eq!(
+            strip_invisible_markers("такую\u{200b}\u{200b}замечательную работу"),
+            "такуюзамечательную работу"
+        );
+    }
+
+    #[test]
+    fn strip_invisible_markers_leaves_ordinary_text_untouched() {
+        assert_eq!(
+            strip_invisible_markers("Hello, мир! 世界"),
+            "Hello, мир! 世界"
+        );
+    }
+
+    #[test]
+    fn strip_invisible_markers_empty_string_is_empty() {
+        assert_eq!(strip_invisible_markers(""), "");
+    }
+
+    /// Regression test: the unofficial endpoint sometimes embeds U+200B around individual
+    /// words it considers ambiguous (a leftover of the web UI's per-word "alternate
+    /// translations" click targets) -- observed live translating "You've done such an
+    /// admirable job, congratulations!" into Russian, where two U+200B characters appeared
+    /// directly before "замечательную".
+    #[test]
+    fn extract_translation_strips_embedded_zero_width_spaces() {
+        let response = json!([[[
+            "Вы проделали такую \u{200b}\u{200b}замечательную работу, поздравляю!",
+            "You've done such an admirable job, congratulations!",
+            null,
+            null,
+            1
+        ]]]);
+        let result = extract_translation(&response).unwrap();
+        assert_eq!(
+            result,
+            "Вы проделали такую замечательную работу, поздравляю!"
+        );
+        assert!(!result.contains('\u{200b}'));
+    }
+
+    #[test]
+    fn extract_translation_joins_multiple_chunks() {
+        let response = json!([[["Hello ", null], ["world", null]]]);
+        assert_eq!(extract_translation(&response).unwrap(), "Hello world");
+    }
+
+    #[test]
+    fn extract_translation_missing_array_is_decode_error() {
+        let response = json!({});
+        assert!(matches!(
+            extract_translation(&response),
+            Err(Error::Decode(_))
+        ));
+    }
+
+    #[test]
+    fn extract_translation_empty_result_is_decode_error() {
+        let response = json!([[]]);
+        assert!(matches!(
+            extract_translation(&response),
+            Err(Error::Decode(_))
+        ));
+    }
+
+    /// Same regression as `extract_translation_strips_embedded_zero_width_spaces`, for the
+    /// dictionary side: a definition, a synonym and a part-of-speech label can each carry the
+    /// same U+200B artifact.
+    #[test]
+    fn parse_dictionary_response_strips_embedded_zero_width_spaces() {
+        let provider = GoogleDictionaryProvider::new();
+        let response = json!([
+            [["x", "x"]],
+            [[
+                "adjective\u{200b}",
+                null,
+                [[
+                    "admi\u{200b}rable",
+                    ["fine\u{200b}"],
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    []
+                ]]
+            ]]
+        ]);
+
+        let entry = provider
+            .parse_dictionary_response(&response, "admirable")
+            .expect("response has dictionary entries");
+        assert_eq!(entry.definitions[0].part_of_speech, "adjective");
+        assert_eq!(entry.definitions[0].definitions[0].text, "admirable");
+        assert_eq!(entry.definitions[0].definitions[0].synonyms, ["fine"]);
+    }
 
     #[test]
     fn test_parse_corrected_word_silent_correction() {

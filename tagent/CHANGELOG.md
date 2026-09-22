@@ -17,6 +17,20 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-09-22
+
+### Fixed
+- **`GoogleTranslateProvider`/`GoogleDictionaryProvider`: stripped stray U+200B (zero-width
+  space) characters from translations, definitions, synonyms, part-of-speech labels and
+  corrected words.** The unofficial endpoint occasionally embeds these around individual
+  words it considers ambiguous -- apparently a leftover of the Google Translate web page's
+  per-word "show alternate translations" click targets. Invisible in most renderers, but
+  visible as literal escape notation in editors with a "reveal whitespace" mode, which is how
+  this was caught in practice (translating "You've done such an admirable job,
+  congratulations!" into Russian produced two U+200B characters directly before
+  "замечательную"). New `strip_invisible_markers` helper in `providers::google`, applied at
+  every plain-text extraction point in both providers.
+
 ## [0.18.1] - 2026-09-20
 
 ### Added
