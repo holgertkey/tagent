@@ -12,9 +12,26 @@ use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::error::Error;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tagent::providers::SpeechProvider;
+
+/// Asks the current playback, if any, to stop: sets the stop flag stored in
+/// `current` (the one shared "who's speaking" slot). A no-op when nothing is
+/// speaking (`None`). Returns whether there was playback to stop.
+///
+/// Every stop path shares this: a click on the active speaker button, Escape
+/// seen by the global keyboard hook, and Escape pressed inside the main window.
+/// The hook calls it on its own thread, so it must stay a quick lock-and-store.
+pub fn request_stop(current: &Mutex<Option<Arc<AtomicBool>>>) -> bool {
+    match current.lock().unwrap().as_ref() {
+        Some(flag) => {
+            flag.store(true, Ordering::Relaxed);
+            true
+        }
+        None => false,
+    }
+}
 
 /// Speaks `text` in `lang_code` through the default audio output device,
 /// chunked via [`SpeechProvider::split_for_speech`]. Checked against
@@ -68,4 +85,37 @@ pub async fn speak(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_stop_sets_the_active_flag() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let current = Mutex::new(Some(flag.clone()));
+        assert!(request_stop(&current));
+        assert!(flag.load(Ordering::Relaxed));
+        // The slot itself is left alone -- the speaking thread clears it when done.
+        assert!(current.lock().unwrap().is_some());
+    }
+
+    #[test]
+    fn request_stop_is_a_no_op_when_nothing_is_speaking() {
+        let current = Mutex::new(None);
+        assert!(!request_stop(&current));
+        assert!(current.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn request_stop_is_idempotent() {
+        // Escape can reach both the window handler and the global hook for one
+        // key press, so a second stop must be harmless.
+        let flag = Arc::new(AtomicBool::new(false));
+        let current = Mutex::new(Some(flag.clone()));
+        assert!(request_stop(&current));
+        assert!(request_stop(&current));
+        assert!(flag.load(Ordering::Relaxed));
+    }
 }

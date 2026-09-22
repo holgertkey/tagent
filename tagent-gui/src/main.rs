@@ -2401,9 +2401,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if window.get_speaking_entry_index() == index
                 && window.get_speaking_is_phrase() == is_phrase
             {
-                if let Some(flag) = speech_stop_flag_for_speak.lock().unwrap().as_ref() {
-                    flag.store(true, Ordering::Relaxed);
-                }
+                speech::request_stop(&speech_stop_flag_for_speak);
             }
             return;
         }
@@ -2437,6 +2435,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 code,
             },
         );
+    });
+
+    // Escape pressed while the main window itself has focus (`app.slint`'s
+    // `capture-key-pressed` FocusScope). The global keyboard hook's own Escape
+    // path (`on_escape` below) covers every other window, but on Windows the
+    // low-level hook was observed to receive no keystrokes at all while one of our
+    // own windows is focused, so without this Esc could not stop playback there.
+    let speech_stop_flag_for_window_escape = speech_stop_flag.clone();
+    window.on_stop_speech_requested(move || {
+        speech::request_stop(&speech_stop_flag_for_window_escape);
     });
 
     // Stage 13: right-click "Copy" on one transcript block (`app.slint`'s
@@ -2682,9 +2690,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // guard check. Cancels whichever entry is currently speaking, hotkey-
                 // or button-triggered, since both share this one flag (Stage 10
                 // follow-up design decision 2).
-                if let Some(flag) = speech_stop_flag_for_escape.lock().unwrap().as_ref() {
-                    flag.store(true, Ordering::Relaxed);
-                }
+                speech::request_stop(&speech_stop_flag_for_escape);
             };
 
             KeyboardHook::spawn(

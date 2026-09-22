@@ -12,6 +12,15 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+008] - 2026-09-22
+
+### Fixed
+- **Esc now stops speech while the main window is focused on Windows.** Pressing Esc during
+  playback started by a transcript speaker button (or by the speech hotkey) did nothing while the
+  main window had focus, because the global keyboard hook receives no keystrokes aimed at
+  `tagent-gui`'s own window. The main window now handles Esc itself as well; the global hook still
+  covers every other window. Esc still reaches the focused control as before.
+
 ## [0.14.0+007] - 2026-09-22
 
 ### Added
