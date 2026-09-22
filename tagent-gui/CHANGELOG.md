@@ -12,6 +12,23 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+003] - 2026-09-22
+
+### Added
+- **Configurable prompt color**: the `[Language]:` prompt shown before the phrase and
+  translation text -- in the input box, the transcript's own highlighted prefix (Stage 13),
+  and (new) the hotkey popup's own prefix -- now has its own color picker, independent of
+  the phrase/translation text colors. `prompt_color` (Settings > View) covers the main
+  window; `popup_prompt_color` (Settings > Popup) covers the popup and, when left at "theme
+  default", follows `prompt_color` first (falling further back to the raw theme default only
+  if that's also empty) -- the same fallback chain `popup_color` already uses through
+  `translation_color`. Each of the 14 non-"Default" color-scheme presets in Settings > View
+  also picked up its own matching prompt accent.
+- The hotkey popup's own phrase/translation lines are now `StyledText` (were plain `Text`),
+  so its `[Language]:` prefix can actually be highlighted in `popup_prompt_color` -- no other
+  visual change to the popup; still no dictionary-structure highlighting there (out of scope,
+  same as before).
+
 ## [0.14.0+002] - 2026-09-22
 
 ### Changed

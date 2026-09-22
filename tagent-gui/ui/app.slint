@@ -168,8 +168,9 @@ export component AppWindow inherits Window {
     // Theme-adaptive tokens for the custom-drawn panels below (transcript,
     // input box). Palette's role properties already resolve correctly for
     // ColorScheme.dark/light/unknown(auto) — no manual branching needed here.
-    // prompt-accent is the one exception: it's a decorative highlight with no
-    // matching Palette role, so it branches on color-scheme directly.
+    // prompt-accent-theme-default is the one exception: it's a decorative
+    // highlight with no matching Palette role, so it branches on color-scheme
+    // directly.
     //
     // panel-background-theme-default/panel-foreground are read from Rust (as
     // `out` properties): the former to resolve panel-background itself (see
@@ -185,7 +186,13 @@ export component AppWindow inherits Window {
     property <brush> field-foreground: Palette.control-foreground;
     property <brush> selection-bg: Palette.selection-background;
     property <brush> selection-fg: Palette.selection-foreground;
-    property <brush> prompt-accent: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
+    // prompt-accent-theme-default is prompt-color's "theme default" (an empty
+    // config value), read from Rust the same way panel-background-theme-default
+    // is; prompt-accent itself is the resolved value Rust actually sets (custom
+    // hex, or this default), same pattern as phrase-color/translation-color --
+    // configurable since the "prompt color" Settings feature (2026-09-22).
+    out property <brush> prompt-accent-theme-default: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
+    in-out property <color> prompt-accent: #92400e;
 
     // The transcript log's background — "Background color" in Settings >
     // View. Empty config means "follow the theme"
@@ -574,11 +581,18 @@ export component TranslationPopup inherits Window {
     // flag), both dimensions are explicitly bound to what the content
     // actually needs, each capped at its own popup-max-*. Width shrinks to
     // fit the longer of the phrase/translation's natural (unwrapped)
-    // single-line width, via `phrase-measure`/`translation-line`'s own
+    // single-line width, via `phrase-measure`/`translation-measure`'s own
     // `preferred-width` (a Text's preferred-width reflects its natural
     // unwrapped size regardless of the `wrap`/`width` it's actually given,
     // so this doesn't depend on how wide the window currently is) — text
     // only wraps once that natural width would exceed popup-max-width.
+    // These two invisible plain-`Text` twins measure width deliberately
+    // instead of the real, visible `phrase-line`/`translation-line`
+    // (`StyledText` since the prompt-highlighting feature, 2026-09-22):
+    // whether `StyledText.preferred-width` has this same "ignores my own
+    // `width` binding" behavior is unverified, and a wrong guess here would
+    // make the popup's own width-fitting feed back on itself, so measurement
+    // stays on the widget this comment's claim is actually proven for.
     // Height is bound to the content layout's preferred-height (which
     // already includes content-layout's own 8px top/bottom padding — no
     // extra margin added here), so Slint's normal reactive layout recompute
@@ -594,13 +608,13 @@ export component TranslationPopup inherits Window {
     // without wrapping.
     property <length> popup-horizontal-chrome: 24px;
     property <length> phrase-natural-width: show-phrase ? phrase-measure.preferred-width : 0px;
-    property <length> content-natural-width: max(phrase-natural-width, translation-line.preferred-width) + popup-horizontal-chrome;
+    property <length> content-natural-width: max(phrase-natural-width, translation-measure.preferred-width) + popup-horizontal-chrome;
 
     width: max(min(content-natural-width, popup-max-width * 1px), 150px);
     height: min(content-layout.preferred-height, popup-max-height * 1px);
 
     // Invisible measurement-only twin of phrase-line: the real phrase-line
-    // Text lives inside `if show-phrase: Rectangle { ... }` below, so its id
+    // element lives inside `if show-phrase: Rectangle { ... }` below, so its id
     // isn't reliably queryable from this component's root scope when
     // show-phrase is false (the element doesn't exist in the tree at all in
     // that case). This one always exists, mirrors phrase-text/popup-font/
@@ -609,6 +623,16 @@ export component TranslationPopup inherits Window {
     phrase-measure := Text {
         visible: false;
         text: phrase-text;
+        font-family: popup-font;
+        font-size: popup-size * 1px;
+    }
+
+    // Same reasoning as phrase-measure, for translation-line -- it's always
+    // shown (no `if`), so this one is purely about the StyledText-vs-Text
+    // preferred-width question above, not about an id that might not exist.
+    translation-measure := Text {
+        visible: false;
+        text: translation-text;
         font-family: popup-font;
         font-size: popup-size * 1px;
     }
@@ -627,9 +651,28 @@ export component TranslationPopup inherits Window {
     // panel-foreground/panel-background-theme-default.
     out property <brush> panel-foreground: Palette.alternate-foreground;
     out property <brush> panel-background-theme-default: Palette.alternate-background;
+    // popup-prompt-accent-theme-default is popup-prompt-color's own "follow
+    // the theme" fallback -- same Palette-branching shape as AppWindow's
+    // prompt-accent-theme-default (this window has its own Palette instance,
+    // so it can't just read AppWindow's). Rust actually chains
+    // popup_prompt_color -> prompt_color -> this, mirroring how
+    // popup-color/popup-background already chain through translation-color/
+    // translation-background (main.rs's apply_popup_style).
+    out property <brush> popup-prompt-accent-theme-default: Palette.color-scheme == ColorScheme.light ? #92400e : #e5c07b;
+    in property <color> popup-prompt-accent: #92400e;
 
     in property <string> phrase-text: "";
     in property <string> translation-text: "";
+    // Stage 13-style prompt highlighting (2026-09-22): rendered `styled-text`
+    // values `phrase-line`/`translation-line` actually bind to, built in Rust
+    // from a role-tagged template (`styled::phrase_template`/
+    // `translation_template_from_body`) the same way the transcript's own
+    // entries are -- but with only `Role::Prompt` ever used here (no
+    // dictionary-structure highlighting in the popup; out of scope).
+    // phrase-text/translation-text above stay as the plain, unstyled strings --
+    // still needed by phrase-measure/translation-measure for width measurement.
+    in property <styled-text> phrase-styled;
+    in property <styled-text> translation-styled;
     // One shared style for both the phrase and translation lines — unlike
     // the main window's transcript, which styles them separately.
     in property <string> popup-font: "monospace";
@@ -798,12 +841,11 @@ export component TranslationPopup inherits Window {
                         border-radius: 3px;
                         height: phrase-line.preferred-height;
 
-                        phrase-line := Text {
-                            text: phrase-text;
-                            font-family: popup-font;
-                            font-size: popup-size * 1px;
-                            color: popup-color;
-                            wrap: word-wrap;
+                        phrase-line := StyledText {
+                            text: phrase-styled;
+                            default-color: popup-color;
+                            default-font-family: popup-font;
+                            default-font-size: popup-size * 1px;
                             x: 4px;
                             width: parent.width - 8px;
                         }
@@ -814,12 +856,11 @@ export component TranslationPopup inherits Window {
                         border-radius: 3px;
                         height: translation-line.preferred-height;
 
-                        translation-line := Text {
-                            text: translation-text;
-                            font-family: popup-font;
-                            font-size: popup-size * 1px;
-                            color: popup-color;
-                            wrap: word-wrap;
+                        translation-line := StyledText {
+                            text: translation-styled;
+                            default-color: popup-color;
+                            default-font-family: popup-font;
+                            default-font-size: popup-size * 1px;
                             x: 4px;
                             width: parent.width - 8px;
                         }
@@ -1043,6 +1084,14 @@ export component SettingsDialog inherits Dialog {
     callback phrase-bg-hex-committed <=> phrase-bg-color-field.hex-committed;
     callback phrase-bg-rgb-changed <=> phrase-bg-color-field.rgb-changed;
 
+    in-out property <bool> prompt-color-use-default <=> prompt-text-color-field.use-default;
+    in-out property <float> prompt-color-red <=> prompt-text-color-field.red;
+    in-out property <float> prompt-color-green <=> prompt-text-color-field.green;
+    in-out property <float> prompt-color-blue <=> prompt-text-color-field.blue;
+    in-out property <string> prompt-color-hex <=> prompt-text-color-field.hex-text;
+    callback prompt-color-hex-committed <=> prompt-text-color-field.hex-committed;
+    callback prompt-color-rgb-changed <=> prompt-text-color-field.rgb-changed;
+
     in-out property <bool> translation-color-use-default <=> translation-text-color-field.use-default;
     in-out property <float> translation-color-red <=> translation-text-color-field.red;
     in-out property <float> translation-color-green <=> translation-text-color-field.green;
@@ -1079,6 +1128,14 @@ export component SettingsDialog inherits Dialog {
     in-out property <string> popup-color-hex <=> popup-text-color-field.hex-text;
     callback popup-color-hex-committed <=> popup-text-color-field.hex-committed;
     callback popup-color-rgb-changed <=> popup-text-color-field.rgb-changed;
+
+    in-out property <bool> popup-prompt-color-use-default <=> popup-prompt-color-field.use-default;
+    in-out property <float> popup-prompt-color-red <=> popup-prompt-color-field.red;
+    in-out property <float> popup-prompt-color-green <=> popup-prompt-color-field.green;
+    in-out property <float> popup-prompt-color-blue <=> popup-prompt-color-field.blue;
+    in-out property <string> popup-prompt-color-hex <=> popup-prompt-color-field.hex-text;
+    callback popup-prompt-color-hex-committed <=> popup-prompt-color-field.hex-committed;
+    callback popup-prompt-color-rgb-changed <=> popup-prompt-color-field.rgb-changed;
 
     in-out property <bool> popup-bg-use-default <=> popup-bg-color-field.use-default;
     in-out property <float> popup-bg-red <=> popup-bg-color-field.red;
@@ -1242,6 +1299,7 @@ export component SettingsDialog inherits Dialog {
                         SpinBox { minimum: 0; maximum: 100; value <=> phrases-spacing-px; }
                     }
                     CheckBox { text: "Show prompt"; checked <=> show-prompt; }
+                    prompt-text-color-field := ColorPickerField { label: "Prompt color:"; }
 
                     Text { text: "Phrase"; font-weight: 700; }
                     HorizontalLayout {
@@ -1393,6 +1451,7 @@ export component SettingsDialog inherits Dialog {
                     }
 
                     CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
+                    popup-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
                     CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }
                     CheckBox {
                         text: "Remember position after dragging";

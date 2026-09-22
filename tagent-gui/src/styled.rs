@@ -179,14 +179,20 @@ pub fn strip_template(template: &str) -> String {
     out
 }
 
-/// Per-role hex colors for one background lightness class -- see
-/// [`RoleColors::for_background`]. `Plain`/`Header` aren't included: they render in
-/// the block's own `default-color`, which is a separate Slint property, not one of
-/// these.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Per-role hex colors for one block -- see [`RoleColors::new`]. `Plain`/`Header`
+/// aren't included: they render in the block's own `default-color`, which is a
+/// separate Slint property, not one of these.
+///
+/// `prompt` is `String`, not `&'static str` like the other four: since the prompt
+/// color became user-configurable (`prompt_color`/`popup_prompt_color` in
+/// `tagent-gui.json`), it's a resolved runtime value, not one of two fixed presets --
+/// see [`RoleColors::new`]. This is also why the struct as a whole is `Clone` but not
+/// `Copy` any more.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleColors {
-    /// Color for [`Role::Prompt`].
-    pub prompt: &'static str,
+    /// Color for [`Role::Prompt`] -- resolved by the caller (theme-default-or-custom,
+    /// same pattern as `phrase_color`/`translation_color`), not derived from `bg`.
+    pub prompt: String,
     /// Color for [`Role::PartOfSpeech`].
     pub pos: &'static str,
     /// Color for [`Role::Synonym`].
@@ -197,49 +203,82 @@ pub struct RoleColors {
     pub error: &'static str,
 }
 
-/// Role colors picked for a light block background (Stage 13 plan, decision 5).
-const LIGHT_ROLE_COLORS: RoleColors = RoleColors {
-    // Mirrors app.slint's `prompt-accent` under a light color scheme -- see that
-    // property's own comment; there's no Rust<->`.slint` constant sharing, so this
-    // value is kept in sync by hand.
-    prompt: "#92400e",
+/// The four *automatically* derived role colors (everything but `prompt`) for one
+/// block-background lightness class -- see [`RoleColors::new`].
+struct AutoColors {
+    pos: &'static str,
+    synonym: &'static str,
+    notice: &'static str,
+    error: &'static str,
+}
+
+/// Picked for a light block background (Stage 13 plan, decision 5).
+const LIGHT_AUTO_COLORS: AutoColors = AutoColors {
     pos: "#0b5cad",
     synonym: "#047857",
     notice: "#a16207",
     error: "#b91c1c",
 };
 
-/// Role colors picked for a dark block background (Stage 13 plan, decision 5).
-const DARK_ROLE_COLORS: RoleColors = RoleColors {
-    // Mirrors app.slint's `prompt-accent` under a dark color scheme.
-    prompt: "#e5c07b",
+/// Picked for a dark block background (Stage 13 plan, decision 5).
+const DARK_AUTO_COLORS: AutoColors = AutoColors {
     pos: "#61afef",
     synonym: "#98c379",
     notice: "#d19a66",
     error: "#f87171",
 };
 
+/// The theme-default `prompt_color`/`popup_prompt_color` value under a light color
+/// scheme -- mirrors `app.slint`'s `prompt-accent-theme-default`; there's no
+/// Rust<->`.slint` constant sharing, so this is kept in sync by hand. Used as the
+/// [`RoleColors::default`] filler and by tests; production code reads the resolved
+/// value back from the window instead (`main.rs`'s `apply_style`/`apply_popup_style`).
+pub const LIGHT_THEME_DEFAULT_PROMPT: &str = "#92400e";
+/// The theme-default prompt color under a dark color scheme.
+///
+/// No production call site of its own (unlike [`LIGHT_THEME_DEFAULT_PROMPT`], the
+/// `RoleColors::default` filler) -- kept as a real constant rather than an
+/// inline test literal for symmetry with it and because both mirror the same pair
+/// of literal values in `app.slint`.
+#[allow(dead_code)]
+pub const DARK_THEME_DEFAULT_PROMPT: &str = "#e5c07b";
+
 impl Default for RoleColors {
-    /// The light-background set. Only meaningful as a filler for a template that
-    /// never colors a role at all (e.g. [`crate::info_transcript_entry`]'s
-    /// plain-only rows) -- for anything that might actually render a colored span,
-    /// use [`RoleColors::for_background`] instead.
+    /// The light-background automatic set, with the light theme-default prompt.
+    /// Only meaningful as a filler for a template that never colors a role at all
+    /// (e.g. [`crate::info_transcript_entry`]'s plain-only rows) -- for anything
+    /// that might actually render a colored span, use [`RoleColors::new`] with the
+    /// caller's real resolved prompt color instead.
     fn default() -> Self {
-        LIGHT_ROLE_COLORS
+        RoleColors::new(
+            Color::from_rgb_u8(255, 255, 255),
+            LIGHT_THEME_DEFAULT_PROMPT,
+        )
     }
 }
 
 impl RoleColors {
-    /// Picks the light- or dark-background role palette by the relative luminance of
-    /// `bg` -- the block's own *resolved* `phrase-background`/`translation-background`
-    /// (custom hex, or the panel background it falls back to), not the raw OS theme,
-    /// so highlighted text stays legible even when the user customized a block's
-    /// background under a theme it doesn't match.
-    pub fn for_background(bg: Color) -> RoleColors {
-        if is_dark(bg) {
-            DARK_ROLE_COLORS
+    /// Builds the role colors for one block: `pos`/`synonym`/`notice`/`error` are
+    /// still picked automatically from the relative luminance of `bg` -- the block's
+    /// own *resolved* `phrase-background`/`translation-background` (custom hex, or
+    /// the panel background it falls back to), not the raw OS theme, so they stay
+    /// legible even when the user customized a block's background under a theme it
+    /// doesn't match. `prompt` is **not** derived from `bg` -- unlike the other four
+    /// roles, it's independently user-configurable (`prompt_color`/
+    /// `popup_prompt_color`), so the caller passes in its already-resolved value
+    /// (theme-default-or-custom, same pattern as `phrase_color`/`translation_color`).
+    pub fn new(bg: Color, prompt: impl Into<String>) -> RoleColors {
+        let auto = if is_dark(bg) {
+            &DARK_AUTO_COLORS
         } else {
-            LIGHT_ROLE_COLORS
+            &LIGHT_AUTO_COLORS
+        };
+        RoleColors {
+            prompt: prompt.into(),
+            pos: auto.pos,
+            synonym: auto.synonym,
+            notice: auto.notice,
+            error: auto.error,
         }
     }
 }
@@ -483,7 +522,10 @@ mod tests {
 
     #[test]
     fn hostile_input_never_takes_the_render_fallback_path() {
-        let colors = RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
+        let colors = RoleColors::new(
+            Color::from_rgb_u8(255, 255, 255),
+            LIGHT_THEME_DEFAULT_PROMPT,
+        );
         for input in hostile_strings() {
             for role in [
                 Role::Plain,
@@ -526,7 +568,10 @@ mod tests {
 
     #[test]
     fn hostile_input_renders_as_literal_text() {
-        let colors = RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
+        let colors = RoleColors::new(
+            Color::from_rgb_u8(255, 255, 255),
+            LIGHT_THEME_DEFAULT_PROMPT,
+        );
         for input in hostile_strings() {
             let template = phrase_template(false, "English", input);
             let rendered = render_template(&template, &colors);
@@ -538,22 +583,26 @@ mod tests {
         }
     }
 
-    // --- RoleColors::for_background -----------------------------------------
+    // --- RoleColors::new -----------------------------------------------------
 
     #[test]
-    fn for_background_picks_dark_set_for_black() {
-        assert_eq!(
-            RoleColors::for_background(Color::from_rgb_u8(0, 0, 0)),
-            DARK_ROLE_COLORS
-        );
+    fn new_picks_dark_auto_set_for_black_background_and_keeps_given_prompt() {
+        let colors = RoleColors::new(Color::from_rgb_u8(0, 0, 0), "#123456");
+        assert_eq!(colors.pos, DARK_AUTO_COLORS.pos);
+        assert_eq!(colors.synonym, DARK_AUTO_COLORS.synonym);
+        assert_eq!(colors.notice, DARK_AUTO_COLORS.notice);
+        assert_eq!(colors.error, DARK_AUTO_COLORS.error);
+        assert_eq!(colors.prompt, "#123456");
     }
 
     #[test]
-    fn for_background_picks_light_set_for_white() {
-        assert_eq!(
-            RoleColors::for_background(Color::from_rgb_u8(255, 255, 255)),
-            LIGHT_ROLE_COLORS
-        );
+    fn new_picks_light_auto_set_for_white_background_and_keeps_given_prompt() {
+        let colors = RoleColors::new(Color::from_rgb_u8(255, 255, 255), "#abcdef");
+        assert_eq!(colors.pos, LIGHT_AUTO_COLORS.pos);
+        assert_eq!(colors.synonym, LIGHT_AUTO_COLORS.synonym);
+        assert_eq!(colors.notice, LIGHT_AUTO_COLORS.notice);
+        assert_eq!(colors.error, LIGHT_AUTO_COLORS.error);
+        assert_eq!(colors.prompt, "#abcdef");
     }
 
     fn contrast_ratio(fg: &str, bg: &str) -> f64 {
@@ -565,15 +614,16 @@ mod tests {
         (lighter + 0.05) / (darker + 0.05)
     }
 
+    /// `pos`/`synonym`/`notice`/`error` stay tied to the block's own background
+    /// luminance (unlike `prompt`, now user-configurable -- see the next test).
     #[test]
-    fn role_colors_meet_wcag_contrast_against_reference_backgrounds() {
+    fn auto_role_colors_meet_wcag_contrast_against_reference_backgrounds() {
         for (colors, backgrounds) in [
-            (LIGHT_ROLE_COLORS, ["#ffffff", "#f5f5f5"]),
-            (DARK_ROLE_COLORS, ["#1e1e1e", "#282c34"]),
+            (&LIGHT_AUTO_COLORS, ["#ffffff", "#f5f5f5"]),
+            (&DARK_AUTO_COLORS, ["#1e1e1e", "#282c34"]),
         ] {
             for bg in backgrounds {
                 for (name, fg) in [
-                    ("prompt", colors.prompt),
                     ("pos", colors.pos),
                     ("synonym", colors.synonym),
                     ("notice", colors.notice),
@@ -585,6 +635,27 @@ mod tests {
                         "{name} ({fg}) against {bg} has contrast {ratio:.2}, need >= 4.5"
                     );
                 }
+            }
+        }
+    }
+
+    /// The *theme-default* prompt colors (used when `prompt_color`/
+    /// `popup_prompt_color` is left empty) against their own matching theme's
+    /// reference backgrounds -- prompt is no longer paired with a block's
+    /// background lightness the way the automatic roles above are, so this checks
+    /// contrast against the theme it actually follows instead.
+    #[test]
+    fn theme_default_prompt_meets_wcag_contrast_against_its_own_theme_backgrounds() {
+        for (fg, backgrounds) in [
+            (LIGHT_THEME_DEFAULT_PROMPT, ["#ffffff", "#f5f5f5"]),
+            (DARK_THEME_DEFAULT_PROMPT, ["#1e1e1e", "#282c34"]),
+        ] {
+            for bg in backgrounds {
+                let ratio = contrast_ratio(fg, bg);
+                assert!(
+                    ratio >= 4.5,
+                    "prompt ({fg}) against {bg} has contrast {ratio:.2}, need >= 4.5"
+                );
             }
         }
     }

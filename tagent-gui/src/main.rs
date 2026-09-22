@@ -4,7 +4,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -56,7 +56,7 @@ fn font_index_for(family: &str) -> i32 {
 }
 
 /// One preset entry for the "Color scheme" picker in Settings > View: a
-/// one-shot bulk-fill for background/phrase/translation colors (plus the
+/// one-shot bulk-fill for background/phrase/translation/prompt colors (plus the
 /// matching Theme), not a persisted setting of its own — see
 /// `SettingsDialog.color-scheme-options` in app.slint.
 struct ColorScheme {
@@ -69,6 +69,22 @@ struct ColorScheme {
     phrase_background: &'static str,
     translation_color: &'static str,
     translation_background: &'static str,
+    /// The scheme's own accent for the `[Language]:` prompt (2026-09-22) --
+    /// picked from each palette's own well-known accent color, distinct from
+    /// `phrase_color`/`translation_color`. `""` (only `"Default"`) follows the
+    /// theme instead, same as every other empty field here.
+    ///
+    /// Chosen for palette fit, not independently WCAG-verified the way
+    /// `styled::RoleColors`'s own automatic light/dark defaults are (those are
+    /// this project's own two-variant design; these are each borrowed from an
+    /// existing community palette's real accent set, evaluated against both the
+    /// scheme's own background and its slightly darker phrase/translation
+    /// background). Most clear 4.5:1 against both; Solarized Dark/Light and
+    /// Catppuccin Latte fall a little short (3.5-4.1) against the darker
+    /// block background specifically -- checked by hand against every color in
+    /// each palette's own accent set, and none does better there without
+    /// abandoning the palette's own look.
+    prompt_color: &'static str,
 }
 
 const COLOR_SCHEMES: &[ColorScheme] = &[
@@ -83,6 +99,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "",
         translation_color: "",
         translation_background: "",
+        prompt_color: "",
     },
     ColorScheme {
         name: "Solarized Dark",
@@ -92,6 +109,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#073642",
         translation_color: "#268BD2",
         translation_background: "#073642",
+        prompt_color: "#B58900",
     },
     ColorScheme {
         name: "Solarized Light",
@@ -101,6 +119,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#EEE8D5",
         translation_color: "#268BD2",
         translation_background: "#EEE8D5",
+        prompt_color: "#CB4B16",
     },
     ColorScheme {
         name: "Dracula",
@@ -110,6 +129,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#44475A",
         translation_color: "#BD93F9",
         translation_background: "#44475A",
+        prompt_color: "#8BE9FD",
     },
     ColorScheme {
         name: "Nord",
@@ -119,6 +139,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#3B4252",
         translation_color: "#88C0D0",
         translation_background: "#3B4252",
+        prompt_color: "#EBCB8B",
     },
     ColorScheme {
         name: "Gruvbox Dark",
@@ -128,6 +149,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#3C3836",
         translation_color: "#FE8019",
         translation_background: "#3C3836",
+        prompt_color: "#FABD2F",
     },
     ColorScheme {
         name: "Monokai",
@@ -137,6 +159,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#3E3D32",
         translation_color: "#A6E22E",
         translation_background: "#3E3D32",
+        prompt_color: "#66D9EF",
     },
     ColorScheme {
         name: "One Dark",
@@ -146,6 +169,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#2C313C",
         translation_color: "#61AFEF",
         translation_background: "#2C313C",
+        prompt_color: "#E5C07B",
     },
     ColorScheme {
         name: "Tokyo Night",
@@ -155,6 +179,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#292E42",
         translation_color: "#7AA2F7",
         translation_background: "#292E42",
+        prompt_color: "#E0AF68",
     },
     ColorScheme {
         name: "Catppuccin Mocha",
@@ -164,6 +189,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#313244",
         translation_color: "#CBA6F7",
         translation_background: "#313244",
+        prompt_color: "#FAB387",
     },
     ColorScheme {
         name: "Night Owl",
@@ -173,6 +199,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#1D3B53",
         translation_color: "#82AAFF",
         translation_background: "#1D3B53",
+        prompt_color: "#F78C6C",
     },
     ColorScheme {
         name: "Ayu Dark",
@@ -182,6 +209,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#131721",
         translation_color: "#FFB454",
         translation_background: "#131721",
+        prompt_color: "#59C2FF",
     },
     ColorScheme {
         name: "GitHub Light",
@@ -191,6 +219,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#F6F8FA",
         translation_color: "#0366D6",
         translation_background: "#F6F8FA",
+        prompt_color: "#6F42C1",
     },
     ColorScheme {
         name: "Gruvbox Light",
@@ -200,6 +229,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#EBDBB2",
         translation_color: "#D65D0E",
         translation_background: "#EBDBB2",
+        prompt_color: "#076678",
     },
     ColorScheme {
         name: "Catppuccin Latte",
@@ -209,6 +239,7 @@ const COLOR_SCHEMES: &[ColorScheme] = &[
         phrase_background: "#CCD0DA",
         translation_color: "#8839EF",
         translation_background: "#CCD0DA",
+        prompt_color: "#D20F39",
     },
 ];
 
@@ -234,6 +265,13 @@ fn resolve_color(hex: &str, default: Color) -> Color {
         Some((r, g, b)) => Color::from_rgb_u8(r, g, b),
         None => default,
     }
+}
+
+/// The inverse of [`resolve_color`]: formats an already-resolved `slint::Color` back
+/// into a `"#RRGGBB"` string, for feeding into a [`styled::RoleColors`] (whose
+/// `prompt` field needs a markdown-embeddable string, not a `Color`).
+fn color_to_hex(color: Color) -> String {
+    format_hex(color.red(), color.green(), color.blue())
 }
 
 /// Sets `dialog`'s Theme dropdown (and applies it to the dialog's own Palette
@@ -388,6 +426,15 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_translation_color(resolve_color(&config.translation_color, default_fg));
     window.set_translation_background(resolve_color(&config.translation_background, default_bg));
 
+    // Prompt color (2026-09-22): one shared accent for the input box's own
+    // "[Lang]:" label (app.slint's `prompt-accent`, read straight off this
+    // property) and the transcript's `Role::Prompt` highlighting (read back
+    // as a hex string by `restyle_transcript`/`spawn_translation` below,
+    // since `RoleColors::prompt` needs a markdown-embeddable string, not a
+    // `slint::Color`).
+    let prompt_theme_default = window.get_prompt_accent_theme_default().color();
+    window.set_prompt_accent(resolve_color(&config.prompt_color, prompt_theme_default));
+
     window.set_block_spacing_px(config.block_spacing_px);
     window.set_phrases_spacing_px(config.phrases_spacing_px);
 
@@ -400,27 +447,33 @@ thread_local! {
     /// state, same reasoning as this file's other `thread_local!`s (`slint::Timer`
     /// and friends aren't `Send`, so this can't just be a field threaded through
     /// `apply_style`'s callers, several of which cross a thread boundary first).
-    static LAST_TRANSCRIPT_ROLE_COLORS: Cell<Option<(styled::RoleColors, styled::RoleColors)>> =
-        const { Cell::new(None) };
+    /// A `RefCell`, not a `Cell` like before the prompt-color feature: `RoleColors`
+    /// carries a `String` (the resolved prompt) now, so it's `Clone` but no longer
+    /// `Copy`, and `Cell::get` needs `Copy`.
+    static LAST_TRANSCRIPT_ROLE_COLORS: RefCell<Option<(styled::RoleColors, styled::RoleColors)>> =
+        const { RefCell::new(None) };
 }
 
 /// Whether [`restyle_transcript`] needs to actually re-render every row: `true` on
 /// the first call (`last: None`) or whenever either resolved `RoleColors` changed
 /// since then. Split out as a pure function so the decision itself -- as opposed to
 /// the `set_row_data` loop that acts on it, which needs a live `AppWindow` and isn't
-/// verifiable in this environment -- has a test.
+/// verifiable in this environment -- has a test. Takes both by reference since
+/// `RoleColors` is no longer `Copy`.
 fn role_colors_changed(
-    last: Option<(styled::RoleColors, styled::RoleColors)>,
-    current: (styled::RoleColors, styled::RoleColors),
+    last: &Option<(styled::RoleColors, styled::RoleColors)>,
+    current: &(styled::RoleColors, styled::RoleColors),
 ) -> bool {
-    last != Some(current)
+    last.as_ref() != Some(current)
 }
 
 /// Re-renders every transcript row's `phrase-styled`/`translation-styled` fields
 /// (Stage 13) against `window`'s current, already-resolved `phrase-background`/
-/// `translation-background` -- called from [`apply_style`], which already runs on
-/// settings change, config live-reload, first show, and the auto-theme poll timer
-/// (`main`'s `theme_poll_timer`), so this needs no separate trigger of its own.
+/// `translation-background` (for the automatic `pos`/`synonym`/`notice`/`error`
+/// roles) and `prompt-accent` (for `Role::Prompt`, user-configurable since
+/// 2026-09-22 -- see [`apply_style`]) -- called from `apply_style`, which already
+/// runs on settings change, config live-reload, first show, and the auto-theme poll
+/// timer (`main`'s `theme_poll_timer`), so this needs no separate trigger of its own.
 ///
 /// A no-op unless [`role_colors_changed`] says the colors actually moved, so the
 /// once-a-second `Auto`-theme poll doesn't re-parse and re-lay-out every row on
@@ -428,16 +481,19 @@ fn role_colors_changed(
 /// rather than rebuilding the model with `set_transcript_entries` (as
 /// [`push_transcript_entry`] does), which would reset the scroll position.
 fn restyle_transcript(window: &AppWindow) {
-    let phrase_colors = styled::RoleColors::for_background(window.get_phrase_background());
+    let prompt_hex = color_to_hex(window.get_prompt_accent());
+    let phrase_colors = styled::RoleColors::new(window.get_phrase_background(), prompt_hex.clone());
     let translation_colors =
-        styled::RoleColors::for_background(window.get_translation_background());
+        styled::RoleColors::new(window.get_translation_background(), prompt_hex);
     let current = (phrase_colors, translation_colors);
 
-    let changed = LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| role_colors_changed(cell.get(), current));
+    let changed =
+        LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| role_colors_changed(&cell.borrow(), &current));
     if !changed {
         return;
     }
-    LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| cell.set(Some(current)));
+    LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| *cell.borrow_mut() = Some(current.clone()));
+    let (phrase_colors, translation_colors) = current;
 
     let entries = window.get_transcript_entries();
     for i in 0..entries.row_count() {
@@ -483,6 +539,17 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
     popup.set_popup_max_width(config.popup_max_width);
     popup.set_popup_max_height(config.popup_max_height);
     popup.set_popup_border_width(config.popup_border_width);
+
+    // Prompt color (2026-09-22): popup_prompt_color's "theme default" chains through
+    // the main window's own prompt_color first -- same chain shape as popup_color
+    // above following translation_color -- and only falls all the way back to the
+    // raw Palette-branching default when *that's* also empty.
+    let popup_prompt_theme_default = popup.get_popup_prompt_accent_theme_default().color();
+    let scheme_default_prompt = resolve_color(&config.prompt_color, popup_prompt_theme_default);
+    popup.set_popup_prompt_accent(resolve_color(
+        &config.popup_prompt_color,
+        scheme_default_prompt,
+    ));
 }
 
 /// Shows the Stage 6 popup with `outcome`'s text -- formatted here using the popup's
@@ -536,6 +603,30 @@ fn show_popup(
         format_line(show_prompt, &outcome.to_lang, &outcome.translation_raw).into()
     });
     popup.set_show_phrase(show_phrase);
+
+    // Prompt highlighting (2026-09-22): the popup's own "[Lang]:" prefix, in
+    // popup-prompt-accent -- no dictionary-structure highlighting here (out of
+    // scope; a dictionary hit's translation_raw is rendered as one plain, escaped
+    // block, same as any other translation), so `pos`/`synonym`/`notice`/`error`
+    // are never actually referenced and popup-background is passed only for
+    // plausibility, not because it matters.
+    let popup_colors = styled::RoleColors::new(
+        popup.get_popup_background(),
+        color_to_hex(popup.get_popup_prompt_accent()),
+    );
+    popup.set_phrase_styled(styled::render_template(
+        &styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw),
+        &popup_colors,
+    ));
+    popup.set_translation_styled(styled::render_template(
+        &styled::translation_template_from_body(
+            show_prompt,
+            &outcome.to_lang,
+            &styled::escape_markdown(&outcome.translation_raw),
+            outcome.is_error,
+        ),
+        &popup_colors,
+    ));
 
     popup.show().ok();
 
@@ -870,17 +961,19 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_phrases_spacing_px(config.phrases_spacing_px);
 
     // Show the matching preset's name in the "Color scheme" dropdown
-    // (instead of the "Custom" placeholder at index 0) when the five
-    // colors currently in effect are exactly one of the presets — e.g.
-    // right after it was applied and saved, or "Default" when they're all
-    // still at "" (theme-following). Index +1 accounts for the "Custom"
-    // placeholder being first in color-scheme-options.
+    // (instead of the "Custom" placeholder at index 0) when the six colors
+    // currently in effect (five, plus the prompt color added 2026-09-22) are
+    // exactly one of the presets — e.g. right after it was applied and saved,
+    // or "Default" when they're all still at "" (theme-following). Index +1
+    // accounts for the "Custom" placeholder being first in
+    // color-scheme-options.
     let matching_scheme_index = COLOR_SCHEMES.iter().position(|scheme| {
         scheme.background == config.background_color
             && scheme.phrase_color == config.phrase_color
             && scheme.phrase_background == config.phrase_background
             && scheme.translation_color == config.translation_color
             && scheme.translation_background == config.translation_background
+            && scheme.prompt_color == config.prompt_color
     });
     dialog.set_color_scheme_index(matching_scheme_index.map_or(0, |i| i as i32 + 1));
 
@@ -955,6 +1048,15 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     );
     init_color_field!(
         dialog,
+        config.prompt_color.as_str(),
+        set_prompt_color_use_default,
+        set_prompt_color_red,
+        set_prompt_color_green,
+        set_prompt_color_blue,
+        set_prompt_color_hex
+    );
+    init_color_field!(
+        dialog,
         config.popup_color.as_str(),
         set_popup_color_use_default,
         set_popup_color_red,
@@ -970,6 +1072,15 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
         set_popup_bg_green,
         set_popup_bg_blue,
         set_popup_bg_hex
+    );
+    init_color_field!(
+        dialog,
+        config.popup_prompt_color.as_str(),
+        set_popup_prompt_color_use_default,
+        set_popup_prompt_color_red,
+        set_popup_prompt_color_green,
+        set_popup_prompt_color_blue,
+        set_popup_prompt_color_hex
     );
 }
 
@@ -1293,23 +1404,31 @@ fn spawn_translation(
                 };
             let phrase_full_template = styled::phrase_template(show_prompt, &from_lang, &text);
 
-            // Stage 13: each block's role colors are derived from *that block's own*
-            // resolved background (decision 5) -- read from the window when it's still
-            // alive; the fallback only matters in the rare case the window was closed
-            // in the moment between the translation finishing and this callback
-            // running, since the entry built below is then never actually pushed.
+            // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived
+            // from *that block's own* resolved background (decision 5); `prompt` is
+            // instead the one shared, user-configurable `prompt-accent` (2026-09-22)
+            // -- read from the window when it's still alive; the fallback only
+            // matters in the rare case the window was closed in the moment between
+            // the translation finishing and this callback running, since the entry
+            // built below is then never actually pushed.
             let window = weak.upgrade();
-            let phrase_colors = styled::RoleColors::for_background(
+            let prompt_hex = window
+                .as_ref()
+                .map(|w| color_to_hex(w.get_prompt_accent()))
+                .unwrap_or_else(|| styled::LIGHT_THEME_DEFAULT_PROMPT.to_string());
+            let phrase_colors = styled::RoleColors::new(
                 window
                     .as_ref()
                     .map(|w| w.get_phrase_background())
                     .unwrap_or_default(),
+                prompt_hex.clone(),
             );
-            let translation_colors = styled::RoleColors::for_background(
+            let translation_colors = styled::RoleColors::new(
                 window
                     .as_ref()
                     .map(|w| w.get_translation_background())
                     .unwrap_or_default(),
+                prompt_hex,
             );
             let fields = styled::entry_fields(
                 phrase_full_template,
@@ -1893,6 +2012,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
         wire_hex_committed!(
             dialog,
+            on_prompt_color_hex_committed,
+            set_prompt_color_red,
+            set_prompt_color_green,
+            set_prompt_color_blue,
+            set_prompt_color_use_default
+        );
+        wire_hex_committed!(
+            dialog,
             on_popup_color_hex_committed,
             set_popup_color_red,
             set_popup_color_green,
@@ -1906,6 +2033,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             set_popup_bg_green,
             set_popup_bg_blue,
             set_popup_bg_use_default
+        );
+        wire_hex_committed!(
+            dialog,
+            on_popup_prompt_color_hex_committed,
+            set_popup_prompt_color_red,
+            set_popup_prompt_color_green,
+            set_popup_prompt_color_blue,
+            set_popup_prompt_color_use_default
         );
         wire_rgb_changed!(
             dialog,
@@ -1949,6 +2084,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
         wire_rgb_changed!(
             dialog,
+            on_prompt_color_rgb_changed,
+            get_prompt_color_red,
+            get_prompt_color_green,
+            get_prompt_color_blue,
+            set_prompt_color_hex
+        );
+        wire_rgb_changed!(
+            dialog,
             on_popup_color_rgb_changed,
             get_popup_color_red,
             get_popup_color_green,
@@ -1962,6 +2105,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             get_popup_bg_green,
             get_popup_bg_blue,
             set_popup_bg_hex
+        );
+        wire_rgb_changed!(
+            dialog,
+            on_popup_prompt_color_rgb_changed,
+            get_popup_prompt_color_red,
+            get_popup_prompt_color_green,
+            get_popup_prompt_color_blue,
+            set_popup_prompt_color_hex
         );
 
         let dialog_weak = dialog.as_weak();
@@ -2017,6 +2168,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 set_translation_bg_green,
                 set_translation_bg_blue,
                 set_translation_bg_hex
+            );
+            init_color_field!(
+                dialog,
+                scheme.prompt_color,
+                set_prompt_color_use_default,
+                set_prompt_color_red,
+                set_prompt_color_green,
+                set_prompt_color_blue,
+                set_prompt_color_hex
             );
 
             apply_scheme_theme(&dialog, scheme.theme);
@@ -2079,6 +2239,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_translation_bg_green(),
                     dialog.get_translation_bg_blue(),
                 ),
+                prompt_color: color_field_hex(
+                    dialog.get_prompt_color_use_default(),
+                    dialog.get_prompt_color_red(),
+                    dialog.get_prompt_color_green(),
+                    dialog.get_prompt_color_blue(),
+                ),
                 popup_font: FONT_FAMILIES[dialog
                     .get_popup_font_index()
                     .clamp(0, FONT_FAMILIES.len() as i32 - 1)
@@ -2096,6 +2262,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_popup_bg_red(),
                     dialog.get_popup_bg_green(),
                     dialog.get_popup_bg_blue(),
+                ),
+                popup_prompt_color: color_field_hex(
+                    dialog.get_popup_prompt_color_use_default(),
+                    dialog.get_popup_prompt_color_red(),
+                    dialog.get_popup_prompt_color_green(),
+                    dialog.get_popup_prompt_color_blue(),
                 ),
                 popup_show_prompt: dialog.get_popup_show_prompt(),
                 popup_show_phrase: dialog.get_popup_show_phrase(),
@@ -2392,8 +2564,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     // `Role::Prompt` highlighting -- the produced
                                     // string is exactly `format!("[Speech]: {text}")`,
                                     // matching the plain `phrase` field below.
-                                    let phrase_colors = styled::RoleColors::for_background(
+                                    let phrase_colors = styled::RoleColors::new(
                                         window.get_phrase_background(),
+                                        color_to_hex(window.get_prompt_accent()),
                                     );
                                     let fields = styled::entry_fields(
                                         styled::phrase_template(true, "Speech", &text),
@@ -2662,25 +2835,92 @@ mod tests {
         ))
     }
 
+    /// Every preset's five color fields must be either `""` (follow the theme) or a
+    /// valid `"#RRGGBB"` -- a regression guard against a typo in `COLOR_SCHEMES`'
+    /// hand-written hex literals (15 presets x 6 fields, added to by hand across
+    /// several sessions).
+    #[test]
+    fn every_color_scheme_field_is_empty_or_valid_hex() {
+        for scheme in COLOR_SCHEMES {
+            for (field, value) in [
+                ("background", scheme.background),
+                ("phrase_color", scheme.phrase_color),
+                ("phrase_background", scheme.phrase_background),
+                ("translation_color", scheme.translation_color),
+                ("translation_background", scheme.translation_background),
+                ("prompt_color", scheme.prompt_color),
+            ] {
+                assert!(
+                    value.is_empty() || parse_hex_color(value).is_some(),
+                    "{}'s {field} ({value:?}) is neither empty nor valid hex",
+                    scheme.name
+                );
+            }
+        }
+    }
+
+    /// Only "Default" follows the theme for prompt -- every other preset should
+    /// give the prompt its own accent, per the 2026-09-22 decision to pick one per
+    /// scheme rather than leaving it universally theme-following.
+    #[test]
+    fn every_non_default_color_scheme_sets_its_own_prompt_color() {
+        for scheme in COLOR_SCHEMES {
+            if scheme.name == "Default" {
+                assert_eq!(scheme.prompt_color, "");
+            } else {
+                assert_ne!(
+                    scheme.prompt_color, "",
+                    "{} has no prompt_color of its own",
+                    scheme.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn role_colors_changed_is_true_on_first_call() {
         let colors = (styled::RoleColors::default(), styled::RoleColors::default());
-        assert!(role_colors_changed(None, colors));
+        assert!(role_colors_changed(&None, &colors));
     }
 
     #[test]
     fn role_colors_changed_is_false_when_pair_is_unchanged() {
-        let light = styled::RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
-        let dark = styled::RoleColors::for_background(Color::from_rgb_u8(0, 0, 0));
-        assert!(!role_colors_changed(Some((light, dark)), (light, dark)));
+        let light =
+            styled::RoleColors::new(Color::from_rgb_u8(255, 255, 255), "#92400e".to_string());
+        let dark = styled::RoleColors::new(Color::from_rgb_u8(0, 0, 0), "#e5c07b".to_string());
+        assert!(!role_colors_changed(
+            &Some((light.clone(), dark.clone())),
+            &(light, dark)
+        ));
     }
 
     #[test]
     fn role_colors_changed_is_true_when_either_side_changes() {
-        let light = styled::RoleColors::for_background(Color::from_rgb_u8(255, 255, 255));
-        let dark = styled::RoleColors::for_background(Color::from_rgb_u8(0, 0, 0));
-        assert!(role_colors_changed(Some((light, light)), (light, dark)));
-        assert!(role_colors_changed(Some((light, dark)), (dark, dark)));
+        let light =
+            styled::RoleColors::new(Color::from_rgb_u8(255, 255, 255), "#92400e".to_string());
+        let dark = styled::RoleColors::new(Color::from_rgb_u8(0, 0, 0), "#e5c07b".to_string());
+        assert!(role_colors_changed(
+            &Some((light.clone(), light.clone())),
+            &(light.clone(), dark.clone())
+        ));
+        assert!(role_colors_changed(
+            &Some((light, dark.clone())),
+            &(dark.clone(), dark)
+        ));
+    }
+
+    #[test]
+    fn role_colors_changed_is_true_when_only_prompt_changes() {
+        let bg = Color::from_rgb_u8(255, 255, 255);
+        let a = (
+            styled::RoleColors::new(bg, "#111111".to_string()),
+            styled::RoleColors::new(bg, "#111111".to_string()),
+        );
+        let b = (
+            styled::RoleColors::new(bg, "#222222".to_string()),
+            styled::RoleColors::new(bg, "#111111".to_string()),
+        );
+        assert!(role_colors_changed(&Some(a), &b));
     }
 
     /// Regression: appending an entry must leave the transcript scrolled to its very

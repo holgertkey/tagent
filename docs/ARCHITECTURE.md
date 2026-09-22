@@ -361,6 +361,36 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     whole article) and writes it via `ClipboardManager::set_text` on a spawned thread, same
     as the existing 📋 button. Deliberately a different callback from `copy-requested`
     (the unrelated "paste clipboard into input" button).
+- **Configurable prompt color** (2026-09-22): the `[Language]:` prompt shown before phrase
+  and translation text has its own color, independent of the phrase/translation text colors
+  -- `prompt_color` (`tagent-gui.json`, Settings > View) for the main window, resolved in
+  `apply_style` the same way `phrase_color`/`translation_color` are (an empty value falls
+  back to `prompt-accent-theme-default`, `app.slint`'s own `Palette.color-scheme`-branching
+  default, formerly hardcoded as `prompt-accent` before this feature). It drives two things:
+  the input box's own `[Lang]:` label (`prompt-accent`, read directly as a `color`) and, via
+  `color_to_hex` and `styled::RoleColors::new`'s `prompt` parameter, the transcript's
+  `Role::Prompt` highlighting (Stage 13) -- which is why `RoleColors` changed from a `Copy`
+  struct with two fixed light/dark presets to a `Clone`-only one carrying a resolved `String`:
+  `pos`/`synonym`/`notice`/`error` still auto-derive from each block's background luminance,
+  but `prompt` is this one shared, user-set value instead. `popup_prompt_color` is the
+  popup's own independent counterpart (Settings > Popup), chaining through `prompt_color`
+  first and the popup's own theme default last -- the same fallback shape `popup_color`
+  already uses through `translation_color`. Making this visible in the popup required
+  converting its `phrase-line`/`translation-line` from plain `Text` to `StyledText` too (only
+  `Role::Prompt` ever renders there -- no dictionary-structure highlighting, out of scope);
+  since whether `StyledText.preferred-width` reports natural unwrapped width the same way
+  `Text`'s does (the property `content-natural-width` relies on to size the popup) was
+  unverified, width measurement stayed on two invisible plain-`Text` twins
+  (`phrase-measure`, and a new `translation-measure`) rather than the now-`StyledText`
+  `phrase-line`/`translation-line` themselves, sidestepping the question rather than
+  answering it. Each of the 14 non-"Default" presets in `COLOR_SCHEMES` (Settings > View's
+  "Color scheme" dropdown) also picked up its own prompt accent, picked from that palette's
+  own well-known accent set -- most clear 4.5:1 contrast against both the scheme's own
+  background and its slightly darker phrase/translation background, but Solarized Dark/Light
+  and Catppuccin Latte fall a little short (3.5-4.1) against the darker one specifically; every
+  color in each of those three palettes' own accent sets was checked by hand and none does
+  better there without abandoning the palette's own look, so this was accepted rather than
+  substituting an inauthentic color.
 - **Input box** (`input-field` in `app.slint`): a multi-line `TextInput` inside its own
   `ScrollView`, wrapped in a resizable container — a 6px drag handle above the box lets
   the user set `input-user-height` between `input-min-height` (32px) and

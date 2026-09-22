@@ -178,6 +178,14 @@ pub struct GuiConfig {
     /// Background color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub translation_background: String,
+    /// Text color for the `[Language]:` prompt prefix shown before the phrase and
+    /// translation text in the transcript and the input box (and, since Stage 13,
+    /// the transcript's own highlighted prefix -- see `styled::Role::Prompt`), as
+    /// `"#RRGGBB"`, or `""` to follow the theme. Shared by the phrase and
+    /// translation sides -- there is only one prompt accent, not a separate one
+    /// per side.
+    #[serde(default = "default_style_color")]
+    pub prompt_color: String,
     /// Font family for the hotkey-triggered popup's text (phrase and
     /// translation share one style, unlike the transcript's separate
     /// phrase/translation styling).
@@ -192,6 +200,12 @@ pub struct GuiConfig {
     /// Background color for the popup, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub popup_background: String,
+    /// Text color for the popup's own `[Language]:` prompt prefix highlighting
+    /// (Stage 13), as `"#RRGGBB"`, or `""` to follow [`Self::prompt_color`] (which
+    /// itself follows the theme when that's also empty) -- mirrors how
+    /// [`Self::popup_color`] follows [`Self::translation_color`].
+    #[serde(default = "default_style_color")]
+    pub popup_prompt_color: String,
     /// Whether the popup shows the "[Auto]:"/"[Russian]:"-style prompt before
     /// its phrase/translation text. Independent of the transcript's own
     /// [`Self::show_prompt`].
@@ -356,10 +370,12 @@ impl Default for GuiConfig {
             translation_size: default_style_size(),
             translation_color: default_style_color(),
             translation_background: default_style_color(),
+            prompt_color: default_style_color(),
             popup_font: default_style_font(),
             popup_size: default_style_size(),
             popup_color: default_style_color(),
             popup_background: default_style_color(),
+            popup_prompt_color: default_style_color(),
             popup_show_prompt: default_popup_show_prompt(),
             popup_show_phrase: default_popup_show_phrase(),
             popup_max_width: default_popup_max_width(),
@@ -1092,6 +1108,7 @@ mod tests {
         assert_eq!(config.translation_size, 13);
         assert_eq!(config.translation_color, "");
         assert_eq!(config.translation_background, "");
+        assert_eq!(config.prompt_color, "");
         assert_eq!(config.block_spacing_px, 20);
         assert_eq!(config.phrases_spacing_px, 2);
         assert!(config.show_prompt);
@@ -1113,6 +1130,7 @@ mod tests {
         assert_eq!(config.popup_size, 13);
         assert_eq!(config.popup_color, "");
         assert_eq!(config.popup_background, "");
+        assert_eq!(config.popup_prompt_color, "");
     }
 
     #[test]
