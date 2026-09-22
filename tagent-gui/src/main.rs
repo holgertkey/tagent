@@ -1661,6 +1661,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     platform::windows::console::attach_parent();
 
     let window = AppWindow::new()?;
+    // Right after the first window: that's when winit registers for raw keyboard
+    // input, which would otherwise hide every keystroke from the global hotkey hook
+    // while a Tagent window is focused (see the function's doc comment).
+    #[cfg(target_os = "windows")]
+    platform::windows::keyboard::release_raw_keyboard_input();
 
     let config_manager = Arc::new(Mutex::new(GuiConfigManager::new()));
 
@@ -2439,9 +2444,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Escape pressed while the main window itself has focus (`app.slint`'s
     // `capture-key-pressed` FocusScope). The global keyboard hook's own Escape
-    // path (`on_escape` below) covers every other window, but on Windows the
-    // low-level hook was observed to receive no keystrokes at all while one of our
-    // own windows is focused, so without this Esc could not stop playback there.
+    // path (`on_escape` below) usually sees the same key press; this one keeps
+    // Esc working when the hook isn't running (invalid translate_hotkey, macOS).
+    // Both go through the idempotent `speech::request_stop`.
     let speech_stop_flag_for_window_escape = speech_stop_flag.clone();
     window.on_stop_speech_requested(move || {
         speech::request_stop(&speech_stop_flag_for_window_escape);

@@ -425,6 +425,43 @@ impl KeyboardHook {
     }
 }
 
+/// Drops the process's raw-input keyboard registration so the `WH_KEYBOARD_LL` hook
+/// keeps seeing keystrokes while one of `tagent-gui`'s own windows is focused.
+///
+/// Slint's winit backend registers every mouse and keyboard for raw input
+/// (`RegisterRawInputDevices`, `RIDEV_DEVNOTIFY`) when it creates its event loop. While
+/// a window of a process with that registration is in the foreground, the low-level
+/// hook installed by that same process receives no key events at all -- so the global
+/// hotkeys and Escape did nothing while the main window was focused, and the keys went
+/// to the input field instead. Reproduced with a plain Win32 window: adding the same
+/// registration alone makes the hook go silent, removing it (below) brings it back.
+///
+/// Must run on the UI thread, after the first Slint window has been created (that is
+/// when winit's event loop, and with it the registration, comes into being). Only the
+/// keyboard is removed: mouse raw input is left alone, and nothing in Slint or here
+/// uses keyboard device events -- ordinary window keyboard input is unaffected.
+pub fn release_raw_keyboard_input() {
+    use windows::Win32::UI::Input::{RegisterRawInputDevices, RAWINPUTDEVICE, RIDEV_REMOVE};
+
+    // HID usage page "Generic Desktop" (0x01), usage "Keyboard" (0x06). RIDEV_REMOVE
+    // requires a null target window.
+    let device = [RAWINPUTDEVICE {
+        usUsagePage: 0x01,
+        usUsage: 0x06,
+        dwFlags: RIDEV_REMOVE,
+        hwndTarget: HWND::default(),
+    }];
+    let result = unsafe {
+        RegisterRawInputDevices(&device, std::mem::size_of::<RAWINPUTDEVICE>() as u32)
+    };
+    if let Err(err) = result {
+        eprintln!(
+            "Warning: failed to release raw keyboard input ({err}); global hotkeys and Esc \
+             won't work while the Tagent window is focused"
+        );
+    }
+}
+
 /// Builds the modifier set [`KeyboardHook::spawn`] installs into `COMBO_MODIFIER_VKS` --
 /// the union of `translate_hotkey`'s modifiers (if it's a `ModifierCombo`) and
 /// `speech_hotkey`'s (if present and also a `ModifierCombo`). Split out from `spawn`

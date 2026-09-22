@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+009] - 2026-09-22
+
+### Fixed
+- **Global hotkeys work while the Tagent window is focused (Windows).** With the main window
+  focused, Alt+A / Alt+S just typed "a" / "s" into the input field, because the global keyboard
+  hook received no key events at all there. Cause: Slint's winit backend registers the keyboard
+  for raw input, and while a window of that process is in the foreground its own low-level hook
+  gets nothing. `tagent-gui` now drops that raw keyboard registration right after creating its
+  window (window keyboard input is unaffected), so both hotkeys, and Esc for speech, now work
+  in Tagent's own windows too -- e.g. select text in the input field and press Alt+A.
 ## [0.14.0+008] - 2026-09-22
 
 ### Fixed

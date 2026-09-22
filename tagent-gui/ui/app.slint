@@ -305,11 +305,12 @@ export component AppWindow inherits Window {
     }
 
     // Escape stops whatever is currently speaking while this window has focus.
-    // The global Windows keyboard hook (platform/windows/keyboard.rs) was observed
-    // to receive no keystrokes while one of our own windows is focused, so on
-    // Windows this is the only Esc path that works while this window is focused. `capture-key-pressed`
-    // runs before the focused child (input field, a speaker button, ...) and
-    // always rejects, so Escape still reaches that child unchanged.
+    // The global keyboard hook normally sees this Escape too; this in-window path
+    // keeps Esc working when the hook isn't running at all (an invalid
+    // translate_hotkey disables it, and macOS has none). Stopping twice is
+    // harmless. `capture-key-pressed` runs before the focused child (input
+    // field, a speaker button, ...) and always rejects, so Escape still reaches
+    // that child unchanged.
     FocusScope {
         focus-on-click: false;
         capture-key-pressed(event) => {
