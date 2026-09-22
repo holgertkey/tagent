@@ -20,8 +20,8 @@ use tagent::providers::SpeechProvider;
 /// `current` (the one shared "who's speaking" slot). A no-op when nothing is
 /// speaking (`None`). Returns whether there was playback to stop.
 ///
-/// Every stop path shares this: a click on the active speaker button, Escape
-/// seen by the global keyboard hook, and Escape pressed inside the main window.
+/// Both stop paths share this: a click on the active speaker button and Escape
+/// seen by the global keyboard hook.
 /// The hook calls it on its own thread, so it must stay a quick lock-and-store.
 pub fn request_stop(current: &Mutex<Option<Arc<AtomicBool>>>) -> bool {
     match current.lock().unwrap().as_ref() {
@@ -110,8 +110,8 @@ mod tests {
 
     #[test]
     fn request_stop_is_idempotent() {
-        // Escape can reach both the window handler and the global hook for one
-        // key press, so a second stop must be harmless.
+        // Esc can be pressed again (or ⏹ clicked) before the speaking thread has
+        // cleared the slot, so a second stop must be harmless.
         let flag = Arc::new(AtomicBool::new(false));
         let current = Mutex::new(Some(flag.clone()));
         assert!(request_stop(&current));

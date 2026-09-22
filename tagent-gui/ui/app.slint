@@ -274,9 +274,6 @@ export component AppWindow inherits Window {
     in-out property <int> speaking-entry-index: -1;
     in-out property <bool> speaking-is-phrase: true;
     callback speak-requested(int, bool);
-    // Escape pressed while this window is focused -- stops any playback, whether a
-    // speaker button or the speech hotkey started it.
-    callback stop-speech-requested();
 
     callback translate-requested(string, string, string);
     callback swap-requested();
@@ -304,333 +301,316 @@ export component AppWindow inherits Window {
         triggered => { copy-flash-index = -1; }
     }
 
-    // Escape stops whatever is currently speaking while this window has focus.
-    // The global keyboard hook normally sees this Escape too; this in-window path
-    // keeps Esc working when the hook isn't running at all (an invalid
-    // translate_hotkey disables it, and macOS has none). Stopping twice is
-    // harmless. `capture-key-pressed` runs before the focused child (input
-    // field, a speaker button, ...) and always rejects, so Escape still reaches
-    // that child unchanged.
-    FocusScope {
-        focus-on-click: false;
-        capture-key-pressed(event) => {
-            if event.text == Key.Escape {
-                stop-speech-requested();
+    VerticalBox {
+        HorizontalBox {
+            ComboBox {
+                model: languages;
+                current-index <=> source-language-index;
             }
-            return reject;
+
+            Button {
+                text: "⇄";
+                clicked => { swap-requested(); }
+            }
+
+            ComboBox {
+                model: languages;
+                current-index <=> target-language-index;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "⚙";
+                clicked => { settings-requested(); }
+            }
         }
 
-        VerticalBox {
-            HorizontalBox {
-                ComboBox {
-                    model: languages;
-                    current-index <=> source-language-index;
-                }
+        Rectangle {
+            background: panel-background;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: panel-border;
+            vertical-stretch: 1;
+            min-height: 60px;
 
-                Button {
-                    text: "⇄";
-                    clicked => { swap-requested(); }
-                }
+            transcript-scroll := ScrollView {
+                width: parent.width;
+                height: parent.height;
+                viewport-width: self.width;
+                viewport-height: transcript-content.preferred-height + 16px;
 
-                ComboBox {
-                    model: languages;
-                    current-index <=> target-language-index;
-                }
-
-                Rectangle { horizontal-stretch: 1; }
-
-                Button {
-                    text: "⚙";
-                    clicked => { settings-requested(); }
-                }
-            }
-
-            Rectangle {
-                background: panel-background;
-                border-radius: 4px;
-                border-width: 1px;
-                border-color: panel-border;
-                vertical-stretch: 1;
-                min-height: 60px;
-
-                transcript-scroll := ScrollView {
-                    width: parent.width;
-                    height: parent.height;
-                    viewport-width: self.width;
-                    viewport-height: transcript-content.preferred-height + 16px;
-
-                    transcript-content := VerticalLayout {
-                        x: 8px;
-                        y: 8px;
-                        width: parent.width - 16px;
-                        spacing: block-spacing-px * 1px;
-                        alignment: start;
-
-                        Text {
-                            text: header-text;
-                            font-family: "monospace";
-                            font-size: 13px;
-                            color: panel-foreground;
-                            wrap: word-wrap;
-                        }
-
-                        for entry[i] in transcript-entries: VerticalLayout {
-                            spacing: phrases-spacing-px * 1px;
-
-                            // No vertical padding anywhere in this pair — the gap
-                            // between the phrase's last line and the
-                            // translation's first line is entirely controlled by
-                            // phrases-spacing-px, down to 0.
-                            HorizontalLayout {
-                                spacing: 4px;
-
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    background: phrase-background;
-                                    border-radius: 3px;
-                                    height: phrase-line.preferred-height;
-                                    border-width: (copy-flash-index == i && copy-flash-is-phrase) ? 2px : 0px;
-                                    border-color: prompt-accent;
-                                    animate border-width { duration: 220ms; easing: ease-out; }
-
-                                    // Stage 13: view-only, no selection/Ctrl+C -- see
-                                    // TranscriptEntry's own comment. Copying is
-                                    // right-click, either via a "Copy" menu or directly
-                                    // (show-context-menu below) -- of the block's plain
-                                    // `phrase-copy` text.
-                                    phrase-line := StyledText {
-                                        text: entry.phrase-styled;
-                                        default-color: phrase-color;
-                                        default-font-family: phrase-font;
-                                        default-font-size: phrase-size * 1px;
-                                        horizontal-alignment: left;
-                                        vertical-alignment: top;
-                                        x: 4px;
-                                        y: 0px;
-                                        width: parent.width - 8px;
-                                        height: self.preferred-height;
-                                    }
-
-                                    if show-context-menu: ContextMenuArea {
-                                        Menu {
-                                            MenuItem {
-                                                title: "Copy";
-                                                enabled: entry.phrase-copy != "";
-                                                activated => { copy-block-requested(i, true); }
-                                            }
-                                        }
-                                    }
-
-                                    // No-menu path: right-click copies immediately and
-                                    // flashes the block's border instead of opening a
-                                    // menu (see show-context-menu/copy-flash-index above).
-                                    if !show-context-menu: TouchArea {
-                                        width: 100%;
-                                        height: 100%;
-                                        pointer-event(event) => {
-                                            if event.button == PointerEventButton.right
-                                                && event.kind == PointerEventKind.up
-                                                && entry.phrase-copy != "" {
-                                                copy-flash-index = i;
-                                                copy-flash-is-phrase = true;
-                                                copy-block-requested(i, true);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Stage 10: every row's button other than the one
-                                // currently speaking is disabled (std-widgets'
-                                // own dimmed/non-clickable styling) while
-                                // speaking-entry-index != -1, rather than letting
-                                // a second click start a second, overlapping
-                                // Sink. The active row's own button stays
-                                // enabled and turns into "⏹" -- clicking it again
-                                // is how playback is stopped.
-                                if tts-enabled && entry.phrase-speech != "": Button {
-                                    width: 28px;
-                                    text: (speaking-entry-index == i && speaking-is-phrase) ? "⏹" : "🔊";
-                                    enabled: speaking-entry-index == -1 || (speaking-entry-index == i && speaking-is-phrase);
-                                    clicked => { speak-requested(i, true); }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: 4px;
-
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    background: translation-background;
-                                    border-radius: 3px;
-                                    height: translation-line.preferred-height;
-                                    border-width: (copy-flash-index == i && !copy-flash-is-phrase) ? 2px : 0px;
-                                    border-color: prompt-accent;
-                                    animate border-width { duration: 220ms; easing: ease-out; }
-
-                                    // Stage 13: see phrase-line's own comment above.
-                                    translation-line := StyledText {
-                                        text: entry.translation-styled;
-                                        default-color: translation-color;
-                                        default-font-family: translation-font;
-                                        default-font-size: translation-size * 1px;
-                                        horizontal-alignment: left;
-                                        vertical-alignment: top;
-                                        x: 4px;
-                                        y: 0px;
-                                        width: parent.width - 8px;
-                                        height: self.preferred-height;
-                                    }
-
-                                    if show-context-menu: ContextMenuArea {
-                                        Menu {
-                                            MenuItem {
-                                                title: "Copy";
-                                                enabled: entry.translation-copy != "";
-                                                activated => { copy-block-requested(i, false); }
-                                            }
-                                        }
-                                    }
-
-                                    if !show-context-menu: TouchArea {
-                                        width: 100%;
-                                        height: 100%;
-                                        pointer-event(event) => {
-                                            if event.button == PointerEventButton.right
-                                                && event.kind == PointerEventKind.up
-                                                && entry.translation-copy != "" {
-                                                copy-flash-index = i;
-                                                copy-flash-is-phrase = false;
-                                                copy-block-requested(i, false);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if tts-enabled && !entry.translation-is-error && entry.translation-speech != "": Button {
-                                    width: 28px;
-                                    text: (speaking-entry-index == i && !speaking-is-phrase) ? "⏹" : "🔊";
-                                    enabled: speaking-entry-index == -1 || (speaking-entry-index == i && !speaking-is-phrase);
-                                    clicked => { speak-requested(i, false); }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            resize-handle := Rectangle {
-                height: 6px;
-
-                Rectangle {
-                    width: 32px;
-                    height: 2px;
-                    border-radius: 1px;
-                    background: resize-touch.pressed ? panel-border.brighter(1.0) : resize-touch.has-hover ? panel-border.brighter(0.5) : panel-border;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
-
-                resize-touch := TouchArea {
-                    width: 100%;
-                    height: 100%;
-                    mouse-cursor: ns-resize;
-
-                    moved => {
-                        if (self.pressed) {
-                            input-user-height = max(input-min-height, min(input-max-height,
-                                input-user-height - (self.mouse-y - self.pressed-y)));
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                // Deliberately the raw theme default, not the customizable
-                // panel-background: this frame just holds the language prompt,
-                // input field, and Translate button, and a custom "Background
-                // color" bleeding through the gaps around them (behind the
-                // prompt, behind the button) looked like the controls themselves
-                // had been recolored. Only the transcript log's reading area
-                // uses the customizable color.
-                background: panel-background-theme-default;
-                border-radius: 4px;
-                border-width: 1px;
-                border-color: panel-border;
-                height: input-box-height;
-
-                HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 8px;
-                    spacing: 4px;
-                    alignment: stretch;
+                transcript-content := VerticalLayout {
+                    x: 8px;
+                    y: 8px;
+                    width: parent.width - 16px;
+                    spacing: block-spacing-px * 1px;
+                    alignment: start;
 
                     Text {
-                        text: "[" + languages[source-language-index] + "]:";
+                        text: header-text;
                         font-family: "monospace";
                         font-size: 13px;
-                        color: prompt-accent;
-                        vertical-alignment: center;
+                        color: panel-foreground;
+                        wrap: word-wrap;
                     }
 
-                    Rectangle {
-                        background: field-background;
-                        border-radius: 3px;
-                        border-width: 1px;
-                        border-color: panel-border;
-                        horizontal-stretch: 1;
+                    for entry[i] in transcript-entries: VerticalLayout {
+                        spacing: phrases-spacing-px * 1px;
 
-                        ScrollView {
-                            width: parent.width;
-                            height: parent.height;
-                            viewport-width: self.width;
-                            viewport-height: input-field.preferred-height + 16px;
+                        // No vertical padding anywhere in this pair — the gap
+                        // between the phrase's last line and the
+                        // translation's first line is entirely controlled by
+                        // phrases-spacing-px, down to 0.
+                        HorizontalLayout {
+                            spacing: 4px;
 
-                            input-field := TextInput {
-                                text <=> input-text;
-                                font-size: 13px;
-                                color: field-foreground;
-                                selection-background-color: selection-bg;
-                                selection-foreground-color: selection-fg;
-                                wrap: word-wrap;
-                                single-line: false;
-                                horizontal-alignment: left;
-                                vertical-alignment: top;
-                                x: 8px;
-                                y: 8px;
-                                width: parent.width - 16px;
-                                height: max(self.preferred-height, parent.height - 16px);
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: phrase-background;
+                                border-radius: 3px;
+                                height: phrase-line.preferred-height;
+                                border-width: (copy-flash-index == i && copy-flash-is-phrase) ? 2px : 0px;
+                                border-color: prompt-accent;
+                                animate border-width { duration: 220ms; easing: ease-out; }
 
-                                key-pressed(event) => {
-                                    if (event.text == Key.Return && !event.modifiers.shift) {
-                                        translate-requested(
-                                            input-text,
-                                            languages[source-language-index],
-                                            languages[target-language-index],
-                                        );
-                                        input-text = "";
-                                        return accept;
-                                    }
-                                    return reject;
+                                // Stage 13: view-only, no selection/Ctrl+C -- see
+                                // TranscriptEntry's own comment. Copying is
+                                // right-click, either via a "Copy" menu or directly
+                                // (show-context-menu below) -- of the block's plain
+                                // `phrase-copy` text.
+                                phrase-line := StyledText {
+                                    text: entry.phrase-styled;
+                                    default-color: phrase-color;
+                                    default-font-family: phrase-font;
+                                    default-font-size: phrase-size * 1px;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    x: 4px;
+                                    y: 0px;
+                                    width: parent.width - 8px;
+                                    height: self.preferred-height;
                                 }
+
+                                if show-context-menu: ContextMenuArea {
+                                    Menu {
+                                        MenuItem {
+                                            title: "Copy";
+                                            enabled: entry.phrase-copy != "";
+                                            activated => { copy-block-requested(i, true); }
+                                        }
+                                    }
+                                }
+
+                                // No-menu path: right-click copies immediately and
+                                // flashes the block's border instead of opening a
+                                // menu (see show-context-menu/copy-flash-index above).
+                                if !show-context-menu: TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right
+                                            && event.kind == PointerEventKind.up
+                                            && entry.phrase-copy != "" {
+                                            copy-flash-index = i;
+                                            copy-flash-is-phrase = true;
+                                            copy-block-requested(i, true);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Stage 10: every row's button other than the one
+                            // currently speaking is disabled (std-widgets'
+                            // own dimmed/non-clickable styling) while
+                            // speaking-entry-index != -1, rather than letting
+                            // a second click start a second, overlapping
+                            // Sink. The active row's own button stays
+                            // enabled and turns into "⏹" -- clicking it again
+                            // is how playback is stopped.
+                            if tts-enabled && entry.phrase-speech != "": Button {
+                                width: 28px;
+                                text: (speaking-entry-index == i && speaking-is-phrase) ? "⏹" : "🔊";
+                                enabled: speaking-entry-index == -1 || (speaking-entry-index == i && speaking-is-phrase);
+                                clicked => { speak-requested(i, true); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 4px;
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: translation-background;
+                                border-radius: 3px;
+                                height: translation-line.preferred-height;
+                                border-width: (copy-flash-index == i && !copy-flash-is-phrase) ? 2px : 0px;
+                                border-color: prompt-accent;
+                                animate border-width { duration: 220ms; easing: ease-out; }
+
+                                // Stage 13: see phrase-line's own comment above.
+                                translation-line := StyledText {
+                                    text: entry.translation-styled;
+                                    default-color: translation-color;
+                                    default-font-family: translation-font;
+                                    default-font-size: translation-size * 1px;
+                                    horizontal-alignment: left;
+                                    vertical-alignment: top;
+                                    x: 4px;
+                                    y: 0px;
+                                    width: parent.width - 8px;
+                                    height: self.preferred-height;
+                                }
+
+                                if show-context-menu: ContextMenuArea {
+                                    Menu {
+                                        MenuItem {
+                                            title: "Copy";
+                                            enabled: entry.translation-copy != "";
+                                            activated => { copy-block-requested(i, false); }
+                                        }
+                                    }
+                                }
+
+                                if !show-context-menu: TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right
+                                            && event.kind == PointerEventKind.up
+                                            && entry.translation-copy != "" {
+                                            copy-flash-index = i;
+                                            copy-flash-is-phrase = false;
+                                            copy-block-requested(i, false);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if tts-enabled && !entry.translation-is-error && entry.translation-speech != "": Button {
+                                width: 28px;
+                                text: (speaking-entry-index == i && !speaking-is-phrase) ? "⏹" : "🔊";
+                                enabled: speaking-entry-index == -1 || (speaking-entry-index == i && !speaking-is-phrase);
+                                clicked => { speak-requested(i, false); }
                             }
                         }
                     }
+                }
+            }
+        }
 
-                    Button {
-                        text: "📋";
-                        clicked => { copy-requested(); }
+        resize-handle := Rectangle {
+            height: 6px;
+
+            Rectangle {
+                width: 32px;
+                height: 2px;
+                border-radius: 1px;
+                background: resize-touch.pressed ? panel-border.brighter(1.0) : resize-touch.has-hover ? panel-border.brighter(0.5) : panel-border;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            resize-touch := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: ns-resize;
+
+                moved => {
+                    if (self.pressed) {
+                        input-user-height = max(input-min-height, min(input-max-height,
+                            input-user-height - (self.mouse-y - self.pressed-y)));
                     }
+                }
+            }
+        }
 
-                    Button {
-                        text: "Translate";
-                        clicked => {
-                            translate-requested(
-                                input-text,
-                                languages[source-language-index],
-                                languages[target-language-index],
-                            );
-                            input-text = "";
+        Rectangle {
+            // Deliberately the raw theme default, not the customizable
+            // panel-background: this frame just holds the language prompt,
+            // input field, and Translate button, and a custom "Background
+            // color" bleeding through the gaps around them (behind the
+            // prompt, behind the button) looked like the controls themselves
+            // had been recolored. Only the transcript log's reading area
+            // uses the customizable color.
+            background: panel-background-theme-default;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: panel-border;
+            height: input-box-height;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 4px;
+                alignment: stretch;
+
+                Text {
+                    text: "[" + languages[source-language-index] + "]:";
+                    font-family: "monospace";
+                    font-size: 13px;
+                    color: prompt-accent;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    background: field-background;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: panel-border;
+                    horizontal-stretch: 1;
+
+                    ScrollView {
+                        width: parent.width;
+                        height: parent.height;
+                        viewport-width: self.width;
+                        viewport-height: input-field.preferred-height + 16px;
+
+                        input-field := TextInput {
+                            text <=> input-text;
+                            font-size: 13px;
+                            color: field-foreground;
+                            selection-background-color: selection-bg;
+                            selection-foreground-color: selection-fg;
+                            wrap: word-wrap;
+                            single-line: false;
+                            horizontal-alignment: left;
+                            vertical-alignment: top;
+                            x: 8px;
+                            y: 8px;
+                            width: parent.width - 16px;
+                            height: max(self.preferred-height, parent.height - 16px);
+
+                            key-pressed(event) => {
+                                if (event.text == Key.Return && !event.modifiers.shift) {
+                                    translate-requested(
+                                        input-text,
+                                        languages[source-language-index],
+                                        languages[target-language-index],
+                                    );
+                                    input-text = "";
+                                    return accept;
+                                }
+                                return reject;
+                            }
                         }
+                    }
+                }
+
+                Button {
+                    text: "📋";
+                    clicked => { copy-requested(); }
+                }
+
+                Button {
+                    text: "Translate";
+                    clicked => {
+                        translate-requested(
+                            input-text,
+                            languages[source-language-index],
+                            languages[target-language-index],
+                        );
+                        input-text = "";
                     }
                 }
             }

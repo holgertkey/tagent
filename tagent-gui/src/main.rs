@@ -2442,16 +2442,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     });
 
-    // Escape pressed while the main window itself has focus (`app.slint`'s
-    // `capture-key-pressed` FocusScope). The global keyboard hook's own Escape
-    // path (`on_escape` below) usually sees the same key press; this one keeps
-    // Esc working when the hook isn't running (invalid translate_hotkey, macOS).
-    // Both go through the idempotent `speech::request_stop`.
-    let speech_stop_flag_for_window_escape = speech_stop_flag.clone();
-    window.on_stop_speech_requested(move || {
-        speech::request_stop(&speech_stop_flag_for_window_escape);
-    });
-
     // Stage 13: right-click "Copy" on one transcript block (`app.slint`'s
     // `ContextMenuArea`, one per phrase/translation Rectangle) -- index into
     // transcript-entries, is_phrase selecting which side. Row lookup mirrors

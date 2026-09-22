@@ -12,6 +12,12 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+010] - 2026-09-22
+
+### Removed
+- **The main window's own Esc handler** added in `0.14.0+008`. Since `0.14.0+009` the global
+  keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
+
 ## [0.14.0+009] - 2026-09-22
 
 ### Fixed
