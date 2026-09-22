@@ -139,6 +139,12 @@ fn default_enable_text_to_speech() -> bool {
     true
 }
 
+/// Default for [`GuiConfig::show_context_menu`]: off -- a single-item "Copy" menu is
+/// pure friction over just copying the block directly on right-click.
+fn default_show_context_menu() -> bool {
+    false
+}
+
 /// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
@@ -315,6 +321,13 @@ pub struct GuiConfig {
     /// transcript (Stage 10). Live-reloaded, no restart needed.
     #[serde(default = "default_enable_text_to_speech")]
     pub enable_text_to_speech: bool,
+    /// Whether right-click on a transcript block opens a "Copy" context menu, or
+    /// copies the block immediately with no menu at all. Default `false` (a
+    /// single-item menu is pure friction over copying directly) -- when off, a
+    /// brief border flash on the copied block is the only feedback, since there's
+    /// no menu-click to see. Live-reloaded, no restart needed.
+    #[serde(default = "default_show_context_menu")]
+    pub show_context_menu: bool,
     /// Name of the text-to-speech backend (Stage 11), independent of
     /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "General"
     /// (or hand-edited); live-reloaded, no restart needed.
@@ -396,6 +409,7 @@ impl Default for GuiConfig {
             show_dictionary: default_show_dictionary(),
             spell_check: default_spell_check(),
             enable_text_to_speech: default_enable_text_to_speech(),
+            show_context_menu: default_show_context_menu(),
             speech_provider: default_speech_provider(),
             dictionary_provider: default_dictionary_provider(),
         }
@@ -1194,6 +1208,21 @@ mod tests {
 
         assert!(config.show_dictionary);
         assert!(config.spell_check);
+    }
+
+    #[test]
+    fn old_file_without_show_context_menu_field_defaults_to_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        let config = load_from_path(&path);
+
+        assert!(!config.show_context_menu);
     }
 
     #[test]

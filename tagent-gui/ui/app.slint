@@ -284,6 +284,22 @@ export component AppWindow inherits Window {
     // translation block. Deliberately not named copy-requested (above),
     // which is the unrelated 📋 "paste clipboard into input" button.
     callback copy-block-requested(int, bool);
+    // Whether right-click opens the "Copy" context menu (`ContextMenuArea` below)
+    // or copies the block immediately with no menu at all -- `show_context_menu` in
+    // tagent-gui.json, default off (a single-item menu is pure friction over just
+    // copying directly). Live-reloaded, no restart needed.
+    in-out property <bool> show-context-menu: false;
+    // Feedback for the no-menu path, where nothing else indicates a copy just
+    // happened (the menu path's own click-to-close is already visible on its own,
+    // so this is never set there) -- a brief colored outline on the copied block,
+    // animated back to nothing. -1 means nothing is flashing.
+    in-out property <int> copy-flash-index: -1;
+    in-out property <bool> copy-flash-is-phrase: true;
+    flash-timer := Timer {
+        interval: 220ms;
+        running: copy-flash-index != -1;
+        triggered => { copy-flash-index = -1; }
+    }
 
     VerticalBox {
         HorizontalBox {
@@ -354,11 +370,15 @@ export component AppWindow inherits Window {
                                 background: phrase-background;
                                 border-radius: 3px;
                                 height: phrase-line.preferred-height;
+                                border-width: (copy-flash-index == i && copy-flash-is-phrase) ? 2px : 0px;
+                                border-color: prompt-accent;
+                                animate border-width { duration: 220ms; easing: ease-out; }
 
                                 // Stage 13: view-only, no selection/Ctrl+C -- see
-                                // TranscriptEntry's own comment. Copying is a
-                                // right-click "Copy" menu instead (ContextMenuArea
-                                // below), of the block's plain `phrase-copy` text.
+                                // TranscriptEntry's own comment. Copying is
+                                // right-click, either via a "Copy" menu or directly
+                                // (show-context-menu below) -- of the block's plain
+                                // `phrase-copy` text.
                                 phrase-line := StyledText {
                                     text: entry.phrase-styled;
                                     default-color: phrase-color;
@@ -372,12 +392,29 @@ export component AppWindow inherits Window {
                                     height: self.preferred-height;
                                 }
 
-                                ContextMenuArea {
+                                if show-context-menu: ContextMenuArea {
                                     Menu {
                                         MenuItem {
                                             title: "Copy";
                                             enabled: entry.phrase-copy != "";
                                             activated => { copy-block-requested(i, true); }
+                                        }
+                                    }
+                                }
+
+                                // No-menu path: right-click copies immediately and
+                                // flashes the block's border instead of opening a
+                                // menu (see show-context-menu/copy-flash-index above).
+                                if !show-context-menu: TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right
+                                            && event.kind == PointerEventKind.up
+                                            && entry.phrase-copy != "" {
+                                            copy-flash-index = i;
+                                            copy-flash-is-phrase = true;
+                                            copy-block-requested(i, true);
                                         }
                                     }
                                 }
@@ -407,6 +444,9 @@ export component AppWindow inherits Window {
                                 background: translation-background;
                                 border-radius: 3px;
                                 height: translation-line.preferred-height;
+                                border-width: (copy-flash-index == i && !copy-flash-is-phrase) ? 2px : 0px;
+                                border-color: prompt-accent;
+                                animate border-width { duration: 220ms; easing: ease-out; }
 
                                 // Stage 13: see phrase-line's own comment above.
                                 translation-line := StyledText {
@@ -422,12 +462,26 @@ export component AppWindow inherits Window {
                                     height: self.preferred-height;
                                 }
 
-                                ContextMenuArea {
+                                if show-context-menu: ContextMenuArea {
                                     Menu {
                                         MenuItem {
                                             title: "Copy";
                                             enabled: entry.translation-copy != "";
                                             activated => { copy-block-requested(i, false); }
+                                        }
+                                    }
+                                }
+
+                                if !show-context-menu: TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right
+                                            && event.kind == PointerEventKind.up
+                                            && entry.translation-copy != "" {
+                                            copy-flash-index = i;
+                                            copy-flash-is-phrase = false;
+                                            copy-block-requested(i, false);
                                         }
                                     }
                                 }
@@ -1024,6 +1078,9 @@ export component SettingsDialog inherits Dialog {
     // Stage 10: per-entry text-to-speech speaker buttons. Live-reloaded, same
     // as show-dictionary/spell-check above.
     in-out property <bool> enable-text-to-speech: true;
+    // Right-click "Copy" menu vs. instant copy-on-right-click (see
+    // AppWindow's own show-context-menu). Live-reloaded, same as the above.
+    in-out property <bool> show-context-menu: false;
     in-out property <[string]> themes: ["Auto", "Light", "Dark"];
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
@@ -1253,6 +1310,12 @@ export component SettingsDialog inherits Dialog {
                 CheckBox { text: "Enable text-to-speech"; checked <=> enable-text-to-speech; }
                 Text {
                     text: "Applies to the next translation immediately — no restart needed. \"Spell check suggestions\" has no effect while \"Show dictionary\" is off.";
+                    wrap: word-wrap;
+                }
+
+                CheckBox { text: "Show menu on right-click"; checked <=> show-context-menu; }
+                Text {
+                    text: "When off (default), right-click a transcript block copies it immediately -- a brief border flash confirms it. When on, right-click opens a \"Copy\" menu instead. Applies immediately, no restart needed.";
                     wrap: word-wrap;
                 }
 

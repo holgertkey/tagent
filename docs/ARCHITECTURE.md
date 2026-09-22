@@ -354,13 +354,27 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     theme poll doesn't re-parse and re-lay-out every row for nothing. Rows are written
     back individually with `set_row_data`, not `set_transcript_entries` (which rebuilds
     the model and would reset the scroll position).
-  - **Copying**: a right-click "Copy" menu per block (`ContextMenuArea` + `Menu` +
-    `MenuItem`, one pair per phrase/translation `Rectangle`) replaces the lost selection --
-    `copy-block-requested(index, is_phrase)` reads that row's `phrase-copy`/
-    `translation-copy` (plain text, no prefix, no markup -- a dictionary hit copies the
-    whole article) and writes it via `ClipboardManager::set_text` on a spawned thread, same
-    as the existing 📋 button. Deliberately a different callback from `copy-requested`
-    (the unrelated "paste clipboard into input" button).
+  - **Copying**: right-click a block replaces the lost selection, in one of two modes
+    controlled by `show_context_menu` (`tagent-gui.json`, Settings > General "Show menu on
+    right-click", default `false`, live-reloaded -- added 2026-09-22, a day after the
+    highlighting/copy-menu feature itself, once a single-item menu turned out to be pure
+    friction over just copying directly). Either way the target is `copy-block-requested(index,
+    is_phrase)`, whose Rust handler reads that row's `phrase-copy`/`translation-copy` (plain
+    text, no prefix, no markup -- a dictionary hit copies the whole article) and writes it via
+    `ClipboardManager::set_text` on a spawned thread, same as the existing 📋 button --
+    deliberately a different callback from `copy-requested` (the unrelated "paste clipboard
+    into input" button).
+    - **Menu on** (`ContextMenuArea` + `Menu` + `MenuItem`, one pair per phrase/translation
+      `Rectangle`): right-click opens a "Copy" menu; clicking it fires `copy-block-requested`.
+    - **Menu off (default)**: the `ContextMenuArea` is swapped for a plain `TouchArea`
+      (`if show-context-menu: ContextMenuArea {...}` / `if !show-context-menu: TouchArea
+      {...}`, mutually exclusive per block) whose `pointer-event` fires `copy-block-requested`
+      directly on a right-button-up, with no menu shown at all. Since nothing else indicates
+      the copy happened, `copy-flash-index`/`copy-flash-is-phrase` (AppWindow properties, set
+      right before firing the callback) drive a 220ms `animate`d `border-width` flash
+      (`prompt-accent`-colored) on the copied `Rectangle`, reset by a `flash-timer := Timer`
+      element. The menu path never touches this state, since the menu's own click-to-close is
+      already visible feedback on its own.
 - **Configurable prompt color** (2026-09-22): the `[Language]:` prompt shown before phrase
   and translation text has its own color, independent of the phrase/translation text colors
   -- `prompt_color` (`tagent-gui.json`, Settings > View) for the main window, resolved in

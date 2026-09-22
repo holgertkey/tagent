@@ -12,6 +12,19 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+004] - 2026-09-22
+
+### Added
+- **"Show menu on right-click" setting** (Settings > General, default off): with it off, right-click
+  on a transcript block copies it immediately instead of opening a one-item "Copy" menu -- a brief
+  border flash confirms the copy since there's no menu-click to see it happen. With it on, right-click
+  opens the "Copy" menu, same as before this change.
+
+### Changed
+- **Right-click copies immediately by default.** This changes the transcript's out-of-the-box
+  right-click behavior introduced by the "Semantic highlighting" release above: previously right-click
+  always opened a "Copy" menu; now it copies directly unless "Show menu on right-click" is turned on.
+
 ## [0.14.0+003] - 2026-09-22
 
 ### Added

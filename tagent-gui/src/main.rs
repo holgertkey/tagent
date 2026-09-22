@@ -437,6 +437,7 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
 
     window.set_block_spacing_px(config.block_spacing_px);
     window.set_phrases_spacing_px(config.phrases_spacing_px);
+    window.set_show_context_menu(config.show_context_menu);
 
     restyle_transcript(window);
 }
@@ -945,6 +946,7 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_show_dictionary(config.show_dictionary);
     dialog.set_spell_check(config.spell_check);
     dialog.set_enable_text_to_speech(config.enable_text_to_speech);
+    dialog.set_show_context_menu(config.show_context_menu);
 
     let themes = dialog.get_themes();
     let theme_index = themes
@@ -2197,6 +2199,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 show_dictionary: dialog.get_show_dictionary(),
                 spell_check: dialog.get_spell_check(),
                 enable_text_to_speech: dialog.get_enable_text_to_speech(),
+                show_context_menu: dialog.get_show_context_menu(),
                 background_color: color_field_hex(
                     dialog.get_background_use_default(),
                     dialog.get_background_red(),
