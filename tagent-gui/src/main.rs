@@ -1659,6 +1659,10 @@ fn apply_window_geometry(
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     #[cfg(target_os = "windows")]
     platform::windows::console::attach_parent();
+    // Before the first window: the OpenGL renderer can deadlock on a keyboard-layout
+    // change (see the module doc comment).
+    #[cfg(target_os = "windows")]
+    platform::windows::renderer::select_default_renderer();
 
     let window = AppWindow::new()?;
     // Right after the first window: that's when winit registers for raw keyboard

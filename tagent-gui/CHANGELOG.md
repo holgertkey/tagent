@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+011] - 2026-09-23
+
+### Fixed
+- **Hang on a keyboard-layout switch (Windows)**: switching the layout could freeze
+  `tagent-gui` for good, most readily with switchers that broadcast
+  `WM_INPUTLANGCHANGEREQUEST` to all windows. The cause was a deadlock between the UI thread
+  and the NVIDIA OpenGL driver's own thread over the IMM lock. `tagent-gui` now uses Slint's
+  software renderer on Windows, which never loads the OpenGL driver; setting `SLINT_BACKEND`
+  (e.g. `winit-femtovg`) still overrides it.
+
 ## [0.14.0+010] - 2026-09-22
 
 ### Removed

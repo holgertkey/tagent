@@ -7,5 +7,7 @@ pub mod console;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Slint renderer selection (software by default, to avoid an OpenGL-driver deadlock).
+pub mod renderer;
 /// Cursor position and foreground-window focus save/restore, for the Stage 6 popup.
 pub mod window;

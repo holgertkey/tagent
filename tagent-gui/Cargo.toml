@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0+010"
+version = "0.14.0+011"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
