@@ -1169,7 +1169,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     every launch, and it depends on Slint internals. An unbound `visible` on
     `SystemTrayIcon` is compiled as a constant, so `TrayIcon::hide()` panics with
     "Constant property being changed". The proper fix is upstream, where Slint
-    would register the item only once the menu is built.
+    would register the item only once the menu is built. Reported as
+    [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
+    (2026-09-24). Once a Slint release fixes it, bump `slint`/`slint-build`
+    together and remove this entry.
 
 - **Language list and history logging aren't configurable at all yet** — no
   field exists for either (the 6-language list stays hardcoded).
