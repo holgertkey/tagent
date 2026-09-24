@@ -5662,7 +5662,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+014"
+version = "0.14.0+015"
 dependencies = [
  "arboard",
  "clipboard-win",

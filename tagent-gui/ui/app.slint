@@ -731,19 +731,15 @@ export component TranslationPopup inherits Window {
     // popup) -- a `TouchArea` inside each of the phrase/translation `Rectangle`s
     // below, right-button-up triggers `popup-copy-requested` for that block.
     //
-    // That meant a new nested interactive element over the same text `touch-area`
-    // used for drag-by-any-point-of-the-surface, and dragging was temporarily
-    // disabled outright rather than ship a half-working compromise. Restored the
-    // same day, gated behind Ctrl (a plain left-click-drag would have re-created
-    // the exact conflict this whole redesign exists to avoid, since a plain left
-    // press on one of these `TouchArea`s is indistinguishable from one meant to
-    // start a drag): the drag logic lives in these same two `TouchArea`s now
-    // (not `touch-area`, which no longer receives any events over the text), on
-    // `event.modifiers.control` -- see each block's own `TouchArea` below. Drag
-    // only works from the two blocks, not `touch-area`'s own thin margin
-    // (`content-layout`'s 8px padding plus the popup's border) -- a deliberately
-    // accepted, minor gap rather than tripling this same logic into a third
-    // place for a sliver of surface.
+    // Those nested `TouchArea`s sit over the text, so `touch-area` (below) never
+    // sees a press there; dragging therefore lives in the same two `TouchArea`s
+    // (plain left-button drag -- the buttons don't overlap, right copies, left
+    // drags) *and* in `touch-area` for the thin margin around them
+    // (`content-layout`'s 8px padding plus the border), so the popup can be
+    // dragged by any point of its surface. (0.14.0+007 to +014 gated the drag
+    // behind Ctrl; that turned out to be unnecessary, since a plain left press
+    // has no other meaning here -- the text isn't selectable. Ctrl+drag still
+    // works, modifiers are simply ignored.)
     in property <string> phrase-copy: "";
     in property <string> translation-copy: "";
     // Feedback since there's no menu-click to see: a brief colored outline on
@@ -751,6 +747,11 @@ export component TranslationPopup inherits Window {
     // split into two properties (no index needed -- exactly one phrase and one
     // translation block).
     in-out property <bool> copy-flash-active: false;
+    // True while the left button is held down on one of the phrase/translation
+    // blocks (a drag in progress, or about to be). `hide-timer` treats it as
+    // engagement the same way it treats `touch-area.pressed` for the margin:
+    // hover tracking isn't reliable while the pointer is grabbed.
+    property <bool> drag-pressed: false;
     in-out property <bool> copy-flash-is-phrase: true;
     popup-copy-flash-timer := Timer {
         interval: 220ms;
@@ -828,7 +829,7 @@ export component TranslationPopup inherits Window {
             // drag the pointer is grabbed, and hover tracking over this
             // TouchArea is not reliable in that state (same grab that made
             // wheel-scrolling report "not hovering", see `scroll-event` below).
-            if (touch-area.has-hover || touch-area.pressed) {
+            if (touch-area.has-hover || touch-area.pressed || drag-pressed) {
                 // Mirrors tagent-cli's `hide_terminal_and_restore` polling
                 // loop (`translator.rs`): once the initial delay has passed,
                 // keep re-checking every second for as long as the cursor
@@ -885,14 +886,23 @@ export component TranslationPopup inherits Window {
             width: 100%;
             height: 100%;
 
-            // Dragging no longer starts from here (2026-09-22) -- see phrase-copy's
-            // own doc comment above for why it moved into the phrase/translation
-            // blocks' own `TouchArea`s instead. This element only ever sees
-            // pointer events over the popup's thin margin now (`content-layout`'s
-            // padding plus the border), where there's no text to either copy or
-            // drag-start from, so it keeps just the hover/engagement bookkeeping.
+            // Only ever sees presses over the popup's thin margin
+            // (`content-layout`'s padding plus the border) -- the phrase/translation
+            // blocks' own `TouchArea`s take them over the text. Dragging from here
+            // covers that margin; see phrase-copy's doc comment above.
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down
+                    && event.button == PointerEventButton.left {
+                    root.start-hide-timer();
+                    root.drag-started();
+                } else if event.kind == PointerEventKind.up
+                    || event.kind == PointerEventKind.cancel {
+                    root.drag-ended();
+                }
+            }
             moved => {
                 root.start-hide-timer();
+                root.drag-moved();
             }
 
             // Wheel-scrolling flips `has-hover` to false -- even with the
@@ -944,12 +954,11 @@ export component TranslationPopup inherits Window {
                             width: parent.width - 8px;
                         }
 
-                        // Right-click copies this block; Ctrl+left-click drags the
+                        // Right-click copies this block; left-button drag moves the
                         // popup -- see phrase-copy's own doc comment above for why
                         // both live in this one nested TouchArea (mirroring the
                         // transcript's own per-block design for the copy half)
-                        // rather than anything menu-based, and why dragging needs
-                        // the Ctrl gate specifically. `drag-moved`/`drag-ended`
+                        // rather than anything menu-based. `drag-moved`/`drag-ended`
                         // fire unconditionally on every `moved`/up-or-cancel --
                         // harmless when no drag is in progress, since
                         // `wire_popup_drag` in main.rs (unchanged since dragging
@@ -960,8 +969,8 @@ export component TranslationPopup inherits Window {
                             height: 100%;
                             pointer-event(event) => {
                                 if event.kind == PointerEventKind.down
-                                    && event.button == PointerEventButton.left
-                                    && event.modifiers.control {
+                                    && event.button == PointerEventButton.left {
+                                    drag-pressed = true;
                                     root.start-hide-timer();
                                     root.drag-started();
                                 } else if event.kind == PointerEventKind.up
@@ -973,6 +982,7 @@ export component TranslationPopup inherits Window {
                                     popup-copy-requested(true);
                                 } else if event.kind == PointerEventKind.up
                                     || event.kind == PointerEventKind.cancel {
+                                    drag-pressed = false;
                                     root.drag-ended();
                                 }
                             }
@@ -1006,8 +1016,8 @@ export component TranslationPopup inherits Window {
                             height: 100%;
                             pointer-event(event) => {
                                 if event.kind == PointerEventKind.down
-                                    && event.button == PointerEventButton.left
-                                    && event.modifiers.control {
+                                    && event.button == PointerEventButton.left {
+                                    drag-pressed = true;
                                     root.start-hide-timer();
                                     root.drag-started();
                                 } else if event.kind == PointerEventKind.up
@@ -1019,6 +1029,7 @@ export component TranslationPopup inherits Window {
                                     popup-copy-requested(false);
                                 } else if event.kind == PointerEventKind.up
                                     || event.kind == PointerEventKind.cancel {
+                                    drag-pressed = false;
                                     root.drag-ended();
                                 }
                             }

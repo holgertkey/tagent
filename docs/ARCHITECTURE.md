@@ -433,15 +433,21 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     `mouse-cursor` "move" binding deleted, `drag-started`/`drag-moved`/`drag-ended` left declared
     and `wire_popup_drag` in `main.rs` left fully wired to them, unused), then brought back into
     the *same* two per-block `TouchArea`s that already handle copy: `PointerEventKind.down` +
-    `PointerEventButton.left` + `event.modifiers.control` calls `drag-started()`; `moved` always
+    `PointerEventButton.left` (+ `event.modifiers.control` until 0.14.0+014) calls `drag-started()`; `moved` always
     calls `drag-moved()`; any `up`/`cancel` not matched by the copy branch always calls
     `drag-ended()` -- both unconditional calls are safe no-ops when `wire_popup_drag`'s own
-    in-progress-drag state is `None`, the same shape the pre-disable code already had. Drag only
-    works from the two blocks now, not `touch-area`'s own thin margin (`content-layout`'s 8px
-    padding plus the border) -- accepted rather than tripling the same handler into a third
-    place for a sliver of surface. `touch-area` itself still exists for hover tracking
-    (auto-hide) and the wheel-scroll-hover-loss workaround (`scroll-event`), but no longer ever
-    sees a click over the text.
+    in-progress-drag state is `None`, the same shape the pre-disable code already had.
+  - **Plain left-button drag from any point (0.14.0+015)**: the Ctrl gate turned out to be
+    unnecessary -- copy reacts only to the right button and nothing else uses a plain left
+    press (the text isn't selectable), so the two never compete even inside one `TouchArea`.
+    The gate was dropped (modifiers are now ignored, so Ctrl+drag still works) and the same
+    left-down/`moved`/up-or-cancel handler was added to `touch-area` itself, which only ever
+    sees presses over the thin margin (`content-layout`'s 8px padding plus the border) -- so
+    the popup drags by any point of its surface. `touch-area` also still does hover tracking
+    (auto-hide) and the wheel-scroll-hover-loss workaround (`scroll-event`). A private
+    `drag-pressed` property, set while the left button is held on a block, joins
+    `touch-area.pressed` in `hide-timer`'s engagement check, since `touch-area.pressed` is
+    false for a press its nested block `TouchArea`s took.
   - `phrase-copy`/`translation-copy` (`TranslationPopup` properties) are set directly from
     `TranslationOutcome.phrase_raw`/`translation_raw` in `show_popup` -- both already the raw,
     unprompted text the transcript's own `*-copy` fields are built to match, so no extra

@@ -12,6 +12,15 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+015] - 2026-09-24
+
+### Changed
+- **The popup drags with a plain left-button drag, from any point of it**: holding Ctrl is no
+  longer needed (Ctrl+drag still works), and the thin margin around the phrase/translation
+  text can be grabbed too, not just the text itself. Right-click still copies a line; a plain
+  click without moving does nothing. The popup also no longer risks auto-hiding while the
+  button is held down over the text.
+
 ## [0.14.0+014] - 2026-09-24
 
 ### Added
