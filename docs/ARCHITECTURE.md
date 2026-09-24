@@ -1130,8 +1130,46 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   playback shipped at Stage 10, above). `app.slint` hardcodes a 6-language
   list (Auto/English/Russian/Spanish/French/German), much smaller than the
   ~16 languages `config.rs` supports for CLI/interactive mode.
+- **Detaching from the terminal** (`tagent-gui/src/detach.rs`, `#[cfg(unix)]`,
+  0.14.0+013): a Linux/macOS launch from a terminal would otherwise hold it until
+  Quit. First thing in `main` (before any thread exists, since it may `exit`),
+  `detach_from_terminal()` re-spawns `current_exe()` with the same arguments plus
+  `--foreground`, in a new session (`libc::setsid` in `pre_exec`, so no controlling
+  terminal: no SIGHUP on terminal close, no Ctrl+C), with stdin from `/dev/null`
+  and stdout/stderr appended to `dirs::data_dir()/tagent-gui/tagent-gui.log`
+  (truncated first once it is over 1 MiB), then the parent exits 0. The appended
+  `--foreground` is how the child knows not to detach again, and users pass it (or
+  `-f`) to stay attached. It only detaches when a standard stream is a terminal, so
+  desktop launchers, autostart and systemd units (which track the PID they started)
+  are unaffected. A failed re-spawn warns and carries on in the foreground. Output goes
+  to a file rather than staying on the terminal because `eprintln!` panics on a
+  write error, and a tty whose terminal has been closed returns EIO. Windows needs none of this, since
+  `windows_subsystem = "windows"` already makes shells not wait for the app.
 
 ### Known gaps in `tagent-gui`
+
+- **Empty tray menu after a slow start (Linux, GNOME)** — known, left as is
+  (2026-09-24). Occasionally the tray icon shows but right-click opens nothing,
+  so the only way to quit is `pkill tagent-gui`. Restarting fixes it. It happens
+  when startup is slow, typically the first launch of a freshly built binary
+  (cold disk cache), and it predates the terminal detach. It can be reproduced by
+  evicting the binary from the page cache (`posix_fadvise(POSIX_FADV_DONTNEED)`)
+  before launching.
+  - **Cause**: Slint 1.17's `ksni` backend
+    (`i-slint-core/items/system_tray/ksni.rs`) registers the
+    StatusNotifierItem with an **empty** menu and fills it in right afterwards via
+    `Handle::update`. `ksni` does emit `com.canonical.dbusmenu.LayoutUpdated` for
+    that. But if GNOME's `ubuntu-appindicators` extension reads the layout inside
+    the gap, it keeps the empty menu. The app side is fine the whole time:
+    `busctl --user call org.kde.StatusNotifierItem-<pid>-1 /MenuBar
+    com.canonical.dbusmenu GetLayout iias 0 -- -1 0` returns the full menu.
+  - **Why no workaround**: re-registering the icon once after startup (dropping
+    and recreating the item, which then carries the built menu from the start) was
+    tried and rejected. It needs a guessed delay, it makes the icon flicker on
+    every launch, and it depends on Slint internals. An unbound `visible` on
+    `SystemTrayIcon` is compiled as a constant, so `TrayIcon::hide()` panics with
+    "Constant property being changed". The proper fix is upstream, where Slint
+    would register the item only once the menu is built.
 
 - **Language list and history logging aren't configurable at all yet** — no
   field exists for either (the 6-language list stays hardcoded).

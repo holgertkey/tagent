@@ -24,6 +24,19 @@ or, from a checkout of the repository:
 cargo run -p tagent-gui
 ```
 
+On Linux and macOS, starting it from a terminal doesn't hold that terminal: the app moves
+itself to the background and the prompt comes back at once. Its diagnostics (config
+warnings, "Global hotkeys disabled", speech errors) go to a log file,
+`~/.local/share/tagent-gui/tagent-gui.log` on Linux and
+`~/Library/Application Support/tagent-gui/tagent-gui.log` on macOS. To keep the app
+attached, with its output in the terminal (e.g. while debugging), pass `--foreground`
+(or `-f`):
+
+```bash
+tagent-gui --foreground
+cargo run -p tagent-gui -- --foreground
+```
+
 On Windows the app has no console window of its own, so starting it from Explorer or a
 shortcut shows only the GUI. Its diagnostics (config warnings, "Global hotkeys disabled",
 speech errors) go to `stderr`, and they still appear if you start it from a terminal:

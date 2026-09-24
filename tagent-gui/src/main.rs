@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
 mod config;
+#[cfg(unix)]
+mod detach;
 mod dictionary;
 mod platform;
 mod popup_position;
@@ -1685,6 +1687,10 @@ fn apply_window_geometry(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Linux/macOS: give the terminal back (see the module doc comment); must come before
+    // any thread is spawned.
+    #[cfg(unix)]
+    detach::detach_from_terminal();
     #[cfg(target_os = "windows")]
     platform::windows::console::attach_parent();
     // Before the first window: the OpenGL renderer can deadlock on a keyboard-layout

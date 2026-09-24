@@ -5662,12 +5662,13 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+012"
+version = "0.14.0+013"
 dependencies = [
  "arboard",
  "clipboard-win",
  "dirs",
  "i-slint-backend-testing",
+ "libc",
  "rdev",
  "rodio",
  "serde",

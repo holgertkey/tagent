@@ -12,6 +12,18 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+013] - 2026-09-24
+
+### Changed
+- **Doesn't hold the terminal (Linux/macOS)**: started from a terminal, `tagent-gui` now
+  re-launches itself in its own session with no controlling terminal and returns the prompt
+  at once. Closing the terminal or pressing Ctrl+C there no longer stops the app. Its
+  diagnostics go to `tagent-gui.log` in the data directory
+  (`~/.local/share/tagent-gui/` on Linux). A log bigger than 1 MiB is started over.
+  `--foreground` (or `-f`) keeps the old attached behavior, with output in the terminal.
+  Launches from outside a terminal (desktop launcher, autostart, systemd) behave as before.
+  Windows already behaved this way.
+
 ## [0.14.0+012] - 2026-09-24
 
 ### Added
