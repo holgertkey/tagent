@@ -63,6 +63,11 @@ fn default_popup_show_prompt() -> bool {
     true
 }
 
+/// Default: the global translate hotkey pops up the translation next to the cursor.
+fn default_show_popup() -> bool {
+    true
+}
+
 /// Default: the popup shows the original phrase line, not just the translation.
 fn default_popup_show_phrase() -> bool {
     true
@@ -212,6 +217,11 @@ pub struct GuiConfig {
     /// [`Self::popup_color`] follows [`Self::translation_color`].
     #[serde(default = "default_style_color")]
     pub popup_prompt_color: String,
+    /// Whether the global translate hotkey shows the popup at all. When `false`,
+    /// the hotkey still translates the selection into the transcript, just with
+    /// no popup. Live-reloaded, no restart needed.
+    #[serde(default = "default_show_popup")]
+    pub show_popup: bool,
     /// Whether the popup shows the "[Auto]:"/"[Russian]:"-style prompt before
     /// its phrase/translation text. Independent of the transcript's own
     /// [`Self::show_prompt`].
@@ -390,6 +400,7 @@ impl Default for GuiConfig {
             popup_background: default_style_color(),
             popup_prompt_color: default_style_color(),
             popup_show_prompt: default_popup_show_prompt(),
+            show_popup: default_show_popup(),
             popup_show_phrase: default_popup_show_phrase(),
             popup_max_width: default_popup_max_width(),
             popup_max_height: default_popup_max_height(),
@@ -1161,6 +1172,32 @@ mod tests {
 
         assert!(config.popup_show_prompt);
         assert!(config.popup_show_phrase);
+    }
+
+    #[test]
+    fn old_file_without_show_popup_field_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"translate_provider": "google", "theme": "dark"}"#,
+        )
+        .unwrap();
+
+        assert!(load_from_path(&path).show_popup);
+    }
+
+    #[test]
+    fn show_popup_off_round_trips_through_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        let config = GuiConfig {
+            show_popup: false,
+            ..Default::default()
+        };
+        save_to_path(&path, &config).unwrap();
+
+        assert!(!load_from_path(&path).show_popup);
     }
 
     #[test]

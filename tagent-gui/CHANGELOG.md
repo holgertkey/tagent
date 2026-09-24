@@ -12,6 +12,14 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+014] - 2026-09-24
+
+### Added
+- **Option to turn off the hotkey popup**: a new "Show popup on hotkey" checkbox on
+  Settings > Popup (`show_popup` in `tagent-gui.json`, default `true`, applies at once).
+  With it off, the global translate hotkey still translates the selection into the
+  transcript, but no popup appears.
+
 ## [0.14.0+013] - 2026-09-24
 
 ### Changed

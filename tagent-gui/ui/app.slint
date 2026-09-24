@@ -1282,6 +1282,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> popup-font-index: 0;
     in-out property <int> popup-size: 13;
     in-out property <bool> popup-show-prompt: true;
+    in-out property <bool> show-popup: true;
     in-out property <bool> popup-show-phrase: true;
     in-out property <int> popup-max-width: 600;
     in-out property <int> popup-max-height: 600;
@@ -1618,10 +1619,11 @@ export component SettingsDialog inherits Dialog {
                     alignment: start;
 
                     Text {
-                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection. Drag it with the mouse to move it; with \"Remember position after dragging\" on, it reappears where you left it instead of next to the cursor.";
+                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection. Drag it with the mouse to move it; with \"Remember position after dragging\" on, it reappears where you left it instead of next to the cursor. Turn off \"Show popup on hotkey\" to have the hotkey translate into the transcript only.";
                         wrap: word-wrap;
                     }
 
+                    CheckBox { text: "Show popup on hotkey"; checked <=> show-popup; }
                     CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
                     popup-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
                     CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }

@@ -1009,6 +1009,7 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_popup_font_index(font_index_for(&config.popup_font));
     dialog.set_popup_size(config.popup_size);
     dialog.set_popup_show_prompt(config.popup_show_prompt);
+    dialog.set_show_popup(config.show_popup);
     dialog.set_popup_show_phrase(config.popup_show_phrase);
     dialog.set_popup_max_width(config.popup_max_width);
     dialog.set_popup_max_height(config.popup_max_height);
@@ -2350,6 +2351,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_popup_prompt_color_blue(),
                 ),
                 popup_show_prompt: dialog.get_popup_show_prompt(),
+                show_popup: dialog.get_show_popup(),
                 popup_show_phrase: dialog.get_popup_show_phrase(),
                 popup_max_width: dialog.get_popup_max_width(),
                 popup_max_height: dialog.get_popup_max_height(),
@@ -2779,6 +2781,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         popup_show_prompt,
                         popup_show_phrase,
                         remembered_popup_position,
+                        show_popup_enabled,
                     ) = {
                         let mut manager = config_manager.lock().unwrap();
                         manager.check_and_reload();
@@ -2796,6 +2799,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             cfg.remember_popup_position
                                 .then_some(cfg.popup_position)
                                 .flatten(),
+                            cfg.show_popup,
                         )
                     };
                     window.set_tts_enabled(enable_text_to_speech);
@@ -2837,6 +2841,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     },
                                     Some(Box::new(move |_entry: &TranscriptEntry, outcome: &TranslationOutcome| {
                                         is_processing2.store(false, Ordering::SeqCst);
+                                        if !show_popup_enabled {
+                                            return;
+                                        }
                                         show_popup(
                                             &popup_weak2,
                                             outcome,
