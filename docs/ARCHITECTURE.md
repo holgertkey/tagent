@@ -215,7 +215,7 @@ one platform will fail to compile on the others.
 | Capability | Linux | Windows | macOS |
 |---|---|---|---|
 | Clipboard get/set | ✅ `arboard` | ✅ `clipboard-win` | ❌ stub, always errors |
-| Auto-copy selection (simulated Ctrl+C) | ✅ `xdotool` (X11/XWayland only) | ✅ `SendInput` | ❌ stub, always errors |
+| Auto-copy selection (simulated Ctrl+C) | ✅ XTest, by hardware keycode (X11/XWayland only) | ✅ `SendInput` | ❌ stub, always errors |
 | Global hotkeys | ✅ `rdev` + `XGrabKey` (X11/XWayland only) | ✅ `WH_KEYBOARD_LL` hook | ❌ stub, prints a notice and idles |
 | Show/hide/focus terminal window | ✅ Xlib | ✅ Win32 (`GetConsoleWindow` etc.) | ❌ stub, all no-ops |
 | Pure Wayland (no XWayland) | ⚠️ interactive/CLI only — clipboard auto-copy and hotkeys are disabled with an explanatory message | n/a | n/a |
@@ -600,7 +600,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   what happened (see the Hotkey bullet below). `get_text`/`set_text`/
   `copy_selected_text`/`get_text_with_copy` are ported near-verbatim from
   `tagent-cli`'s own `ClipboardManager` (Linux: `arboard` + a process-lifetime
-  `static CLIPBOARD` + `xdotool`-simulated Ctrl+C; Windows: `clipboard-win` +
+  `static CLIPBOARD` + XTest-simulated Ctrl+C; Windows: `clipboard-win` +
   `SendInput`/`WM_CANCELMODE`/`WM_COPY`-to-focused-control fallback; macOS: a
   stub, every method `Err`, matching `tagent-cli`'s own macOS posture). `set_text`
   is currently unused (`#[allow(dead_code)]`, kept for API parity and future use,
@@ -612,7 +612,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   run on Slint's own event loop thread), then applies the result via
   `slint::invoke_from_event_loop`, mirroring `on_translate_requested`'s existing
   thread-hop pattern exactly. On success it replaces `input-text`; on failure
-  (e.g. the Wayland guard, or `xdotool` missing) it pushes a `TranscriptEntry {
+  (e.g. the Wayland guard, or no XTest extension) it pushes a `TranscriptEntry {
   phrase: "[Clipboard]", ... }` through the existing `push_transcript_entry`
   error-display convention, rather than inventing a new one. **Known limitation,
   inherent to a button-triggered (as opposed to global-hotkey-triggered)

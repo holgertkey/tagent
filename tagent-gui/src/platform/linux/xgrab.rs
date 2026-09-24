@@ -201,7 +201,7 @@ fn vk_modifiers_to_x11_mask(modifiers: &[u32]) -> c_uint {
 /// exists rather than calling into rdev's internals directly) exactly, so
 /// grabbing and detection agree on which physical key each abstract VK code
 /// means.
-fn vk_to_x11_keycode(vk_code: u32) -> Option<c_uint> {
+pub(super) fn vk_to_x11_keycode(vk_code: u32) -> Option<c_uint> {
     match vk_code {
         // Letters A-Z: physical QWERTY key positions, not alphabetical order,
         // so no linear formula from the VK code -- listed individually.

@@ -12,6 +12,22 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+017] - 2026-09-24
+
+### Fixed
+- **Hotkey copy with a non-Latin keyboard layout on Linux**: the simulated Ctrl+C no
+  longer goes through `xdotool`, which switched the XKB group (keyboard layout) to the Latin
+  one and back for every key it sent; with e.g. the Russian layout active the hotkey took up
+  to several seconds to copy the selection. Ctrl+C is now sent directly through the X11
+  XTest extension by physical key, without touching the layout. It first waits for the
+  hotkey's own key to be released (while it's held, the hotkey's key grab would swallow the
+  Ctrl+C), then releases only the modifiers that are actually still held. With a non-Latin
+  layout the application receives the same Ctrl+C as when pressed by hand (Ctrl plus that
+  layout's letter on the C key).
+
+### Removed
+- **`xdotool` is no longer needed** at run time on Linux.
+
 ## [0.14.0+015] - 2026-09-24
 
 ### Changed

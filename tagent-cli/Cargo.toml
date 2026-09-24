@@ -1,6 +1,6 @@
 [package]
 name = "tagent-cli"
-version = "0.16.0"
+version = "0.16.0+002"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]
@@ -50,7 +50,7 @@ windows = { version = "0.52", features = [
 # Linux-only dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 rdev = "0.5"
-x11 = { version = "2.21", features = ["xlib"] }
+x11 = { version = "2.21", features = ["xlib", "xtest"] }
 
 # Windows-only build dependencies
 [target.'cfg(target_os = "windows")'.build-dependencies]

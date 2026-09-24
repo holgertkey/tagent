@@ -1,4 +1,4 @@
-/// Clipboard read/write and "copy selected text" (via `arboard` + `xdotool`).
+/// Clipboard read/write and "copy selected text" (via `arboard` + the X11 XTest extension).
 pub mod clipboard;
 /// Global hotkey detection, driven by `rdev` key events and X11 key grabbing (see [`xgrab`]).
 pub mod keyboard;

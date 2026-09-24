@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0
+# Tagent Text Translator v0.16.0+002
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -73,7 +73,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 
 ### Prerequisites
 - **Windows**: Windows 10/11
-- **Linux**: X11 or Wayland display server, `xdotool` (for hotkey auto-copy on X11)
+- **Linux**: X11 or Wayland display server (hotkey auto-copy needs X11/XWayland)
 - Internet connection for translations
 
 ## Download
@@ -467,7 +467,6 @@ AutoPromptColor = Yellow
 - Restart the application after changing hotkey configuration
 - Verify hotkey format in config file is correct
 - **Linux (Wayland)**: Global hotkeys are not supported on Wayland — use interactive or CLI mode instead
-- **Linux (X11)**: Ensure `xdotool` is installed (`sudo apt install xdotool`)
 
 **Speech (TTS) not working**
 - Check internet connection (uses Google TTS API)
@@ -496,7 +495,7 @@ AutoPromptColor = Yellow
 
 ### System Requirements
 - **Windows**: Windows 10 or later
-- **Linux**: X11 or Wayland, `xdotool` for hotkey auto-copy (X11 only)
+- **Linux**: X11 or Wayland (hotkey auto-copy needs X11/XWayland)
 - ~5MB disk space
 - Network access for translations
 
@@ -549,7 +548,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0
+**Current Version**: v0.16.0+002
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -582,4 +581,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+002** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

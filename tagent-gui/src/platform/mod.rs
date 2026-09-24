@@ -4,7 +4,7 @@
 // Not a `trait`/`dyn` object design — the compiler only ever compiles in one
 // platform's module.
 
-/// Linux platform implementation (clipboard via `arboard` + `xdotool`; hotkeys via
+/// Linux platform implementation (clipboard via `arboard` + XTest; hotkeys via
 /// `rdev` + `XGrabKey`; full feature parity requires X11 or XWayland).
 #[cfg(target_os = "linux")]
 pub mod linux;

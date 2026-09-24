@@ -61,8 +61,9 @@ on Debian/Ubuntu:
 sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev
 ```
 
-The "translate the current selection" hotkey also needs the `xdotool` program at run
-time (it simulates Ctrl+C in the source application).
+The "translate the current selection" hotkey simulates Ctrl+C in the source application
+through the X server's XTest extension, so it needs no extra programs, but it does need
+X11 or XWayland.
 
 By default the app starts minimized to the tray; click the tray icon (or use the hotkey)
 to bring it up. Set `start_minimized` to `false` in `tagent-gui.json`, or untick it in

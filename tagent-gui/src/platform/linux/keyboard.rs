@@ -361,7 +361,7 @@ impl KeyboardHook {
 
                 if translate_state.handle(event.vk_code, true, &modifier_state) {
                     // Clear all modifier state: the clipboard copy that follows
-                    // releases them via its own `xdotool keyup`, and rdev will
+                    // releases the held ones via XTest, and rdev will
                     // see synthetic release events anyway.
                     modifier_state.clear();
                     on_translate_trigger();

@@ -423,7 +423,7 @@ impl KeyboardHook {
                             true,
                             &modifier_snapshot,
                         ) {
-                            // Clear all modifier state: xdotool keyup will release them,
+                            // Clear all modifier state: the clipboard copy will release them,
                             // and rdev will see synthetic release events anyway
                             state_guard.modifier_state.clear();
                             drop(state_guard);
