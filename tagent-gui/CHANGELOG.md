@@ -12,6 +12,15 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+012] - 2026-09-24
+
+### Added
+- **Semantic highlighting in the hotkey popup**: the popup now uses the same role-tagged
+  templates as the transcript. A dictionary hit shows part-of-speech labels, `[synonyms]`
+  and the spelling-correction notice in their own colors, and an error shows in the error
+  color. Before, only the `[Language]:` prompt was colored. The colors come from the popup's
+  own background, and they update right away when the theme or popup colors change.
+
 ## [0.14.0+011] - 2026-09-23
 
 ### Fixed

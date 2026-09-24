@@ -390,8 +390,11 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   popup's own independent counterpart (Settings > Popup), chaining through `prompt_color`
   first and the popup's own theme default last -- the same fallback shape `popup_color`
   already uses through `translation_color`. Making this visible in the popup required
-  converting its `phrase-line`/`translation-line` from plain `Text` to `StyledText` too (only
-  `Role::Prompt` ever renders there -- no dictionary-structure highlighting, out of scope);
+  converting its `phrase-line`/`translation-line` from plain `Text` to `StyledText` too
+  (initially prompt-only; since `tagent-gui` `0.14.0+012` the popup renders the transcript's
+  full role-tagged templates -- `TranslationOutcome::translation_body_template`, wrapped by
+  `popup_templates` and kept on the popup as `phrase-template`/`translation-template` so
+  `restyle_popup`, called from `apply_popup_style`, re-renders them on a theme/color change);
   since whether `StyledText.preferred-width` reports natural unwrapped width the same way
   `Text`'s does (the property `content-natural-width` relies on to size the popup) was
   unverified, width measurement stayed on two invisible plain-`Text` twins

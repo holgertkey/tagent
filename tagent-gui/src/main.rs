@@ -551,6 +551,10 @@ fn apply_popup_style(popup: &TranslationPopup, config: &config::GuiConfig) {
         &config.popup_prompt_color,
         scheme_default_prompt,
     ));
+
+    // The resolved background/prompt color may have just changed -- re-render a
+    // currently visible (or next-shown) popup's text against them.
+    restyle_popup(popup);
 }
 
 /// Shows the Stage 6 popup with `outcome`'s text -- formatted here using the popup's
@@ -611,29 +615,13 @@ fn show_popup(
     popup.set_phrase_copy(outcome.phrase_raw.clone().into());
     popup.set_translation_copy(outcome.translation_raw.clone().into());
 
-    // Prompt highlighting (2026-09-22): the popup's own "[Lang]:" prefix, in
-    // popup-prompt-accent -- no dictionary-structure highlighting here (out of
-    // scope; a dictionary hit's translation_raw is rendered as one plain, escaped
-    // block, same as any other translation), so `pos`/`synonym`/`notice`/`error`
-    // are never actually referenced and popup-background is passed only for
-    // plausibility, not because it matters.
-    let popup_colors = styled::RoleColors::new(
-        popup.get_popup_background(),
-        color_to_hex(popup.get_popup_prompt_accent()),
-    );
-    popup.set_phrase_styled(styled::render_template(
-        &styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw),
-        &popup_colors,
-    ));
-    popup.set_translation_styled(styled::render_template(
-        &styled::translation_template_from_body(
-            show_prompt,
-            &outcome.to_lang,
-            &styled::escape_markdown(&outcome.translation_raw),
-            outcome.is_error,
-        ),
-        &popup_colors,
-    ));
+    // Highlighting: the same role-tagged templates the transcript uses (prompt
+    // prefix, and for a dictionary hit its part-of-speech/synonym/notice spans),
+    // kept on the popup so `apply_popup_style` can re-render them on a restyle.
+    let (phrase_template, translation_template) = popup_templates(outcome, show_prompt);
+    popup.set_phrase_template(phrase_template.into());
+    popup.set_translation_template(translation_template.into());
+    restyle_popup(&popup);
 
     popup.show().ok();
 
@@ -1166,9 +1154,49 @@ struct TranslationOutcome {
     to_lang: String,
     phrase_raw: String,
     translation_raw: String,
+    /// `translation_raw`'s Stage 13 template *without* any `[Lang]:` prefix -- a
+    /// dictionary hit's role-tagged article (part-of-speech/synonym/notice spans), or
+    /// the [`styled::escape_markdown`]-ed plain translation or error message. The
+    /// popup wraps it with its own prefix via [`popup_templates`].
+    translation_body_template: String,
     /// `true` when `translation_raw` is already a formatted `"Error: ..."` message
     /// (never itself lang-prompt-formatted, same as the transcript's own handling).
     is_error: bool,
+}
+
+/// Builds the popup's (phrase, translation) templates for `outcome` under the popup's
+/// own `show_prompt` -- the same role-tagged templates the transcript uses, so a
+/// dictionary hit gets the same part-of-speech/synonym/notice highlighting there.
+fn popup_templates(outcome: &TranslationOutcome, show_prompt: bool) -> (String, String) {
+    (
+        styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw),
+        styled::translation_template_from_body(
+            show_prompt,
+            &outcome.to_lang,
+            &outcome.translation_body_template,
+            outcome.is_error,
+        ),
+    )
+}
+
+/// (Re-)renders the popup's `phrase-template`/`translation-template` against its
+/// current resolved `popup-background`/`popup-prompt-accent` -- called when a popup
+/// is shown and again from [`apply_popup_style`], so a theme or color change while
+/// the popup is visible re-colors it just like `restyle_transcript` does for the
+/// transcript.
+fn restyle_popup(popup: &TranslationPopup) {
+    let colors = styled::RoleColors::new(
+        popup.get_popup_background(),
+        color_to_hex(popup.get_popup_prompt_accent()),
+    );
+    popup.set_phrase_styled(styled::render_template(
+        &popup.get_phrase_template(),
+        &colors,
+    ));
+    popup.set_translation_styled(styled::render_template(
+        &popup.get_translation_template(),
+        &colors,
+    ));
 }
 
 /// Callback type for [`spawn_translation`]'s `on_done` parameter — named (rather than
@@ -1415,28 +1443,27 @@ fn spawn_translation(
         });
 
         slint::invoke_from_event_loop(move || {
-            let (translation_raw, translation_speech, is_error, translation_full_template) =
+            // `translation_body_template` is the un-prefixed body (a dictionary
+            // article's role-tagged template, or the escaped plain translation/error
+            // message) -- kept separately for the popup, which adds its own `[Lang]:`
+            // prefix under its own `popup_show_prompt` setting.
+            let (translation_raw, translation_speech, is_error, translation_body_template) =
                 match &result {
                     Ok((body, speech_text, body_template)) => {
-                        let full_template = styled::translation_template_from_body(
-                            show_prompt,
-                            &to_lang,
-                            body_template,
-                            false,
-                        );
-                        (body.clone(), speech_text.clone(), false, full_template)
+                        (body.clone(), speech_text.clone(), false, body_template.clone())
                     }
                     Err(err) => {
                         let message = format!("Error: {err}");
-                        let full_template = styled::translation_template_from_body(
-                            show_prompt,
-                            &to_lang,
-                            &styled::escape_markdown(&message),
-                            true,
-                        );
-                        (message.clone(), message, true, full_template)
+                        let body_template = styled::escape_markdown(&message);
+                        (message.clone(), message, true, body_template)
                     }
                 };
+            let translation_full_template = styled::translation_template_from_body(
+                show_prompt,
+                &to_lang,
+                &translation_body_template,
+                is_error,
+            );
             let phrase_full_template = styled::phrase_template(show_prompt, &from_lang, &text);
 
             // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived
@@ -1502,6 +1529,7 @@ fn spawn_translation(
                 to_lang: to_lang.clone(),
                 phrase_raw: text.clone(),
                 translation_raw,
+                translation_body_template,
                 is_error,
             };
             if let Some(on_done) = on_done {
@@ -2867,6 +2895,81 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dictionary_outcome() -> TranslationOutcome {
+        use tagent::providers::{Definition, DictionaryEntry, PartOfSpeechEntry};
+        let entry = DictionaryEntry::new(
+            "violent",
+            vec![PartOfSpeechEntry::new(
+                "adjective",
+                vec![Definition::new(
+                    "жестокий",
+                    vec!["fierce".to_string(), "brutal".to_string()],
+                )],
+            )],
+        );
+        let body_template = dictionary::to_template(&dictionary::article_lines(
+            &entry,
+            "ru",
+            Some("насильственный"),
+        ));
+        TranslationOutcome {
+            from_lang: "English".to_string(),
+            to_lang: "Russian".to_string(),
+            phrase_raw: "violent".to_string(),
+            translation_raw: dictionary::format_dictionary_entry(
+                &entry,
+                "ru",
+                Some("насильственный"),
+            ),
+            translation_body_template: body_template,
+            is_error: false,
+        }
+    }
+
+    /// Regression guard: the popup used to render a dictionary hit as one flat,
+    /// escaped block (prompt-only highlighting); it must now carry the same
+    /// part-of-speech/synonym spans as the transcript's template.
+    #[test]
+    fn popup_translation_template_keeps_dictionary_highlighting() {
+        let outcome = dictionary_outcome();
+        let (_, translation) = popup_templates(&outcome, false);
+        assert_eq!(translation, outcome.translation_body_template);
+        assert!(translation.contains("color=\"@pos\""), "{translation}");
+        assert!(translation.contains("color=\"@synonym\""), "{translation}");
+        let colors = styled::RoleColors::default();
+        assert!(styled::render_template_checked(&translation, &colors).is_ok());
+    }
+
+    #[test]
+    fn popup_templates_follow_popup_show_prompt() {
+        let outcome = dictionary_outcome();
+        let (phrase, translation) = popup_templates(&outcome, true);
+        assert_eq!(phrase, styled::phrase_template(true, "English", "violent"));
+        assert!(translation.starts_with(&styled::span(
+            styled::Role::Prompt,
+            &styled::escape_markdown("[Russian]:")
+        )));
+        assert!(translation.contains("color=\"@pos\""));
+    }
+
+    #[test]
+    fn popup_error_template_is_error_role_without_prompt() {
+        let message = "Error: boom";
+        let outcome = TranslationOutcome {
+            from_lang: "English".to_string(),
+            to_lang: "Russian".to_string(),
+            phrase_raw: "hi".to_string(),
+            translation_raw: message.to_string(),
+            translation_body_template: styled::escape_markdown(message),
+            is_error: true,
+        };
+        let (_, translation) = popup_templates(&outcome, true);
+        assert_eq!(
+            translation,
+            styled::span(styled::Role::Error, &styled::escape_markdown(message))
+        );
+    }
 
     fn model(items: &[&str]) -> ModelRc<SharedString> {
         ModelRc::new(VecModel::from(

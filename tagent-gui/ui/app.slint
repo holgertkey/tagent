@@ -759,14 +759,16 @@ export component TranslationPopup inherits Window {
     }
     // true = phrase, false = translation.
     callback popup-copy-requested(bool);
-    // Stage 13-style prompt highlighting (2026-09-22): rendered `styled-text`
-    // values `phrase-line`/`translation-line` actually bind to, built in Rust
-    // from a role-tagged template (`styled::phrase_template`/
-    // `translation_template_from_body`) the same way the transcript's own
-    // entries are -- but with only `Role::Prompt` ever used here (no
-    // dictionary-structure highlighting in the popup; out of scope).
+    // Stage 13-style semantic highlighting: rendered `styled-text` values
+    // `phrase-line`/`translation-line` actually bind to, built in Rust from the
+    // same role-tagged templates the transcript's own entries use (prompt
+    // prefix, plus a dictionary hit's part-of-speech/synonym/notice spans and
+    // error rows). The templates themselves are kept here too so Rust's
+    // `restyle_popup` can re-render them after a theme/color change.
     // phrase-text/translation-text above stay as the plain, unstyled strings --
     // still needed by phrase-measure/translation-measure for width measurement.
+    in property <string> phrase-template: "";
+    in property <string> translation-template: "";
     in property <styled-text> phrase-styled;
     in property <styled-text> translation-styled;
     // One shared style for both the phrase and translation lines — unlike
