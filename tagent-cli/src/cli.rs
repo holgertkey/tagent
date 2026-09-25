@@ -1,4 +1,4 @@
-use crate::config::{self, ConfigManager};
+use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
@@ -99,6 +99,12 @@ impl CliHandler {
                     ("Auto".to_string(), arg2_norm, 3)
                 };
 
+                let pair = LanguagePair::new(&source, &target);
+                // stderr, so a notice doesn't end up in piped translation output.
+                for notice in &pair.notices {
+                    eprintln!("{}", notice);
+                }
+                let (source, target) = (pair.source, pair.target);
                 self.config_manager.set_languages(&source, &target);
 
                 if args.len() > text_start_idx {

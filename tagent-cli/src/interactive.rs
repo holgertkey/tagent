@@ -1,5 +1,5 @@
 use crate::cli::CliHandler;
-use crate::config::{self, ConfigManager};
+use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
@@ -192,20 +192,19 @@ impl InteractiveMode {
             if parts.is_empty() {
                 // Swap source and target languages
                 let config = self.config_manager.get_config();
-                let mut source = config.source_language.clone();
-                let target = config.target_language.clone();
-
-                // If source is Auto, treat it as English before swapping
-                if source.to_lowercase() == "auto" {
-                    source = "English".to_string();
+                let pair =
+                    LanguagePair::swapped(&config.source_language, &config.target_language);
+                for notice in &pair.notices {
+                    println!("{}", notice);
                 }
 
-                self.config_manager.set_languages(&target, &source);
-                let new_source_code = tagent::languages::name_to_code(&target);
-                let new_target_code = tagent::languages::name_to_code(&source);
+                self.config_manager.set_languages(&pair.source, &pair.target);
                 println!(
                     "Languages swapped: {} ({}) -> {} ({})",
-                    target, new_source_code, source, new_target_code
+                    pair.source,
+                    tagent::languages::name_to_code(&pair.source),
+                    pair.target,
+                    tagent::languages::name_to_code(&pair.target)
                 );
                 println!();
                 return Ok(true);
@@ -238,10 +237,17 @@ impl InteractiveMode {
                 );
             }
 
-            self.config_manager.set_languages(&source, &target);
+            let pair = LanguagePair::new(&source, &target);
+            for notice in &pair.notices {
+                println!("{}", notice);
+            }
+            self.config_manager.set_languages(&pair.source, &pair.target);
             println!(
                 "Languages set: {} ({}) -> {} ({})",
-                source, source_code, target, target_code
+                pair.source,
+                source_code,
+                pair.target,
+                tagent::languages::name_to_code(&pair.target)
             );
             println!();
             return Ok(true);

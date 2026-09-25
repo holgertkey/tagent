@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+003] - 2026-09-25
+
+### Fixed
+- **"Auto" can no longer become the target language**: `/l auto`, `/l <src> auto`,
+  `tagent-cli -l auto ...` and a hand-edited `TargetLanguage = Auto` used to produce a pair
+  like `Auto -> Auto`. Auto-detection only makes sense for the source, so an "Auto" target is
+  now replaced with English, with a notice (`Target can't be Auto; using English instead`).
+  The config file itself is not rewritten.
+
+### Changed
+- **`/l` (swap) with an "Auto" source now says what it did**: it still uses English as the
+  new target, and now prints `Source was Auto; using English as the new target` instead of
+  doing it silently.
+- **Same-language pairs** (e.g. `English -> English`) are allowed, with a
+  `Note: source and target are the same language` notice. They're kept on purpose for future
+  monolingual dictionaries.
+
 ## [0.16.0+002] - 2026-09-24
 
 ### Fixed

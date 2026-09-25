@@ -98,6 +98,81 @@ impl Default for Config {
     }
 }
 
+/// Target language substituted wherever `"Auto"` would otherwise become the
+/// target: auto-detection only makes sense for the source language.
+pub const AUTO_TARGET_FALLBACK: &str = "English";
+
+/// A source/target language pair resolved from user input (`/l`, `-l`, or the
+/// config file), with `"Auto"` never left as the target.
+///
+/// `notices` holds the messages to show the user about what was adjusted or is
+/// worth knowing (an `"Auto"` target replaced with [`AUTO_TARGET_FALLBACK`], or a
+/// same-language pair). A same-language pair is allowed on purpose: it's the
+/// natural way to express a future monolingual (explanatory) dictionary lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguagePair {
+    /// Source language name (may be `"Auto"`).
+    pub source: String,
+    /// Target language name (never `"Auto"`).
+    pub target: String,
+    /// Messages to show the user, in order.
+    pub notices: Vec<String>,
+}
+
+impl LanguagePair {
+    /// Resolves a requested `source -> target` pair.
+    pub fn new(source: &str, target: &str) -> Self {
+        let mut notices = Vec::new();
+        let target = if is_auto(target) {
+            notices.push(format!(
+                "Target can't be Auto; using {} instead",
+                AUTO_TARGET_FALLBACK
+            ));
+            AUTO_TARGET_FALLBACK.to_string()
+        } else {
+            target.to_string()
+        };
+        Self::finish(source.to_string(), target, notices)
+    }
+
+    /// Resolves the pair produced by swapping `source` and `target`. An `"Auto"`
+    /// source has no concrete language to become the new target, so
+    /// [`AUTO_TARGET_FALLBACK`] takes its place.
+    pub fn swapped(source: &str, target: &str) -> Self {
+        let mut notices = Vec::new();
+        let new_target = if is_auto(source) {
+            notices.push(format!(
+                "Source was Auto; using {} as the new target",
+                AUTO_TARGET_FALLBACK
+            ));
+            AUTO_TARGET_FALLBACK.to_string()
+        } else {
+            source.to_string()
+        };
+        Self::finish(target.to_string(), new_target, notices)
+    }
+
+    fn finish(source: String, target: String, mut notices: Vec<String>) -> Self {
+        if !is_auto(&source)
+            && tagent::languages::name_to_code(&source).eq_ignore_ascii_case(
+                tagent::languages::name_to_code(&target),
+            )
+        {
+            notices.push("Note: source and target are the same language".to_string());
+        }
+        Self {
+            source,
+            target,
+            notices,
+        }
+    }
+}
+
+/// Whether a language name/code means auto-detection.
+fn is_auto(language: &str) -> bool {
+    language.trim().eq_ignore_ascii_case("auto")
+}
+
 /// Formats a provider factory error for display. When the configured name is unknown, it
 /// appends the supported values and the setting to change (`setting` is the config key,
 /// e.g. `"SpeechProvider"`), because `tagent`'s own message only echoes the bad name.
@@ -404,6 +479,13 @@ SpeechProvider = {}
             .and_then(|section| section.get("TargetLanguage"))
             .cloned()
             .unwrap_or_else(|| "Russian".to_string());
+        // A hand-edited `TargetLanguage = Auto` is replaced in memory only; the file
+        // itself is left untouched.
+        let resolved = LanguagePair::new(&source_lang, &target_lang);
+        for notice in &resolved.notices {
+            eprintln!("Warning: {} (TargetLanguage in config)", notice);
+        }
+        let (source_lang, target_lang) = (resolved.source, resolved.target);
 
         let show_dictionary = parsed_config
             .get("Dictionary")
@@ -617,7 +699,10 @@ SpeechProvider = {}
         }
     }
 
-    /// Set source and target languages in memory (without saving to file)
+    /// Set source and target languages in memory (without saving to file).
+    ///
+    /// Callers resolve user input through [`LanguagePair`] first, so `target` is
+    /// never `"Auto"`.
     pub fn set_languages(&self, source: &str, target: &str) {
         if let Ok(mut config) = self.config.lock() {
             config.source_language = source.to_string();
@@ -1192,6 +1277,108 @@ impl HotkeyParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `/l auto` and `-l auto`: an "Auto" target is replaced, never kept.
+    #[test]
+    fn language_pair_replaces_auto_target_with_fallback() {
+        let pair = LanguagePair::new("Auto", "Auto");
+        assert_eq!(pair.source, "Auto");
+        assert_eq!(pair.target, AUTO_TARGET_FALLBACK);
+        assert_eq!(
+            pair.notices,
+            vec!["Target can't be Auto; using English instead".to_string()]
+        );
+
+        // Any spelling of "auto" counts.
+        assert_eq!(LanguagePair::new("Russian", " AUTO ").target, AUTO_TARGET_FALLBACK);
+    }
+
+    #[test]
+    fn language_pair_keeps_a_normal_pair_without_notices() {
+        let pair = LanguagePair::new("Auto", "Russian");
+        assert_eq!(
+            (pair.source.as_str(), pair.target.as_str()),
+            ("Auto", "Russian")
+        );
+        assert!(pair.notices.is_empty());
+    }
+
+    /// Same-language pairs are allowed (future monolingual dictionaries), just
+    /// noted -- including one produced by the Auto-target fallback.
+    #[test]
+    fn language_pair_allows_same_language_with_a_note() {
+        let pair = LanguagePair::new("English", "Auto");
+        assert_eq!(
+            (pair.source.as_str(), pair.target.as_str()),
+            ("English", "English")
+        );
+        assert_eq!(
+            pair.notices,
+            vec![
+                "Target can't be Auto; using English instead".to_string(),
+                "Note: source and target are the same language".to_string(),
+            ]
+        );
+
+        let pair = LanguagePair::new("Russian", "russian");
+        assert_eq!(
+            pair.notices,
+            vec!["Note: source and target are the same language".to_string()]
+        );
+    }
+
+    #[test]
+    fn swapped_pair_uses_fallback_for_auto_source() {
+        let pair = LanguagePair::swapped("Auto", "Russian");
+        assert_eq!(
+            (pair.source.as_str(), pair.target.as_str()),
+            ("Russian", "English")
+        );
+        assert_eq!(
+            pair.notices,
+            vec!["Source was Auto; using English as the new target".to_string()]
+        );
+    }
+
+    #[test]
+    fn swapped_pair_swaps_two_concrete_languages() {
+        let pair = LanguagePair::swapped("English", "Russian");
+        assert_eq!(
+            (pair.source.as_str(), pair.target.as_str()),
+            ("Russian", "English")
+        );
+        assert!(pair.notices.is_empty());
+    }
+
+    /// A hand-edited `TargetLanguage = Auto` is replaced in memory on load.
+    #[test]
+    fn test_load_config_replaces_auto_target_language() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_auto_target_{}.conf",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Auto\n",
+        )
+        .unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+
+        assert_eq!(manager.get_config().source_language, "Auto");
+        assert_eq!(manager.get_config().target_language, AUTO_TARGET_FALLBACK);
+        // The file itself is not rewritten.
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("TargetLanguage = Auto"));
+
+        let _ = fs::remove_file(&path);
+    }
 
     #[test]
     fn test_parse_single_key() {
