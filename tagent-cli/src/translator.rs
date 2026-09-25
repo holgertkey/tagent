@@ -4,6 +4,7 @@ use rustyline::ExternalPrinter;
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
+use tagent::article;
 use tagent::providers::{self, DictionaryProvider, TranslationProvider};
 
 /// Shared slot for the rustyline external printer used to route hotkey-triggered
@@ -30,8 +31,11 @@ pub struct LastTranslation {
 /// Result of [`Translator::get_dictionary_entry`].
 #[derive(Debug)]
 pub struct DictionaryLookup {
-    /// The formatted dictionary article, ready to print.
+    /// The dictionary article as plain text, for the clipboard and the history file.
     pub formatted: String,
+    /// The same article as role-tagged lines, for highlighted display with
+    /// [`config::render_article`].
+    pub lines: Vec<article::Line>,
     /// Set when the provider looked up a spelling-corrected word instead.
     pub corrected_word: Option<String>,
     /// The plain translation of the word, if the translate request succeeded.
@@ -278,6 +282,7 @@ impl Translator {
             {
                 Ok(DictionaryLookup {
                     formatted: dictionary_info,
+                    lines,
                     corrected_word,
                     primary_translation,
                 }) => {
@@ -308,7 +313,10 @@ impl Translator {
                     if config.spell_check {
                         if let Some(ref corrected) = corrected_word {
                             if corrected.to_lowercase() != original_text.to_lowercase() {
-                                self.emit_line(Self::correction_notice(corrected, &target_code));
+                                self.emit_line(config::colorize(
+                                    &Self::correction_notice(corrected, &target_code),
+                                    &config.notice_color,
+                                ));
                             }
                         }
                     }
@@ -317,11 +325,14 @@ impl Translator {
                     self.emit_line(format!(
                         "{}{}\n",
                         config::colorize("[Word]: ", &config.dictionary_prompt_color),
-                        dictionary_info
+                        config::render_article(&lines, &config)
                     ));
 
                     if let Err(e) = self.copy_to_clipboard_if_enabled(&dictionary_info, &config) {
-                        self.emit_line(format!("Dictionary clipboard write error: {}", e));
+                        self.emit_line(config::colorize(
+                            &format!("Dictionary clipboard write error: {}", e),
+                            &config.error_color,
+                        ));
                     }
 
                     // Save dictionary entry to history
@@ -332,7 +343,10 @@ impl Translator {
                         &target_code,
                         &config,
                     ) {
-                        self.emit_line(format!("History save error: {}", e));
+                        self.emit_line(config::colorize(
+                            &format!("History save error: {}", e),
+                            &config.error_color,
+                        ));
                     }
 
                     // Show source language prompt after hotkey translation
@@ -416,7 +430,10 @@ impl Translator {
                 ));
 
                 if let Err(e) = self.copy_to_clipboard_if_enabled(&translated_text, config) {
-                    self.emit_line(format!("Translation clipboard write error: {}", e));
+                    self.emit_line(config::colorize(
+                        &format!("Translation clipboard write error: {}", e),
+                        &config.error_color,
+                    ));
                 }
 
                 // Save translation to history
@@ -427,14 +444,20 @@ impl Translator {
                     target_code,
                     config,
                 ) {
-                    self.emit_line(format!("History save error: {}", e));
+                    self.emit_line(config::colorize(
+                        &format!("History save error: {}", e),
+                        &config.error_color,
+                    ));
                 }
 
                 // Show source language prompt after hotkey translation
                 self.maybe_print_source_prompt(config);
             }
             Err(e) => {
-                self.emit_line(format!("Translation error: {}", e));
+                self.emit_line(config::colorize(
+                    &format!("Translation error: {}", e),
+                    &config.error_color,
+                ));
                 self.maybe_print_source_prompt(config);
             }
         }
@@ -469,10 +492,10 @@ impl Translator {
         match dict_result? {
             Some(entry) => {
                 let corrected_word = entry.corrected_word.clone();
-                let formatted =
-                    self.format_dictionary_entry(&entry, to, true, primary_translation.as_deref());
+                let lines = article::article_lines(&entry, to, primary_translation.as_deref());
                 Ok(DictionaryLookup {
-                    formatted,
+                    formatted: article::to_plain(&lines),
+                    lines,
                     corrected_word,
                     primary_translation,
                 })
@@ -504,177 +527,6 @@ impl Translator {
         to: &str,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.translate_text_internal(text, from, to).await
-    }
-
-    /// Format dictionary entry into string
-    /// cli_mode: true for CLI/terminal (no word header), false for GUI (with word header)
-    /// primary_translation: result from regular translate API, used as header in terminal mode
-    fn format_dictionary_entry(
-        &self,
-        entry: &tagent::providers::DictionaryEntry,
-        target_lang: &str,
-        cli_mode: bool,
-        primary_translation: Option<&str>,
-    ) -> String {
-        let mut result = Vec::new();
-
-        // Add the original word at the beginning (only for GUI mode)
-        if !cli_mode {
-            result.push(entry.word.clone());
-        }
-
-        // In terminal mode use primary translation (from translate API) as the header,
-        // falling back to the first dictionary definition if translation unavailable
-        if cli_mode {
-            let header = primary_translation.map(|s| s.to_string()).or_else(|| {
-                entry
-                    .definitions
-                    .first()
-                    .and_then(|pos| pos.definitions.first())
-                    .map(|def| def.text.clone())
-            });
-            if let Some(h) = header {
-                result.push(h);
-            }
-        }
-
-        // Format each part of speech entry
-        for pos_entry in &entry.definitions {
-            let pos_full = self.get_full_part_of_speech(&pos_entry.part_of_speech, target_lang);
-            result.push(pos_full.to_string());
-
-            // Format definitions with synonyms
-            for def in &pos_entry.definitions {
-                if !def.synonyms.is_empty() {
-                    result.push(format!("  {} [{}]", def.text, def.synonyms.join(", ")));
-                } else {
-                    result.push(format!("  {}", def.text));
-                }
-            }
-        }
-
-        result.join("\n")
-    }
-
-    /// Get full part of speech name in target language
-    fn get_full_part_of_speech(&self, pos: &str, target_lang: &str) -> &'static str {
-        let pos_lower = pos.to_lowercase();
-
-        match target_lang {
-            "ru" => match pos_lower.as_str() {
-                "noun" | "существительное" => "Существительное",
-                "verb" | "глагол" => "Глагол",
-                "adjective" | "прилагательное" => "Прилагательное",
-                "adverb" | "наречие" => "Наречие",
-                "preposition" | "предлог" => "Предлог",
-                "conjunction" | "союз" => "Союз",
-                "pronoun" | "местоимение" => "Местоимение",
-                "interjection" | "междометие" => "Междометие",
-                "article" | "артикль" => "Артикль",
-                "determiner" | "определитель" => "Определитель",
-                "participle" | "причастие" => "Причастие",
-                _ => "Прочее",
-            },
-            "es" => match pos_lower.as_str() {
-                "noun" => "Sustantivo",
-                "verb" => "Verbo",
-                "adjective" => "Adjetivo",
-                "adverb" => "Adverbio",
-                "preposition" => "Preposición",
-                "conjunction" => "Conjunción",
-                "pronoun" => "Pronombre",
-                "interjection" => "Interjección",
-                "article" => "Artículo",
-                "determiner" => "Determinante",
-                "participle" => "Participio",
-                _ => "Otro",
-            },
-            "fr" => match pos_lower.as_str() {
-                "noun" => "Nom",
-                "verb" => "Verbe",
-                "adjective" => "Adjectif",
-                "adverb" => "Adverbe",
-                "preposition" => "Préposition",
-                "conjunction" => "Conjonction",
-                "pronoun" => "Pronom",
-                "interjection" => "Interjection",
-                "article" => "Article",
-                "determiner" => "Déterminant",
-                "participle" => "Participe",
-                _ => "Autre",
-            },
-            "de" => match pos_lower.as_str() {
-                "noun" => "Substantiv",
-                "verb" => "Verb",
-                "adjective" => "Adjektiv",
-                "adverb" => "Adverb",
-                "preposition" => "Präposition",
-                "conjunction" => "Konjunktion",
-                "pronoun" => "Pronomen",
-                "interjection" => "Interjektion",
-                "article" => "Artikel",
-                "determiner" => "Bestimmungswort",
-                "participle" => "Partizip",
-                _ => "Andere",
-            },
-            "it" => match pos_lower.as_str() {
-                "noun" => "Sostantivo",
-                "verb" => "Verbo",
-                "adjective" => "Aggettivo",
-                "adverb" => "Avverbio",
-                "preposition" => "Preposizione",
-                "conjunction" => "Congiunzione",
-                "pronoun" => "Pronome",
-                "interjection" => "Interiezione",
-                "article" => "Articolo",
-                "determiner" => "Determinante",
-                "participle" => "Participio",
-                _ => "Altro",
-            },
-            "pt" => match pos_lower.as_str() {
-                "noun" => "Substantivo",
-                "verb" => "Verbo",
-                "adjective" => "Adjetivo",
-                "adverb" => "Advérbio",
-                "preposition" => "Preposição",
-                "conjunction" => "Conjunção",
-                "pronoun" => "Pronome",
-                "interjection" => "Interjeição",
-                "article" => "Artigo",
-                "determiner" => "Determinante",
-                "participle" => "Particípio",
-                _ => "Outro",
-            },
-            "zh" => match pos_lower.as_str() {
-                "noun" => "名词",
-                "verb" => "动词",
-                "adjective" => "形容词",
-                "adverb" => "副词",
-                "preposition" => "介词",
-                "conjunction" => "连词",
-                "pronoun" => "代词",
-                "interjection" => "感叹词",
-                "article" => "冠词",
-                "determiner" => "限定词",
-                "participle" => "分词",
-                _ => "其他",
-            },
-            // English fallback (default)
-            _ => match pos_lower.as_str() {
-                "noun" | "существительное" => "Noun",
-                "verb" | "глагол" => "Verb",
-                "adjective" | "прилагательное" => "Adjective",
-                "adverb" | "наречие" => "Adverb",
-                "preposition" | "предлог" => "Preposition",
-                "conjunction" | "союз" => "Conjunction",
-                "pronoun" | "местоимение" => "Pronoun",
-                "interjection" | "междометие" => "Interjection",
-                "article" | "артикль" => "Article",
-                "determiner" | "определитель" => "Determiner",
-                "participle" | "причастие" => "Participle",
-                _ => "Other",
-            },
-        }
     }
 
     /// Hide terminal window and restore previously active window
@@ -973,6 +825,7 @@ mod tests {
 
         let DictionaryLookup {
             formatted,
+            lines,
             corrected_word: corrected,
             primary_translation,
         } = translator
@@ -986,6 +839,8 @@ mod tests {
         assert!(formatted.starts_with("насилие"), "got: {formatted:?}");
         assert!(formatted.contains("жестокий"), "got: {formatted:?}");
         assert!(formatted.contains("[violent]"), "got: {formatted:?}");
+        // The plain text (clipboard, history) and the highlighted display share one layout.
+        assert_eq!(formatted, article::to_plain(&lines));
     }
 
     #[tokio::test]

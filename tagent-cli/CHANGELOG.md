@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+006] - 2026-09-25
+
+### Added
+- **Dictionary entries are highlighted**: part-of-speech labels and synonym brackets are shown
+  in their own colors, the spelling-correction notice in another, and translation, speech,
+  clipboard and history errors in red. Four new `[Colors]` keys set them: `PartOfSpeechColor`
+  (default `Cyan`), `SynonymColor` (`Green`), `NoticeColor` (`Magenta`) and `ErrorColor`
+  (`Red`); `None` turns one off. Existing config files get the defaults. As before, colors are
+  only used when output goes to a terminal, and the clipboard and the history file get plain
+  text.
+
+### Changed
+- **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
+  `tagent` 0.18.3) and is shared with `tagent-gui`; the output text is unchanged.
+
 ## [0.16.0+005] - 2026-09-25
 
 ### Added

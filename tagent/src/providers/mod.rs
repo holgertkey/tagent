@@ -234,8 +234,9 @@ impl DictionaryEntry {
 #[non_exhaustive]
 pub struct PartOfSpeechEntry {
     /// Part-of-speech label: a lowercase English full word such as `"noun"`, `"verb"` or
-    /// `"adjective"`. The bundled applications localize it through a table keyed on these,
-    /// so a backend that returns tags or another language's labels normalizes them first.
+    /// `"adjective"`. [`article::part_of_speech_label`](crate::article::part_of_speech_label)
+    /// localizes it through a table keyed on these, so a backend that returns tags or
+    /// another language's labels normalizes them first.
     pub part_of_speech: String,
     /// Individual definitions for this part of speech.
     pub definitions: Vec<Definition>,

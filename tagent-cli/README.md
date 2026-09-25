@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+005
+# Tagent Text Translator v0.16.0+006
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -202,10 +202,18 @@ ShowTerminalOnTranslate = true
 ; Auto-hide terminal after translation (seconds, 0 = disabled)
 AutoHideTerminalSeconds = 3
 
-; Terminal output colors (Red, Green, Blue, Yellow, Magenta, Cyan, White)
-TranslationPromptColor = Green
-DictionaryPromptColor = Cyan
-AutoPromptColor = Yellow
+
+[Colors]
+; Terminal output colors: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+; their Bright* variants (e.g. BrightYellow), or None
+SourcePromptColor = None
+TargetPromptColor = BrightYellow
+DictionaryPromptColor = BrightYellow
+; Dictionary article highlighting and status messages
+PartOfSpeechColor = Cyan
+SynonymColor = Green
+NoticeColor = Magenta
+ErrorColor = Red
 
 [History]
 ; Save all translations to file with timestamps
@@ -443,12 +451,20 @@ EnableSpeechHotkey = false      # Disable speech hotkey if not needed
 
 ### Customize Colors
 ```ini
-[Interface]
-; Available colors: Red, Green, Blue, Yellow, Magenta, Cyan, White
-TranslationPromptColor = Green
-DictionaryPromptColor = Cyan
-AutoPromptColor = Yellow
+[Colors]
+; Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, their Bright* variants, or None
+SourcePromptColor = None        ; "[auto → ru]: " prompt
+TargetPromptColor = BrightYellow ; "[Russian]: " label
+DictionaryPromptColor = BrightYellow ; "[Word]: " label
+PartOfSpeechColor = Cyan        ; "Noun", "Прилагательное", ... in a dictionary entry
+SynonymColor = Green            ; "[fierce, brutal]" in a dictionary entry
+NoticeColor = Magenta           ; spelling-correction notice
+ErrorColor = Red                ; translation, speech, clipboard and history errors
 ```
+
+Colors are only emitted when output goes to a terminal: piping or redirecting
+(`tagent-cli word > out.txt`) gives plain text, and so do `NO_COLOR` and `CLICOLOR=0`.
+The clipboard and the history file always get plain text.
 
 ## Troubleshooting
 
@@ -558,7 +574,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+005
+**Current Version**: v0.16.0+006
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -591,4 +607,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+005** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+006** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

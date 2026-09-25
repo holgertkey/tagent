@@ -47,6 +47,15 @@ pub struct Config {
     pub dictionary_prompt_color: String,
     /// Terminal color for the source-language prompt. `"None"` disables.
     pub source_prompt_color: String,
+    /// Terminal color for part-of-speech labels in a dictionary article. `"None"` disables.
+    pub part_of_speech_color: String,
+    /// Terminal color for `[synonym, ...]` brackets in a dictionary article. `"None"` disables.
+    pub synonym_color: String,
+    /// Terminal color for the spelling-correction notice. `"None"` disables.
+    pub notice_color: String,
+    /// Terminal color for translation, speech, clipboard and history error messages.
+    /// `"None"` disables.
+    pub error_color: String,
     /// Hotkey string for triggering translation, e.g. `"Alt+Q"`, `"Ctrl+Ctrl"`, `"F9"`.
     pub translate_hotkey: String,
     /// Enable text-to-speech playback of translations.
@@ -88,6 +97,10 @@ impl Default for Config {
             target_prompt_color: "BrightYellow".to_string(), // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
             source_prompt_color: "None".to_string(),             // Default no color for source
+            part_of_speech_color: DEFAULT_PART_OF_SPEECH_COLOR.to_string(),
+            synonym_color: DEFAULT_SYNONYM_COLOR.to_string(),
+            notice_color: DEFAULT_NOTICE_COLOR.to_string(),
+            error_color: DEFAULT_ERROR_COLOR.to_string(),
             translate_hotkey: "Alt+A".to_string(),               // Default translation hotkey
             enable_text_to_speech: true,                         // TTS enabled by default
             speech_hotkey: "Alt+S".to_string(),                  // Default speech hotkey
@@ -97,6 +110,15 @@ impl Default for Config {
         }
     }
 }
+
+/// Default `[Colors]` `PartOfSpeechColor`.
+const DEFAULT_PART_OF_SPEECH_COLOR: &str = "Cyan";
+/// Default `[Colors]` `SynonymColor`.
+const DEFAULT_SYNONYM_COLOR: &str = "Green";
+/// Default `[Colors]` `NoticeColor`.
+const DEFAULT_NOTICE_COLOR: &str = "Magenta";
+/// Default `[Colors]` `ErrorColor`.
+const DEFAULT_ERROR_COLOR: &str = "Red";
 
 /// Target language substituted wherever `"Auto"` would otherwise become the
 /// target: auto-detection only makes sense for the source language.
@@ -384,6 +406,17 @@ TargetPromptColor = {}
 ; Default: BrightYellow
 DictionaryPromptColor = {}
 
+; Colors used inside a dictionary article and for status messages.
+; Same supported values as above; use "None" to disable a color.
+; Part-of-speech labels (e.g., "Noun", "Существительное"). Default: Cyan
+PartOfSpeechColor = {}
+; Synonym brackets (e.g., "[fierce, brutal]"). Default: Green
+SynonymColor = {}
+; Spelling-correction notice (e.g., "Showing translation for word violent"). Default: Magenta
+NoticeColor = {}
+; Error messages (translation, speech, clipboard, history). Default: Red
+ErrorColor = {}
+
 [History]
 ; Save translation history to file
 ; Set to true to save all translations with timestamps to a text file
@@ -455,6 +488,10 @@ SpeechProvider = {}
             config.source_prompt_color,
             config.target_prompt_color,
             config.dictionary_prompt_color,
+            config.part_of_speech_color,
+            config.synonym_color,
+            config.notice_color,
+            config.error_color,
             config.save_translation_history,
             config.history_file,
             config.translate_hotkey,
@@ -575,6 +612,18 @@ SpeechProvider = {}
             .cloned()
             .unwrap_or_else(|| "None".to_string());
 
+        let color = |key: &str, default: &str| {
+            parsed_config
+                .get("Colors")
+                .and_then(|section| section.get(key))
+                .cloned()
+                .unwrap_or_else(|| default.to_string())
+        };
+        let part_of_speech_color = color("PartOfSpeechColor", DEFAULT_PART_OF_SPEECH_COLOR);
+        let synonym_color = color("SynonymColor", DEFAULT_SYNONYM_COLOR);
+        let notice_color = color("NoticeColor", DEFAULT_NOTICE_COLOR);
+        let error_color = color("ErrorColor", DEFAULT_ERROR_COLOR);
+
         // Hotkey settings
         let translate_hotkey = parsed_config
             .get("Hotkeys")
@@ -628,6 +677,10 @@ SpeechProvider = {}
             target_prompt_color,
             dictionary_prompt_color,
             source_prompt_color,
+            part_of_speech_color,
+            synonym_color,
+            notice_color,
+            error_color,
             translate_hotkey,
             enable_text_to_speech,
             speech_hotkey,
@@ -1147,6 +1200,27 @@ pub fn colorize(label: &str, color_name: &str) -> String {
         label.color(color).to_string()
     } else {
         label.to_string()
+    }
+}
+
+/// Render a dictionary article for the terminal, coloring each span per the
+/// `[Colors]` settings. The clipboard and the history file get
+/// [`tagent::article::to_plain`] of the same lines instead, so no escape codes
+/// ever reach them.
+pub fn render_article(lines: &[tagent::article::Line], config: &Config) -> String {
+    tagent::article::render_with(lines, "  ", |role, text| {
+        colorize(text, article_role_color(role, config))
+    })
+}
+
+/// The configured color name for a dictionary article span of `role`.
+fn article_role_color(role: tagent::article::Role, config: &Config) -> &str {
+    use tagent::article::Role;
+    match role {
+        Role::PartOfSpeech => &config.part_of_speech_color,
+        Role::Synonym => &config.synonym_color,
+        // Header and Plain text use the terminal's own foreground color.
+        _ => "None",
     }
 }
 
@@ -1789,6 +1863,10 @@ mod tests {
             target_prompt_color: "target-color-sentinel".to_string(),
             dictionary_prompt_color: "dict-color-sentinel".to_string(),
             source_prompt_color: "source-color-sentinel".to_string(),
+            part_of_speech_color: "pos-color-sentinel".to_string(),
+            synonym_color: "synonym-color-sentinel".to_string(),
+            notice_color: "notice-color-sentinel".to_string(),
+            error_color: "error-color-sentinel".to_string(),
             translate_hotkey: "translate-hotkey-sentinel".to_string(),
             enable_text_to_speech: !defaults.enable_text_to_speech,
             speech_hotkey: "speech-hotkey-sentinel".to_string(),
@@ -1836,6 +1914,10 @@ mod tests {
             config.dictionary_prompt_color
         );
         assert_eq!(loaded.source_prompt_color, config.source_prompt_color);
+        assert_eq!(loaded.part_of_speech_color, config.part_of_speech_color);
+        assert_eq!(loaded.synonym_color, config.synonym_color);
+        assert_eq!(loaded.notice_color, config.notice_color);
+        assert_eq!(loaded.error_color, config.error_color);
         assert_eq!(loaded.translate_hotkey, config.translate_hotkey);
         assert_eq!(loaded.enable_text_to_speech, config.enable_text_to_speech);
         assert_eq!(loaded.speech_hotkey, config.speech_hotkey);
@@ -1881,6 +1963,83 @@ mod tests {
             assert!(ini.contains(&line), "missing {line:?} in generated config");
         }
         assert!(!ini.contains("{translate_providers}"));
+    }
+
+    /// A config file written before the article/status colors existed gets their defaults.
+    #[test]
+    fn test_load_config_article_colors_default_when_absent() {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_missing_article_colors_{}.conf",
+            std::process::id()
+        ));
+        fs::write(&path, "[Colors]\nTargetPromptColor = Blue\n").unwrap();
+
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        manager.load_config().unwrap();
+        let config = manager.get_config();
+        let _ = fs::remove_file(&path);
+
+        let defaults = Config::default();
+        assert_eq!(config.target_prompt_color, "Blue");
+        assert_eq!(config.part_of_speech_color, defaults.part_of_speech_color);
+        assert_eq!(config.synonym_color, defaults.synonym_color);
+        assert_eq!(config.notice_color, defaults.notice_color);
+        assert_eq!(config.error_color, defaults.error_color);
+    }
+
+    fn sample_article() -> Vec<tagent::article::Line> {
+        use tagent::providers::{Definition, DictionaryEntry, PartOfSpeechEntry};
+        let entry = DictionaryEntry::new(
+            "violent",
+            vec![PartOfSpeechEntry::new(
+                "adjective",
+                vec![
+                    Definition::new("жестокий", vec!["brutal".to_string()]),
+                    Definition::new("сильный", vec![]),
+                ],
+            )],
+        );
+        tagent::article::article_lines(&entry, "ru", Some("насильственный"))
+    }
+
+    /// Only part-of-speech labels and synonyms are colored; header and definition text
+    /// keep the terminal's own foreground.
+    #[test]
+    fn article_role_color_maps_roles_to_config_keys() {
+        use tagent::article::Role;
+        let config = Config {
+            part_of_speech_color: "pos".to_string(),
+            synonym_color: "syn".to_string(),
+            ..Config::default()
+        };
+        assert_eq!(article_role_color(Role::PartOfSpeech, &config), "pos");
+        assert_eq!(article_role_color(Role::Synonym, &config), "syn");
+        assert_eq!(article_role_color(Role::Header, &config), "None");
+        assert_eq!(article_role_color(Role::Plain, &config), "None");
+    }
+
+    /// With every article color set to `"None"`, the rendered article must be exactly
+    /// the plain text that goes to the clipboard and the history file.
+    #[test]
+    fn render_article_without_colors_equals_plain_text() {
+        let lines = sample_article();
+        let config = Config {
+            part_of_speech_color: "None".to_string(),
+            synonym_color: "None".to_string(),
+            ..Config::default()
+        };
+        assert_eq!(
+            render_article(&lines, &config),
+            tagent::article::to_plain(&lines)
+        );
+        assert_eq!(
+            tagent::article::to_plain(&lines),
+            "насильственный\nПрилагательное\n  жестокий [brutal]\n  сильный"
+        );
     }
 
     #[test]

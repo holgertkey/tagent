@@ -115,7 +115,7 @@ the old single-crate `tagent`).
     is a translation into `to` and `synonyms` are words in `from` (the field names read
     like a monolingual dictionary; they are not); part-of-speech labels are lowercase
     English full words, because both apps localize through a table keyed on them
-    (`get_full_part_of_speech`), so a backend normalizes tags or foreign labels inside
+    (`tagent::article::part_of_speech_label` since `tagent` 0.18.3), so a backend normalizes tags or foreign labels inside
     the provider; `Ok(None)` means "no entry" (a miss, an unsupported pair, input the
     backend can't handle), never `Some` with an empty list, and `Error::NotFound` stays
     unused; `from == "auto"` is valid, and a backend that can't look up with it returns
@@ -137,7 +137,8 @@ the old single-crate `tagent`).
     also on the retry path (where `corrected_word` holds the suggestion). No shipped
     output changed: its only consumer was the `!cli_mode` branch of
     `Translator::format_dictionary_entry`, which is dead (its one caller passes
-    `cli_mode = true`).
+    `cli_mode = true`). (That function is gone since `tagent-cli` 0.16.0+006, replaced by
+    `tagent::article`.)
   - **Failure isolation: a bad `DictionaryProvider` value never breaks translation.**
     `tagent-cli`'s `Translator::build` still `?`s the translate provider but builds the
     dictionary provider non-fatally — one warning (`Dictionary provider unavailable
@@ -349,7 +350,11 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     intermediate representation (`article_lines`, a `Vec<Line>` of role-tagged `Span`s)
     that both `format_dictionary_entry` (`to_plain`, unchanged output, pinned by a golden
     test -- still what the popup and history-adjacent `translation_raw` use) and the new
-    `to_template` derive from, so plain and styled output can't drift apart.
+    `to_template` derive from, so plain and styled output can't drift apart. Since
+    `tagent-gui` 0.14.0+019 that representation lives in the `tagent` library
+    (`tagent::article`: `article_lines`, `to_plain`, `render_with`, its own
+    article-only `Role`), shared with `tagent-cli`'s terminal highlighting;
+    `dictionary.rs` keeps `to_template` and maps `article::Role` onto `styled::Role`.
   - **Live restyle**: `main.rs`'s `restyle_transcript`, called at the end of
     `apply_style` (which already runs on settings change, config live-reload, first show,
     and the `Auto`-theme poll timer), re-renders every row's `styled-text` fields against
@@ -970,7 +975,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   (Open Question 3 in the development plan, resolved 2026-08-15 — `tagent-gui`
   never depends on `tagent-cli`): `is_single_word`, `correction_notice`, and
   `format_dictionary_entry` (plus its private `get_full_part_of_speech` table
-  for all 7 target languages) all live in the new module. **Key design
+  for all 7 target languages) all live in the new module (the article layout and
+  the part-of-speech table later moved into `tagent::article`, `tagent` 0.18.3,
+  shared with `tagent-cli`; `is_single_word`/`correction_notice` are still
+  duplicated). **Key design
   decision**: rather than a new UI surface, the dictionary result becomes the
   *content* of the existing `translation` string — both `TranscriptEntry.translation`
   (main window) and `TranslationOutcome.translation_raw` (the Stage 6 popup)
@@ -1269,6 +1277,7 @@ than the old app once it is published (not done yet).
 ## Other known gaps worth knowing about
 
 - **`[Colors]` and `[Speech]` config sections** (`SourcePromptColor`, `TargetPromptColor`,
-  `DictionaryPromptColor`, `EnableTextToSpeech`, `SpeechHotkey`, `EnableSpeechHotkey`)
+  `DictionaryPromptColor`, `PartOfSpeechColor`, `SynonymColor`, `NoticeColor`,
+  `ErrorColor`, `EnableTextToSpeech`, `SpeechHotkey`, `EnableSpeechHotkey`)
   exist in `config.rs` and are used by CLI/interactive/keyboard-hook code, but have no
   equivalent in `tagent-gui`.

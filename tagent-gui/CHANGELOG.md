@@ -12,6 +12,13 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+019] - 2026-09-25
+
+### Changed
+- **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
+  `tagent` 0.18.3) instead of a copy in `dictionary.rs`, and is shared with `tagent-cli`. The
+  transcript, the popup and copied text are unchanged.
+
 ## [0.14.0+018] - 2026-09-25
 
 ### Changed

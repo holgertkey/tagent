@@ -1,8 +1,10 @@
 //! Dictionary lookup formatting for single-word input.
 //!
-//! Duplicated independently from `tagent-cli`'s `translator.rs`/`config.rs`
-//! (Open Question 3, `.debug/tagent-gui development plan.md`) rather than
-//! shared, since `tagent-gui` never depends on `tagent-cli`.
+//! The article layout itself (header, part-of-speech labels, definitions,
+//! synonyms) comes from [`tagent::article`], shared with `tagent-cli`; this
+//! module adds the GUI's own Markdown-template rendering on top of it. The
+//! small helpers below are still duplicated from `tagent-cli`, since
+//! `tagent-gui` never depends on `tagent-cli`.
 
 use crate::styled::{self, Role};
 use tagent::providers::DictionaryEntry;
@@ -32,113 +34,29 @@ pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
     format!("{} {}", phrase, corrected_word)
 }
 
-/// Picks the single line that best represents `entry` on its own -- the plain
-/// translation fetched alongside the dictionary lookup when available, or the
-/// first part-of-speech's first definition text otherwise.
-///
-/// Used both as [`format_dictionary_entry`]'s header line and, unmodified, as
-/// the text a dictionary-hit transcript entry's translation speaker button
-/// (Stage 10) reads aloud -- never the full formatted block (part-of-speech
-/// headers, synonym lists), which would read strangely out loud.
-pub fn primary_line(entry: &DictionaryEntry, primary_translation: Option<&str>) -> Option<String> {
-    primary_translation.map(|s| s.to_string()).or_else(|| {
-        entry
-            .definitions
-            .first()
-            .and_then(|pos| pos.definitions.first())
-            .map(|def| def.text.clone())
-    })
-}
+pub use tagent::article::primary_line;
+use tagent::article::{self, Line};
 
-/// One span of text within an [`article_lines`] [`Line`], tagged with the
-/// [`Role`] it should be highlighted with (Stage 13).
-pub struct Span {
-    /// The span's semantic role -- see [`crate::styled::Role`].
-    pub role: Role,
-    /// The span's raw, unescaped text.
-    pub text: String,
-}
-
-impl Span {
-    fn new(role: Role, text: impl Into<String>) -> Span {
-        Span {
-            role,
-            text: text.into(),
-        }
+/// Maps a [`tagent::article::Role`] onto this app's own highlighting [`Role`].
+fn style_role(role: article::Role) -> Role {
+    match role {
+        article::Role::Header => Role::Header,
+        article::Role::PartOfSpeech => Role::PartOfSpeech,
+        article::Role::Synonym => Role::Synonym,
+        _ => Role::Plain,
     }
 }
 
-/// One line of a dictionary article: a header, a part-of-speech label, or an
-/// indented definition -- see [`article_lines`].
-pub struct Line {
-    /// Whether this line gets the two-space (or, in a template, two-NBSP)
-    /// definition indent.
-    pub indent: bool,
-    /// The line's spans, concatenated in order with no separator (any spacing
-    /// between them is baked into a span's own text, e.g. a trailing space
-    /// before a synonym bracket).
-    pub spans: Vec<Span>,
-}
-
-/// Builds `entry`'s single traversal: a header line (the primary
-/// translation, or the first definition text -- see [`primary_line`] -- when
-/// there isn't one), then for each part of speech a label line followed by
-/// one indented line per definition, with `[synonyms]` as its own
-/// [`Role::Synonym`] span. Both [`format_dictionary_entry`] (`to_plain`) and
-/// the Stage 13 styled renderer (`to_template`) are derived from this one
-/// traversal, so they can never drift apart.
+/// Lays `entry` out as role-tagged lines -- see [`tagent::article::article_lines`].
+/// Both [`format_dictionary_entry`] and the Stage 13 styled renderer
+/// ([`to_template`]) are derived from this one traversal, so they can never drift
+/// apart.
 pub fn article_lines(
     entry: &DictionaryEntry,
     target_lang: &str,
     primary_translation: Option<&str>,
 ) -> Vec<Line> {
-    let mut lines = Vec::new();
-
-    if let Some(h) = primary_line(entry, primary_translation) {
-        lines.push(Line {
-            indent: false,
-            spans: vec![Span::new(Role::Header, h)],
-        });
-    }
-
-    for pos_entry in &entry.definitions {
-        let pos_full = get_full_part_of_speech(&pos_entry.part_of_speech, target_lang);
-        lines.push(Line {
-            indent: false,
-            spans: vec![Span::new(Role::PartOfSpeech, pos_full.to_string())],
-        });
-
-        for def in &pos_entry.definitions {
-            let spans = if def.synonyms.is_empty() {
-                vec![Span::new(Role::Plain, def.text.clone())]
-            } else {
-                vec![
-                    Span::new(Role::Plain, format!("{} ", def.text)),
-                    Span::new(Role::Synonym, format!("[{}]", def.synonyms.join(", "))),
-                ]
-            };
-            lines.push(Line {
-                indent: true,
-                spans,
-            });
-        }
-    }
-
-    lines
-}
-
-/// Renders [`article_lines`] as plain text: two-space indent, spans
-/// concatenated with no highlighting, lines joined with `\n`.
-fn to_plain(lines: &[Line]) -> String {
-    lines
-        .iter()
-        .map(|line| {
-            let indent = if line.indent { "  " } else { "" };
-            let body: String = line.spans.iter().map(|s| s.text.as_str()).collect();
-            format!("{indent}{body}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    article::article_lines(entry, target_lang, primary_translation)
 }
 
 /// Renders [`article_lines`] as a Stage 13 template: two-NBSP indent (a
@@ -147,19 +65,9 @@ fn to_plain(lines: &[Line]) -> String {
 /// plain for [`Role::Header`]/[`Role::Plain`]), lines joined with `\n` --
 /// a single line break within one paragraph, not a blank-paragraph gap.
 pub fn to_template(lines: &[Line]) -> String {
-    lines
-        .iter()
-        .map(|line| {
-            let indent = if line.indent { "\u{a0}\u{a0}" } else { "" };
-            let body: String = line
-                .spans
-                .iter()
-                .map(|s| styled::span(s.role, &styled::escape_markdown(&s.text)))
-                .collect();
-            format!("{indent}{body}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    article::render_with(lines, "\u{a0}\u{a0}", |role, text| {
+        styled::span(style_role(role), &styled::escape_markdown(text))
+    })
 }
 
 /// Formats a dictionary entry for display.
@@ -180,128 +88,7 @@ pub fn format_dictionary_entry(
     target_lang: &str,
     primary_translation: Option<&str>,
 ) -> String {
-    to_plain(&article_lines(entry, target_lang, primary_translation))
-}
-
-/// Get full part of speech name in target language.
-fn get_full_part_of_speech(pos: &str, target_lang: &str) -> &'static str {
-    let pos_lower = pos.to_lowercase();
-
-    match target_lang {
-        "ru" => match pos_lower.as_str() {
-            "noun" | "существительное" => "Существительное",
-            "verb" | "глагол" => "Глагол",
-            "adjective" | "прилагательное" => "Прилагательное",
-            "adverb" | "наречие" => "Наречие",
-            "preposition" | "предлог" => "Предлог",
-            "conjunction" | "союз" => "Союз",
-            "pronoun" | "местоимение" => "Местоимение",
-            "interjection" | "междометие" => "Междометие",
-            "article" | "артикль" => "Артикль",
-            "determiner" | "определитель" => "Определитель",
-            "participle" | "причастие" => "Причастие",
-            _ => "Прочее",
-        },
-        "es" => match pos_lower.as_str() {
-            "noun" => "Sustantivo",
-            "verb" => "Verbo",
-            "adjective" => "Adjetivo",
-            "adverb" => "Adverbio",
-            "preposition" => "Preposición",
-            "conjunction" => "Conjunción",
-            "pronoun" => "Pronombre",
-            "interjection" => "Interjección",
-            "article" => "Artículo",
-            "determiner" => "Determinante",
-            "participle" => "Participio",
-            _ => "Otro",
-        },
-        "fr" => match pos_lower.as_str() {
-            "noun" => "Nom",
-            "verb" => "Verbe",
-            "adjective" => "Adjectif",
-            "adverb" => "Adverbe",
-            "preposition" => "Préposition",
-            "conjunction" => "Conjonction",
-            "pronoun" => "Pronom",
-            "interjection" => "Interjection",
-            "article" => "Article",
-            "determiner" => "Déterminant",
-            "participle" => "Participe",
-            _ => "Autre",
-        },
-        "de" => match pos_lower.as_str() {
-            "noun" => "Substantiv",
-            "verb" => "Verb",
-            "adjective" => "Adjektiv",
-            "adverb" => "Adverb",
-            "preposition" => "Präposition",
-            "conjunction" => "Konjunktion",
-            "pronoun" => "Pronomen",
-            "interjection" => "Interjektion",
-            "article" => "Artikel",
-            "determiner" => "Bestimmungswort",
-            "participle" => "Partizip",
-            _ => "Andere",
-        },
-        "it" => match pos_lower.as_str() {
-            "noun" => "Sostantivo",
-            "verb" => "Verbo",
-            "adjective" => "Aggettivo",
-            "adverb" => "Avverbio",
-            "preposition" => "Preposizione",
-            "conjunction" => "Congiunzione",
-            "pronoun" => "Pronome",
-            "interjection" => "Interiezione",
-            "article" => "Articolo",
-            "determiner" => "Determinante",
-            "participle" => "Participio",
-            _ => "Altro",
-        },
-        "pt" => match pos_lower.as_str() {
-            "noun" => "Substantivo",
-            "verb" => "Verbo",
-            "adjective" => "Adjetivo",
-            "adverb" => "Advérbio",
-            "preposition" => "Preposição",
-            "conjunction" => "Conjunção",
-            "pronoun" => "Pronome",
-            "interjection" => "Interjeição",
-            "article" => "Artigo",
-            "determiner" => "Determinante",
-            "participle" => "Particípio",
-            _ => "Outro",
-        },
-        "zh" => match pos_lower.as_str() {
-            "noun" => "名词",
-            "verb" => "动词",
-            "adjective" => "形容词",
-            "adverb" => "副词",
-            "preposition" => "介词",
-            "conjunction" => "连词",
-            "pronoun" => "代词",
-            "interjection" => "感叹词",
-            "article" => "冠词",
-            "determiner" => "限定词",
-            "participle" => "分词",
-            _ => "其他",
-        },
-        // English fallback (default)
-        _ => match pos_lower.as_str() {
-            "noun" | "существительное" => "Noun",
-            "verb" | "глагол" => "Verb",
-            "adjective" | "прилагательное" => "Adjective",
-            "adverb" | "наречие" => "Adverb",
-            "preposition" | "предлог" => "Preposition",
-            "conjunction" | "союз" => "Conjunction",
-            "pronoun" | "местоимение" => "Pronoun",
-            "interjection" | "междометие" => "Interjection",
-            "article" | "артикль" => "Article",
-            "determiner" | "определитель" => "Determiner",
-            "participle" | "причастие" => "Participle",
-            _ => "Other",
-        },
-    }
+    article::to_plain(&article_lines(entry, target_lang, primary_translation))
 }
 
 #[cfg(test)]
@@ -442,7 +229,7 @@ mod tests {
         primary_translation: Option<&str>,
     ) {
         let lines = article_lines(entry, target_lang, primary_translation);
-        let plain = to_plain(&lines);
+        let plain = article::to_plain(&lines);
         let template = to_template(&lines);
         let normalized = styled::strip_template(&template).replace('\u{a0}', " ");
         assert_eq!(

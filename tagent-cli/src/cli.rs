@@ -164,6 +164,7 @@ impl CliHandler {
             {
                 Ok(DictionaryLookup {
                     formatted: dictionary_info,
+                    lines,
                     corrected_word,
                     ..
                 }) => {
@@ -173,21 +174,30 @@ impl CliHandler {
                             if corrected.to_lowercase() != text.to_lowercase() {
                                 println!(
                                     "{}",
-                                    crate::translator::Translator::correction_notice(
-                                        corrected,
-                                        &target_code
+                                    config::colorize(
+                                        &crate::translator::Translator::correction_notice(
+                                            corrected,
+                                            &target_code
+                                        ),
+                                        &config.notice_color
                                     )
                                 );
                             }
                         }
                     }
 
-                    println!("{}", dictionary_info);
+                    println!("{}", config::render_article(&lines, &config));
 
                     if config.copy_to_clipboard {
                         let clipboard = ClipboardManager::new();
                         if let Err(e) = clipboard.set_text(&dictionary_info) {
-                            println!("Clipboard error: {}", e);
+                            println!(
+                                "{}",
+                                config::colorize(
+                                    &format!("Clipboard error: {}", e),
+                                    &config.error_color
+                                )
+                            );
                         }
                     }
 
@@ -199,7 +209,13 @@ impl CliHandler {
                         &target_code,
                         &config,
                     ) {
-                        println!("History save error: {}", e);
+                        println!(
+                            "{}",
+                            config::colorize(
+                                &format!("History save error: {}", e),
+                                &config.error_color
+                            )
+                        );
                     }
 
                     return Ok(());
@@ -245,7 +261,13 @@ impl CliHandler {
                     target_code,
                     config,
                 ) {
-                    println!("History save error: {}", e);
+                    println!(
+                        "{}",
+                        config::colorize(
+                            &format!("History save error: {}", e),
+                            &config.error_color
+                        )
+                    );
                 }
             }
             Err(e) => {

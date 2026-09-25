@@ -102,6 +102,8 @@
 //! - [`providers`] — Translation, dictionary and speech provider traits and factories,
 //!   plus the Google implementations. Start here to use, or to extend, the crate.
 //! - [`languages`] — Human-readable language name ↔ BCP-47 code mapping.
+//! - [`article`] — Role-tagged display layout of a dictionary entry, for plain or
+//!   highlighted rendering.
 //! - [`error`] — Unified error type used throughout this crate.
 //!
 //! ## Versioning
@@ -111,6 +113,7 @@
 
 #![warn(missing_docs)]
 
+pub mod article;
 /// Unified error type for the `tagent` library.
 pub mod error;
 /// Human-readable language name ↔ BCP-47 code mapping.

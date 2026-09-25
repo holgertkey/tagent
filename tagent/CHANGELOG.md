@@ -17,6 +17,17 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-09-25
+
+### Added
+- **`article` module: display layout of a `DictionaryEntry`**, moved here from the two
+  applications, which had identical copies. `article_lines` lays an entry out as lines of
+  role-tagged spans (`Role::Header`, `PartOfSpeech`, `Plain`, `Synonym`), `to_plain` renders
+  them as the plain text both apps have always shown, and `render_with` lets an app wrap each
+  span in its own highlighting (ANSI colors in `tagent-cli`, rich-text markup in `tagent-gui`).
+  Also `primary_line` and `part_of_speech_label` (the part-of-speech localization table).
+  `Role`, `Span` and `Line` are `#[non_exhaustive]`.
+
 ## [0.18.2] - 2026-09-22
 
 ### Fixed

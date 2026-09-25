@@ -184,7 +184,13 @@ impl InteractiveMode {
                             .translate_interactive_text(text, &source_code, &target_code, &config)
                             .await
                         {
-                            println!("Translation error: {}", e);
+                            println!(
+                                "{}",
+                                config::colorize(
+                                    &format!("Translation error: {}", e),
+                                    &config.error_color
+                                )
+                            );
                         }
                     }
                 }
@@ -324,7 +330,13 @@ impl InteractiveMode {
                 }
             };
             if let Err(e) = result {
-                println!("Speech error: {}", e);
+                println!(
+                    "{}",
+                    config::colorize(
+                        &format!("Speech error: {}", e),
+                        &self.config_manager.get_config().error_color
+                    )
+                );
             }
             println!();
             Ok(true)
@@ -402,6 +414,7 @@ impl InteractiveMode {
             {
                 Ok(DictionaryLookup {
                     formatted: dictionary_info,
+                    lines,
                     corrected_word,
                     primary_translation,
                 }) => {
@@ -417,9 +430,12 @@ impl InteractiveMode {
                             if corrected.to_lowercase() != text.to_lowercase() {
                                 println!(
                                     "{}",
-                                    crate::translator::Translator::correction_notice(
-                                        corrected,
-                                        target_code
+                                    config::colorize(
+                                        &crate::translator::Translator::correction_notice(
+                                            corrected,
+                                            target_code
+                                        ),
+                                        &config.notice_color
                                     )
                                 );
                             }
@@ -428,12 +444,18 @@ impl InteractiveMode {
 
                     // Print colored dictionary label
                     config::print_colored("[Word]: ", &config.dictionary_prompt_color);
-                    println!("{}", dictionary_info);
+                    println!("{}", config::render_article(&lines, config));
 
                     if config.copy_to_clipboard {
                         let clipboard = ClipboardManager::new();
                         if let Err(e) = clipboard.set_text(&dictionary_info) {
-                            println!("Clipboard error: {}", e);
+                            println!(
+                                "{}",
+                                config::colorize(
+                                    &format!("Clipboard error: {}", e),
+                                    &config.error_color
+                                )
+                            );
                         }
                     }
 
@@ -445,7 +467,13 @@ impl InteractiveMode {
                         target_code,
                         config,
                     ) {
-                        println!("History save error: {}", e);
+                        println!(
+                            "{}",
+                            config::colorize(
+                                &format!("History save error: {}", e),
+                                &config.error_color
+                            )
+                        );
                     }
 
                     println!();
@@ -489,7 +517,13 @@ impl InteractiveMode {
                     target_code,
                     config,
                 ) {
-                    println!("History save error: {}", e);
+                    println!(
+                        "{}",
+                        config::colorize(
+                            &format!("History save error: {}", e),
+                            &config.error_color
+                        )
+                    );
                 }
             }
             Err(e) => {
