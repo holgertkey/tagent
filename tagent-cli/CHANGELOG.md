@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+005] - 2026-09-25
+
+### Added
+- **Replay the last translation as speech**: in interactive mode, a bare `/s` (or `/speech`)
+  speaks the last translated phrase, and the new `/ss` speaks its translation, in the target
+  language of that translation. "Last" covers both typed input and hotkey translations. For a
+  single word shown as a dictionary entry, `/ss` speaks only the main translation, not the
+  whole entry. `/s <text>` works as before.
+
+### Fixed
+- **A bare `/s` or `/speech` is no longer translated as text**: it used to fall through to
+  translation of the literal string `/s`.
+
 ## [0.16.0+004] - 2026-09-25
 
 ### Added

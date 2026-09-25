@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+004
+# Tagent Text Translator v0.16.0+005
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -158,6 +158,8 @@ Goodbye!
 - `/c`, `/config` - Show current configuration
 - `/v`, `/version` - Show version information
 - `/s <text>`, `/speech <text>` - Text-to-speech (press Esc to cancel)
+- `/s`, `/speech` - Speak the last translated phrase (typed or via hotkey)
+- `/ss` - Speak the translation of the last phrase (for a single word, just its main translation)
 - `/l`, `/lang` - Swap source and target languages
 - `/l <target>`, `/lang <target>` - Set target language (source=Auto)
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
@@ -360,12 +362,19 @@ tagent-cli --speech "Привет, как дела?"
 
 [auto → ru]: /speech Bonjour le monde
 # Speaks "Bonjour le monde" in French
+
+[auto → ru]: Good morning
+[Russian]: Доброе утро
+[auto → ru]: /s
+# Speaks "Good morning" again
+[auto → ru]: /ss
+# Speaks "Доброе утро" in Russian
 ```
 
 **Speech Notes:**
 - **GUI Speech Hotkey**: Select text → Press Alt+S (or configured key)
 - Press **Esc** anytime to cancel speech playback
-- Speech language determined by `SourceLanguage` config setting
+- Speech language determined by `SourceLanguage` config setting (`/ss` uses the target language of the last translation)
 - Long text is automatically chunked (100 char limit per chunk)
 - Works in GUI (hotkey), Interactive, and CLI modes
 
@@ -548,7 +557,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+004
+**Current Version**: v0.16.0+005
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -581,4 +590,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+004** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+005** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

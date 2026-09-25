@@ -12,6 +12,32 @@ use tagent::providers::{self, DictionaryProvider, TranslationProvider};
 /// installs one; always `None` in CLI mode, which never calls [`Translator::translate_clipboard`].
 type SharedPrinter = Arc<Mutex<Option<Box<dyn ExternalPrinter + Send>>>>;
 
+/// The most recent successful translation, kept so `/s` and `/ss` can replay it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastTranslation {
+    /// The text that was translated.
+    pub phrase: String,
+    /// The plain translation; for a dictionary hit, the primary translation (never the
+    /// full article). `None` when a dictionary lookup succeeded but its plain translation
+    /// failed.
+    pub translation: Option<String>,
+    /// Source language code at translation time (may be `"auto"`).
+    pub source_code: String,
+    /// Target language code at translation time.
+    pub target_code: String,
+}
+
+/// Result of [`Translator::get_dictionary_entry`].
+#[derive(Debug)]
+pub struct DictionaryLookup {
+    /// The formatted dictionary article, ready to print.
+    pub formatted: String,
+    /// Set when the provider looked up a spelling-corrected word instead.
+    pub corrected_word: Option<String>,
+    /// The plain translation of the word, if the translate request succeeded.
+    pub primary_translation: Option<String>,
+}
+
 /// High-level translation orchestrator.
 ///
 /// `Translator` ties together a [`TranslationProvider`] and a [`DictionaryProvider`] (from
@@ -29,6 +55,9 @@ pub struct Translator {
     window_manager: Option<Arc<WindowManager>>,
     stored_foreground_window: Arc<std::sync::Mutex<Option<WindowHandle>>>,
     printer: SharedPrinter,
+    /// Shared between the hotkey path and interactive mode (both hold clones of this
+    /// `Translator`), so `/s`/`/ss` replay whichever translation happened last.
+    last_translation: Arc<Mutex<Option<LastTranslation>>>,
 }
 
 impl Translator {
@@ -102,6 +131,7 @@ impl Translator {
             window_manager,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
             printer: Arc::new(Mutex::new(None)),
+            last_translation: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -110,6 +140,27 @@ impl Translator {
     /// Called once, from `InteractiveMode::start()`, right after the rustyline `Editor` is built.
     pub fn set_external_printer(&self, printer: impl ExternalPrinter + Send + 'static) {
         *self.printer.lock().unwrap() = Some(Box::new(printer));
+    }
+
+    /// Remember a successful translation for `/s` and `/ss`.
+    pub fn record_last_translation(
+        &self,
+        phrase: &str,
+        translation: Option<&str>,
+        source_code: &str,
+        target_code: &str,
+    ) {
+        *self.last_translation.lock().unwrap() = Some(LastTranslation {
+            phrase: phrase.to_string(),
+            translation: translation.map(str::to_string),
+            source_code: source_code.to_string(),
+            target_code: target_code.to_string(),
+        });
+    }
+
+    /// The most recent successful translation (hotkey or interactive), if any.
+    pub fn last_translation(&self) -> Option<LastTranslation> {
+        self.last_translation.lock().unwrap().clone()
     }
 
     /// True once an external printer has been installed via [`set_external_printer`](Self::set_external_printer).
@@ -225,7 +276,18 @@ impl Translator {
                 .get_dictionary_entry(&original_text, &source_code, &target_code)
                 .await
             {
-                Ok((dictionary_info, corrected_word)) => {
+                Ok(DictionaryLookup {
+                    formatted: dictionary_info,
+                    corrected_word,
+                    primary_translation,
+                }) => {
+                    self.record_last_translation(
+                        &original_text,
+                        primary_translation.as_deref(),
+                        &source_code,
+                        &target_code,
+                    );
+
                     // Clear any existing prompt and print on new line (no-printer fallback only;
                     // with a printer installed, rustyline handles redrawing on its own).
                     if !self.has_external_printer() {
@@ -338,6 +400,13 @@ impl Translator {
             .await
         {
             Ok(translated_text) => {
+                self.record_last_translation(
+                    text,
+                    Some(&translated_text),
+                    source_code,
+                    target_code,
+                );
+
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
                 self.emit_line(format!(
@@ -374,14 +443,14 @@ impl Translator {
     }
 
     /// Public method to get dictionary entry.
-    /// Returns `(formatted_entry, corrected_word)` where `corrected_word` is `Some` when
+    /// See [`DictionaryLookup`] for what is returned; `corrected_word` is `Some` when
     /// the provider detected a spelling error and used a corrected word for the lookup.
     pub async fn get_dictionary_entry(
         &self,
         word: &str,
         from: &str,
         to: &str,
-    ) -> Result<(String, Option<String>), Box<dyn Error + Send + Sync>> {
+    ) -> Result<DictionaryLookup, Box<dyn Error + Send + Sync>> {
         // No dictionary provider: fail before any network call so the caller's fallback to
         // plain translation runs exactly once.
         let dictionary_provider = self
@@ -402,7 +471,11 @@ impl Translator {
                 let corrected_word = entry.corrected_word.clone();
                 let formatted =
                     self.format_dictionary_entry(&entry, to, true, primary_translation.as_deref());
-                Ok((formatted, corrected_word))
+                Ok(DictionaryLookup {
+                    formatted,
+                    corrected_word,
+                    primary_translation,
+                })
             }
             None => Err("Limited dictionary information available".into()),
         }
@@ -816,6 +889,7 @@ mod tests {
             window_manager: None,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
             printer: Arc::new(Mutex::new(None)),
+            last_translation: Arc::new(Mutex::new(None)),
         };
 
         let printer = MockPrinter::default();
@@ -875,6 +949,7 @@ mod tests {
             window_manager: None,
             stored_foreground_window: Arc::new(std::sync::Mutex::new(None)),
             printer: Arc::new(Mutex::new(None)),
+            last_translation: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -896,12 +971,17 @@ mod tests {
             "dict_entry",
         );
 
-        let (formatted, corrected) = translator
+        let DictionaryLookup {
+            formatted,
+            corrected_word: corrected,
+            primary_translation,
+        } = translator
             .get_dictionary_entry("violnt", "en", "ru")
             .await
             .unwrap();
 
         assert_eq!(corrected.as_deref(), Some("violent"));
+        assert_eq!(primary_translation.as_deref(), Some("насилие"));
         // Terminal mode: the translate provider's result is the header line.
         assert!(formatted.starts_with("насилие"), "got: {formatted:?}");
         assert!(formatted.contains("жестокий"), "got: {formatted:?}");
@@ -933,5 +1013,60 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// `/s` and `/ss` replay what `perform_translation` (the hotkey path) records.
+    #[tokio::test]
+    async fn successful_translation_is_recorded_for_speech_replay() {
+        let translator = translator_with(MockProvider::new("Привет, мир"), None, "last_ok");
+        translator.set_external_printer(MockPrinter::default());
+        let config = translator.config_manager.get_config();
+
+        translator
+            .perform_translation("Hello, world", "auto", "ru", &config)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            translator.last_translation(),
+            Some(LastTranslation {
+                phrase: "Hello, world".to_string(),
+                translation: Some("Привет, мир".to_string()),
+                source_code: "auto".to_string(),
+                target_code: "ru".to_string(),
+            })
+        );
+    }
+
+    /// A rejected phrase ("Text does not appear to be in ...") must not replace the
+    /// previously recorded translation.
+    #[tokio::test]
+    async fn rejected_translation_keeps_previous_last_translation() {
+        let translator = translator_with(MockProvider::new("мир"), None, "last_rejected");
+        translator.set_external_printer(MockPrinter::default());
+        let config = translator.config_manager.get_config();
+        translator.record_last_translation("world", Some("мир"), "en", "ru");
+
+        translator
+            .perform_translation("Привет всем", "en", "ru", &config)
+            .await
+            .unwrap();
+
+        let last = translator.last_translation().unwrap();
+        assert_eq!(last.phrase, "world");
+        assert_eq!(last.translation.as_deref(), Some("мир"));
+    }
+
+    /// Clones share the slot, so a hotkey translation is visible to interactive mode.
+    #[test]
+    fn last_translation_is_shared_between_clones() {
+        let translator = translator_with(MockProvider::new(""), None, "last_shared");
+        let interactive_copy = translator.clone();
+
+        translator.record_last_translation("word", None, "auto", "ru");
+
+        let last = interactive_copy.last_translation().unwrap();
+        assert_eq!(last.phrase, "word");
+        assert_eq!(last.translation, None);
     }
 }

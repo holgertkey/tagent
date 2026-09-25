@@ -187,12 +187,24 @@ impl SpeechManager {
         text: &str,
         config_manager: &ConfigManager,
     ) -> Result<bool, String> {
+        config_manager.check_and_reload().ok();
+        let (source_code, _) = config_manager.get_language_codes();
+        self.speak_text_in(text, &source_code, config_manager).await
+    }
+
+    /// Like [`speak_text_full`](Self::speak_text_full), but speaks in `lang_code` instead
+    /// of the configured source language. `"auto"` is resolved by language detection.
+    pub async fn speak_text_in(
+        &self,
+        text: &str,
+        lang_code: &str,
+        config_manager: &ConfigManager,
+    ) -> Result<bool, String> {
         if text.trim().is_empty() {
             return Err("Empty text provided".to_string());
         }
 
         config_manager.check_and_reload().ok();
-        let (source_code, _) = config_manager.get_language_codes();
         let config = config_manager.get_config();
 
         let provider = create_speech_provider(&config.speech_provider).map_err(|e| {
@@ -208,7 +220,7 @@ impl SpeechManager {
 
         // Detect language (constructs a translate provider only for "auto")
         let speech_lang =
-            Self::resolve_speech_language(&config.translate_provider, text, &source_code).await;
+            Self::resolve_speech_language(&config.translate_provider, text, lang_code).await;
 
         // Print speech label
         Self::print_speech_label(text, Some(&config.target_prompt_color));

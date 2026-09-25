@@ -1,7 +1,7 @@
 use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
-use crate::translator::Translator;
+use crate::translator::{DictionaryLookup, Translator};
 use std::error::Error;
 use std::sync::Arc;
 
@@ -162,7 +162,11 @@ impl CliHandler {
                 .get_dictionary_entry(text, &source_code, &target_code)
                 .await
             {
-                Ok((dictionary_info, corrected_word)) => {
+                Ok(DictionaryLookup {
+                    formatted: dictionary_info,
+                    corrected_word,
+                    ..
+                }) => {
                     // If a spelling correction was applied, notify the user
                     if config.spell_check {
                         if let Some(ref corrected) = corrected_word {

@@ -2,7 +2,7 @@ use crate::cli::CliHandler;
 use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::{ClipboardManager, TerminalTitle};
 use crate::speech::SpeechManager;
-use crate::translator::Translator;
+use crate::translator::{DictionaryLookup, LastTranslation, Translator};
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -17,9 +17,37 @@ use std::sync::Arc;
 
 /// Slash-commands offered for Tab-completion at the interactive prompt.
 const SLASH_COMMANDS: &[&str] = &[
-    "/help", "/h", "/?", "/config", "/c", "/lang", "/l", "/save", "/speech", "/s", "/clear",
+    "/help", "/h", "/?", "/config", "/c", "/lang", "/l", "/save", "/speech", "/s", "/ss", "/clear",
     "/cls", "/quit", "/q", "/exit", "/e", "/version", "/v",
 ];
+
+/// A parsed `/s`, `/speech` or `/ss` command.
+#[derive(Debug, PartialEq, Eq)]
+enum SpeechCommand<'a> {
+    /// `/s <text>`: speak the given text.
+    Text(&'a str),
+    /// Bare `/s`: speak the last translated phrase.
+    LastPhrase,
+    /// `/ss`: speak the translation of the last phrase.
+    LastTranslation,
+    /// `/ss <anything>`: `/ss` takes no arguments.
+    Usage,
+}
+
+/// Parses `text` (already trimmed) as a speech command; `None` if it isn't one.
+fn parse_speech_command(text: &str) -> Option<SpeechCommand<'_>> {
+    match text {
+        "/s" | "/speech" => return Some(SpeechCommand::LastPhrase),
+        "/ss" => return Some(SpeechCommand::LastTranslation),
+        _ => {}
+    }
+    if text.starts_with("/ss ") {
+        return Some(SpeechCommand::Usage);
+    }
+    text.strip_prefix("/s ")
+        .or_else(|| text.strip_prefix("/speech "))
+        .map(|rest| SpeechCommand::Text(rest.trim()))
+}
 
 /// Rustyline [`Helper`] that Tab-completes slash-commands. Hints, highlighting, and
 /// validation are left at rustyline's no-op defaults.
@@ -261,22 +289,41 @@ impl InteractiveMode {
             return Ok(true);
         }
 
-        // Check for speech commands with arguments
-        if text.starts_with("/s ") || text.starts_with("/speech ") {
-            let speech_text = if let Some(stripped) = text.strip_prefix("/s ") {
-                stripped
-            } else {
-                text.strip_prefix("/speech ").unwrap_or("")
+        if let Some(command) = parse_speech_command(text) {
+            let result = match command {
+                SpeechCommand::Text(speech_text) => self.speak_interactive_text(speech_text).await,
+                SpeechCommand::LastPhrase => match self.translator.last_translation() {
+                    Some(LastTranslation {
+                        phrase,
+                        source_code,
+                        ..
+                    }) => self.speak_in(&phrase, &source_code).await,
+                    None => {
+                        println!("Nothing to speak yet: translate something first");
+                        Ok(())
+                    }
+                },
+                SpeechCommand::LastTranslation => match self.translator.last_translation() {
+                    Some(LastTranslation {
+                        translation: Some(translation),
+                        target_code,
+                        ..
+                    }) => self.speak_in(&translation, &target_code).await,
+                    Some(_) => {
+                        println!("No translation to speak for the last phrase");
+                        Ok(())
+                    }
+                    None => {
+                        println!("Nothing to speak yet: translate something first");
+                        Ok(())
+                    }
+                },
+                SpeechCommand::Usage => {
+                    println!("Usage: /ss (speaks the translation of the last phrase)");
+                    Ok(())
+                }
             };
-
-            if speech_text.is_empty() {
-                println!("Error: No text provided for speech");
-                println!("Usage: /s <text to speak> or /speech <text to speak>");
-                println!();
-                return Ok(true);
-            }
-
-            if let Err(e) = self.speak_interactive_text(speech_text).await {
+            if let Err(e) = result {
                 println!("Speech error: {}", e);
             }
             println!();
@@ -353,7 +400,17 @@ impl InteractiveMode {
                 .get_dictionary_entry(text, source_code, target_code)
                 .await
             {
-                Ok((dictionary_info, corrected_word)) => {
+                Ok(DictionaryLookup {
+                    formatted: dictionary_info,
+                    corrected_word,
+                    primary_translation,
+                }) => {
+                    self.translator.record_last_translation(
+                        text,
+                        primary_translation.as_deref(),
+                        source_code,
+                        target_code,
+                    );
                     // If a spelling correction was applied, notify the user
                     if config.spell_check {
                         if let Some(ref corrected) = corrected_word {
@@ -407,6 +464,13 @@ impl InteractiveMode {
             .await
         {
             Ok(translated_text) => {
+                self.translator.record_last_translation(
+                    text,
+                    Some(&translated_text),
+                    source_code,
+                    target_code,
+                );
+
                 // Print colored translation label
                 let trans_label = format!("[{}]: ", config.target_language);
                 config::print_colored(&trans_label, &config.target_prompt_color);
@@ -444,12 +508,48 @@ impl InteractiveMode {
             .await
             .map(|_| ())
     }
+
+    /// Speak text in `lang_code` (`"auto"` is detected), e.g. for `/s` and `/ss` replay
+    async fn speak_in(&self, text: &str, lang_code: &str) -> Result<(), String> {
+        self.speech_manager
+            .speak_text_in(text, lang_code, &self.config_manager)
+            .await
+            .map(|_| ())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rustyline::history::DefaultHistory;
+
+    #[test]
+    fn parses_speech_commands() {
+        assert_eq!(parse_speech_command("/s"), Some(SpeechCommand::LastPhrase));
+        assert_eq!(
+            parse_speech_command("/speech"),
+            Some(SpeechCommand::LastPhrase)
+        );
+        assert_eq!(
+            parse_speech_command("/ss"),
+            Some(SpeechCommand::LastTranslation)
+        );
+        assert_eq!(
+            parse_speech_command("/ss hello"),
+            Some(SpeechCommand::Usage)
+        );
+        assert_eq!(
+            parse_speech_command("/s hello world"),
+            Some(SpeechCommand::Text("hello world"))
+        );
+        assert_eq!(
+            parse_speech_command("/speech   hi"),
+            Some(SpeechCommand::Text("hi"))
+        );
+        assert_eq!(parse_speech_command("/save"), None);
+        assert_eq!(parse_speech_command("/sss"), None);
+        assert_eq!(parse_speech_command("so"), None);
+    }
 
     #[test]
     fn completes_slash_commands_by_prefix() {

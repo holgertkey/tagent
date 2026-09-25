@@ -744,7 +744,7 @@ SpeechProvider = {}
 
         println!(
             r#"Commands:
-  /h (help), /c (config), /s (speech)
+  /h (help), /c (config), /s (speech), /ss (speak translation)
   /l (lang), /save, /clear, /q (quit)"#
         );
         println!();
@@ -828,6 +828,8 @@ SpeechProvider = {}
         println!(
             "  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)"
         );
+        println!("  /s, /speech             - Speak the last translated phrase");
+        println!("  /ss                     - Speak the translation of the last phrase");
         println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
