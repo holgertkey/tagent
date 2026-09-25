@@ -82,7 +82,7 @@ the old single-crate `tagent`).
     a permanent, correct asymmetry. To avoid reintroducing the coupling through the
     back door, **the translate provider is constructed lazily, only when the source
     language is `"auto"`** (`SpeechManager::resolve_speech_language` in `tagent-cli`
-    — used by `speak_text_full` and both platforms' `speak_clipboard` — and an inline
+    — used by `speak_text_full`/`speak_text_in` and both platforms' `speak_clipboard` — and an inline
     equivalent in `tagent-gui`'s `start_speaking`). A concrete source language never
     builds a translate provider at all; if construction fails on the `"auto"` path
     (which nothing else on that call chain has already proven works, unlike before),

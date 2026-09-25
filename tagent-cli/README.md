@@ -25,6 +25,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 - Built-in speech synthesis using Google TTS API
 - Available in all modes (GUI, Interactive, CLI)
 - Speech hotkey for selected text (default: Alt+S)
+- Replay the last translation in the interactive terminal: `/s` speaks the phrase, `/ss` its translation
 - Press Esc to cancel speech playback
 - Automatic language detection for speech
 - Supports long text with automatic chunking
@@ -374,7 +375,7 @@ tagent-cli --speech "Привет, как дела?"
 **Speech Notes:**
 - **GUI Speech Hotkey**: Select text → Press Alt+S (or configured key)
 - Press **Esc** anytime to cancel speech playback
-- Speech language determined by `SourceLanguage` config setting (`/ss` uses the target language of the last translation)
+- Speech language determined by `SourceLanguage` config setting; `/s` and `/ss` without text use the source and target language of the last translation (as they were when it was made)
 - Long text is automatically chunked (100 char limit per chunk)
 - Works in GUI (hotkey), Interactive, and CLI modes
 

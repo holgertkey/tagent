@@ -828,14 +828,16 @@ SpeechProvider = {}
         println!(
             "  /s, /speech <text>      - Speak text using text-to-speech (press Esc to cancel)"
         );
-        println!("  /s, /speech             - Speak the last translated phrase");
+        println!(
+            "  /s, /speech             - Speak the last translated phrase (typed or via hotkey)"
+        );
         println!("  /ss                     - Speak the translation of the last phrase");
         println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
         println!("  /save                   - Save current configuration to file");
         println!("  /clear, /cls            - Clear screen");
-        println!("  /q, /quit, /e, /exit,   - Exit program");
+        println!("  /q, /quit, /e, /exit    - Exit program");
         println!();
 
         println!("CONFIGURATION:");
@@ -872,7 +874,7 @@ SpeechProvider = {}
         println!("- Google Translate API with dictionary lookups");
         println!("- Configuration hot-reload (changes take effect immediately)");
         println!("- Configurable hotkeys with various combinations");
-        println!("- Text-to-speech support (Google TTS)");
+        println!("- Text-to-speech support (Google TTS), with replay of the last translation");
         println!("- Translation history logging");
         println!("- Clipboard integration");
         println!();
