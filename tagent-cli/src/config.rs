@@ -168,6 +168,12 @@ impl LanguagePair {
     }
 }
 
+/// Compact `source → target` label from language codes (e.g. `auto → ru`), used in
+/// the interactive prompt and the terminal window title.
+pub fn language_pair_label(source_code: &str, target_code: &str) -> String {
+    format!("{} → {}", source_code, target_code)
+}
+
 /// Whether a language name/code means auto-detection.
 fn is_auto(language: &str) -> bool {
     language.trim().eq_ignore_ascii_case("auto")
@@ -708,6 +714,40 @@ SpeechProvider = {}
             config.source_language = source.to_string();
             config.target_language = target.to_string();
         }
+    }
+
+    /// Print the interactive-mode banner: version, the current language pair,
+    /// active hotkeys (when `config` is available) and a command summary.
+    ///
+    /// Shown at startup and again after `/clear`.
+    pub fn display_banner(config: Option<&Config>) {
+        println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
+        println!();
+
+        if let Some(config) = config {
+            println!(
+                "Languages: {} ({}) -> {} ({})",
+                config.source_language,
+                tagent::languages::name_to_code(&config.source_language),
+                config.target_language,
+                tagent::languages::name_to_code(&config.target_language)
+            );
+            println!();
+
+            println!("Active Hotkeys:");
+            println!("  Translation: {}", config.translate_hotkey);
+            if config.enable_speech_hotkey && config.enable_text_to_speech {
+                println!("  Speech: {}", config.speech_hotkey);
+            }
+            println!();
+        }
+
+        println!(
+            r#"Commands:
+  /h (help), /c (config), /s (speech)
+  /l (lang), /save, /clear, /q (quit)"#
+        );
+        println!();
     }
 
     /// Display help information (unified for CLI and Interactive modes)
@@ -1277,6 +1317,11 @@ impl HotkeyParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_pair_label_uses_codes_with_an_arrow() {
+        assert_eq!(language_pair_label("auto", "ru"), "auto → ru");
+    }
 
     /// `/l auto` and `-l auto`: an "Auto" target is replaced, never kept.
     #[test]

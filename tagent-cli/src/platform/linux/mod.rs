@@ -6,6 +6,8 @@ pub mod keyboard;
 pub mod keycodes;
 /// Process signal handling (Ctrl+C) and X11 threading initialization.
 pub mod signals;
+/// Terminal window title set/restore via xterm escape sequences.
+pub mod terminal;
 /// Terminal window show/hide/focus management via Xlib.
 pub mod window;
 /// X11 `XGrabKey`-based global key grabbing so hotkeys are consumed instead of forwarded.

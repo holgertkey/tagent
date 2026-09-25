@@ -1,6 +1,6 @@
 use crate::cli::CliHandler;
 use crate::config::{self, ConfigManager, LanguagePair};
-use crate::platform::ClipboardManager;
+use crate::platform::{ClipboardManager, TerminalTitle};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use rustyline::completion::Completer;
@@ -114,6 +114,11 @@ impl InteractiveMode {
             ),
         }
 
+        // Shows the current language pair in the terminal window title, which stays
+        // visible while a hotkey translation is triggered from another application.
+        // Restored to the previous title when dropped at the end of this function.
+        let mut terminal_title = TerminalTitle::new();
+
         loop {
             // Check if we should exit
             if self.should_exit.load(Ordering::Relaxed) {
@@ -125,8 +130,11 @@ impl InteractiveMode {
             let config = self.config_manager.get_config();
             let (source_code, target_code) = self.config_manager.get_language_codes();
 
+            // Rebuilt every iteration, so both reflect `/l` and config-file edits.
+            let pair_label = config::language_pair_label(&source_code, &target_code);
+            terminal_title.set(&format!("Tagent — {}", pair_label));
             let prompt = config::colorize(
-                &format!("[{}]: ", config.source_language),
+                &format!("[{}]: ", pair_label),
                 &config.source_prompt_color,
             );
 
@@ -321,10 +329,7 @@ impl InteractiveMode {
                     io::stdout()
                         .flush()
                         .map_err(|e| format!("IO error: {}", e))?;
-                    println!("=== Text Translator v{} ===", env!("CARGO_PKG_VERSION"));
-                    println!("Interactive and Hotkey modes active");
-                    println!("Type '/h' or '/help' for commands or just type text to translate");
-                    println!();
+                    ConfigManager::display_banner(Some(&self.config_manager.get_config()));
                     Ok(true)
                 }
 

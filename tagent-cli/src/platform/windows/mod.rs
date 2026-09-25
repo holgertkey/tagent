@@ -6,5 +6,7 @@ pub mod keyboard;
 pub mod keycodes;
 /// Process signal handling (disables the default Ctrl+C console handler).
 pub mod signals;
+/// Console window title set/restore via `SetConsoleTitleW`.
+pub mod terminal;
 /// Terminal window show/hide/focus management via the Win32 API.
 pub mod window;

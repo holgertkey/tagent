@@ -6,5 +6,7 @@ pub mod keyboard;
 pub mod keycodes;
 /// Process signal handling. No-op on macOS.
 pub mod signals;
+/// Terminal window title set/restore via xterm escape sequences.
+pub mod terminal;
 /// Terminal window show/hide/focus management. Not yet implemented on macOS.
 pub mod window;

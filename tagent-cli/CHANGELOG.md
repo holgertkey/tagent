@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+004] - 2026-09-25
+
+### Added
+- **The current language pair is always visible**: the interactive prompt now shows it as
+  language codes (`[auto → ru]: ` instead of `[Auto]: `), the terminal window title reads
+  `Tagent — auto → ru`, and the startup banner has a `Languages: Auto (auto) -> Russian (ru)`
+  line. The prompt and title follow `/l` and config-file edits (the latter show up at the next
+  prompt). The title is visible even while a hotkey translation is triggered from another
+  application; the previous title is restored on exit (on Linux/macOS, in terminals that
+  support xterm's title stack; others leave it to the shell).
+
+### Changed
+- **`/clear` reprints the same banner as at startup** (version, language pair, active hotkeys,
+  commands), instead of a separate shorter header.
+
 ## [0.16.0+003] - 2026-09-25
 
 ### Fixed

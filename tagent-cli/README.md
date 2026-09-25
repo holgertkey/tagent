@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+003
+# Tagent Text Translator v0.16.0+004
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
 
@@ -140,7 +140,7 @@ tagent-cli --config
 
 ### Interactive Terminal
 ```
-[Auto]: hello
+[auto → ru]: hello
 привет
 
 [Word]: translate
@@ -149,7 +149,7 @@ tagent-cli --config
   транслировать [передавать, транслить]
   перемещать [переносить, передвигать]
 
-[Auto]: exit
+[auto → ru]: exit
 Goodbye!
 ```
 
@@ -304,7 +304,7 @@ tagent-cli "How are you?"
 # Output: Как дела?
 
 # Interactive
-[Auto]: How are you?
+[auto → ru]: How are you?
 Как дела?
 ```
 
@@ -318,7 +318,7 @@ tagent-cli beautiful
 #   прекрасный [великолепный, чудесный]
 
 # Interactive
-[Auto]: beautiful
+[auto → ru]: beautiful
 Прилагательное
   красивый [прекрасный, красивая]
   прекрасный [великолепный, чудесный]
@@ -327,7 +327,7 @@ tagent-cli beautiful
 ### Spell Check
 When a misspelled word is entered, the correct word is found automatically and a notice is shown:
 ```
-[English]: vialent
+[en → ru]: vialent
 Показан перевод слова violent
 [Word]: жестокий
 Прилагательное
@@ -355,10 +355,10 @@ tagent-cli --speech "Привет, как дела?"
 
 **Interactive Mode**
 ```bash
-[Auto]: /s Hello world
+[auto → ru]: /s Hello world
 # Speaks "Hello world" (press Esc to cancel)
 
-[Auto]: /speech Bonjour le monde
+[auto → ru]: /speech Bonjour le monde
 # Speaks "Bonjour le monde" in French
 ```
 
@@ -548,7 +548,7 @@ dirs = "5.0"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+003
+**Current Version**: v0.16.0+004
 
 **Recent Changes**:
 - Spell checking for single words with correction notice in target language
@@ -581,4 +581,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+003** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+004** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

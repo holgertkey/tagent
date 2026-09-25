@@ -94,27 +94,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 fn show_unified_mode_info() {
     use config::ConfigManager;
 
-    println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
-    println!();
-
-    // Load config to show active hotkeys
-    if let Ok(config_path) = ConfigManager::get_default_config_path() {
-        if let Ok(config_manager) = ConfigManager::new(config_path.to_string_lossy().as_ref()) {
-            let config = config_manager.get_config();
-
-            println!("Active Hotkeys:");
-            println!("  Translation: {}", config.translate_hotkey);
-            if config.enable_speech_hotkey && config.enable_text_to_speech {
-                println!("  Speech: {}", config.speech_hotkey);
-            }
-            println!();
-        }
-    }
-
-    println!(
-        r#"Commands:
-  /h (help), /c (config), /s (speech)
-  /l (lang), /save, /clear, /q (quit)"#
-    );
-    println!();
+    // Load config to show the language pair and active hotkeys
+    let config = ConfigManager::get_default_config_path()
+        .ok()
+        .and_then(|path| ConfigManager::new(path.to_string_lossy().as_ref()).ok())
+        .map(|manager| manager.get_config());
+    ConfigManager::display_banner(config.as_ref());
 }
