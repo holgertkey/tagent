@@ -25,6 +25,47 @@ use platform::{ClipboardManager, KeyboardHook};
 
 slint::include_modules!();
 
+/// Language names offered in the source-language dropdown; `"Auto"` (auto-detect)
+/// is the default.
+const SOURCE_LANGUAGES: [&str; 6] = ["Auto", "English", "Russian", "Spanish", "French", "German"];
+
+/// Language names offered in the target-language dropdown: the source list minus
+/// `"Auto"`, which can't be a translation target.
+const TARGET_LANGUAGES: [&str; 5] = ["English", "Russian", "Spanish", "French", "German"];
+
+/// Target language selected at startup.
+const DEFAULT_TARGET_LANGUAGE: &str = "Russian";
+
+/// Fills the two language dropdowns and selects their startup defaults.
+fn init_language_models(window: &AppWindow) {
+    let to_model = |names: &[&str]| -> ModelRc<SharedString> {
+        ModelRc::new(VecModel::from(
+            names.iter().map(|&name| SharedString::from(name)).collect::<Vec<_>>(),
+        ))
+    };
+    window.set_source_languages(to_model(&SOURCE_LANGUAGES));
+    window.set_target_languages(to_model(&TARGET_LANGUAGES));
+    window.set_source_language_index(0);
+    window.set_target_language_index(
+        TARGET_LANGUAGES
+            .iter()
+            .position(|&name| name == DEFAULT_TARGET_LANGUAGE)
+            .unwrap_or(0) as i32,
+    );
+}
+
+/// Returns the `(source, target)` dropdown indices after swapping the selected
+/// languages, or `None` when they can't be swapped (the source is `"Auto"`, or an
+/// index is out of range). The two dropdowns list different languages, so the swap
+/// goes by language name, not by index.
+fn swapped_language_indices(source_index: i32, target_index: i32) -> Option<(i32, i32)> {
+    let source = SOURCE_LANGUAGES.get(usize::try_from(source_index).ok()?)?;
+    let target = TARGET_LANGUAGES.get(usize::try_from(target_index).ok()?)?;
+    let new_source = SOURCE_LANGUAGES.iter().position(|name| name == target)?;
+    let new_target = TARGET_LANGUAGES.iter().position(|name| name == source)?;
+    Some((new_source as i32, new_target as i32))
+}
+
 thread_local! {
     // The foreground window captured by `show_popup`, to be restored once the
     // popup actually hides (see `show_popup`'s doc comment for why this moved
@@ -811,7 +852,7 @@ fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
 }
 
 /// Builds a [`TranscriptEntry`] for a message that isn't a real translation (a
-/// clipboard error, or the "Auto"-as-target-language guard) -- no speech text
+/// clipboard error, or a "[Hotkey]" label) -- no speech text
 /// on either side (Stage 10), since there's nothing meaningful to speak;
 /// `translation_is_error: true` also keeps the translation speaker button
 /// hidden even if that changes.
@@ -821,8 +862,8 @@ fn info_transcript_entry(
 ) -> TranscriptEntry {
     let phrase = phrase.into();
     let translation = translation.into();
-    // Stage 13: these rows are one-off system messages (a clipboard error, the
-    // "Auto"-as-target guard, a "[Speech]"/"[Hotkey]" label, ...), not a real
+    // Stage 13: these rows are one-off system messages (a clipboard error, a
+    // "[Speech]"/"[Hotkey]" label, ...), not a real
     // phrase/translation pair with a language attached -- rendered as plain,
     // literal, unhighlighted text. No role ever colors a Plain-only template, so
     // the `RoleColors` passed to `entry_fields` doesn't matter here; see
@@ -1700,6 +1741,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     platform::windows::renderer::select_default_renderer();
 
     let window = AppWindow::new()?;
+    init_language_models(&window);
     // Right after the first window: that's when winit registers for raw keyboard
     // input, which would otherwise hide every keystroke from the global hotkey hook
     // while a Tagent window is focused (see the function's doc comment).
@@ -1934,19 +1976,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             window.set_tts_enabled(enable_text_to_speech);
         }
 
-        if to_code == "auto" {
-            if let Some(window) = weak.upgrade() {
-                push_transcript_entry(
-                    &window,
-                    info_transcript_entry(
-                        format_line(show_prompt, &from_lang, &text),
-                        "Error: \"Auto\" is not a valid target language",
-                    ),
-                );
-            }
-            return;
-        }
-
         spawn_translation(
             weak.clone(),
             TranslationRequest {
@@ -1968,12 +1997,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let weak = window.as_weak();
     window.on_swap_requested(move || {
         if let Some(window) = weak.upgrade() {
-            let source = window.get_source_language_index();
-            let target = window.get_target_language_index();
-            window.set_source_language_index(target);
-            // "Auto" (index 0) is only valid as a source language; fall back to
-            // "English" (index 1) rather than making it the new target.
-            window.set_target_language_index(if source == 0 { 1 } else { source });
+            // `None` for an "Auto" source; the button is disabled then anyway.
+            if let Some((source, target)) = swapped_language_indices(
+                window.get_source_language_index(),
+                window.get_target_language_index(),
+            ) {
+                window.set_source_language_index(source);
+                window.set_target_language_index(target);
+            }
         }
     });
 
@@ -2620,7 +2651,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     let from_code = languages::name_to_code(
                         &window
-                            .get_languages()
+                            .get_source_languages()
                             .row_data(window.get_source_language_index() as usize)
                             .unwrap_or_default(),
                     )
@@ -2762,11 +2793,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return;
                     };
 
-                    let languages_model = window.get_languages();
-                    let from_lang = languages_model
+                    let from_lang = window
+                        .get_source_languages()
                         .row_data(window.get_source_language_index() as usize)
                         .unwrap_or_default();
-                    let to_lang = languages_model
+                    let to_lang = window
+                        .get_target_languages()
                         .row_data(window.get_target_language_index() as usize)
                         .unwrap_or_default();
 
@@ -2806,18 +2838,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
                     let to_code = languages::name_to_code(&to_lang).to_string();
-
-                    if to_code == "auto" {
-                        push_transcript_entry(
-                            &window,
-                            info_transcript_entry(
-                                "[Hotkey]",
-                                "Error: \"Auto\" is not a valid target language",
-                            ),
-                        );
-                        is_processing.store(false, Ordering::SeqCst);
-                        return;
-                    }
 
                     let weak2 = weak.clone();
                     let is_processing2 = is_processing.clone();
@@ -2908,6 +2928,58 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// "Auto" is a source-only choice: the target dropdown must not offer it, and
+    /// must otherwise list exactly the source languages, in the same order.
+    #[test]
+    fn target_languages_are_source_languages_without_auto() {
+        assert_eq!(SOURCE_LANGUAGES[0], "Auto");
+        assert!(!TARGET_LANGUAGES.contains(&"Auto"));
+        assert_eq!(&SOURCE_LANGUAGES[1..], &TARGET_LANGUAGES[..]);
+        assert!(TARGET_LANGUAGES.contains(&DEFAULT_TARGET_LANGUAGE));
+    }
+
+    #[test]
+    fn swap_goes_by_language_name_across_the_two_lists() {
+        let src = |name: &str| SOURCE_LANGUAGES.iter().position(|&n| n == name).unwrap() as i32;
+        let tgt = |name: &str| TARGET_LANGUAGES.iter().position(|&n| n == name).unwrap() as i32;
+        assert_eq!(
+            swapped_language_indices(src("English"), tgt("Russian")),
+            Some((src("Russian"), tgt("English")))
+        );
+        assert_eq!(
+            swapped_language_indices(src("German"), tgt("Spanish")),
+            Some((src("Spanish"), tgt("German")))
+        );
+    }
+
+    #[test]
+    fn swap_is_unavailable_for_auto_source_or_bad_indices() {
+        assert_eq!(swapped_language_indices(0, 1), None);
+        assert_eq!(swapped_language_indices(-1, 0), None);
+        assert_eq!(swapped_language_indices(1, TARGET_LANGUAGES.len() as i32), None);
+    }
+
+    #[test]
+    fn language_models_start_with_auto_source_and_default_target() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+        init_language_models(&window);
+
+        let source = window.get_source_languages();
+        let target = window.get_target_languages();
+        assert_eq!(source.row_count(), SOURCE_LANGUAGES.len());
+        assert_eq!(target.row_count(), TARGET_LANGUAGES.len());
+        assert!(target.iter().all(|name| name != "Auto"));
+        assert_eq!(
+            source.row_data(window.get_source_language_index() as usize).unwrap(),
+            "Auto"
+        );
+        assert_eq!(
+            target.row_data(window.get_target_language_index() as usize).unwrap(),
+            DEFAULT_TARGET_LANGUAGE
+        );
+    }
 
     fn dictionary_outcome() -> TranslationOutcome {
         use tagent::providers::{Definition, DictionaryEntry, PartOfSpeechEntry};

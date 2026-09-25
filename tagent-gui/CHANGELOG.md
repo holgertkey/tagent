@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+018] - 2026-09-25
+
+### Changed
+- **The target-language dropdown no longer offers "Auto"**: auto-detection only makes sense
+  for the source language, and picking it as the target used to be accepted by the dropdown
+  and then fail with `Error: "Auto" is not a valid target language` on translate. The two
+  dropdowns now have their own language lists, and that error is gone.
+- **The ⇄ swap button is disabled while the source language is "Auto"**, instead of silently
+  replacing the target with English. With two concrete languages it swaps them as before.
+
 ## [0.14.0+017] - 2026-09-24
 
 ### Fixed

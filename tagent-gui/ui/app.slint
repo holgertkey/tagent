@@ -26,8 +26,7 @@ export struct TranscriptEntry {
     phrase-speech: string,
     translation-speech: string,
     // from-code may be "auto" (resolved lazily at speak time); to-code never
-    // is, since "Auto" as a target is already rejected before translation
-    // happens.
+    // is, since the target dropdown doesn't offer "Auto".
     from-code: string,
     to-code: string,
     // Hides the translation speaker button for a failed translation without
@@ -216,9 +215,14 @@ export component AppWindow inherits Window {
 
     in-out property <string> input-text: "";
     in-out property <[TranscriptEntry]> transcript-entries: [];
-    in-out property <[string]> languages: ["Auto", "English", "Russian", "Spanish", "French", "German"];
+    // Filled from Rust (`SOURCE_LANGUAGES`/`TARGET_LANGUAGES` in main.rs). Two
+    // separate models because "Auto" (auto-detect) is only meaningful as a
+    // source language, so the target list doesn't offer it at all; the indices
+    // below therefore point into different lists and are not interchangeable.
+    in-out property <[string]> source-languages: [];
+    in-out property <[string]> target-languages: [];
     in-out property <int> source-language-index: 0;
-    in-out property <int> target-language-index: 2;
+    in-out property <int> target-language-index: 0;
 
     // Independent display style for the phrase (original text) and
     // translation lines in the transcript — set from Rust based on
@@ -304,17 +308,20 @@ export component AppWindow inherits Window {
     VerticalBox {
         HorizontalBox {
             ComboBox {
-                model: languages;
+                model: source-languages;
                 current-index <=> source-language-index;
             }
 
             Button {
                 text: "⇄";
+                // An auto-detected source has no concrete language to become
+                // the new target, so swapping is unavailable until one is picked.
+                enabled: source-languages[source-language-index] != "Auto";
                 clicked => { swap-requested(); }
             }
 
             ComboBox {
-                model: languages;
+                model: target-languages;
                 current-index <=> target-language-index;
             }
 
@@ -546,7 +553,7 @@ export component AppWindow inherits Window {
                 alignment: stretch;
 
                 Text {
-                    text: "[" + languages[source-language-index] + "]:";
+                    text: "[" + source-languages[source-language-index] + "]:";
                     font-family: "monospace";
                     font-size: 13px;
                     color: prompt-accent;
@@ -585,8 +592,8 @@ export component AppWindow inherits Window {
                                 if (event.text == Key.Return && !event.modifiers.shift) {
                                     translate-requested(
                                         input-text,
-                                        languages[source-language-index],
-                                        languages[target-language-index],
+                                        source-languages[source-language-index],
+                                        target-languages[target-language-index],
                                     );
                                     input-text = "";
                                     return accept;
@@ -607,8 +614,8 @@ export component AppWindow inherits Window {
                     clicked => {
                         translate-requested(
                             input-text,
-                            languages[source-language-index],
-                            languages[target-language-index],
+                            source-languages[source-language-index],
+                            target-languages[target-language-index],
                         );
                         input-text = "";
                     }

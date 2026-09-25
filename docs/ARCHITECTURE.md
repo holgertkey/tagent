@@ -310,9 +310,13 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   own fresh `tokio::runtime::Runtime`, calls
   `tagent::providers::create_provider(&translate_provider)`, calls
   `provider.translate_text(...)`, then marshals the result back onto the Slint UI thread
-  via `slint::invoke_from_event_loop`. A `to == "auto"` request is rejected before
-  the reload/spawn (both the target `ComboBox` and the ⇄ swap button can otherwise
-  produce one), appending an in-transcript error instead of calling the provider.
+  via `slint::invoke_from_event_loop`. The two language `ComboBox`es have separate
+  models (`SOURCE_LANGUAGES`/`TARGET_LANGUAGES` in `main.rs`, set by
+  `init_language_models`): "Auto" is only in the source list, so a `to == "auto"`
+  request can't be produced (since 0.14.0+018; it used to be rejected with an
+  in-transcript error). Because the lists differ, their indices aren't
+  interchangeable — ⇄ swaps by language name (`swapped_language_indices`) and is
+  disabled while the source is "Auto".
   Language names from the UI are resolved to codes via `tagent::languages::name_to_code`.
 - **Transcript pane** (`transcript-scroll` in `app.slint`, `phrase-line`/`translation-line`
   per row): **view-only since Stage 13** (2026-09-22) -- each block is a `StyledText`
