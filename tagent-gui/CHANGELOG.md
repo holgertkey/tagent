@@ -12,6 +12,22 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+023] - 2026-09-26
+
+### Added
+- **Linux desktop integration**: `tagent-gui --install-desktop` writes a launcher entry
+  (`~/.local/share/applications/tagent-gui.desktop`, `Exec=` the running executable) and the
+  app icon (`~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png`, embedded in the
+  binary), so GNOME's dock, Alt+Tab and the app grid show the Tagent icon instead of a
+  generic one, and Tagent can be started from the app grid. `--uninstall-desktop` removes
+  both files. Installing is explicit, never automatic; run it again after moving the binary.
+  Both honor `$XDG_DATA_HOME`.
+
+### Changed
+- On Linux the window class is now pinned to `tagent-gui` (`slint::set_xdg_app_id`:
+  `WM_CLASS` on X11, the app id on Wayland) instead of following the executable's file name,
+  so it matches the installed entry's `StartupWMClass=`.
+
 ## [0.14.0+022] - 2026-09-26
 
 ### Added

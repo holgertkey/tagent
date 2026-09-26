@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use tagent::{languages, providers};
 
 mod config;
+#[cfg(target_os = "linux")]
+mod desktop_entry;
 #[cfg(unix)]
 mod detach;
 mod dictionary;
@@ -1801,6 +1803,15 @@ fn apply_window_geometry(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Linux: `--install-desktop`/`--uninstall-desktop` are one-shot commands, run before
+    // detaching so their output lands in the terminal.
+    #[cfg(target_os = "linux")]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if let Some(command) = desktop_entry::command_from_args(&args) {
+            std::process::exit(desktop_entry::run(command));
+        }
+    }
     // Linux/macOS: give the terminal back (see the module doc comment); must come before
     // any thread is spawned.
     #[cfg(unix)]
@@ -1813,6 +1824,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     platform::windows::renderer::select_default_renderer();
 
     let window = AppWindow::new()?;
+    // Linux: a stable window class (`WM_CLASS` on X11, app id on Wayland) that the
+    // installed `.desktop` file's `StartupWMClass=` matches, so docks show the app icon
+    // (see `desktop_entry`). Right after the first component (before that there is no
+    // Slint platform to set it on) and before any window is shown (the native window is
+    // created on the first show, which is when the id is read).
+    #[cfg(target_os = "linux")]
+    if let Err(err) = slint::set_xdg_app_id(desktop_entry::APP_ID) {
+        eprintln!("Warning: cannot set the window class ({err}).");
+    }
     init_language_models(&window);
     // Right after the first window: that's when winit registers for raw keyboard
     // input, which would otherwise hide every keystroke from the global hotkey hook

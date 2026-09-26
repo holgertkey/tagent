@@ -90,6 +90,9 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 - **Window geometry** is remembered (`remember_window_geometry`).
 - **Terminal detach** on Linux/macOS (`--foreground` / `-f` to stay attached; the log goes
   to `tagent-gui.log` in the data dir).
+- **Linux desktop integration** (0.14.0+023): `--install-desktop` / `--uninstall-desktop`
+  write/remove a `.desktop` file and the icon in the user's data dir; the window class is
+  pinned to `tagent-gui`, so GNOME's dock shows the app icon.
 
 ## Shipped stages
 
@@ -120,9 +123,9 @@ Candidates, not yet scheduled; the order is a suggestion.
 1. **Stage 2 — Language list expansion.** The 6-language list is `tagent-gui`'s own call
    (not tied to `tagent-cli`'s ~16). Low effort, self-contained.
 2. **History logging.** A candidate, not prioritized; no design yet.
-3. **Linux desktop integration.** A `.desktop` file plus `slint::set_xdg_app_id(...)`, so
-   GNOME's dock shows the app icon (it matches icons through an installed `.desktop` file,
-   not `_NET_WM_ICON`). This is packaging/installation work; `tagent-cli` has the same gap.
+3. **Linux packaging.** Ship `tagent-gui.desktop` and the icon in the Linux release archive,
+   or a `.deb` (`cargo-deb`) that installs them system-wide. The per-user install is done
+   (`--install-desktop`); `tagent-cli` still has no launcher entry (it's a terminal app).
 4. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
 5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)

@@ -848,7 +848,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     `slint::set_xdg_app_id(...)` (for a stable `WM_CLASS`) plus an installed
     `.desktop` file — packaging/installation work, out of scope for Stage 7.
     Decided with the user (2026-09-15) to leave this documented rather than
-    patch it now; revisit as part of a future packaging/installation stage.
+    patch it now. **Fixed in 0.14.0+023** — see "Linux desktop integration" below.
     The system tray icon itself (`TrayIcon`, above) is unaffected — it's a
     separate GNOME UI surface (the status area, via StatusNotifierItem/D-Bus)
     that carries its own icon data directly, no `.desktop` lookup involved.
@@ -1168,6 +1168,37 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   to a file rather than staying on the terminal because `eprintln!` panics on a
   write error, and a tty whose terminal has been closed returns EIO. Windows needs none of this, since
   `windows_subsystem = "windows"` already makes shells not wait for the app.
+
+### Linux desktop integration (`tagent-gui` 0.14.0+023)
+
+`tagent-gui/src/desktop_entry.rs` (Linux only) fixes the generic dock icon described under
+Stage 7 above. Two halves, both needed:
+
+- **Stable window class.** `main()` calls `slint::set_xdg_app_id("tagent-gui")`. It must
+  come *after* the first component (`AppWindow::new()`): before that there is no Slint
+  platform and the call fails with `NoPlatform`. It still takes effect because the winit
+  backend creates the native window lazily, on the first `show()`, and reads the id then
+  (`WindowAttributesExtX11::with_name` / its Wayland twin). On X11 this gives
+  `WM_CLASS = "", "tagent-gui"` (Slint passes an empty instance); winit's default would
+  have been the executable's file name for both parts, so a renamed or symlinked binary
+  used to change the class. Verified with `xprop WM_CLASS` on both the normal and a
+  renamed binary.
+- **Launcher entry.** `tagent-gui --install-desktop` writes
+  `$XDG_DATA_HOME/applications/tagent-gui.desktop` (`Exec=` = `std::env::current_exe()`,
+  quoted/escaped per the Desktop Entry spec when needed, `Icon=tagent-gui`,
+  `StartupWMClass=tagent-gui`) and `$XDG_DATA_HOME/icons/hicolor/512x512/apps/tagent-gui.png`
+  (`tray.png`, embedded with `include_bytes!`, so a `cargo install`ed binary needs no files
+  next to it). Files with unchanged contents aren't rewritten. `--uninstall-desktop`
+  removes both. The flags are handled first thing in `main()`, before terminal detach, so
+  their output reaches the terminal, and the process exits right after.
+- **Why explicit, not on every startup**: a `cargo run` from `target/debug` would point the
+  launcher at a debug build and overwrite the installed binary's `Exec=`, and an app
+  silently writing launcher entries is surprising. The cost: after moving the binary the
+  user re-runs `--install-desktop` (which repairs `Exec=`).
+- GNOME Shell's window tracker looks `StartupWMClass` up by the `WM_CLASS` instance and
+  then by the class, so the empty instance should not matter (the dock result itself is
+  the thing to check after changing any of this). Windows and macOS don't need any of
+  this (Windows embeds the icon in the `.exe`, see Stage 7).
 
 ### Known gaps in `tagent-gui`
 
