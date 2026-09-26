@@ -188,7 +188,7 @@ and the test runs in CI.
 
 ### Stage A — Error model for real-world APIs
 
-**Status:** planned
+**Status:** done (2026-09-26, tagent 0.19.0)
 **Goal:** give keyed and paid services meaningful error variants, and make `Error` open for
 future growth, all in **one** breaking bump.
 
@@ -217,6 +217,21 @@ Apps: bump the dependency version plus `+BUILD`.
 **Tests:** `Display` output of the new variants; the existing `From<reqwest::Error>` still maps timeouts.
 **Done when:** `cargo test`, `cargo clippy -D warnings` and `cargo doc -p tagent` are clean,
 and all three changelogs have entries.
+**Notes after landing:**
+- Variant names shipped as sketched: `Auth(String)`, `RateLimited { retry_after: Option<Duration> }`,
+  `QuotaExceeded(String)`, `Unsupported(String)`, `InvalidOptions(String)`. `RateLimited`'s
+  message appends `" (retry after N s)"` when a wait is known, rounded **up** so it never
+  suggests retrying too early.
+- No built-in provider returns the new variants yet; the transport (Stage E) and the `*_with`
+  factories (Stage B) will.
+- Apps: no code change. `tagent-cli`'s `provider_error_message` already had a `_` arm, and
+  `tagent-gui` has no `match` on `Error`. The optional friendly texts for `Auth` /
+  `RateLimited` were left for Stage F, when a keyed provider can actually produce them.
+  Dependency `version` raised to `0.19.0` in both apps (required: `^0.18.3` doesn't match
+  0.19.0); `tagent-cli` 0.16.0+007, `tagent-gui` 0.14.0+020.
+- Tests: `Display` of every new variant; a `reqwest` timeout (a local listener that never
+  answers) still maps to `Network("request timed out")`; a doctest shows matching with a
+  wildcard arm.
 
 ---
 

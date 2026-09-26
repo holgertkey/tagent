@@ -172,8 +172,10 @@ the old single-crate `tagent`).
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
   makes it safe for `tagent-gui` to depend on without pulling in `ConfigManager`.
 - **`error`** — `tagent::error::Error`, a `thiserror`-based enum (`Network`, `Api`,
-  `NotFound`, `EmptyText`, `TextTooLong { len, max }`, `Decode`, `UnknownProvider`)
-  used across the provider boundary. `tagent-cli` still uses `Box<dyn Error + Send +
+  `NotFound`, `EmptyText`, `TextTooLong { len, max }`, `Decode`, `UnknownProvider`;
+  since `tagent` 0.19.0 also `Auth`, `RateLimited { retry_after }`, `QuotaExceeded`,
+  `Unsupported`, `InvalidOptions` for keyed services, and `#[non_exhaustive]`, so apps
+  match it with a wildcard arm) used across the provider boundary. `tagent-cli` still uses `Box<dyn Error + Send +
   Sync>` internally as before; `Error`'s `?` conversion into that boxed type is
   automatic since it implements `std::error::Error + Send + Sync`, so no `From` impls
   were needed at the seam.
@@ -1263,7 +1265,7 @@ its own independent counter, and the `+BUILD` is stripped at release — and log
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
-workspace-root one. The `tagent` library crate's version (`0.18.3`) is likewise
+workspace-root one. The `tagent` library crate's version (`0.19.0`) is likewise
 standalone, plain semver with no `+BUILD` suffix, with history in
 [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
 still moving (three provider traits, more providers to come), and under semver's `0.y.z`

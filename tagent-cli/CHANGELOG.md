@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+007] - 2026-09-26
+
+### Changed
+- **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
+  `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
+  keyed services. No behavior change: nothing returns them yet, and every new variant is
+  shown with its own message.
+
 ## [0.16.0+006] - 2026-09-25
 
 ### Added

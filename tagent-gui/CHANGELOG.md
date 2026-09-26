@@ -12,6 +12,14 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+020] - 2026-09-26
+
+### Changed
+- **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
+  `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
+  keyed services. No behavior change: nothing returns them yet, and every new variant is
+  shown with its own message.
+
 ## [0.14.0+019] - 2026-09-25
 
 ### Changed

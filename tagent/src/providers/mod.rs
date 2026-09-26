@@ -32,9 +32,16 @@
 //!   | [`Error::EmptyText`]        | Empty input where non-empty text is required (Google's `speak_chunk`). |
 //!   | [`Error::TextTooLong`]      | A chunk longer than the provider accepts (Google's `speak_chunk`). |
 //!   | [`Error::UnknownProvider`]  | A factory was given a name it does not know.               |
+//!   | [`Error::Auth`]             | Credentials missing, invalid or expired (HTTP 401/403).    |
+//!   | [`Error::RateLimited`]      | The service is throttling requests (HTTP 429); carries its `Retry-After`, if any. |
+//!   | [`Error::QuotaExceeded`]    | The account's quota or character allowance is used up.     |
+//!   | [`Error::Unsupported`]      | The provider can't do this operation or language pair (e.g. `detect_language` without detection). |
+//!   | [`Error::InvalidOptions`]   | A provider option is missing or has an invalid value.      |
 //!
 //!   [`Error::NotFound`] exists but no built-in provider returns it: a dictionary miss is
-//!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error.
+//!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error. Neither do the last five
+//!   rows yet: they are there for keyed and paid services. [`Error`] is
+//!   `#[non_exhaustive]`, so a `match` on it outside this crate needs a wildcard arm.
 //! - **`Send + Sync`**. All three traits require it, so one provider can be shared across tasks.
 //!   The factories build a *new* provider (with a fresh HTTP client) on every call, so
 //!   create one and reuse it, e.g. behind an [`Arc`](std::sync::Arc), rather than calling a

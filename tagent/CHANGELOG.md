@@ -17,6 +17,21 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-26
+
+### Changed
+- **Breaking: `Error` is now `#[non_exhaustive]`.** A `match` on it outside this crate needs a
+  wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
+
+### Added
+- **`Error` variants for keyed and paid services**, groundwork for providers beyond Google
+  (no built-in provider returns them yet): `Auth` (credentials missing, invalid or expired;
+  HTTP 401/403), `RateLimited { retry_after }` (HTTP 429, with the service's `Retry-After`
+  if it sent one), `QuotaExceeded` (quota or character allowance used up), `Unsupported`
+  (an operation or language pair the provider can't handle) and `InvalidOptions` (a
+  missing or invalid provider option). The error table in the `providers` module docs
+  lists them.
+
 ## [0.18.3] - 2026-09-25
 
 ### Added
