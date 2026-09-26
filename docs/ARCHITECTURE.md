@@ -264,7 +264,7 @@ tagent instead of leaking through. Notable details:
 `tagent-cli` binary. There is no flag or code path in `tagent-cli`'s own
 `main.rs`/`cli.rs` that launches it.
 
-**Concept (decided 2026-08-15, see the local, untracked `.debug/tagent-gui development plan.md`): `tagent-gui` is a fully
+**Concept (decided 2026-08-15, see [`docs/tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md)): `tagent-gui` is a fully
 independent application from `tagent-cli`** — own interface, own configuration (its
 own `tagent-gui.json`; see "Reading `translate_provider`" below), own feature set (no
 obligation to reach parity with `tagent-cli`), and own versioning/changelog
@@ -972,7 +972,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   2026-09-18): single-word input now takes a dictionary path instead of a plain
   translation, when `GuiConfig.show_dictionary` (default `true`) is on. Fully
   duplicated from `tagent-cli`'s `translator.rs`/`config.rs` rather than shared
-  (Open Question 3 in the development plan, resolved 2026-08-15 — `tagent-gui`
+  (resolved question 3 in [the development plan](tagent-gui-dev-plan.md), 2026-08-15 — `tagent-gui`
   never depends on `tagent-cli`): `is_single_word`, `correction_notice`, and
   `format_dictionary_entry` (plus its private `get_full_part_of_speech` table
   for all 7 target languages) all live in the new module (the article layout and
@@ -1195,7 +1195,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 - **Language list and history logging aren't configurable at all yet** — no
   field exists for either (the 6-language list stays hardcoded).
   `tagent-cli.conf` is not read at all any more (no migration path — see the
-  "own configuration" concept in the development plan). (`translate_hotkey`
+  "own configuration" concept in [the development plan](tagent-gui-dev-plan.md)). (`translate_hotkey`
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
   Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control; TTS
   settings used to be listed here too — Stage 10, shipped 2026-09-18, gave
@@ -1212,7 +1212,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   warning is logged) where it works on Linux/Windows. Before Stage 13, Ctrl+C worked in the
   transcript's plain `TextInput` via Slint's own built-in clipboard handling, independent of
   `ClipboardManager`; that path is gone along with the `TextInput`. Accepted and documented
-  rather than fixed (`tagent-gui development plan.md`'s Stage 13 open item 1) -- macOS is a
+  rather than fixed (resolved question 4 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md)) -- macOS is a
   stub platform throughout the GUI already.
 - It calls `TranslationProvider::translate_text`, `DictionaryProvider::lookup` and
   `SpeechProvider::split_for_speech`/`speak_chunk` directly rather than going through
@@ -1263,12 +1263,21 @@ its own independent counter, and the `+BUILD` is stripped at release — and log
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
-workspace-root one. The `tagent` library crate's version (`0.18.1`) is likewise
+workspace-root one. The `tagent` library crate's version (`0.18.3`) is likewise
 standalone, plain semver with no `+BUILD` suffix, with history in
 [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
 still moving (three provider traits, more providers to come), and under semver's `0.y.z`
 rules a minor bump is the place for breaking changes, so `0.17` → `0.18` for a breaking
 change and `0.17.0` → `0.17.1` for a compatible addition or fix. It is bumped manually.
+**One `tagent` version per release cycle** (decided 2026-09-26): only the version present
+when a `v*` tag is pushed reaches crates.io, so intermediate numbers just fragment the
+changelog. The first change after a release picks the next version (patch for a
+compatible change, minor for a breaking one) and opens its `tagent/CHANGELOG.md` section.
+Later changes before the next release go into that same version and section, with no
+further bump. If a breaking change follows a patch bump within the cycle, the version is
+escalated to the next minor and the section header renamed. The last published version is
+`git show <latest v* tag>:tagent/Cargo.toml`. It is the library's counterpart of the apps'
+`+BUILD` counter.
 `1.0.0` waits until the API settles and the crate is published. `0.17.0` still sorts
 above `0.12.0`, the last version the old single-crate `tagent` application published to
 crates.io (checked 2026-09-19), so `cargo add tagent` will resolve to the library rather
