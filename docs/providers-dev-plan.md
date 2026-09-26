@@ -132,8 +132,9 @@ universality is built at the level of **capabilities**, and "any text server" is
   limits are taken from the **official documentation**, read at the start of the stage,
   never from memory. Link the docs in the stage notes.
 
-Stage 0 is a release-process prerequisite. Stages A–G are the **foundation** (library
-infrastructure, done once). Stages P1, P2, … are **provider stages**, appended as
+Stage 0 is a release-process prerequisite. Stages A–F are the **foundation** (library
+infrastructure, done once); the former Stage G (Cargo features per provider) moved into
+P1, where the second provider makes it useful (decided 2026-09-26). Stages P1, P2, … are **provider stages**, appended as
 providers are added. They are numbered separately so a new provider never renumbers the
 foundation.
 
@@ -750,29 +751,13 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 
 ---
 
-### Stage G — Cargo features per provider
-
-**Status:** planned
-**Goal:** users of the library compile only the providers they need.
-
-- Features such as `google` (default), `deepl`, `openai-compat`, `http` (feature names match the kind names). Registry,
-  factories and name lists are all `cfg`-gated consistently.
-- The apps enable what they ship. CI builds with `--all-features` and with
-  `--no-default-features` plus each feature alone (at least a `cargo check`).
-- It's most useful once a second provider exists, so it can move after P1.
-
-**Semver:** changing default features → decide at implementation time (keeping `google` in
-`default` makes it additive).
-
----
-
 ## Provider stages
 
 Each provider stage follows the template at the end. Planned order (it can be changed):
 
 | Stage | Provider | Axis | Kind | Depends on |
 |-------|----------|------|------|------------|
-| P1 | DeepL | translation | native, keyed | A, B, E (C, D recommended) |
+| P1 | DeepL, plus Cargo features per provider (former Stage G) | translation | native, keyed | A–F |
 | P2 | OpenAI-compatible chat | translation | generic | A, B, E |
 | P3 | OpenAI-compatible chat | dictionary | generic (structured JSON) | P2 |
 | P4 | Declarative HTTP (reference config: LibreTranslate) | translation | generic | A, B, E |
@@ -790,7 +775,27 @@ header format, language-code list, limits, quota status code). Link them here.
 `capabilities()` filled in; registry and const-list entries.
 **Tests:** request building and response parsing (pure functions); mock-server tests for
 success/401/429/quota; a live test behind `#[ignore]` plus an env var.
-**Semver:** additive → `tagent` patch. The apps only need the Stage F wiring.
+**Semver:** additive; it goes into the current cycle's `tagent` version (0.19.0 while that
+is unpublished). The apps only need the Stage F wiring (and, with the features below, to
+enable `deepl`).
+
+#### P1 part 2 — Cargo features per provider (former Stage G)
+
+Moved here from the foundation (2026-09-26): with a single provider there is nothing to
+choose between, and DeepL is the first provider worth leaving out. Done after DeepL itself
+works, in its own commit.
+
+**Goal:** users of the library compile only the providers they need.
+- Features named after the provider kinds: `google` (default), `deepl`, and later
+  `openai-compat`, `http`. The registry (descriptors and `*_PROVIDERS` lists), the factory
+  branches, the provider modules and their tests are all `cfg`-gated consistently; the
+  shared transport and `ProviderOptions`/`ProviderProfiles` stay unconditional.
+- A profile whose `type` names a kind that is compiled out gets `UnknownProvider`, the same
+  as an unknown kind, and the reserved built-in names follow the enabled features.
+- The apps enable what they ship (`google` + `deepl`). CI builds with `--all-features` and
+  runs `cargo check -p tagent --no-default-features` plus each feature alone.
+- Decide whether `deepl` is on by default. Keeping `google` in `default` makes the change
+  additive.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
