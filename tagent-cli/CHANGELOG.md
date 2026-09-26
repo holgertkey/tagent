@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.16.0+007] - 2026-09-26
 
 ### Changed
+- **Google requests now retry once on a connection failure or an HTTP 502/503/504**
+  (`tagent` 0.19.0's shared transport), within the same 10-second budget as before. A
+  Google rate limit (HTTP 429) is reported as `rate limited by the provider` and is never
+  retried, and HTTP errors read `HTTP 503 Service Unavailable` instead of
+  `HTTP error: 503 Service Unavailable`. Network error messages no longer include the
+  request URL, which contained the text being translated.
 - **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
   `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
   keyed services. No behavior change: nothing returns them yet, and every new variant is

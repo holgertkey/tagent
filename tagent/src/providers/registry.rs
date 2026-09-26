@@ -65,10 +65,27 @@ pub struct OptionSpec {
     pub description: &'static str,
 }
 
-/// Google's unofficial free endpoint: no retries on a 429, since insisting risks
-/// captchas or IP blocks.
-const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
-    max_retries: 0,
+/// The generic transport options every HTTP provider accepts (handled by the shared
+/// transport, not by the provider's own code).
+const TRANSPORT_OPTIONS: &[OptionSpec] = &[
+    OptionSpec {
+        key: "timeout_secs",
+        required: false,
+        secret: false,
+        description: "Time budget for one call in whole seconds, retries included",
+    },
+    OptionSpec {
+        key: "max_retries",
+        required: false,
+        secret: false,
+        description: "How often a failed request is retried; 0 disables retries",
+    },
+];
+
+/// Google's unofficial free endpoint: one retry, but never on a 429, since insisting
+/// risks captchas or IP blocks.
+pub(crate) const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
+    max_retries: 1,
     timeout: GOOGLE_TIMEOUT,
     retry_on_rate_limit: false,
 };
@@ -76,21 +93,21 @@ const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
 static TRANSLATION: &[ProviderDescriptor] = &[ProviderDescriptor {
     name: "google",
     display_name: "Google Translate",
-    options: &[],
+    options: TRANSPORT_OPTIONS,
     transport: GOOGLE_TRANSPORT,
 }];
 
 static DICTIONARY: &[ProviderDescriptor] = &[ProviderDescriptor {
     name: "google",
     display_name: "Google Dictionary",
-    options: &[],
+    options: TRANSPORT_OPTIONS,
     transport: GOOGLE_TRANSPORT,
 }];
 
 static SPEECH: &[ProviderDescriptor] = &[ProviderDescriptor {
     name: "google",
     display_name: "Google TTS",
-    options: &[],
+    options: TRANSPORT_OPTIONS,
     transport: GOOGLE_TRANSPORT,
 }];
 
@@ -136,6 +153,7 @@ pub(crate) fn declared_option_keys(kind: &str) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::http::{MAX_RETRIES_KEY, TIMEOUT_SECS_KEY};
     use super::super::options::{is_secret_key, TYPE_KEY};
     use super::super::*;
     use super::*;
@@ -235,6 +253,9 @@ mod tests {
     #[test]
     fn declared_option_keys_of_unknown_kind_is_empty() {
         assert!(declared_option_keys("no-such-kind").is_empty());
-        assert!(declared_option_keys("google").is_empty());
+        assert_eq!(
+            declared_option_keys("google"),
+            [MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
+        );
     }
 }

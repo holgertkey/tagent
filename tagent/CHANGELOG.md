@@ -20,6 +20,18 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 ## [0.19.0] - 2026-09-26
 
 ### Changed
+- **Shared HTTP transport with retries and status mapping; the Google providers use it.**
+  Every call has a time budget (Google: 10 seconds, as before) that now covers one retry:
+  a connection failure or an HTTP 502/503/504 is retried once after a short pause, if
+  there is time left. Timeouts, HTTP 500 and other 4xx are never retried, and neither is a
+  429 from Google (insisting risks a block). An HTTP 429 now surfaces as
+  `Error::RateLimited` instead of `Error::Api`, and error messages read
+  `HTTP 503 Service Unavailable` (plus a short excerpt of a non-HTML error body) instead of
+  `HTTP error: 503 Service Unavailable` / `Google TTS API returned status: …`. Network
+  error messages no longer contain the request URL, which carried the text being
+  translated. The generic options `timeout_secs` and `max_retries` (`0` disables
+  retries) change the budget and retry count of any HTTP provider; the Google providers
+  declare them and gain `with_options` constructors (`new()` is unchanged).
 - **Breaking: `Error` is now `#[non_exhaustive]`.** A `match` on it outside this crate needs a
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 

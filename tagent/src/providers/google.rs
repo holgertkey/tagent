@@ -13,8 +13,15 @@
 //! - There is no API key, no quota you can raise, and no service guarantee. Google can
 //!   rate-limit or block a client, and can change a response format without notice; such a
 //!   change surfaces as [`Error::Decode`] or [`Error::Api`].
-//! - Requests use a fixed browser-like `User-Agent` and a 10-second timeout, after which
-//!   the call fails with [`Error::Network`].
+//! - Requests use a fixed browser-like `User-Agent` and a 10-second budget per call, after
+//!   which the call fails with [`Error::Network`]. Within it, a connection failure or HTTP
+//!   502/503/504 is retried once; an HTTP 429 ([`Error::RateLimited`]) never is, since
+//!   insisting risks a block. The generic options `timeout_secs` and `max_retries` change
+//!   both (see `with_options` on each provider). The endpoints take no credentials, so an
+//!   HTTP 401/403 is an [`Error::Api`], not an [`Error::Auth`].
+//! - A dictionary lookup of a word Google only *suggests* a correction for makes a second
+//!   request for the suggestion, with a budget of its own, so it can take up to twice the
+//!   budget. That second request is part of the lookup, not a transport retry.
 //! - The response parsing is positional (it reads fixed indices of a JSON array), which is
 //!   why the parsers are the first suspect if a lookup suddenly returns nothing.
 //!
@@ -44,13 +51,14 @@
 //!   returns (translations, definitions, synonyms, part-of-speech labels, corrected words) so
 //!   it never reaches a caller.
 
+use super::http::HttpTransport;
+use super::registry::GOOGLE_TRANSPORT;
 use super::{
-    Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry, SpeechProvider,
-    TranslationCapabilities, TranslationProvider,
+    Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry, ProviderOptions,
+    SpeechProvider, TranslationCapabilities, TranslationProvider,
 };
 use crate::error::Error;
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
 use url::form_urlencoded;
@@ -61,6 +69,26 @@ pub(crate) const GOOGLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Shared User-Agent sent with every request to Google's translate/TTS endpoints.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+/// The translation and dictionary endpoint.
+const TRANSLATE_API_URL: &str = "https://translate.googleapis.com/translate_a/single";
+
+/// The transport all three Google providers use: Google's defaults (see
+/// [`GOOGLE_TRANSPORT`]) with the generic options applied. The endpoints take no
+/// credentials, so 401/403 stay [`Error::Api`] rather than [`Error::Auth`].
+fn google_transport(options: &ProviderOptions) -> Result<HttpTransport, Error> {
+    HttpTransport::builder(GOOGLE_TRANSPORT)
+        .user_agent(USER_AGENT)
+        .auth_statuses(&[])
+        .options(options)?
+        .build()
+}
+
+/// GETs `url` through `transport` and decodes the body as (lossy) UTF-8 text.
+async fn get_text(transport: &HttpTransport, url: &str) -> Result<String, Error> {
+    let body = transport.send(|client| client.get(url)).await?;
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
 
 /// Strips zero-width space (U+200B) characters from `text` -- see the [module
 /// documentation](self)'s "Behavior worth knowing" for why the endpoint puts them there.
@@ -120,7 +148,8 @@ fn extract_translation(json: &Value) -> Result<String, Error> {
 /// # }
 /// ```
 pub struct GoogleTranslateProvider {
-    client: Client,
+    transport: HttpTransport,
+    base_url: String,
 }
 
 impl Default for GoogleTranslateProvider {
@@ -130,21 +159,50 @@ impl Default for GoogleTranslateProvider {
 }
 
 impl GoogleTranslateProvider {
-    /// Create a new provider with a fresh HTTP client (10s request timeout).
+    /// Create a new provider with its own HTTP client and the default transport settings:
+    /// a 10-second budget per call, with one retry on a connection failure or HTTP
+    /// 502/503/504 within it.
     pub fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(GOOGLE_TIMEOUT)
-                .build()
-                .expect("Failed to create HTTP client for Google Translate"),
-        }
+        Self::with_options(&ProviderOptions::default()).expect("default options are valid")
+    }
+
+    /// Create a new provider, honoring the generic transport options `timeout_secs` (the
+    /// budget per call, whole seconds) and `max_retries` (`0` disables retries). Other
+    /// options are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidOptions`] if `timeout_secs` or `max_retries` has an invalid value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::{google::GoogleTranslateProvider, ProviderOptions};
+    ///
+    /// let options = ProviderOptions::new().with("max_retries", "0");
+    /// assert!(GoogleTranslateProvider::with_options(&options).is_ok());
+    /// let options = ProviderOptions::new().with("timeout_secs", "0");
+    /// assert!(GoogleTranslateProvider::with_options(&options).is_err());
+    /// ```
+    pub fn with_options(options: &ProviderOptions) -> Result<Self, Error> {
+        Ok(Self {
+            transport: google_transport(options)?,
+            base_url: TRANSLATE_API_URL.to_string(),
+        })
+    }
+
+    /// Points the provider at a mock server (tests only).
+    #[cfg(test)]
+    fn at(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
     }
 }
 
 #[async_trait]
 impl TranslationProvider for GoogleTranslateProvider {
     async fn translate_text(&self, text: &str, from: &str, to: &str) -> Result<String, Error> {
-        let url = "https://translate.googleapis.com/translate_a/single";
+        let url = &self.base_url;
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
 
@@ -157,18 +215,7 @@ impl TranslationProvider for GoogleTranslateProvider {
 
         let full_url = format!("{}{}", url, params);
 
-        let response = self
-            .client
-            .get(&full_url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Api(format!("HTTP error: {}", response.status())));
-        }
-
-        let body = response.text().await?;
+        let body = get_text(&self.transport, &full_url).await?;
 
         let json: Value = serde_json::from_str(&body)?;
 
@@ -176,7 +223,7 @@ impl TranslationProvider for GoogleTranslateProvider {
     }
 
     async fn detect_language(&self, text: &str) -> Result<String, Error> {
-        let url = "https://translate.googleapis.com/translate_a/single";
+        let url = &self.base_url;
 
         let encoded_text = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
 
@@ -185,18 +232,7 @@ impl TranslationProvider for GoogleTranslateProvider {
 
         let full_url = format!("{}{}", url, params);
 
-        let response = self
-            .client
-            .get(&full_url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Api(format!("HTTP error: {}", response.status())));
-        }
-
-        let body = response.text().await?;
+        let body = get_text(&self.transport, &full_url).await?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Detected language is at index 2 in the response
@@ -248,7 +284,8 @@ impl TranslationProvider for GoogleTranslateProvider {
 /// # }
 /// ```
 pub struct GoogleDictionaryProvider {
-    client: Client,
+    transport: HttpTransport,
+    base_url: String,
 }
 
 impl Default for GoogleDictionaryProvider {
@@ -258,14 +295,43 @@ impl Default for GoogleDictionaryProvider {
 }
 
 impl GoogleDictionaryProvider {
-    /// Create a new provider with a fresh HTTP client (10s request timeout).
+    /// Create a new provider with its own HTTP client and the default transport settings:
+    /// a 10-second budget per call, with one retry on a connection failure or HTTP
+    /// 502/503/504 within it.
     pub fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(GOOGLE_TIMEOUT)
-                .build()
-                .expect("Failed to create HTTP client for Google Dictionary"),
-        }
+        Self::with_options(&ProviderOptions::default()).expect("default options are valid")
+    }
+
+    /// Create a new provider, honoring the generic transport options `timeout_secs` (the
+    /// budget per call, whole seconds) and `max_retries` (`0` disables retries). Other
+    /// options are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidOptions`] if `timeout_secs` or `max_retries` has an invalid value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::{google::GoogleDictionaryProvider, ProviderOptions};
+    ///
+    /// let options = ProviderOptions::new().with("max_retries", "0");
+    /// assert!(GoogleDictionaryProvider::with_options(&options).is_ok());
+    /// let options = ProviderOptions::new().with("timeout_secs", "0");
+    /// assert!(GoogleDictionaryProvider::with_options(&options).is_err());
+    /// ```
+    pub fn with_options(options: &ProviderOptions) -> Result<Self, Error> {
+        Ok(Self {
+            transport: google_transport(options)?,
+            base_url: TRANSLATE_API_URL.to_string(),
+        })
+    }
+
+    /// Points the provider at a mock server (tests only).
+    #[cfg(test)]
+    fn at(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
     }
 
     /// Parses a Google Translate dictionary response into a [`DictionaryEntry`] for `word`,
@@ -358,7 +424,7 @@ impl DictionaryProvider for GoogleDictionaryProvider {
         from: &str,
         to: &str,
     ) -> Result<Option<DictionaryEntry>, Error> {
-        let url = "https://translate.googleapis.com/translate_a/single";
+        let url = &self.base_url;
 
         let encoded_word = form_urlencoded::byte_serialize(word.as_bytes()).collect::<String>();
         let from_param = if from == "auto" { "auto" } else { from };
@@ -371,18 +437,7 @@ impl DictionaryProvider for GoogleDictionaryProvider {
 
         let full_url = format!("{}{}", url, params);
 
-        let response = self
-            .client
-            .get(&full_url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Api(format!("HTTP error: {}", response.status())));
-        }
-
-        let body = response.text().await?;
+        let body = get_text(&self.transport, &full_url).await?;
         let json: Value = serde_json::from_str(&body)?;
 
         // Try parsing dictionary from the primary response.
@@ -412,30 +467,17 @@ impl DictionaryProvider for GoogleDictionaryProvider {
             );
             let retry_url = format!("{}{}", url, retry_params);
 
-            let retry_response = self
-                .client
-                .get(&retry_url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await?;
-
-            if retry_response.status().is_success() {
-                let retry_body = retry_response.text().await?;
-                let retry_json: Value = serde_json::from_str(&retry_body)?;
-                if let Some(mut entry) = self.parse_dictionary_response(&retry_json, word) {
-                    // Override corrected_word with the explicit suggestion (more reliable
-                    // than what parse_dictionary_response would extract from retry_json).
-                    entry.corrected_word = Some(corrected);
-                    return Ok(Some(entry));
-                }
-                // Retry succeeded but still no dictionary entries for the corrected
-                // word — a genuine "not found", not an error.
-            } else {
-                return Err(Error::Api(format!(
-                    "HTTP error on retry: {}",
-                    retry_response.status()
-                )));
+            // A second lookup (with its own time budget), not a transport retry.
+            let retry_body = get_text(&self.transport, &retry_url).await?;
+            let retry_json: Value = serde_json::from_str(&retry_body)?;
+            if let Some(mut entry) = self.parse_dictionary_response(&retry_json, word) {
+                // Override corrected_word with the explicit suggestion (more reliable
+                // than what parse_dictionary_response would extract from retry_json).
+                entry.corrected_word = Some(corrected);
+                return Ok(Some(entry));
             }
+            // The second lookup succeeded but still found no dictionary entries for the
+            // corrected word — a genuine "not found", not an error.
         }
 
         Ok(None)
@@ -496,7 +538,8 @@ fn floor_char_boundary(s: &str, mut index: usize) -> usize {
 /// assert!(chunks.iter().all(|c| c.len() <= 100));
 /// ```
 pub struct GoogleSpeechProvider {
-    client: Client,
+    transport: HttpTransport,
+    base_url: String,
 }
 
 impl Default for GoogleSpeechProvider {
@@ -506,14 +549,43 @@ impl Default for GoogleSpeechProvider {
 }
 
 impl GoogleSpeechProvider {
-    /// Create a new provider with a fresh HTTP client (10s request timeout).
+    /// Create a new provider with its own HTTP client and the default transport settings:
+    /// a 10-second budget per call, with one retry on a connection failure or HTTP
+    /// 502/503/504 within it.
     pub fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(GOOGLE_TIMEOUT)
-                .build()
-                .expect("Failed to create HTTP client for Google TTS"),
-        }
+        Self::with_options(&ProviderOptions::default()).expect("default options are valid")
+    }
+
+    /// Create a new provider, honoring the generic transport options `timeout_secs` (the
+    /// budget per call, whole seconds) and `max_retries` (`0` disables retries). Other
+    /// options are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidOptions`] if `timeout_secs` or `max_retries` has an invalid value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::{google::GoogleSpeechProvider, ProviderOptions};
+    ///
+    /// let options = ProviderOptions::new().with("max_retries", "0");
+    /// assert!(GoogleSpeechProvider::with_options(&options).is_ok());
+    /// let options = ProviderOptions::new().with("timeout_secs", "0");
+    /// assert!(GoogleSpeechProvider::with_options(&options).is_err());
+    /// ```
+    pub fn with_options(options: &ProviderOptions) -> Result<Self, Error> {
+        Ok(Self {
+            transport: google_transport(options)?,
+            base_url: TTS_API_URL.to_string(),
+        })
+    }
+
+    /// Points the provider at a mock server (tests only).
+    #[cfg(test)]
+    fn at(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
     }
 }
 
@@ -630,28 +702,12 @@ impl SpeechProvider for GoogleSpeechProvider {
 
         let url = format!(
             "{}?ie=UTF-8&client=tw-ob&q={}&tl={}",
-            TTS_API_URL,
+            self.base_url,
             urlencoding::encode(text),
             lang
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Api(format!(
-                "Google TTS API returned status: {}",
-                response.status()
-            )));
-        }
-
-        let audio_bytes = response.bytes().await?;
-
-        Ok(audio_bytes.to_vec())
+        self.transport.send(|client| client.get(&url)).await
     }
 
     fn name(&self) -> &str {
@@ -663,6 +719,129 @@ impl SpeechProvider for GoogleSpeechProvider {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    mod transport {
+        //! The Google providers on the shared transport, against a mock server.
+        use super::*;
+        use wiremock::matchers::{method, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const TRANSLATION: &str = r#"[[["Привет","Hello",null,null,10]],null,"en"]"#;
+
+        async fn requests(server: &MockServer) -> usize {
+            server.received_requests().await.unwrap().len()
+        }
+
+        async fn fail_once_then(server: &MockServer, first: ResponseTemplate, body: &str) {
+            Mock::given(method("GET"))
+                .respond_with(first)
+                .up_to_n_times(1)
+                .with_priority(1)
+                .mount(server)
+                .await;
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(body))
+                .mount(server)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn translate_sends_the_query_and_parses_the_answer() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(query_param("sl", "en"))
+                .and(query_param("tl", "ru"))
+                .and(query_param("q", "Hello"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(TRANSLATION))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let provider = GoogleTranslateProvider::new().at(&server.uri());
+            assert_eq!(
+                provider.translate_text("Hello", "en", "ru").await.unwrap(),
+                "Привет"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_503_is_retried_once() {
+            let server = MockServer::start().await;
+            fail_once_then(&server, ResponseTemplate::new(503), TRANSLATION).await;
+            let provider = GoogleTranslateProvider::new().at(&server.uri());
+            assert_eq!(
+                provider.translate_text("Hello", "en", "ru").await.unwrap(),
+                "Привет"
+            );
+            assert_eq!(requests(&server).await, 2);
+        }
+
+        #[tokio::test]
+        async fn a_429_is_never_retried() {
+            let server = MockServer::start().await;
+            let rate_limited = ResponseTemplate::new(429).insert_header("Retry-After", "0");
+            fail_once_then(&server, rate_limited, TRANSLATION).await;
+            let provider = GoogleTranslateProvider::new().at(&server.uri());
+            let error = provider
+                .translate_text("Hello", "en", "ru")
+                .await
+                .unwrap_err();
+            assert!(matches!(error, Error::RateLimited { .. }), "{error:?}");
+            assert_eq!(requests(&server).await, 1);
+        }
+
+        #[tokio::test]
+        async fn a_403_is_an_api_error_not_auth() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .respond_with(
+                    ResponseTemplate::new(403)
+                        .insert_header("Content-Type", "text/html")
+                        .set_body_string("<html>blocked</html>"),
+                )
+                .mount(&server)
+                .await;
+            let provider = GoogleDictionaryProvider::new().at(&server.uri());
+            let error = provider.lookup("cat", "en", "ru").await.unwrap_err();
+            assert_eq!(error.to_string(), "provider API error: HTTP 403 Forbidden");
+        }
+
+        #[tokio::test]
+        async fn max_retries_zero_disables_the_retry() {
+            let server = MockServer::start().await;
+            fail_once_then(&server, ResponseTemplate::new(503), "MP3").await;
+            let options = ProviderOptions::new().with("max_retries", "0");
+            let provider = GoogleSpeechProvider::with_options(&options)
+                .unwrap()
+                .at(&server.uri());
+            assert!(provider.speak_chunk("hello", "en").await.is_err());
+            assert_eq!(requests(&server).await, 1);
+        }
+
+        #[tokio::test]
+        async fn speech_returns_the_audio_bytes() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(query_param("tl", "en"))
+                .and(query_param("q", "hello"))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(b"ID3audio".to_vec()))
+                .mount(&server)
+                .await;
+            let provider = GoogleSpeechProvider::new().at(&server.uri());
+            assert_eq!(
+                provider.speak_chunk("hello", "en").await.unwrap(),
+                b"ID3audio"
+            );
+        }
+
+        #[test]
+        fn invalid_transport_options_fail_construction() {
+            let options = ProviderOptions::new().with("timeout_secs", "soon");
+            assert!(matches!(
+                crate::providers::create_provider_with("google", &options),
+                Err(Error::InvalidOptions(_))
+            ));
+        }
+    }
 
     #[test]
     fn strip_invisible_markers_removes_zero_width_spaces() {
@@ -906,7 +1085,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_request_to_unroutable_address_times_out_with_clear_message() {
-        let client = Client::builder()
+        let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(50))
             .build()
             .unwrap();

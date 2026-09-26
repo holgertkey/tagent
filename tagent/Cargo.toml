@@ -23,6 +23,9 @@ serde_json = "1.0"
 url = "2.4"
 urlencoding = "2.1"
 thiserror = "1.0"
+# Only the timer, for the transport's backoff between retries.
+tokio = { version = "1.0", features = ["time"] }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }
+wiremock = "0.6"

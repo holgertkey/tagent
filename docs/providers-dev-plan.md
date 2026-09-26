@@ -485,7 +485,7 @@ trait TranslationProvider {
 
 ### Stage E — Shared HTTP transport
 
-**Status:** planned
+**Status:** done (2026-09-26, tagent 0.19.0)
 **Goal:** a single place for client setup, credentials, retries and status → `Error` mapping.
 
 **Scope** (`tagent/src/providers/http.rs`, most of it `pub(crate)` at first):
@@ -550,6 +550,45 @@ trait TranslationProvider {
 - `max_retries = 0` disables retries; invalid `max_retries` / `timeout_secs` →
   `InvalidOptions`.
 - Error messages don't contain the key (a regression test using a sentinel key).
+
+**Notes after landing:**
+- `tagent/src/providers/http.rs`, all `pub(crate)`: `HttpTransport::builder(TransportDefaults)`
+  `.user_agent(..)`, `.secret_header(name, prefix, secret)` (sensitive header; the secret
+  is redacted from error bodies), `.auth_statuses(..)` (default 401/403),
+  `.quota_statuses(..)` (default none), `.options(&ProviderOptions)` (`max_retries`,
+  `timeout_secs`), `.build()`; then `send(|client| request) -> Result<Vec<u8>, Error>`,
+  which returns the body of the first 2xx response. `build` is called once per attempt.
+- **`send` reads the body itself**, so body-read errors and the budget are handled in one
+  place. The budget is a deadline; each attempt gets `RequestBuilder::timeout(remaining)`,
+  and a retry happens only if `delay + min_attempt` (1 s) still fits. Backoff 300–600 ms,
+  jitter from `RandomState` (no `rand` dependency). Tests shrink the timing.
+- **A timeout is checked before a connect error** (a timed-out connect is both in reqwest).
+- **Google keeps 401/403 as `Api`** (`auth_statuses(&[])`), deviating from "401/403 →
+  `Auth`": it has no credentials, so "authentication failed" would mislead. Its 429 now
+  becomes `RateLimited` (was `Api`), never retried.
+- Message wording changed (no test depended on the old one): `Api("HTTP 503 Service
+  Unavailable")`, plus `": <excerpt>"` of a non-HTML body (whitespace collapsed, ≤ 200
+  characters cut on a char boundary, secrets redacted). `Retry-After` is parsed as whole
+  seconds only; an HTTP date gives `None` (no retry).
+- `From<reqwest::Error>` now strips the URL (`without_url`) for every non-timeout error,
+  also outside the transport: Google's URLs carry the user's text in `q=`.
+- Google: `GOOGLE_TRANSPORT.max_retries` 0 → 1 (as planned in Stage C). The three
+  providers gained `with_options(&ProviderOptions) -> Result<Self, Error>` (`new()` =
+  defaults, still infallible), and the factories pass the profile's options to it. The
+  generic options are declared once (`TRANSPORT_OPTIONS` in `registry.rs`) and referenced
+  by all three Google descriptors, so settings forms and env overrides see them.
+- The dictionary's second request for a suggested spelling is a separate `send` with its
+  own budget, so `lookup` can still take up to 2× the budget, as before; documented in the
+  `google` module docs.
+- `tokio` (feature `time` only) is now a regular dependency (already in the tree via
+  `reqwest`); `wiremock` 0.6 is a dev-dependency (it pulls `hyper` 1 into the dev tree).
+- Tests: every retry-table row with attempt counts (wiremock, or a closure counter for
+  connect-refused and a never-answering listener), the budget across retries, the status
+  mapping, the excerpt rules, option validation, a sentinel key in an auth header echoed
+  back in a 401 body, and a sentinel in the URL of a refused connection; Google against a
+  mock server (query, parsing, 503 retried once, 429 never, 403 → `Api`, `max_retries = 0`,
+  TTS bytes). The live `#[ignore]` Google tests and a `tagent-cli` CLI translation pass.
+- `reqwest` stays at 0.11 (no need for 0.12 appeared).
 
 ---
 

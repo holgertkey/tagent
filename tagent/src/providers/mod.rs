@@ -48,7 +48,7 @@
 //!
 //!   | Variant                     | Meaning                                                    |
 //!   |-----------------------------|------------------------------------------------------------|
-//!   | [`Error::Network`]          | Transport failure or timeout (the Google providers time out after 10 seconds). |
+//!   | [`Error::Network`]          | Transport failure or timeout (the Google providers' budget is 10 seconds per call, one retry included). |
 //!   | [`Error::Api`]              | The service answered with an error status.                 |
 //!   | [`Error::Decode`]           | The response body could not be parsed into the expected shape. |
 //!   | [`Error::EmptyText`]        | Empty input where non-empty text is required (Google's `speak_chunk`). |
@@ -195,6 +195,7 @@ use crate::error::Error;
 use async_trait::async_trait;
 
 pub mod google;
+mod http;
 mod options;
 mod profile;
 mod registry;
@@ -363,7 +364,9 @@ impl Definition {
 ///
 /// # Adding a new provider
 ///
-/// 1. Create `src/providers/yourprovider.rs` and implement this trait.
+/// 1. Create `src/providers/yourprovider.rs` and implement this trait, doing HTTP through
+///    the crate's shared transport (`providers/http.rs`), which owns the time budget,
+///    retries and status → [`Error`] mapping; the adapter itself never retries.
 /// 2. Add `pub mod yourprovider;` here, add a branch for it in [`create_provider_with`]
 ///    (read credentials etc. from its `options` there), and add its name to
 ///    [`TRANSLATION_PROVIDERS`] and a [`ProviderDescriptor`] (display name, the
@@ -712,10 +715,10 @@ pub fn create_provider_with(
     let profile::Resolved {
         kind,
         label,
-        options: _options, // Google takes no options (yet).
+        options,
     } = profile::resolve(name, options, TRANSLATION_PROVIDERS)?;
     let provider: Box<dyn TranslationProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleTranslateProvider::new()),
+        "google" => Box::new(google::GoogleTranslateProvider::with_options(&options)?),
         _ => return Err(Error::UnknownProvider(kind)),
     };
     Ok(profile::label_translation(provider, label))
@@ -774,10 +777,10 @@ pub fn create_dictionary_provider_with(
     let profile::Resolved {
         kind,
         label,
-        options: _options, // Google takes no options (yet).
+        options,
     } = profile::resolve(name, options, DICTIONARY_PROVIDERS)?;
     let provider: Box<dyn DictionaryProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleDictionaryProvider::new()),
+        "google" => Box::new(google::GoogleDictionaryProvider::with_options(&options)?),
         _ => return Err(Error::UnknownProvider(kind)),
     };
     Ok(profile::label_dictionary(provider, label))
@@ -832,10 +835,10 @@ pub fn create_speech_provider_with(
     let profile::Resolved {
         kind,
         label,
-        options: _options, // Google takes no options (yet).
+        options,
     } = profile::resolve(name, options, SPEECH_PROVIDERS)?;
     let provider: Box<dyn SpeechProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleSpeechProvider::new()),
+        "google" => Box::new(google::GoogleSpeechProvider::with_options(&options)?),
         _ => return Err(Error::UnknownProvider(kind)),
     };
     Ok(profile::label_speech(provider, label))

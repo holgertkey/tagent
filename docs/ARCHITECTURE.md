@@ -72,7 +72,9 @@ the old single-crate `tagent`).
   Stage 12 answered enough of them to build the same seam, see "Dictionary Provider
   Architecture" below.)
   - `GoogleSpeechProvider` is a separate struct from `GoogleTranslateProvider` (same
-    `google.rs` file, but its own `reqwest::Client` — constructing it never touches
+    `google.rs` file, but its own HTTP client — since `tagent` 0.19.0 its own instance of
+    the crate-private shared `HttpTransport` (`providers/http.rs`: time budget, retries,
+    status → `Error` mapping; see `docs/providers-dev-plan.md` Stage E) — constructing it never touches
     anything translate-related). `split_for_speech`'s 100-char chunking is *Google's*
     per-request limit, not a general constraint: a backend with no limit returns
     `vec![text.to_string()]`.
@@ -124,7 +126,7 @@ the old single-crate `tagent`).
     backend arrives); `corrected_word` *should* be set only when a different word was
     looked up, but callers keep comparing it with their input case-insensitively, so
     Google's "always `Some`" behavior remains legal.
-  - `GoogleDictionaryProvider` is a separate struct with its own `reqwest::Client`
+  - `GoogleDictionaryProvider` is a separate struct with its own HTTP client (`HttpTransport`)
     (same `google.rs` file, as `GoogleSpeechProvider`), not `GoogleTranslateProvider`
     implementing a second trait: selecting `dictionary_provider = "google"` with a
     different `translate_provider` instantiates nothing translate-related. The

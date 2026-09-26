@@ -94,7 +94,8 @@ impl From<reqwest::Error> for Error {
         if e.is_timeout() {
             Error::Network("request timed out".to_string())
         } else {
-            Error::Network(e.to_string())
+            // The URL can carry user text (e.g. a query parameter) and must not leak.
+            Error::Network(e.without_url().to_string())
         }
     }
 }
