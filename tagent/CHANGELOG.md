@@ -41,6 +41,14 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   `env_var_name` give every application the same `TAGENT_<PROFILE>_<KEY>` environment
   variables (e.g. `TAGENT_DEEPL_API_KEY`); `Debug` output of `ProviderOptions` redacts
   secret-looking values. The Google providers take no options yet.
+- **Provider registry**: `translation_providers()`, `dictionary_providers()` and
+  `speech_providers()` describe each axis's built-in providers as `ProviderDescriptor`s:
+  canonical name, display name, the options it accepts (`OptionSpec`: key, required,
+  secret, description) and its `TransportDefaults` (timeout, retries, whether a rate-limit
+  answer is retried), so an application can build pickers and settings forms without
+  hardcoding them. Same names and order as `TRANSLATION_PROVIDERS` etc., which stay.
+  `ProviderOptions::with_env_overrides` now also looks up every option the profile's
+  provider kind declares.
 
 ## [0.18.3] - 2026-09-25
 

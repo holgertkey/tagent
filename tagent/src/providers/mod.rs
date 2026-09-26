@@ -16,6 +16,14 @@
 //! The only place two axes meet is [`resolve_source_language`], which turns an `"auto"`
 //! source language into a concrete code (via a translation provider) before speaking.
 //!
+//! # Registry
+//!
+//! [`translation_providers`], [`dictionary_providers`] and [`speech_providers`] describe
+//! the built-in providers of each axis ([`ProviderDescriptor`]): display name, the options
+//! each accepts ([`OptionSpec`], e.g. whether an API key is required or secret) and its
+//! [`TransportDefaults`]. An application can build a picker or a settings form from them.
+//! The plain name lists [`TRANSLATION_PROVIDERS`] etc. hold the same names, in the same order.
+//!
 //! # Options and profiles
 //!
 //! The name-only factories build a provider with default settings. Their `*_with`
@@ -67,10 +75,12 @@
 //! `Box<dyn TranslationProvider>` — nothing needs to be registered for that to work. The
 //! factories are a closed `match` inside this crate, so to make a new backend selectable by
 //! name (`create_provider("yours")`, and through it a config file), add a branch to
-//! [`create_provider_with`] here **and** its name to [`TRANSLATION_PROVIDERS`]: the list
-//! is checked before the `match`, so a branch whose name isn't listed is unreachable. The complete, offline example below implements all three
-//! methods; a real backend does the same with an HTTP call in `translate_text` and
-//! `detect_language`.
+//! [`create_provider_with`] here, its name to [`TRANSLATION_PROVIDERS`] (checked before
+//! the `match`, so a branch whose name isn't listed is unreachable) and a
+//! [`ProviderDescriptor`] to the registry behind [`translation_providers`], declaring its
+//! options. Tests keep the three in step. The complete, offline example below implements
+//! all three methods; a real backend does the same with an HTTP call in `translate_text`
+//! and `detect_language`.
 //!
 //! ```
 //! use async_trait::async_trait;
@@ -109,8 +119,8 @@
 //! # Writing a dictionary provider
 //!
 //! Implement [`DictionaryProvider`] — one `lookup` method — and register it in
-//! [`create_dictionary_provider_with`] and [`DICTIONARY_PROVIDERS`] to make it selectable
-//! by name. The trait documentation
+//! [`create_dictionary_provider_with`], [`DICTIONARY_PROVIDERS`] and
+//! [`dictionary_providers`] to make it selectable by name. The trait documentation
 //! spells out what a backend must return (the direction of each field, part-of-speech
 //! labels, when to return `None`); the offline example below is the smallest complete one.
 //! It does not need a translation provider: which backend translates and which one looks
@@ -184,8 +194,13 @@ use async_trait::async_trait;
 pub mod google;
 mod options;
 mod profile;
+mod registry;
 
 pub use options::{env_var_name, ProviderOptions};
+pub use registry::{
+    dictionary_providers, speech_providers, translation_providers, OptionSpec, ProviderDescriptor,
+    TransportDefaults,
+};
 
 /// Dictionary lookup result returned by a [`DictionaryProvider`].
 ///
@@ -317,8 +332,11 @@ impl Definition {
 /// 1. Create `src/providers/yourprovider.rs` and implement this trait.
 /// 2. Add `pub mod yourprovider;` here, add a branch for it in [`create_provider_with`]
 ///    (read credentials etc. from its `options` there), and add its name to
-///    [`TRANSLATION_PROVIDERS`]. The list entry is required: the factory rejects unlisted
-///    kinds before its `match`, and pickers are built from the list.
+///    [`TRANSLATION_PROVIDERS`] and a [`ProviderDescriptor`] (display name, the
+///    [`OptionSpec`]s it reads, [`TransportDefaults`]) to `providers/registry.rs`. The list
+///    entry is required: the factory rejects unlisted kinds before its `match`, and
+///    pickers are built from the list. Tests check that the list, the descriptors and the
+///    factory agree.
 /// 3. Users select it with `TranslateProvider = yourprovider` in `tagent-cli.conf`, or
 ///    `translate_provider` in `tagent-gui.json`.
 #[async_trait]
@@ -539,6 +557,8 @@ pub trait SpeechProvider: Send + Sync {
 ///
 /// Matching is case-insensitive, so `"Google"` also works; this list holds one spelling per
 /// provider. A test checks that every name here is accepted by the factory.
+/// [`translation_providers`] describes the same providers, in the same order, in more
+/// detail (display name, options, transport defaults).
 ///
 /// # Examples
 ///

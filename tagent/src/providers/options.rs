@@ -109,9 +109,11 @@ impl ProviderOptions {
     /// environment variables (named by [`env_var_name`]).
     ///
     /// `provider` is the profile name the options belong to, as passed to the `*_with`
-    /// factories. Only the keys already set are looked up, plus `api_key`, so a key can
-    /// come from the environment alone (the usual way to keep it out of a config file).
-    /// The reserved `type` key is never overridden: environment variables supply
+    /// factories. The keys looked up are the ones already set, `api_key`, and every option
+    /// the profile's provider kind declares (its [`OptionSpec`](super::OptionSpec)s; the
+    /// kind is the `type` option, or `provider` itself without one). So a key can come from
+    /// the environment alone, the usual way to keep it out of a config file. The reserved
+    /// `type` key is never overridden: environment variables supply
     /// credentials and settings, not the choice of provider. A variable that is unset,
     /// empty or not valid Unicode is ignored, so `TAGENT_X_API_KEY=` does not blank a key
     /// from the config file.
@@ -129,20 +131,28 @@ impl ProviderOptions {
     /// assert_eq!(options.get("api_key"), Some("from-env"));
     /// ```
     pub fn with_env_overrides(self, provider: &str) -> Self {
-        self.with_overrides_from(provider, |name| std::env::var(name).ok())
+        let kind = match self.get(TYPE_KEY) {
+            Some(kind) => kind.trim().to_lowercase(),
+            None => provider.to_lowercase(),
+        };
+        let declared = super::registry::declared_option_keys(&kind);
+        self.with_overrides_from(provider, &declared, |name| std::env::var(name).ok())
     }
 
-    /// [`with_env_overrides`](Self::with_env_overrides) with an injectable variable
-    /// lookup, so the rule can be tested without touching the process environment.
+    /// [`with_env_overrides`](Self::with_env_overrides) with the kind's `declared` option
+    /// keys and the variable lookup injected, so the rule can be tested without touching
+    /// the process environment.
     pub(crate) fn with_overrides_from(
         mut self,
         provider: &str,
+        declared: &[&str],
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Self {
         let mut keys: Vec<String> = self.values.keys().cloned().collect();
-        if !self.values.contains_key("api_key") {
-            keys.push("api_key".to_string());
-        }
+        keys.push("api_key".to_string());
+        keys.extend(declared.iter().map(|key| key.to_string()));
+        keys.sort_unstable();
+        keys.dedup();
         for key in keys.into_iter().filter(|key| key != TYPE_KEY) {
             if let Some(value) = lookup(&env_var_name(provider, &key)) {
                 if !value.is_empty() {
@@ -180,8 +190,9 @@ impl fmt::Debug for ProviderOptions {
 
 /// Whether an option key looks like it holds a secret, for redaction.
 ///
-/// A name heuristic until provider descriptors declare their secret options.
-fn is_secret_key(key: &str) -> bool {
+/// A name heuristic, since `Debug` doesn't know which provider kind the options are for; a
+/// test checks that it catches every option a descriptor declares `secret`.
+pub(crate) fn is_secret_key(key: &str) -> bool {
     ["key", "secret", "token", "password", "auth", "credential"]
         .iter()
         .any(|part| key.contains(part))
@@ -306,6 +317,7 @@ mod tests {
             .with("model", "file-model")
             .with_overrides_from(
                 "ollama",
+                &[],
                 fake_env(&[
                     ("TAGENT_OLLAMA_ENDPOINT", "env-endpoint"),
                     ("TAGENT_OLLAMA_API_KEY", "env-key"),
@@ -323,12 +335,12 @@ mod tests {
     fn env_override_unset_or_empty_keeps_file_value() {
         let options = ProviderOptions::new()
             .with("api_key", "file-key")
-            .with_overrides_from("deepl", fake_env(&[("TAGENT_DEEPL_API_KEY", "")]));
+            .with_overrides_from("deepl", &[], fake_env(&[("TAGENT_DEEPL_API_KEY", "")]));
         assert_eq!(options.get("api_key"), Some("file-key"));
 
         let options = ProviderOptions::new()
             .with("api_key", "file-key")
-            .with_overrides_from("deepl", fake_env(&[]));
+            .with_overrides_from("deepl", &[], fake_env(&[]));
         assert_eq!(options.get("api_key"), Some("file-key"));
     }
 
@@ -336,14 +348,30 @@ mod tests {
     fn env_never_overrides_type() {
         let options = ProviderOptions::new()
             .with("type", "openai-compat")
-            .with_overrides_from("ollama", fake_env(&[("TAGENT_OLLAMA_TYPE", "deepl")]));
+            .with_overrides_from("ollama", &[], fake_env(&[("TAGENT_OLLAMA_TYPE", "deepl")]));
         assert_eq!(options.get("type"), Some("openai-compat"));
+    }
+
+    #[test]
+    fn env_overrides_declared_keys() {
+        let options = ProviderOptions::new().with_overrides_from(
+            "ollama",
+            &["endpoint", "model"],
+            fake_env(&[
+                ("TAGENT_OLLAMA_ENDPOINT", "env-endpoint"),
+                ("TAGENT_OLLAMA_TEMPERATURE", "0.9"),
+            ]),
+        );
+        assert_eq!(options.get("endpoint"), Some("env-endpoint"));
+        assert_eq!(options.get("model"), None);
+        assert_eq!(options.get("temperature"), None);
     }
 
     #[test]
     fn env_overrides_use_the_profile_name() {
         let options = ProviderOptions::new().with_overrides_from(
             "work-deepl",
+            &[],
             fake_env(&[
                 ("TAGENT_DEEPL_API_KEY", "wrong"),
                 ("TAGENT_WORK_DEEPL_API_KEY", "right"),

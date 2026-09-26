@@ -55,6 +55,10 @@ use serde_json::Value;
 use std::time::Duration;
 use url::form_urlencoded;
 
+/// Request timeout of every Google provider; also their
+/// [`TransportDefaults::timeout`](super::TransportDefaults::timeout).
+pub(crate) const GOOGLE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Shared User-Agent sent with every request to Google's translate/TTS endpoints.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
@@ -130,7 +134,7 @@ impl GoogleTranslateProvider {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(Duration::from_secs(10))
+                .timeout(GOOGLE_TIMEOUT)
                 .build()
                 .expect("Failed to create HTTP client for Google Translate"),
         }
@@ -249,7 +253,7 @@ impl GoogleDictionaryProvider {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(Duration::from_secs(10))
+                .timeout(GOOGLE_TIMEOUT)
                 .build()
                 .expect("Failed to create HTTP client for Google Dictionary"),
         }
@@ -497,7 +501,7 @@ impl GoogleSpeechProvider {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(Duration::from_secs(10))
+                .timeout(GOOGLE_TIMEOUT)
                 .build()
                 .expect("Failed to create HTTP client for Google TTS"),
         }

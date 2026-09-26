@@ -11,8 +11,8 @@
 //! selectable by name (`create_provider("reverse")`), add a branch to
 //! `tagent::providers::create_provider_with` (or `create_dictionary_provider_with` /
 //! `create_speech_provider_with`) in the library and its name to `TRANSLATION_PROVIDERS`
-//! (or `DICTIONARY_PROVIDERS` / `SPEECH_PROVIDERS`); using it directly, as here, needs no
-//! registration.
+//! (or `DICTIONARY_PROVIDERS` / `SPEECH_PROVIDERS`), plus a `ProviderDescriptor` in the
+//! library's registry; using it directly, as here, needs no registration.
 
 use async_trait::async_trait;
 use tagent::error::Error;

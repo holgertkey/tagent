@@ -26,6 +26,9 @@ concern.
   takes `ProviderOptions` (API key, endpoint, model, ...) and a profile name, so several
   configured instances of one provider can coexist; `TAGENT_<PROFILE>_<KEY>` environment
   variables can supply or override options via `ProviderOptions::with_env_overrides()`.
+  `translation_providers()`, `dictionary_providers()` and `speech_providers()` describe
+  each provider (display name, the options it accepts and which are secret, timeout and
+  retry defaults), for building settings forms.
 - **`languages`** — human-readable language name ↔ BCP-47 code mapping
   (`name_to_code` / `code_to_name`).
 - **`article`** — the display layout of a dictionary entry, shared by both apps:

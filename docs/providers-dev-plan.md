@@ -353,7 +353,7 @@ item.
 
 ### Stage C — Provider registry and descriptors
 
-**Status:** planned
+**Status:** done (2026-09-26, tagent 0.19.0)
 **Goal:** one source of truth per provider (name, display name, options it needs), usable
 by apps to build settings UIs.
 
@@ -401,6 +401,34 @@ pub fn speech_providers() -> &'static [ProviderDescriptor];
 **Semver:** additive → patch.
 **Tests:** every descriptor name is accepted by its factory; descriptor lists match the
 consts; option keys are lowercase and unique per provider.
+**Notes after landing:**
+- `tagent/src/providers/registry.rs`, re-exported from `providers`. The descriptor structs
+  are `#[non_exhaustive]` with public fields and derive `Debug, Clone, Copy, PartialEq, Eq`
+  (everything in them is `&'static`, `bool` or `Duration`). Per axis, one descriptor per
+  provider; the Google ones have display names `"Google Translate"` / `"Google Dictionary"`
+  / `"Google TTS"`, tested to equal the built provider's `name()`.
+- **Google's `TransportDefaults::max_retries` is `0`, not the planned `1`**: the descriptor
+  is public API and describes what happens *today*, and there are no retries before the
+  shared transport exists. Stage E flips it to `1` together with the retry (noted there).
+  `timeout` (10 s) and `retry_on_rate_limit: false` are already true. The 10 s is now one
+  `pub(crate) const GOOGLE_TIMEOUT` in `google.rs`, used by both the three client
+  builders and the descriptors.
+- The factories still gate on the const lists and dispatch with a `match` (the optional
+  registry-dispatch refactor was skipped). Tests keep list, descriptors and factory in
+  step: same names in the same order, every descriptor builds, display names match,
+  option keys lowercase/unique/non-empty/never `type`, and **every `secret` option is
+  caught by `ProviderOptions`' `is_secret_key`**, so `Debug` redacts declared secrets
+  (`Debug` itself stays name-based, since it doesn't know the kind).
+- **`with_env_overrides` deviates from "only declared keys"**: it looks up the present
+  keys ∪ `api_key` ∪ the kind's declared keys (union over all three axes; kind = `type`,
+  else the profile name; still never `type`; unknown kinds just declare nothing). This
+  keeps Stage B's tested behavior and keeps generic keys such as Stage E's
+  `timeout_secs` overridable without every descriptor declaring them. The `pub(crate)`
+  helper takes the declared keys as a parameter, so this is tested with a fake set
+  (Google declares none, so the real registry can't exercise it yet).
+- The "adding a provider" procedure is now: `*_with` branch + const-list entry +
+  descriptor; updated in the `providers` module docs, the trait's steps,
+  `examples/custom_provider.rs` and CLAUDE.md.
 
 ---
 
@@ -488,7 +516,9 @@ trait TranslationProvider {
     `tagent`'s regular dependencies. `reqwest` 0.11 already depends on `tokio`
     (verified in `Cargo.lock` 2026-09-26), so no new crate enters the tree.
 - Migrate the three Google providers onto it. The **only** intended behavior change is the
-  new single retry on connection failures and 502/503/504. Existing tests must pass
+  new single retry on connection failures and 502/503/504. Together with the retry, set Google's
+  `TransportDefaults::max_retries` from `0` to `1` in `registry.rs` (Stage C shipped `0`
+  because no retries existed yet) and mention it in the changelog. Existing tests must pass
   unchanged, and the changelog mentions the retry.
 - Optional, separate decision: `reqwest` 0.11 → 0.12. It isn't exposed in the public API
   (`Error::Network` stores a `String`), so it's non-breaking; do it only if a need appears.
