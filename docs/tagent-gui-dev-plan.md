@@ -92,7 +92,8 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
   to `tagent-gui.log` in the data dir).
 - **Linux desktop integration** (0.14.0+023): `--install-desktop` / `--uninstall-desktop`
   write/remove a `.desktop` file and the icon in the user's data dir; the window class is
-  pinned to `tagent-gui`, so GNOME's dock shows the app icon.
+  pinned to `tagent-gui`, so GNOME's dock shows the app icon. Releases (0.14.0+024) ship the
+  same entry and icon in the Linux archive and a `.deb` that installs them system-wide.
 
 ## Shipped stages
 
@@ -123,12 +124,9 @@ Candidates, not yet scheduled; the order is a suggestion.
 1. **Stage 2 — Language list expansion.** The 6-language list is `tagent-gui`'s own call
    (not tied to `tagent-cli`'s ~16). Low effort, self-contained.
 2. **History logging.** A candidate, not prioritized; no design yet.
-3. **Linux packaging.** Ship `tagent-gui.desktop` and the icon in the Linux release archive,
-   or a `.deb` (`cargo-deb`) that installs them system-wide. The per-user install is done
-   (`--install-desktop`); `tagent-cli` still has no launcher entry (it's a terminal app).
-4. **Provider options in Settings.** Keys, endpoints and user profiles, following
+3. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
-5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
+4. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
 

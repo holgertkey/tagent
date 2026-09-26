@@ -12,6 +12,18 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+024] - 2026-09-26
+
+### Added
+- **`.deb` package**: each release now also attaches `tagent-gui_<version>-1_amd64.deb`
+  (built with `cargo-deb` from `[package.metadata.deb]` in `Cargo.toml`). It installs
+  `/usr/bin/tagent-gui`, the launcher entry, the icon in the `hicolor` theme, and the README
+  and CHANGELOG; dependencies are computed from the binary. After installing it, the app is
+  in the app grid and the dock shows its icon with no `--install-desktop` step.
+- The Linux release archive now carries `tagent-gui.desktop` and `tagent-gui.png` next to
+  the binary. `assets/linux/tagent-gui.desktop` is the entry both packages ship; a test
+  keeps it identical to the one `--install-desktop` writes (apart from `Exec=`).
+
 ## [0.14.0+023] - 2026-09-26
 
 ### Added

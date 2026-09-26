@@ -36,7 +36,8 @@ ALSA and fontconfig development packages, e.g. on Debian/Ubuntu:
 sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev
 ```
 
-Prebuilt `tagent-cli` and `tagent-gui` binaries for Windows and Linux are attached to each
+Prebuilt `tagent-cli` and `tagent-gui` binaries for Windows and Linux, plus a `.deb` of
+`tagent-gui`, are attached to each
 [GitHub Release](https://github.com/holgertkey/tagent/releases).
 
 Plans and design notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),

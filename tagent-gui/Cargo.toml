@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.14.0+023"
+version = "0.14.0+024"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -11,6 +11,26 @@ readme = "README.md"
 keywords = ["translation", "translate", "gui", "slint", "dictionary"]
 categories = ["gui", "internationalization"]
 build = "build.rs"
+
+# `.deb` package, built by `cargo deb -p tagent-gui` (the release workflow runs it with
+# `--no-build` after `cargo build --release`). Installs the launcher entry and icon
+# system-wide, the packaged counterpart of `tagent-gui --install-desktop`.
+[package.metadata.deb]
+section = "utils"
+priority = "optional"
+depends = "$auto"
+extended-description = """\
+A desktop text translator: a global hotkey translates the current selection into a \
+popup next to the cursor, with a system-tray icon, dictionary lookups for single words \
+and text-to-speech. Uses Google Translate by default. Needs an X11 or XWayland session \
+for the global hotkeys."""
+assets = [
+    ["target/release/tagent-gui", "usr/bin/", "755"],
+    ["assets/linux/tagent-gui.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/tray.png", "usr/share/icons/hicolor/512x512/apps/tagent-gui.png", "644"],
+    ["README.md", "usr/share/doc/tagent-gui/", "644"],
+    ["CHANGELOG.md", "usr/share/doc/tagent-gui/", "644"],
+]
 
 [[bin]]
 name = "tagent-gui"

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Tagent
+GenericName=Translator
+Comment=Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech
+Exec=tagent-gui
+Icon=tagent-gui
+Terminal=false
+Categories=Utility;
+Keywords=translate;translation;dictionary;
+StartupWMClass=tagent-gui

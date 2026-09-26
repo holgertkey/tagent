@@ -1199,6 +1199,25 @@ Stage 7 above. Two halves, both needed:
   then by the class, so the empty instance should not matter (the dock result itself is
   the thing to check after changing any of this). Windows and macOS don't need any of
   this (Windows embeds the icon in the `.exe`, see Stage 7).
+- **Release packages** (0.14.0+024). The same entry lives as a static file,
+  `tagent-gui/assets/linux/tagent-gui.desktop`, with `Exec=tagent-gui` (a bare name found
+  on `PATH`, since the install location isn't known in advance);
+  `packaged_desktop_file_matches_the_generated_one` asserts it equals
+  `desktop_file_contents("tagent-gui")`, so editing one without the other fails the tests.
+  `release.yml`'s Linux build puts it and `tray.png` (renamed `tagent-gui.png`) into
+  `tagent-gui-<version>-linux-x86_64.tar.gz` next to the binary, then runs
+  `cargo deb -p tagent-gui --no-build --locked` (`cargo-deb` from `taiki-e/install-action`)
+  for `tagent-gui_<version>-1_amd64.deb`. `[package.metadata.deb]` in `tagent-gui/Cargo.toml`
+  lists the assets explicitly (binary → `usr/bin/`, entry → `usr/share/applications/`, icon →
+  `usr/share/icons/hicolor/512x512/apps/tagent-gui.png`, README/CHANGELOG →
+  `usr/share/doc/tagent-gui/`); `depends = "$auto"` has `dpkg-shlibdeps` compute the library
+  dependencies. Two consequences: the package needs the glibc of the runner it was built on
+  (`ubuntu-latest`, i.e. 24.04; older Ubuntu won't install it, same as the archive's binary
+  won't run there), and `Maintainer:` is just the Cargo author, with no email address. The
+  `.deb` is built after the tests in `verify`, and `publish` waits for `build`, so a packaging
+  failure stops the release before anything reaches crates.io. To try it locally:
+  `cargo install cargo-deb`, `cargo build --release -p tagent-gui`,
+  `cargo deb -p tagent-gui --no-build` (output in `target/debian/`).
 
 ### Known gaps in `tagent-gui`
 

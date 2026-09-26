@@ -1,7 +1,8 @@
 name: Release
 
 # Pushing a `v*` tag releases all three crates together:
-#   - builds the tagent-cli and tagent-gui binaries for Windows and Linux,
+#   - builds the tagent-cli and tagent-gui binaries for Windows and Linux (plus a `.deb`
+#     of tagent-gui),
 #   - publishes tagent, tagent-cli and tagent-gui to crates.io (each one only if its
 #     version isn't already there), and
 #   - creates the GitHub Release with the binaries and notes from the crates' CHANGELOGs.
@@ -100,11 +101,26 @@ jobs:
           Compress-Archive -Path target/release/tagent-cli.exe -DestinationPath "tagent-cli-$env:CLI_VERSION-windows-x86_64.zip"
           Compress-Archive -Path target/release/tagent-gui.exe -DestinationPath "tagent-gui-$env:GUI_VERSION-windows-x86_64.zip"
 
+      - name: Install cargo-deb (Linux)
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      # tagent-gui's archive also carries the launcher entry and icon (the same files
+      # `tagent-gui --install-desktop` writes, with `Exec=tagent-gui` found on PATH), and
+      # its `.deb` installs them system-wide ([package.metadata.deb] in its Cargo.toml).
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           tar -czf "tagent-cli-${CLI_VERSION}-linux-x86_64.tar.gz" -C target/release tagent-cli
-          tar -czf "tagent-gui-${GUI_VERSION}-linux-x86_64.tar.gz" -C target/release tagent-gui
+          stage=$(mktemp -d)
+          cp target/release/tagent-gui "$stage/"
+          cp tagent-gui/assets/linux/tagent-gui.desktop "$stage/"
+          cp tagent-gui/assets/icons/tray.png "$stage/tagent-gui.png"
+          tar -czf "tagent-gui-${GUI_VERSION}-linux-x86_64.tar.gz" -C "$stage" \
+            tagent-gui tagent-gui.desktop tagent-gui.png
+          cargo deb -p tagent-gui --no-build --locked --output "tagent-gui_${GUI_VERSION}-1_amd64.deb"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -113,6 +129,7 @@ jobs:
           path: |
             tagent-cli-*
             tagent-gui-*
+            tagent-gui_*.deb
 
   publish:
     name: Publish to crates.io

@@ -13,6 +13,11 @@
 //! through [`INSTALL_FLAG`], never automatic on startup: a `cargo run` from `target/debug`
 //! would otherwise point the launcher at a debug build. `Exec=` is the running executable's
 //! own path, so installing again after moving the binary fixes the entry.
+//!
+//! Release packages (the Linux archive and the `.deb`, see `release.yml` and
+//! `[package.metadata.deb]` in `Cargo.toml`) ship the same entry as a static file,
+//! `assets/linux/tagent-gui.desktop`, with `Exec=tagent-gui` (found on `PATH`); a test
+//! keeps it identical to what [`install`] writes.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -219,6 +224,16 @@ mod tests {
         assert!(lines.contains(&"StartupWMClass=tagent-gui"));
         assert!(lines.contains(&"Type=Application"));
         assert!(lines.contains(&"Terminal=false"));
+    }
+
+    #[test]
+    fn packaged_desktop_file_matches_the_generated_one() {
+        assert_eq!(
+            include_str!("../assets/linux/tagent-gui.desktop"),
+            desktop_file_contents(Path::new("tagent-gui")),
+            "assets/linux/tagent-gui.desktop is out of date: regenerate it from \
+             desktop_file_contents(\"tagent-gui\")"
+        );
     }
 
     #[test]
