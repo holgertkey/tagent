@@ -153,7 +153,8 @@ the old single-crate `tagent`).
   - **Deliberately left out**: a second backend or any enrichment of Google's parse (its
     `ex`/`md`/`ss`/`rw`/`rm`/`ld` blocks stay unparsed); credentials/options plumbing
     (`create_dictionary_provider(name)` stays name-only; a keyed backend adds an
-    additive `..._with(name, &options)` later); a shared "translate + dictionary +
+    additive `..._with(name, &options)` later — added in `tagent` 0.19.0 as
+    `create_dictionary_provider_with`, see `docs/providers-dev-plan.md` Stage B); a shared "translate + dictionary +
     fallback" helper in `tagent` (the two apps' shapes differ and the shared part is a few
     lines); monolingual or offline dictionaries (online, bilingual only, so `lookup` takes
     both `from` and `to`); new `Error` variants; a Settings dropdown for

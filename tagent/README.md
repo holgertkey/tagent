@@ -22,7 +22,10 @@ concern.
 
   `TRANSLATION_PROVIDERS`, `DICTIONARY_PROVIDERS` and `SPEECH_PROVIDERS` list the names
   each factory accepts, so a settings dialog or an error message can offer them without
-  hardcoding.
+  hardcoding. Each factory has a `*_with` variant (`create_provider_with()`, ...) that also
+  takes `ProviderOptions` (API key, endpoint, model, ...) and a profile name, so several
+  configured instances of one provider can coexist; `TAGENT_<PROFILE>_<KEY>` environment
+  variables can supply or override options via `ProviderOptions::with_env_overrides()`.
 - **`languages`** — human-readable language name ↔ BCP-47 code mapping
   (`name_to_code` / `code_to_name`).
 - **`article`** — the display layout of a dictionary entry, shared by both apps:

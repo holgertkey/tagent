@@ -31,6 +31,16 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   (an operation or language pair the provider can't handle) and `InvalidOptions` (a
   missing or invalid provider option). The error table in the `providers` module docs
   lists them.
+- **Provider options and profiles**: `create_provider_with`, `create_dictionary_provider_with`
+  and `create_speech_provider_with` take a `ProviderOptions` (a case-insensitive string map
+  for API keys, endpoints, models, ...) next to the name. The name is a *profile* name: the
+  reserved option `type` picks the provider kind and defaults to the name, so several
+  configured instances of one kind can coexist (`"work"` with `type = google` shows up as
+  `"Google Translate (work)"`). The name-only factories are now wrappers around these, with
+  empty options, and behave exactly as before. `ProviderOptions::with_env_overrides` and
+  `env_var_name` give every application the same `TAGENT_<PROFILE>_<KEY>` environment
+  variables (e.g. `TAGENT_DEEPL_API_KEY`); `Debug` output of `ProviderOptions` redacts
+  secret-looking values. The Google providers take no options yet.
 
 ## [0.18.3] - 2026-09-25
 

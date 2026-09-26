@@ -51,10 +51,10 @@ pub enum Error {
     /// The provider's response body could not be decoded into the expected shape.
     #[error("failed to decode provider response: {0}")]
     Decode(String),
-    /// [`create_provider`](crate::providers::create_provider),
-    /// [`create_dictionary_provider`](crate::providers::create_dictionary_provider) or
-    /// [`create_speech_provider`](crate::providers::create_speech_provider) was called
-    /// with a name that does not match any known provider.
+    /// A provider factory ([`create_provider`](crate::providers::create_provider),
+    /// [`create_provider_with`](crate::providers::create_provider_with) and their
+    /// dictionary/speech counterparts) was given a name, or a profile `type`, that does not
+    /// match any known provider, or a provider kind that doesn't implement that axis.
     #[error("unknown provider: {0}")]
     UnknownProvider(String),
     /// The provider rejected the credentials: missing, invalid or expired (HTTP 401/403).
@@ -74,7 +74,9 @@ pub enum Error {
     /// backend without language detection.
     #[error("not supported by the provider: {0}")]
     Unsupported(String),
-    /// A provider option is missing or has an invalid value (e.g. a required API key).
+    /// A provider option is missing or has an invalid value (e.g. a required API key), or
+    /// a profile passed to a `*_with` factory is malformed: an invalid profile name, an
+    /// empty `type`, or a built-in provider name used with a foreign `type`.
     #[error("invalid provider options: {0}")]
     InvalidOptions(String),
 }
@@ -118,12 +120,18 @@ mod tests {
             "rate limited by the provider"
         );
         assert_eq!(
-            Error::RateLimited { retry_after: Some(Duration::from_secs(3)) }.to_string(),
+            Error::RateLimited {
+                retry_after: Some(Duration::from_secs(3))
+            }
+            .to_string(),
             "rate limited by the provider (retry after 3 s)"
         );
         // A fractional wait rounds up, so the hint never suggests retrying too early.
         assert_eq!(
-            Error::RateLimited { retry_after: Some(Duration::from_millis(1200)) }.to_string(),
+            Error::RateLimited {
+                retry_after: Some(Duration::from_millis(1200))
+            }
+            .to_string(),
             "rate limited by the provider (retry after 2 s)"
         );
         assert_eq!(

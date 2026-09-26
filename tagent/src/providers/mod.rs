@@ -16,6 +16,20 @@
 //! The only place two axes meet is [`resolve_source_language`], which turns an `"auto"`
 //! source language into a concrete code (via a translation provider) before speaking.
 //!
+//! # Options and profiles
+//!
+//! The name-only factories build a provider with default settings. Their `*_with`
+//! counterparts ([`create_provider_with`], [`create_dictionary_provider_with`],
+//! [`create_speech_provider_with`]) also take [`ProviderOptions`]: API keys, endpoints,
+//! models and so on, as a string map an application can fill straight from its config file.
+//! The library never stores options itself; [`ProviderOptions::with_env_overrides`] lets
+//! `TAGENT_<PROFILE>_<KEY>` environment variables (see [`env_var_name`]) take precedence.
+//!
+//! The name passed to a `*_with` factory is a **profile name**. The reserved option `type`
+//! picks the provider kind and defaults to the name itself, so several differently
+//! configured instances of one kind can coexist under their own names (see
+//! [`create_provider_with`]).
+//!
 //! # Contracts shared by all providers
 //!
 //! - **Language codes** are BCP-47 (`"en"`, `"ru"`). `"auto"` is a valid *source* language
@@ -31,12 +45,12 @@
 //!   | [`Error::Decode`]           | The response body could not be parsed into the expected shape. |
 //!   | [`Error::EmptyText`]        | Empty input where non-empty text is required (Google's `speak_chunk`). |
 //!   | [`Error::TextTooLong`]      | A chunk longer than the provider accepts (Google's `speak_chunk`). |
-//!   | [`Error::UnknownProvider`]  | A factory was given a name it does not know.               |
+//!   | [`Error::UnknownProvider`]  | A factory was given a name or `type` it does not know, or a kind that doesn't provide that axis. |
 //!   | [`Error::Auth`]             | Credentials missing, invalid or expired (HTTP 401/403).    |
 //!   | [`Error::RateLimited`]      | The service is throttling requests (HTTP 429); carries its `Retry-After`, if any. |
 //!   | [`Error::QuotaExceeded`]    | The account's quota or character allowance is used up.     |
 //!   | [`Error::Unsupported`]      | The provider can't do this operation or language pair (e.g. `detect_language` without detection). |
-//!   | [`Error::InvalidOptions`]   | A provider option is missing or has an invalid value.      |
+//!   | [`Error::InvalidOptions`]   | A provider option is missing or invalid, or a profile is malformed (see [`create_provider_with`]). |
 //!
 //!   [`Error::NotFound`] exists but no built-in provider returns it: a dictionary miss is
 //!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error. Neither do the last five
@@ -53,7 +67,8 @@
 //! `Box<dyn TranslationProvider>` — nothing needs to be registered for that to work. The
 //! factories are a closed `match` inside this crate, so to make a new backend selectable by
 //! name (`create_provider("yours")`, and through it a config file), add a branch to
-//! [`create_provider`] here. The complete, offline example below implements all three
+//! [`create_provider_with`] here **and** its name to [`TRANSLATION_PROVIDERS`]: the list
+//! is checked before the `match`, so a branch whose name isn't listed is unreachable. The complete, offline example below implements all three
 //! methods; a real backend does the same with an HTTP call in `translate_text` and
 //! `detect_language`.
 //!
@@ -94,7 +109,8 @@
 //! # Writing a dictionary provider
 //!
 //! Implement [`DictionaryProvider`] — one `lookup` method — and register it in
-//! [`create_dictionary_provider`] to make it selectable by name. The trait documentation
+//! [`create_dictionary_provider_with`] and [`DICTIONARY_PROVIDERS`] to make it selectable
+//! by name. The trait documentation
 //! spells out what a backend must return (the direction of each field, part-of-speech
 //! labels, when to return `None`); the offline example below is the smallest complete one.
 //! It does not need a translation provider: which backend translates and which one looks
@@ -166,6 +182,10 @@ use crate::error::Error;
 use async_trait::async_trait;
 
 pub mod google;
+mod options;
+mod profile;
+
+pub use options::{env_var_name, ProviderOptions};
 
 /// Dictionary lookup result returned by a [`DictionaryProvider`].
 ///
@@ -295,9 +315,10 @@ impl Definition {
 /// # Adding a new provider
 ///
 /// 1. Create `src/providers/yourprovider.rs` and implement this trait.
-/// 2. Add `pub mod yourprovider;` here and register it in [`create_provider`] with a
-///    matching name string, and add that name to [`TRANSLATION_PROVIDERS`] so pickers
-///    offer it.
+/// 2. Add `pub mod yourprovider;` here, add a branch for it in [`create_provider_with`]
+///    (read credentials etc. from its `options` there), and add its name to
+///    [`TRANSLATION_PROVIDERS`]. The list entry is required: the factory rejects unlisted
+///    kinds before its `match`, and pickers are built from the list.
 /// 3. Users select it with `TranslateProvider = yourprovider` in `tagent-cli.conf`, or
 ///    `translate_provider` in `tagent-gui.json`.
 #[async_trait]
@@ -324,6 +345,8 @@ pub trait TranslationProvider: Send + Sync {
 
     /// Human-readable provider name for display purposes (e.g. `"Google Translate"`).
     fn name(&self) -> &str;
+    // A method added here, even one with a default implementation, must also be forwarded
+    // in `profile::Profiled`, or profiled providers silently lose it.
 }
 
 /// Abstraction over a bilingual dictionary backend.
@@ -420,6 +443,8 @@ pub trait DictionaryProvider: Send + Sync {
 
     /// Human-readable provider name for display purposes (e.g. `"Google Dictionary"`).
     fn name(&self) -> &str;
+    // A method added here, even one with a default implementation, must also be forwarded
+    // in `profile::Profiled`, or profiled providers silently lose it.
 }
 
 /// Abstraction over a text-to-speech backend.
@@ -505,6 +530,8 @@ pub trait SpeechProvider: Send + Sync {
 
     /// Human-readable provider name for display purposes (e.g. `"Google TTS"`).
     fn name(&self) -> &str;
+    // A method added here, even one with a default implementation, must also be forwarded
+    // in `profile::Profiled`, or profiled providers silently lose it.
 }
 
 /// Names [`create_provider`] accepts, in the canonical (lowercase) spelling, for building
@@ -561,10 +588,66 @@ pub const SPEECH_PROVIDERS: &[&str] = &["google"];
 /// assert!(create_provider("no-such-provider").is_err());
 /// ```
 pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvider>, Error> {
-    match provider_name.to_lowercase().as_str() {
-        "google" => Ok(Box::new(google::GoogleTranslateProvider::new())),
-        _ => Err(Error::UnknownProvider(provider_name.to_string())),
-    }
+    create_provider_with(provider_name, &ProviderOptions::default())
+}
+
+/// Instantiate a translation provider for profile `name`, with `options`.
+///
+/// This is [`create_provider`] plus options (credentials, endpoint, model, ...); with
+/// empty options the two behave identically.
+///
+/// # Profiles
+///
+/// `name` is a profile name. The provider kind is the option `type` if set, otherwise
+/// `name` itself:
+///
+/// - Without `type`, `name` must be a kind from [`TRANSLATION_PROVIDERS`], matched
+///   case-insensitively, exactly like [`create_provider`].
+/// - With `type`, `name` is a profile of that kind: it must consist of `a-z`, `0-9`, `_`
+///   and `-` (case-insensitive; no `:`), and it may not be a built-in provider name other
+///   than its own `type` (`name = "google"` with `type = "deepl"` is rejected). The profile
+///   name then appears in the provider's display name, e.g. `"Google Translate (work)"`.
+/// - `type` itself is not passed on to the provider.
+///
+/// # Errors
+///
+/// - [`Error::UnknownProvider`] if the kind (`type`, or `name` without one) is unknown or
+///   doesn't provide translation.
+/// - [`Error::InvalidOptions`] for an invalid profile name, an empty `type`, a built-in name
+///   used with a foreign `type`, or options the provider rejects (e.g. a missing API key).
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::{create_provider_with, ProviderOptions};
+///
+/// // A plain built-in name, as with `create_provider`.
+/// let google = create_provider_with("google", &ProviderOptions::new()).unwrap();
+/// assert_eq!(google.name(), "Google Translate");
+///
+/// // A named profile of the google kind.
+/// let options = ProviderOptions::new().with("type", "google");
+/// let work = create_provider_with("work", &options).unwrap();
+/// assert_eq!(work.name(), "Google Translate (work)");
+///
+/// // A built-in name can't be a profile of another kind.
+/// let options = ProviderOptions::new().with("type", "other");
+/// assert!(create_provider_with("google", &options).is_err());
+/// ```
+pub fn create_provider_with(
+    name: &str,
+    options: &ProviderOptions,
+) -> Result<Box<dyn TranslationProvider>, Error> {
+    let profile::Resolved {
+        kind,
+        label,
+        options: _options, // Google takes no options (yet).
+    } = profile::resolve(name, options, TRANSLATION_PROVIDERS)?;
+    let provider: Box<dyn TranslationProvider> = match kind.as_str() {
+        "google" => Box::new(google::GoogleTranslateProvider::new()),
+        _ => return Err(Error::UnknownProvider(kind)),
+    };
+    Ok(profile::label_translation(provider, label))
 }
 
 /// Instantiate a dictionary provider by name.
@@ -595,10 +678,38 @@ pub fn create_provider(provider_name: &str) -> Result<Box<dyn TranslationProvide
 pub fn create_dictionary_provider(
     provider_name: &str,
 ) -> Result<Box<dyn DictionaryProvider>, Error> {
-    match provider_name.to_lowercase().as_str() {
-        "google" => Ok(Box::new(google::GoogleDictionaryProvider::new())),
-        _ => Err(Error::UnknownProvider(provider_name.to_string())),
-    }
+    create_dictionary_provider_with(provider_name, &ProviderOptions::default())
+}
+
+/// Instantiate a dictionary provider for profile `name`, with `options`.
+///
+/// This is [`create_dictionary_provider`] plus options; profiles, `type` and errors work
+/// as in [`create_provider_with`], with kinds from [`DICTIONARY_PROVIDERS`]. One profile
+/// can serve several axes, e.g. translation and dictionary.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::{create_dictionary_provider_with, ProviderOptions};
+///
+/// let options = ProviderOptions::new().with("type", "google");
+/// let dictionary = create_dictionary_provider_with("work", &options).unwrap();
+/// assert_eq!(dictionary.name(), "Google Dictionary (work)");
+/// ```
+pub fn create_dictionary_provider_with(
+    name: &str,
+    options: &ProviderOptions,
+) -> Result<Box<dyn DictionaryProvider>, Error> {
+    let profile::Resolved {
+        kind,
+        label,
+        options: _options, // Google takes no options (yet).
+    } = profile::resolve(name, options, DICTIONARY_PROVIDERS)?;
+    let provider: Box<dyn DictionaryProvider> = match kind.as_str() {
+        "google" => Box::new(google::GoogleDictionaryProvider::new()),
+        _ => return Err(Error::UnknownProvider(kind)),
+    };
+    Ok(profile::label_dictionary(provider, label))
 }
 
 /// Instantiate a speech provider by name.
@@ -627,10 +738,36 @@ pub fn create_dictionary_provider(
 /// assert!(create_speech_provider("no-such-provider").is_err());
 /// ```
 pub fn create_speech_provider(provider_name: &str) -> Result<Box<dyn SpeechProvider>, Error> {
-    match provider_name.to_lowercase().as_str() {
-        "google" => Ok(Box::new(google::GoogleSpeechProvider::new())),
-        _ => Err(Error::UnknownProvider(provider_name.to_string())),
-    }
+    create_speech_provider_with(provider_name, &ProviderOptions::default())
+}
+
+/// Instantiate a speech provider for profile `name`, with `options`.
+///
+/// This is [`create_speech_provider`] plus options; profiles, `type` and errors work as in
+/// [`create_provider_with`], with kinds from [`SPEECH_PROVIDERS`].
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::{create_speech_provider_with, ProviderOptions};
+///
+/// let speech = create_speech_provider_with("google", &ProviderOptions::new()).unwrap();
+/// assert_eq!(speech.name(), "Google TTS");
+/// ```
+pub fn create_speech_provider_with(
+    name: &str,
+    options: &ProviderOptions,
+) -> Result<Box<dyn SpeechProvider>, Error> {
+    let profile::Resolved {
+        kind,
+        label,
+        options: _options, // Google takes no options (yet).
+    } = profile::resolve(name, options, SPEECH_PROVIDERS)?;
+    let provider: Box<dyn SpeechProvider> = match kind.as_str() {
+        "google" => Box::new(google::GoogleSpeechProvider::new()),
+        _ => return Err(Error::UnknownProvider(kind)),
+    };
+    Ok(profile::label_speech(provider, label))
 }
 
 /// Resolves `from` to a concrete BCP-47 language code, calling
@@ -759,6 +896,73 @@ mod tests {
     #[test]
     fn create_speech_provider_is_case_insensitive() {
         assert!(create_speech_provider("GoOgLe").is_ok());
+    }
+
+    /// The name-only factories are thin wrappers now; these are the behaviors callers
+    /// (e.g. `tagent-cli`'s `provider_error_message`) rely on.
+    #[test]
+    fn name_only_factories_behave_as_before() {
+        assert_eq!(
+            create_provider("GOOGLE").unwrap().name(),
+            "Google Translate"
+        );
+        for bad in ["no-such-provider", "bad name!", "a:b", ""] {
+            match create_provider(bad) {
+                Err(Error::UnknownProvider(name)) => assert_eq!(name, bad),
+                Err(other) => panic!("{bad}: expected UnknownProvider, got {other:?}"),
+                Ok(_) => panic!("{bad}: expected an error"),
+            }
+            assert!(matches!(
+                create_dictionary_provider(bad),
+                Err(Error::UnknownProvider(_))
+            ));
+            assert!(matches!(
+                create_speech_provider(bad),
+                Err(Error::UnknownProvider(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn with_factories_name_profiles_on_every_axis() {
+        let options = ProviderOptions::new().with("type", "google");
+        assert_eq!(
+            create_provider_with("work", &options).unwrap().name(),
+            "Google Translate (work)"
+        );
+        assert_eq!(
+            create_dictionary_provider_with("Work", &options)
+                .unwrap()
+                .name(),
+            "Google Dictionary (work)"
+        );
+        let speech = create_speech_provider_with("work", &options).unwrap();
+        assert_eq!(speech.name(), "Google TTS (work)");
+        // The wrapper forwards to the real provider, not a default.
+        let text = "word ".repeat(60);
+        assert_eq!(
+            speech.split_for_speech(&text),
+            google::GoogleSpeechProvider::new().split_for_speech(&text)
+        );
+        assert!(speech.split_for_speech(&text).len() > 1);
+    }
+
+    #[test]
+    fn with_factories_reject_bad_profiles() {
+        let foreign = ProviderOptions::new().with("type", "deepl");
+        assert!(matches!(
+            create_provider_with("google", &foreign),
+            Err(Error::InvalidOptions(_))
+        ));
+        let google = ProviderOptions::new().with("type", "google");
+        assert!(matches!(
+            create_provider_with("bad name!", &google),
+            Err(Error::InvalidOptions(_))
+        ));
+        assert!(matches!(
+            create_speech_provider_with("work", &foreign),
+            Err(Error::UnknownProvider(kind)) if kind == "deepl"
+        ));
     }
 
     #[test]

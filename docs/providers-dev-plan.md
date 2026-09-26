@@ -237,7 +237,7 @@ and all three changelogs have entries.
 
 ### Stage B — Provider options and `*_with` factories
 
-**Status:** planned
+**Status:** done (2026-09-26, tagent 0.19.0)
 **Goal:** allow passing API keys, endpoints, models and timeouts into providers.
 
 **API sketch** (`tagent/src/providers/options.rs`, re-exported from `providers`):
@@ -315,6 +315,39 @@ the axis → `UnknownProvider`); `with_env_overrides` overrides only when the va
 unique variable name to avoid races with parallel tests); doc examples on each new public
 item.
 **Done when:** new public items are documented with examples and `cargo doc` is clean.
+**Notes after landing:**
+- Files: `tagent/src/providers/options.rs` (`ProviderOptions`, `env_var_name`, re-exported
+  from `providers`) and the private `tagent/src/providers/profile.rs` (profile resolution
+  and the display-name wrapper). The three `*_with` factories are in `providers/mod.rs`;
+  the name-only factories call them with empty options.
+- **Profile-name rules apply only when `type` is set.** Without `type` the name *is* the
+  kind, so an unknown or malformed name stays `UnknownProvider(<name as given>)`, exactly
+  as before (`tagent-cli`'s `provider_error_message` relies on that to list the supported
+  values). Only a real profile (`type` present) gets `InvalidOptions` for a bad name, an
+  empty `type`, or a built-in name with a foreign `type`. An unknown `type`, and a kind
+  lacking the axis, are `UnknownProvider(<type>)`. The axis's name list
+  (`TRANSLATION_PROVIDERS`, ...) is the gate; reserved names are the union of all three.
+- Display name: a profile whose name differs from its kind is wrapped in
+  `profile::Profiled`, which reports `"<provider name> (<profile>)"` and forwards every
+  trait method. A comment in each trait says new methods (default ones included, e.g.
+  Stage D's `capabilities()`) must be forwarded there too.
+- `with_env_overrides` (Stage C hadn't landed): looks up the keys already present plus
+  `api_key`, **never `type`** (an env var must not switch the provider kind). An unset,
+  empty or non-Unicode variable is ignored, so `TAGENT_X_API_KEY=` doesn't blank a key
+  from the file. Stage C can widen the key set to each descriptor's declared options.
+- Unit tests never call `std::env::set_var` (it races with `getenv` in other test threads,
+  e.g. `reqwest` reading proxy variables): the logic sits in a `pub(crate)`
+  `with_overrides_from(profile, lookup)` tested with a fake lookup; only the doctest,
+  which runs as its own process, sets a real variable.
+- `require` treats an empty or whitespace-only value as missing; its message names the
+  key, never a value. `Debug` redacts values whose key contains `key`, `secret`, `token`,
+  `password`, `auth` or `credential` (one function, `is_secret_key`, for Stage C to
+  replace with `OptionSpec::secret`). Also added: `insert`, `remove`, `is_empty`, `iter`,
+  and `FromIterator<(K, V)>` (what Stage F needs to turn a config section's map into
+  options).
+- `ProviderOptions` isn't `#[non_exhaustive]` as sketched: its only field is private, which
+  already prevents construction outside the crate.
+- Google ignores options, as planned. No app changes, so no app version bumps.
 
 ---
 
