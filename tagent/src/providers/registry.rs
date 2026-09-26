@@ -138,6 +138,31 @@ pub fn speech_providers() -> &'static [ProviderDescriptor] {
     SPEECH
 }
 
+/// Whether option `key` of provider kind `kind` holds a secret that a UI should mask: the
+/// kind declares it [`secret`](OptionSpec::secret) on any axis, or the key's name looks
+/// like one (`api_key`, `token`, `password`, ...), the same rule `Debug` of
+/// [`ProviderOptions`](super::ProviderOptions) uses. Both are case-insensitive.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::is_secret_option;
+///
+/// assert!(is_secret_option("deepl", "api_key"));
+/// assert!(is_secret_option("google", "API_KEY"));
+/// assert!(!is_secret_option("google", "timeout_secs"));
+/// ```
+pub fn is_secret_option(kind: &str, key: &str) -> bool {
+    let (kind, key) = (kind.to_lowercase(), key.to_lowercase());
+    super::options::is_secret_key(&key)
+        || [TRANSLATION, DICTIONARY, SPEECH]
+            .iter()
+            .flat_map(|list| list.iter())
+            .filter(|descriptor| descriptor.name == kind)
+            .flat_map(|descriptor| descriptor.options.iter())
+            .any(|option| option.key == key && option.secret)
+}
+
 /// The option keys declared for provider kind `kind` (lowercase) on any axis.
 pub(crate) fn declared_option_keys(kind: &str) -> Vec<&'static str> {
     let mut keys: Vec<&'static str> = [TRANSLATION, DICTIONARY, SPEECH]

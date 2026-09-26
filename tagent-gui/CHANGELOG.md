@@ -12,6 +12,24 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+021] - 2026-09-26
+
+### Added
+- **Provider profiles and options** in `tagent-gui.json`: a new `provider_options` object,
+  `{"<profile>": {"<key>": "<value>", ...}}`, passes options (`api_key`, `endpoint`,
+  `model`, `timeout_secs`, `max_retries`, ...) to a provider, and an optional `"type"` entry
+  makes the profile a named instance of a provider kind. `translate_provider`,
+  `dictionary_provider` and `speech_provider` take a profile name; built-in names work as
+  before. Profile names and keys are case-insensitive (saved back lowercase). A
+  `TAGENT_<NAME>_<KEY>` environment variable overrides a value. Profiles are
+  hand-edited for now; the Settings pickers offer them on every axis their kind supports,
+  and saving Settings keeps them (read fresh at save time, so a hand-edit made while the
+  dialog is open survives).
+
+### Security
+- **`tagent-gui.json` is written with permissions `0600`** on Linux/macOS (on creation and
+  on every save, tightening an existing file), since it can now hold API keys.
+
 ## [0.14.0+020] - 2026-09-26
 
 ### Changed

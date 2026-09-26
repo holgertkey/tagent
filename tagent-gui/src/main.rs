@@ -975,11 +975,16 @@ fn combo_selection(model: &ModelRc<SharedString>, index: i32, fallback: &str) ->
 
 /// A provider dropdown's model built from `names` (one of `tagent`'s `*_PROVIDERS` lists),
 /// with the index of the currently configured provider `current` selected.
-fn provider_choices(names: &[&str], current: &str) -> (ModelRc<SharedString>, i32) {
+fn provider_choices(
+    names: &[&str],
+    profiles: &[String],
+    current: &str,
+) -> (ModelRc<SharedString>, i32) {
     let model = ModelRc::new(VecModel::from(
         names
             .iter()
             .map(|name| SharedString::from(*name))
+            .chain(profiles.iter().map(SharedString::from))
             .collect::<Vec<_>>(),
     ));
     let index = combo_index(&model, current);
@@ -996,15 +1001,27 @@ fn provider_choices(names: &[&str], current: &str) -> (ModelRc<SharedString>, i3
 fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     // The dropdown lists come from `tagent` itself (one per provider axis), so a backend
     // added there is offered here without touching `app.slint`.
-    let (model, index) =
-        provider_choices(providers::TRANSLATION_PROVIDERS, &config.translate_provider);
+    // Hand-edited `provider_options` profiles are offered next to the built-in names, on
+    // every axis their provider kind supports.
+    let (model, index) = provider_choices(
+        providers::TRANSLATION_PROVIDERS,
+        &config.profiles_of_kinds(providers::TRANSLATION_PROVIDERS),
+        &config.translate_provider,
+    );
     dialog.set_providers(model);
     dialog.set_provider_index(index);
-    let (model, index) =
-        provider_choices(providers::DICTIONARY_PROVIDERS, &config.dictionary_provider);
+    let (model, index) = provider_choices(
+        providers::DICTIONARY_PROVIDERS,
+        &config.profiles_of_kinds(providers::DICTIONARY_PROVIDERS),
+        &config.dictionary_provider,
+    );
     dialog.set_dictionary_providers(model);
     dialog.set_dictionary_provider_index(index);
-    let (model, index) = provider_choices(providers::SPEECH_PROVIDERS, &config.speech_provider);
+    let (model, index) = provider_choices(
+        providers::SPEECH_PROVIDERS,
+        &config.profiles_of_kinds(providers::SPEECH_PROVIDERS),
+        &config.speech_provider,
+    );
     dialog.set_speech_providers(model);
     dialog.set_speech_provider_index(index);
     dialog.set_show_dictionary(config.show_dictionary);
@@ -1176,8 +1193,8 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
 /// transcript's "[Lang]:"-style prompt; `from_code`/`to_code` are their already-resolved
 /// provider codes.
 struct TranslationRequest {
-    translate_provider: String,
-    dictionary_provider: String,
+    translate_provider: config::ProviderChoice,
+    dictionary_provider: config::ProviderChoice,
     show_prompt: bool,
     show_dictionary: bool,
     spell_check: bool,
@@ -1305,9 +1322,15 @@ fn start_speaking(
                     let mut manager = config_manager.lock().unwrap();
                     manager.check_and_reload();
                     let cfg = manager.config();
-                    (cfg.translate_provider.clone(), cfg.speech_provider.clone())
+                    (
+                        cfg.provider_choice(&cfg.translate_provider),
+                        cfg.provider_choice(&cfg.speech_provider),
+                    )
                 };
-                let speech_provider = providers::create_speech_provider(&speech_provider)?;
+                let speech_provider = providers::create_speech_provider_with(
+                    &speech_provider.name,
+                    &speech_provider.options,
+                )?;
                 // Speech has its own provider, independent of `translate_provider`: a
                 // translate provider is only constructed when `code == "auto"` actually
                 // needs `detect_language`, so a broken/unimplemented translate provider
@@ -1315,7 +1338,10 @@ fn start_speaking(
                 // call, and every phrase-side call where the source language wasn't
                 // "Auto").
                 let lang_code = if code == "auto" {
-                    match providers::create_provider(&translate_provider) {
+                    match providers::create_provider_with(
+                        &translate_provider.name,
+                        &translate_provider.options,
+                    ) {
                         Ok(translate) => {
                             providers::resolve_source_language(translate.as_ref(), &text, "auto")
                                 .await
@@ -1403,14 +1429,20 @@ fn spawn_translation(
         // speech_text is just its header line (dictionary::primary_line), so the
         // per-entry speaker button never reads out part-of-speech/synonym lists.
         let result = runtime.block_on(async move {
-            let provider = providers::create_provider(&translate_provider)?;
+            let provider = providers::create_provider_with(
+                &translate_provider.name,
+                &translate_provider.options,
+            )?;
 
             // Built only when a dictionary lookup is actually about to happen, and never
             // fatally: a bad `dictionary_provider` value must not break translation, so
             // it warns and takes the plain-translation path below instead.
             let dictionary_provider =
                 if show_dictionary && dictionary::is_single_word(&request_text) {
-                    match providers::create_dictionary_provider(&dictionary_provider) {
+                    match providers::create_dictionary_provider_with(
+                        &dictionary_provider.name,
+                        &dictionary_provider.options,
+                    ) {
                         Ok(dictionary) => Some(dictionary),
                         Err(e) => {
                             eprintln!(
@@ -1963,8 +1995,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             manager.check_and_reload();
             let cfg = manager.config();
             (
-                cfg.translate_provider.clone(),
-                cfg.dictionary_provider.clone(),
+                cfg.provider_choice(&cfg.translate_provider),
+                cfg.provider_choice(&cfg.dictionary_provider),
                 cfg.show_prompt,
                 cfg.show_dictionary,
                 cfg.spell_check,
@@ -2400,6 +2432,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // (see save_window_geometry) -- so carried through unchanged, same
                 // treatment as translate_hotkey/popup_auto_hide_seconds above.
                 window_geometry: current_config.window_geometry,
+                // Not editable in Settings yet (hand-edited only), so carried over rather
+                // than rebuilt: dropping it would wipe every profile. Read fresh (after a
+                // reload), so a hand-edit made while the dialog is open isn't reverted.
+                provider_options: {
+                    let mut manager = config_manager_for_save.lock().unwrap();
+                    manager.check_and_reload();
+                    manager.config().provider_options.clone()
+                },
                 remember_popup_position: dialog.get_remember_popup_position(),
                 // Also not dialog-editable (captured by dragging the popup), but read
                 // fresh from the live config rather than from `current_config`: a drag
@@ -2819,8 +2859,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.check_and_reload();
                         let cfg = manager.config();
                         (
-                            cfg.translate_provider.clone(),
-                            cfg.dictionary_provider.clone(),
+                            cfg.provider_choice(&cfg.translate_provider),
+                            cfg.provider_choice(&cfg.dictionary_provider),
                             cfg.show_prompt,
                             cfg.show_dictionary,
                             cfg.spell_check,
@@ -3214,10 +3254,15 @@ mod tests {
 
     #[test]
     fn provider_choices_lists_the_names_and_selects_the_configured_one() {
-        let (model, index) = provider_choices(&["google", "other"], "other");
+        let (model, index) = provider_choices(&["google", "other"], &[], "other");
         assert_eq!(model.row_count(), 2);
         assert_eq!(index, 1);
         assert_eq!(combo_selection(&model, index, ""), "other");
+
+        // Profiles follow the built-in names and can be the selected entry.
+        let (model, index) = provider_choices(&["google"], &["work".to_string()], "Work");
+        assert_eq!(model.row_count(), 2);
+        assert_eq!(combo_selection(&model, index, ""), "work");
     }
 
     /// A fresh config must land on a real entry of every dropdown, not on the "unlisted

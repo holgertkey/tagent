@@ -1,13 +1,20 @@
 use crate::platform::keycodes;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use tagent::providers::{
+    self, DictionaryProvider, ProviderOptions, ProviderProfiles, SpeechProvider,
+    TranslationProvider,
+};
+
+/// Prefix of the INI sections that hold provider profiles: `[Provider:<name>]`.
+const PROVIDER_SECTION_PREFIX: &str = "Provider:";
 
 /// Runtime configuration loaded from `tagent-cli.conf`.
 ///
@@ -69,6 +76,192 @@ pub struct Config {
     /// Name of the text-to-speech backend to use, e.g. `"google"`. Independent of
     /// `translate_provider`.
     pub speech_provider: String,
+    /// Provider profiles from the `[Provider:<name>]` sections. Modeled here (not just
+    /// read) so `/save`, which rewrites the whole file, keeps them; its `Debug` masks
+    /// secret values.
+    pub provider_options: ProviderProfiles,
+}
+
+impl Config {
+    /// The options for provider profile `name`: its `[Provider:<name>]` section, with
+    /// `TAGENT_<NAME>_<KEY>` environment variables taking precedence.
+    pub fn provider_options(&self, name: &str) -> ProviderOptions {
+        self.provider_options_using(name, |var| std::env::var(var).ok())
+    }
+
+    /// [`Self::provider_options`] with the environment replaced by `lookup`.
+    fn provider_options_using(
+        &self,
+        name: &str,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> ProviderOptions {
+        self.provider_options.options_using(name, lookup)
+    }
+
+    /// Builds the translation provider for `TranslateProvider`, with its profile's options.
+    /// The error is ready to show.
+    pub fn create_translate_provider(&self) -> Result<Box<dyn TranslationProvider>, String> {
+        let name = &self.translate_provider;
+        providers::create_provider_with(name, &self.provider_options(name)).map_err(|e| {
+            provider_error_message(
+                &e,
+                "TranslateProvider",
+                name,
+                providers::TRANSLATION_PROVIDERS,
+            )
+        })
+    }
+
+    /// Builds the dictionary provider for `DictionaryProvider`, with its profile's options.
+    /// The error is ready to show.
+    pub fn create_dictionary_provider(&self) -> Result<Box<dyn DictionaryProvider>, String> {
+        let name = &self.dictionary_provider;
+        providers::create_dictionary_provider_with(name, &self.provider_options(name)).map_err(
+            |e| {
+                provider_error_message(
+                    &e,
+                    "DictionaryProvider",
+                    name,
+                    providers::DICTIONARY_PROVIDERS,
+                )
+            },
+        )
+    }
+
+    /// Builds the speech provider for `SpeechProvider`, with its profile's options. The
+    /// error is ready to show.
+    pub fn create_speech_provider(&self) -> Result<Box<dyn SpeechProvider>, String> {
+        let name = &self.speech_provider;
+        providers::create_speech_provider_with(name, &self.provider_options(name)).map_err(|e| {
+            provider_error_message(&e, "SpeechProvider", name, providers::SPEECH_PROVIDERS)
+        })
+    }
+
+    /// The profiles `/config` describes: every `[Provider:<name>]` section plus the three
+    /// selected providers, sorted, without duplicates.
+    fn profile_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .provider_options
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .chain(
+                [
+                    &self.translate_provider,
+                    &self.dictionary_provider,
+                    &self.speech_provider,
+                ]
+                .iter()
+                .map(|name| name.to_lowercase()),
+            )
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The `/config` lines describing each provider profile's effective options: secret
+    /// values masked, and each value's origin (config file or environment variable).
+    fn provider_profile_lines(&self, lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
+        let mut lines = Vec::new();
+        for name in self.profile_names() {
+            let options = self.provider_options_using(&name, &lookup);
+            let kind = options
+                .get("type")
+                .map(|kind| kind.trim().to_lowercase())
+                .unwrap_or_else(|| name.clone());
+            let heading = if kind == name {
+                format!("  {name}")
+            } else {
+                format!("  {name} (type: {kind})")
+            };
+            lines.push(heading);
+            let mut any = false;
+            for (key, value) in options.iter().filter(|(key, _)| *key != "type") {
+                any = true;
+                let shown = if providers::is_secret_option(&kind, key) {
+                    mask_secret(value)
+                } else {
+                    value.to_string()
+                };
+                let var = providers::env_var_name(&name, key);
+                let origin = if lookup(&var).is_some_and(|v| !v.is_empty()) {
+                    format!(" (from env {var})")
+                } else {
+                    String::new()
+                };
+                lines.push(format!("    {key} = {shown}{origin}"));
+            }
+            if !any {
+                lines.push("    (no options)".to_string());
+            }
+        }
+        lines
+    }
+}
+
+/// `text` without `prefix`, if it starts with it ignoring ASCII case.
+fn strip_prefix_ignore_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = text.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix)
+        .then(|| &text[prefix.len()..])
+}
+
+/// Masks a secret for display: `••••` plus its last 4 characters, or just `••••` when it's
+/// too short for that to hide most of it.
+fn mask_secret(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() < 12 {
+        "••••".to_string()
+    } else {
+        format!("••••{}", chars[chars.len() - 4..].iter().collect::<String>())
+    }
+}
+
+/// Writes the config file. On Unix it is created, or tightened, to mode `0600` before
+/// anything is written, since it can hold API keys; on Windows `%APPDATA%` is already
+/// per-user.
+fn write_config_file(path: &str, content: &str) -> std::io::Result<()> {
+    let mut open = OpenOptions::new();
+    open.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600);
+    }
+    let mut file = open.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(content.as_bytes())
+}
+
+/// The `[Provider:<name>]` part of `tagent-cli.conf`: an explanation, then one section per
+/// profile.
+fn provider_sections_ini(profiles: &ProviderProfiles) -> String {
+    let mut ini = String::from(
+        r#"
+; Provider profiles
+; One [Provider:<name>] section per profile. TranslateProvider, DictionaryProvider and
+; SpeechProvider take a profile name; a built-in name (e.g. google) works without a
+; section. The optional `type` key picks the provider kind (default: the profile name),
+; so several configured instances of one kind can coexist. Keys are passed to the
+; provider as they are (lowercase: api_key, endpoint, model, timeout_secs, max_retries).
+; An environment variable TAGENT_<NAME>_<KEY> (e.g. TAGENT_DEEPL_API_KEY) overrides a key.
+; Example:
+;   [Provider:google]
+;   timeout_secs = 15
+;   max_retries = 0
+"#,
+    );
+    for (name, options) in profiles.iter() {
+        ini.push_str(&format!("\n[{PROVIDER_SECTION_PREFIX}{name}]\n"));
+        for (key, value) in options {
+            ini.push_str(&format!("{key} = {value}\n"));
+        }
+    }
+    ini
 }
 
 impl Default for Config {
@@ -107,6 +300,7 @@ impl Default for Config {
             enable_speech_hotkey: true,                          // Enable speech hotkey by default
             translate_provider: "google".to_string(),            // Default translation provider
             speech_provider: "google".to_string(),               // Default speech provider
+            provider_options: ProviderProfiles::new(),
         }
     }
 }
@@ -203,17 +397,24 @@ fn is_auto(language: &str) -> bool {
 
 /// Formats a provider factory error for display. When the configured name is unknown, it
 /// appends the supported values and the setting to change (`setting` is the config key,
-/// e.g. `"SpeechProvider"`), because `tagent`'s own message only echoes the bad name.
-/// Any other error is shown as is.
+/// e.g. `"SpeechProvider"`), because `tagent`'s own message only echoes the bad name. For
+/// invalid options it points at the profile's `[Provider:<profile>]` section and its
+/// environment variables. Any other error is shown as is.
 pub fn provider_error_message(
     error: &tagent::error::Error,
     setting: &str,
+    profile: &str,
     supported: &[&str],
 ) -> String {
     match error {
         tagent::error::Error::UnknownProvider(_) => format!(
             "{error} (supported values for {setting}: {})",
             supported.join(", ")
+        ),
+        tagent::error::Error::InvalidOptions(_) => format!(
+            "{error} (check [{PROVIDER_SECTION_PREFIX}{}] in tagent-cli.conf, or the {}<KEY> environment variables)",
+            profile.to_lowercase(),
+            providers::env_var_name(profile, "")
         ),
         _ => error.to_string(),
     }
@@ -308,7 +509,7 @@ impl ConfigManager {
         let default_config = Config::default();
         let ini_content = self.create_ini_content(&default_config);
 
-        fs::write(&self.config_path, ini_content)?;
+        write_config_file(&self.config_path, &ini_content)?;
         println!("Created default configuration file: {}", self.config_path);
 
         // Update last modified time
@@ -319,7 +520,7 @@ impl ConfigManager {
 
     /// Create INI format content
     fn create_ini_content(&self, config: &Config) -> String {
-        format!(
+        let mut ini = format!(
             r#"; Text Translator Configuration File
 ; This program translates selected text using keyboard shortcuts
 ;
@@ -503,7 +704,9 @@ SpeechProvider = {}
             translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
             dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
             speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
-        )
+        );
+        ini.push_str(&provider_sections_ini(&config.provider_options));
+        ini
     }
 
     /// Load configuration from INI file
@@ -663,6 +866,19 @@ SpeechProvider = {}
             .cloned()
             .unwrap_or_else(|| "google".to_string());
 
+        // `[Provider:<name>]` sections, the prefix matched case-insensitively: a section
+        // that isn't recognized here would be dropped by the next `/save`.
+        let mut raw_profiles: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+        for (section, values) in &parsed_config {
+            if let Some(profile) = strip_prefix_ignore_case(section, PROVIDER_SECTION_PREFIX) {
+                raw_profiles
+                    .entry(profile.to_string())
+                    .or_default()
+                    .extend(values.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+        }
+        let provider_options = ProviderProfiles::from(raw_profiles);
+
         let new_config = Config {
             source_language: source_lang,
             target_language: target_lang,
@@ -687,6 +903,7 @@ SpeechProvider = {}
             enable_speech_hotkey,
             translate_provider,
             speech_provider,
+            provider_options,
         };
 
         if let Ok(mut config) = self.config.lock() {
@@ -740,7 +957,7 @@ SpeechProvider = {}
     pub fn save_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.get_config();
         let ini_content = self.create_ini_content(&config);
-        fs::write(&self.config_path, ini_content)?;
+        write_config_file(&self.config_path, &ini_content)?;
         self.update_last_modified_time()?;
         Ok(())
     }
@@ -948,6 +1165,10 @@ SpeechProvider = {}
         println!("Translation Provider: {}", config.translate_provider);
         println!("Dictionary Provider: {}", config.dictionary_provider);
         println!("Speech Provider: {}", config.speech_provider);
+        println!("Provider profiles:");
+        for line in config.provider_profile_lines(|var| std::env::var(var).ok()) {
+            println!("{line}");
+        }
         println!();
         println!(
             "Source Language: {} ({})",
@@ -1873,6 +2094,11 @@ mod tests {
             enable_speech_hotkey: !defaults.enable_speech_hotkey,
             translate_provider: "translate-sentinel".to_string(),
             speech_provider: "speech-sentinel".to_string(),
+            provider_options: {
+                let mut profiles = ProviderProfiles::new();
+                profiles.insert("profile-sentinel", "key-sentinel", "value-sentinel");
+                profiles
+            },
         };
 
         let path = std::env::temp_dir().join(format!(
@@ -1924,13 +2150,14 @@ mod tests {
         assert_eq!(loaded.enable_speech_hotkey, config.enable_speech_hotkey);
         assert_eq!(loaded.translate_provider, config.translate_provider);
         assert_eq!(loaded.speech_provider, config.speech_provider);
+        assert_eq!(loaded.provider_options, config.provider_options);
     }
 
     #[test]
     fn provider_error_message_lists_supported_values_for_unknown_provider() {
         let error = tagent::error::Error::UnknownProvider("bogus".to_string());
         assert_eq!(
-            provider_error_message(&error, "SpeechProvider", &["google", "other"]),
+            provider_error_message(&error, "SpeechProvider", "bogus", &["google", "other"]),
             "unknown provider: bogus (supported values for SpeechProvider: google, other)"
         );
     }
@@ -1939,7 +2166,7 @@ mod tests {
     fn provider_error_message_leaves_other_errors_unchanged() {
         let error = tagent::error::Error::Network("down".to_string());
         assert_eq!(
-            provider_error_message(&error, "SpeechProvider", &["google"]),
+            provider_error_message(&error, "SpeechProvider", "google", &["google"]),
             error.to_string()
         );
     }
@@ -2083,4 +2310,156 @@ mod tests {
         );
         assert_eq!(sections["Other"].get("Foo"), Some(&"Bar".to_string()));
     }
+
+    // --- Provider profiles ([Provider:<name>] sections) --------------------------------
+
+    fn manager_at(label: &str) -> (ConfigManager, PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_profiles_{}_{}.conf",
+            label,
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&path);
+        let manager = ConfigManager {
+            config_path: path.to_str().unwrap().to_string(),
+            config: Arc::new(Mutex::new(Config::default())),
+            last_modified: Arc::new(Mutex::new(None)),
+        };
+        (manager, path)
+    }
+
+    fn no_env(_: &str) -> Option<String> {
+        None
+    }
+
+    const PROFILES_INI: &str = "[Provider]\nTranslateProvider = work\n\n\
+        [Provider:Work]\ntype = google\nAPI_Key = file-key-0123456789\ntimeout_secs = 15\n\n\
+        [provider:deepl]\napi_key = deepl-key\n\n[Provider:empty]\n";
+
+    /// The trap Stage F guards against: `/save` rewrites the whole file from `Config`, so
+    /// anything not modeled there would be dropped.
+    #[test]
+    fn provider_profiles_survive_save() {
+        let (manager, path) = manager_at("roundtrip");
+        fs::write(&path, PROFILES_INI).unwrap();
+        manager.load_config().unwrap();
+        let loaded = manager.get_config();
+        assert_eq!(loaded.translate_provider, "work");
+        let work = loaded.provider_options.get("work").unwrap();
+        assert_eq!(work["type"], "google");
+        assert_eq!(work["api_key"], "file-key-0123456789");
+        assert_eq!(work["timeout_secs"], "15");
+        // A lowercase `[provider:...]` header is recognized too, not silently dropped.
+        assert_eq!(loaded.provider_options.get("deepl").unwrap()["api_key"], "deepl-key");
+        assert!(loaded.provider_options.get("empty").unwrap().is_empty());
+
+        manager.save_config().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.contains("[Provider:work]\n"), "{written}");
+        assert!(written.contains("[Provider:deepl]\n"), "{written}");
+        assert!(written.contains("[Provider:empty]\n"), "{written}");
+        manager.load_config().unwrap();
+        assert_eq!(manager.get_config().provider_options, loaded.provider_options);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn provider_options_env_overrides_file() {
+        let (manager, path) = manager_at("env");
+        fs::write(&path, PROFILES_INI).unwrap();
+        manager.load_config().unwrap();
+        let config = manager.get_config();
+        let _ = fs::remove_file(&path);
+
+        let from_file = config.provider_options_using("Work", no_env);
+        assert_eq!(from_file.get("api_key"), Some("file-key-0123456789"));
+        assert_eq!(from_file.get("type"), Some("google"));
+
+        let env = |var: &str| (var == "TAGENT_WORK_API_KEY").then(|| "env-key".to_string());
+        let from_env = config.provider_options_using("work", env);
+        assert_eq!(from_env.get("api_key"), Some("env-key"));
+        assert_eq!(from_env.get("timeout_secs"), Some("15"));
+
+        // A profile without a section still gets its key from the environment.
+        let env = |var: &str| (var == "TAGENT_OTHER_API_KEY").then(|| "k".to_string());
+        assert_eq!(config.provider_options_using("other", env).get("api_key"), Some("k"));
+    }
+
+    #[test]
+    fn profile_lines_mask_secrets_and_name_their_origin() {
+        let (manager, path) = manager_at("display");
+        fs::write(&path, PROFILES_INI).unwrap();
+        manager.load_config().unwrap();
+        let config = manager.get_config();
+        let _ = fs::remove_file(&path);
+
+        let sentinel = "ENV-SENTINEL-KEY-4711";
+        let env = |var: &str| (var == "TAGENT_DEEPL_API_KEY").then(|| sentinel.to_string());
+        let text = config.provider_profile_lines(env).join("\n");
+        assert!(!text.contains(sentinel), "{text}");
+        assert!(!text.contains("file-key-0123456789"), "{text}");
+        assert!(text.contains("  work (type: google)"), "{text}");
+        assert!(text.contains("api_key = ••••6789\n"), "{text}");
+        assert!(text.contains("timeout_secs = 15"), "{text}");
+        assert!(text.contains("api_key = ••••4711 (from env TAGENT_DEEPL_API_KEY)"), "{text}");
+        // The selected built-in providers are listed too.
+        assert!(text.contains("  google\n    (no options)"), "{text}");
+        // Debug output (a log line, a panic message) never shows a configured key.
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("file-key-0123456789"), "{debug}");
+        assert!(!debug.contains("deepl-key"), "{debug}");
+    }
+
+    #[test]
+    fn mask_secret_hides_short_values_entirely() {
+        assert_eq!(mask_secret("short"), "••••");
+        assert_eq!(mask_secret("abcdefghijkl"), "••••ijkl");
+    }
+
+    #[test]
+    fn invalid_profile_options_name_the_section() {
+        let config = Config {
+            translate_provider: "google".to_string(),
+            provider_options: {
+                let mut profiles = ProviderProfiles::new();
+                profiles.insert("google", "timeout_secs", "0");
+                profiles
+            },
+            ..Config::default()
+        };
+        let message = config.create_translate_provider().err().expect("invalid timeout");
+        assert!(message.contains("timeout_secs"), "{message}");
+        assert!(message.contains("[Provider:google]"), "{message}");
+        assert!(message.contains("TAGENT_GOOGLE_<KEY>"), "{message}");
+        // The other axes of the same profile fail the same way.
+        assert!(config.create_dictionary_provider().is_err());
+        assert!(config.create_speech_provider().is_err());
+    }
+
+    #[test]
+    fn default_config_builds_every_provider() {
+        let config = Config::default();
+        assert!(config.create_translate_provider().is_ok());
+        assert!(config.create_dictionary_provider().is_ok());
+        assert!(config.create_speech_provider().is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_file_is_private_after_every_write() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+        // Created by the manager (default config).
+        let (manager, path) = manager_at("mode");
+        manager.create_default_config().unwrap();
+        assert_eq!(mode(&path), 0o600);
+
+        // An existing, world-readable file is tightened by /save.
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        manager.save_config().unwrap();
+        assert_eq!(mode(&path), 0o600);
+        let _ = fs::remove_file(&path);
+    }
+
 }

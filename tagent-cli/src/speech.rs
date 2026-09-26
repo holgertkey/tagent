@@ -1,4 +1,4 @@
-use crate::config::ConfigManager;
+use crate::config::{Config, ConfigManager};
 use crate::platform::keycodes;
 use colored::Colorize;
 use rodio::{Decoder, OutputStreamBuilder, Sink};
@@ -8,9 +8,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tagent::providers::{
-    create_provider, create_speech_provider, resolve_source_language, SpeechProvider,
-};
+use tagent::providers::{resolve_source_language, SpeechProvider};
 
 /// Plays back text as speech via a [`tagent::providers::SpeechProvider`].
 ///
@@ -102,27 +100,16 @@ impl SpeechManager {
     /// in the common non-`"auto"` case. If construction fails for `"auto"`, falls back
     /// to `"en"` with a warning, matching [`resolve_source_language`]'s own
     /// detection-failure fallback.
-    pub async fn resolve_speech_language(
-        translate_provider_name: &str,
-        text: &str,
-        source_code: &str,
-    ) -> String {
+    pub async fn resolve_speech_language(config: &Config, text: &str, source_code: &str) -> String {
         if source_code != "auto" {
             return source_code.to_string();
         }
-        match create_provider(translate_provider_name) {
+        match config.create_translate_provider() {
             Ok(translate_provider) => {
                 resolve_source_language(translate_provider.as_ref(), text, "auto").await
             }
-            Err(e) => {
-                eprintln!(
-                    "Language detection unavailable: {}; using 'en'",
-                    crate::config::provider_error_message(
-                        &e,
-                        "TranslateProvider",
-                        tagent::providers::TRANSLATION_PROVIDERS
-                    )
-                );
+            Err(message) => {
+                eprintln!("Language detection unavailable: {message}; using 'en'");
                 "en".to_string()
             }
         }
@@ -207,20 +194,12 @@ impl SpeechManager {
         config_manager.check_and_reload().ok();
         let config = config_manager.get_config();
 
-        let provider = create_speech_provider(&config.speech_provider).map_err(|e| {
-            format!(
-                "Speech error: {}",
-                crate::config::provider_error_message(
-                    &e,
-                    "SpeechProvider",
-                    tagent::providers::SPEECH_PROVIDERS
-                )
-            )
-        })?;
+        let provider = config
+            .create_speech_provider()
+            .map_err(|message| format!("Speech error: {message}"))?;
 
         // Detect language (constructs a translate provider only for "auto")
-        let speech_lang =
-            Self::resolve_speech_language(&config.translate_provider, text, lang_code).await;
+        let speech_lang = Self::resolve_speech_language(&config, text, lang_code).await;
 
         // Print speech label
         Self::print_speech_label(text, Some(&config.target_prompt_color));
@@ -239,16 +218,24 @@ mod tests {
 
     // A translate provider name that fails to construct must not block speech when the
     // source language is concrete -- the whole point of constructing it lazily.
+    fn unknown_translate_provider() -> Config {
+        Config {
+            translate_provider: "no-such-provider".to_string(),
+            ..Config::default()
+        }
+    }
+
     #[tokio::test]
     async fn resolve_speech_language_concrete_code_never_builds_translate_provider() {
-        let lang = SpeechManager::resolve_speech_language("no-such-provider", "Привет", "ru").await;
+        let config = unknown_translate_provider();
+        let lang = SpeechManager::resolve_speech_language(&config, "Привет", "ru").await;
         assert_eq!(lang, "ru");
     }
 
     #[tokio::test]
     async fn resolve_speech_language_auto_with_unknown_translate_provider_falls_back_to_en() {
-        let lang =
-            SpeechManager::resolve_speech_language("no-such-provider", "Привет", "auto").await;
+        let config = unknown_translate_provider();
+        let lang = SpeechManager::resolve_speech_language(&config, "Привет", "auto").await;
         assert_eq!(lang, "en");
     }
 }

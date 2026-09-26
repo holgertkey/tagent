@@ -5,7 +5,7 @@ use std::error::Error;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use tagent::article;
-use tagent::providers::{self, DictionaryProvider, TranslationProvider};
+use tagent::providers::{DictionaryProvider, TranslationProvider};
 
 /// Shared slot for the rustyline external printer used to route hotkey-triggered
 /// translation output safely while the interactive prompt may be mid-read on another
@@ -101,31 +101,19 @@ impl Translator {
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         // Create translation provider based on config
         let config = config_manager.get_config();
-        let provider = providers::create_provider(&config.translate_provider).map_err(|e| {
-            config::provider_error_message(
-                &e,
-                "TranslateProvider",
-                providers::TRANSLATION_PROVIDERS,
-            )
-        })?;
+        let provider = config.create_translate_provider()?;
 
         // A bad dictionary provider must never break translation: warn once and disable
         // dictionary lookups instead of failing to start (unlike the translate provider).
-        let dictionary_provider =
-            match providers::create_dictionary_provider(&config.dictionary_provider) {
-                Ok(dictionary) => Some(Arc::from(dictionary)),
-                Err(e) => {
-                    eprintln!(
-                        "Dictionary provider unavailable: {}; dictionary lookups disabled",
-                        config::provider_error_message(
-                            &e,
-                            "DictionaryProvider",
-                            providers::DICTIONARY_PROVIDERS
-                        )
-                    );
-                    None
-                }
-            };
+        let dictionary_provider = match config.create_dictionary_provider() {
+            Ok(dictionary) => Some(Arc::from(dictionary)),
+            Err(message) => {
+                eprintln!(
+                    "Dictionary provider unavailable: {message}; dictionary lookups disabled"
+                );
+                None
+            }
+        };
 
         Ok(Self {
             provider: Arc::from(provider),

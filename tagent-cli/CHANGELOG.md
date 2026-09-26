@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0+008] - 2026-09-26
+
+### Added
+- **Provider profiles and options.** `TranslateProvider`, `DictionaryProvider` and
+  `SpeechProvider` now take a profile name. A `[Provider:<name>]` section passes options to
+  that provider (keys as the library names them: `api_key`, `endpoint`, `model`,
+  `timeout_secs`, `max_retries`, ...), and its optional `type` key makes it a named profile
+  of a provider kind (`[Provider:work]` + `type = google`). Built-in names work without a
+  section, as before. Profile names and keys are case-insensitive (saved back lowercase).
+  A `TAGENT_<NAME>_<KEY>` environment variable overrides a key.
+  `/save` keeps the sections. An invalid option names the section to fix.
+- **`/config` lists the provider profiles** with their effective options: secret values
+  masked (`••••` plus the last four characters), and a value from the environment marked
+  with its variable.
+
+### Security
+- **`tagent-cli.conf` is written with permissions `0600`** on Linux/macOS (on creation and
+  on every `/save`, tightening an existing file), since it can now hold API keys.
+
 ## [0.16.0+007] - 2026-09-26
 
 ### Changed

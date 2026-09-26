@@ -200,10 +200,10 @@ mod options;
 mod profile;
 mod registry;
 
-pub use options::{env_var_name, ProviderOptions};
+pub use options::{env_var_name, ProviderOptions, ProviderProfiles};
 pub use registry::{
-    dictionary_providers, speech_providers, translation_providers, OptionSpec, ProviderDescriptor,
-    TransportDefaults,
+    dictionary_providers, is_secret_option, speech_providers, translation_providers, OptionSpec,
+    ProviderDescriptor, TransportDefaults,
 };
 
 /// What a [`TranslationProvider`] supports, as reported by

@@ -594,7 +594,9 @@ trait TranslationProvider {
 
 ### Stage F — App-side options wiring
 
-**Status:** planned
+**Status:** in progress — F1 (config, env, `0600`, `/config`, call sites, pickers) done
+2026-09-26 (`tagent-cli` 0.16.0+008, `tagent-gui` 0.14.0+021); F2 (`tagent-gui` Settings
+option fields) planned
 **Goal:** let users configure keys, endpoints and models in each app's own config, and
 pass them to the `*_with` factories.
 
@@ -612,20 +614,23 @@ hand-added sections that only the reader knows about.
   - One section per **profile** (Q3), named `[Provider:<profile>]` (colon, not dot). The
     optional `type` key picks the provider kind and defaults to the profile name, e.g.
     ```ini
-    [Translation]
+    [Provider]
     TranslateProvider = ollama
 
     [Dictionary]
-    DictionaryProvider = ollama        ; one profile can serve several axes
+    ; One profile can serve several axes.
+    DictionaryProvider = ollama
 
     [Provider:ollama]
     type = openai-compat
     endpoint = http://localhost:11434/v1
     model = ...
 
-    [Provider:deepl]                   ; no type → the built-in deepl
+    ; No type: the built-in deepl.
+    [Provider:deepl]
     api_key = ...
     ```
+    (The INI parser has no inline comments: text after a value is part of the value.)
     `TranslateProvider` / `DictionaryProvider` / `SpeechProvider` take a profile name (a
     bare built-in name keeps working, since that's a profile with no section). The
     hand-written parser (`config.rs` `parse_ini`) already accepts these section names:
@@ -672,6 +677,50 @@ hand-added sections that only the reader knows about.
 - On Unix, the file mode is `0600` after each write path.
 - A missing required key → the provider is disabled with a clear warning (translation
   provider: the same fatal/non-fatal behavior as today for a bad name).
+
+**Split** (2026-09-26): F1 is everything except the `tagent-gui` Settings form that renders
+option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of its own.
+
+**Notes after landing (F1):**
+- Library additions it needed (in the same 0.19.0): `ProviderProfiles` (below),
+  `ProviderOptions::with_env_overrides_using`
+  (environment as a lookup function, so apps test env-vs-file precedence without
+  `std::env::set_var`) and `providers::is_secret_option(kind, key)` (descriptor `secret` or
+  the key-name heuristic), used by `/config`'s masking.
+- **Both apps keep profiles in the library's new `ProviderProfiles`** (instead of a bare
+  `BTreeMap` in each): one implementation of the case-insensitive lookup, the env
+  overrides and `profiles_of_kinds`, and a `Debug` that masks secrets. The apps' config
+  structs derive `Debug`, and a bare map would have printed raw keys (e.g. into
+  `tagent-gui.log`); tests assert a sentinel key never appears in `{config:?}`. Names and
+  keys are lowercased on load, so a hand-written `"Work"` / `[Provider:Work]` is saved back
+  as `work`.
+- `tagent-cli`: `Config::provider_options: ProviderProfiles` (the `[Provider:` prefix is
+  matched case-insensitively, since an unrecognized section would be dropped by `/save`;
+  an empty section is kept); `Config::create_*_provider()`
+  wrap the `*_with` factories and format the error (`provider_error_message` gained a
+  `profile` argument; `InvalidOptions` gets "check [Provider:<name>] … or the
+  TAGENT_<NAME>_<KEY> environment variables"). `SpeechManager::resolve_speech_language`
+  takes `&Config` instead of a provider name. Sections are appended after `[Speech]` with
+  an explanatory comment block. The existing positional round-trip test covers the new field.
+- `/config` lists every `[Provider:*]` section plus the three selected profiles; a secret is
+  `••••` + last 4 characters, or only `••••` below 12 characters.
+- **The INI parser has no inline comments** (`timeout_secs = 20 ; x` is an invalid value);
+  documented in the README, and this plan's own example above is fixed accordingly (it also
+  said `[Translation]` for `TranslateProvider`, which lives in `[Provider]`).
+- `tagent-gui`: `GuiConfig::provider_choice(name)` → `ProviderChoice { name, options }`
+  replaces the plain provider name in `TranslationRequest` and in `start_speaking`. The
+  Settings save builds a whole new `GuiConfig`, so it carries `provider_options` over, read
+  fresh from the manager after a reload (like `popup_position`), so a hand-edit made while
+  the dialog is open isn't reverted. Pickers append `profiles_of_kinds(<axis list>)`.
+- `0600`: both apps open the file with mode `0600` and also `set_permissions(0600)` on the
+  handle before writing, which tightens an existing `0644` file; tested on every write path.
+- Behavior on a bad profile is unchanged in kind: a bad translate profile is fatal at
+  `tagent-cli` startup (as a bad name was); dictionary/speech degrade with a warning.
+- Verified end to end with a throwaway `XDG_CONFIG_HOME`; `cargo check --target
+  x86_64-pc-windows-gnu` for both apps is clean.
+
+**F2 (planned):** Settings > General renders, for each selected profile, one field per
+`OptionSpec` of its kind (`secret` → password input), saved into `provider_options`.
 
 ---
 

@@ -1,9 +1,10 @@
 use crate::platform::keycodes;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use tagent::providers::{ProviderOptions, ProviderProfiles};
 
 fn default_translate_provider() -> String {
     "google".to_string()
@@ -350,6 +351,26 @@ pub struct GuiConfig {
     /// breaking translation.
     #[serde(default = "default_dictionary_provider")]
     pub dictionary_provider: String,
+    /// Provider profiles: profile name → option key → value, e.g.
+    /// `{"deepl": {"api_key": "..."}}`. `translate_provider`, `dictionary_provider` and
+    /// `speech_provider` name a profile (a built-in name like `"google"` works without an
+    /// entry); an optional `"type"` entry picks the provider kind, defaulting to the
+    /// profile name. Names and keys are case-insensitive. Hand-edited only (no Settings UI
+    /// yet); `TAGENT_<NAME>_<KEY>` environment variables override values. Modeled here so
+    /// [`GuiConfigManager::update`], which rewrites the whole file, keeps it; its `Debug`
+    /// masks secret values, so options never reach `tagent-gui.log` in full.
+    #[serde(default)]
+    pub provider_options: ProviderProfiles,
+}
+
+/// A provider profile selected for one axis: its name and effective options (config
+/// entry plus environment overrides), ready for `tagent`'s `*_with` factories.
+#[derive(Debug, Clone)]
+pub struct ProviderChoice {
+    /// The profile name, as configured.
+    pub name: String,
+    /// The profile's options.
+    pub options: ProviderOptions,
 }
 
 /// The main window's saved position/size ([`GuiConfig::window_geometry`]), in
@@ -423,11 +444,38 @@ impl Default for GuiConfig {
             show_context_menu: default_show_context_menu(),
             speech_provider: default_speech_provider(),
             dictionary_provider: default_dictionary_provider(),
+            provider_options: ProviderProfiles::new(),
         }
     }
 }
 
 impl GuiConfig {
+    /// Profile `name` with its effective options: its `provider_options` entry (matched
+    /// case-insensitively), with `TAGENT_<NAME>_<KEY>` environment variables taking
+    /// precedence.
+    pub fn provider_choice(&self, name: &str) -> ProviderChoice {
+        self.provider_choice_using(name, |var| std::env::var(var).ok())
+    }
+
+    /// [`Self::provider_choice`] with the environment replaced by `lookup`.
+    fn provider_choice_using(
+        &self,
+        name: &str,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> ProviderChoice {
+        ProviderChoice {
+            name: name.to_string(),
+            options: self.provider_options.options_using(name, lookup),
+        }
+    }
+
+    /// The configured profiles whose provider kind (their `"type"`, or else their name)
+    /// is one of `kinds`, i.e. what a picker for that axis offers besides the built-in
+    /// names; sorted, lowercase.
+    pub fn profiles_of_kinds(&self, kinds: &[&str]) -> Vec<String> {
+        self.provider_options.profiles_of_kinds(kinds)
+    }
+
     /// [`Self::popup_auto_hide_seconds`], with `0` clamped to the default (`3`).
     pub fn popup_auto_hide_seconds_or_default(&self) -> u64 {
         if self.popup_auto_hide_seconds == 0 {
@@ -483,13 +531,28 @@ pub fn load_from_path(path: &Path) -> GuiConfig {
 }
 
 /// Writes `config` to `path` as pretty-printed JSON, creating parent directories.
+///
+/// On Unix the file is created, or tightened, to mode `0600` before anything is written,
+/// since `provider_options` can hold API keys; on Windows `%APPDATA%` is already per-user.
 pub fn save_to_path(path: &Path, config: &GuiConfig) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let file = fs::File::create(path)?;
-    serde_json::to_writer_pretty(file, config)?;
-    Ok(())
+    let mut open = fs::OpenOptions::new();
+    open.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600);
+    }
+    let mut file = open.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    serde_json::to_writer_pretty(&mut file, config)?;
+    file.flush()
 }
 
 fn mtime(path: &Path) -> Option<SystemTime> {
@@ -1495,5 +1558,104 @@ mod tests {
                 last_modified,
             }
         }
+    }
+
+    // --- Provider profiles (`provider_options`) -----------------------------------------
+
+    const PROFILES_JSON: &str = r#"{
+        "translate_provider": "work",
+        "provider_options": {
+            "Work": {"type": "google", "API_Key": "file-key", "timeout_secs": "15"},
+            "deepl": {"api_key": "deepl-key"},
+            "llm": {"type": "openai-compat"}
+        }
+    }"#;
+
+    #[test]
+    fn old_file_without_provider_options_defaults_to_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, br#"{"translate_provider": "google"}"#).unwrap();
+        assert!(load_from_path(&path).provider_options.is_empty());
+    }
+
+    /// The trap Stage F guards against: `update()` rewrites the whole file from
+    /// `GuiConfig`, so anything not modeled there would be dropped.
+    #[test]
+    fn provider_options_survive_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(&path, PROFILES_JSON).unwrap();
+        let mut manager = GuiConfigManager::new_for_test(path.clone());
+        let loaded = manager.config().clone();
+        assert_eq!(
+            loaded.provider_options.get("work").unwrap()["api_key"],
+            "file-key"
+        );
+        // Debug output (e.g. a line in tagent-gui.log) never shows a configured key.
+        assert!(!format!("{loaded:?}").contains("file-key"));
+
+        manager
+            .update(GuiConfig {
+                theme: "dark".to_string(),
+                ..loaded.clone()
+            })
+            .unwrap();
+        let on_disk = load_from_path(&path);
+        assert_eq!(on_disk.provider_options, loaded.provider_options);
+        assert_eq!(on_disk.theme, "dark");
+    }
+
+    #[test]
+    fn provider_choice_merges_config_and_environment() {
+        let config: GuiConfig = serde_json::from_str(PROFILES_JSON).unwrap();
+        let no_env = |_: &str| None;
+
+        let work = config.provider_choice_using("work", no_env);
+        assert_eq!(work.name, "work");
+        assert_eq!(work.options.get("api_key"), Some("file-key"));
+        assert_eq!(work.options.get("type"), Some("google"));
+
+        let env = |var: &str| (var == "TAGENT_WORK_API_KEY").then(|| "env-key".to_string());
+        let work = config.provider_choice_using("WORK", env);
+        assert_eq!(work.options.get("api_key"), Some("env-key"));
+        assert_eq!(work.options.get("timeout_secs"), Some("15"));
+
+        // The options reach the factory: a profile of the google kind builds and is named.
+        let provider = tagent::providers::create_provider_with(&work.name, &work.options).unwrap();
+        assert_eq!(provider.name(), "Google Translate (work)");
+        // Debug output (e.g. a log line) never shows a key.
+        assert!(!format!("{work:?}").contains("env-key"));
+    }
+
+    #[test]
+    fn profiles_are_offered_on_the_axes_their_kind_supports() {
+        let config: GuiConfig = serde_json::from_str(PROFILES_JSON).unwrap();
+        // "work" is a google profile; "deepl"/"llm" are kinds this axis doesn't have.
+        assert_eq!(config.profiles_of_kinds(&["google"]), ["work"]);
+        assert_eq!(config.profiles_of_kinds(&["google", "deepl"]), ["work"]);
+        assert_eq!(
+            config.profiles_of_kinds(&["google", "openai-compat"]),
+            ["llm", "work"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_file_is_private_after_every_write() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+        // Created with the default config on first load.
+        load_from_path(&path);
+        assert_eq!(mode(&path), 0o600);
+
+        // An existing, world-readable file is tightened by update().
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let mut manager = GuiConfigManager::new_for_test(path.clone());
+        manager.update(GuiConfig::default()).unwrap();
+        assert_eq!(mode(&path), 0o600);
     }
 }

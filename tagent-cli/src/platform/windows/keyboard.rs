@@ -834,17 +834,8 @@ async fn speak_clipboard(
     // Detect language
     let (source_code, _) = config_manager.get_language_codes();
     let speech_manager = SpeechManager::new();
-    let provider =
-        tagent::providers::create_speech_provider(&config.speech_provider).map_err(|e| {
-            crate::config::provider_error_message(
-                &e,
-                "SpeechProvider",
-                tagent::providers::SPEECH_PROVIDERS,
-            )
-        })?;
-    let lang_code =
-        SpeechManager::resolve_speech_language(&config.translate_provider, &text, &source_code)
-            .await;
+    let provider = config.create_speech_provider()?;
+    let lang_code = SpeechManager::resolve_speech_language(&config, &text, &source_code).await;
 
     // Clear any existing prompt and print speech info
     print!("\r");

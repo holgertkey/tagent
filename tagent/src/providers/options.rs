@@ -2,6 +2,7 @@
 //! `*_with` factories, and the shared environment-variable naming rule.
 
 use crate::error::Error;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -131,12 +132,41 @@ impl ProviderOptions {
     /// assert_eq!(options.get("api_key"), Some("from-env"));
     /// ```
     pub fn with_env_overrides(self, provider: &str) -> Self {
-        let kind = match self.get(TYPE_KEY) {
+        self.with_env_overrides_using(provider, |name| std::env::var(name).ok())
+    }
+
+    /// [`with_env_overrides`](Self::with_env_overrides) with the environment replaced by
+    /// `lookup` (variable name → value), e.g. so an application can test how its config
+    /// and the environment combine without changing its own process environment.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::ProviderOptions;
+    ///
+    /// let options = ProviderOptions::new()
+    ///     .with("api_key", "from-file")
+    ///     .with_env_overrides_using("deepl", |name| {
+    ///         (name == "TAGENT_DEEPL_API_KEY").then(|| "from-env".to_string())
+    ///     });
+    /// assert_eq!(options.get("api_key"), Some("from-env"));
+    /// ```
+    pub fn with_env_overrides_using(
+        self,
+        provider: &str,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        let declared = super::registry::declared_option_keys(&self.kind_of(provider));
+        self.with_overrides_from(provider, &declared, lookup)
+    }
+
+    /// The provider kind of profile `provider` with these options: the `type` option,
+    /// trimmed and lowercased, or else `provider` lowercased.
+    pub(crate) fn kind_of(&self, provider: &str) -> String {
+        match self.get(TYPE_KEY) {
             Some(kind) => kind.trim().to_lowercase(),
             None => provider.to_lowercase(),
-        };
-        let declared = super::registry::declared_option_keys(&kind);
-        self.with_overrides_from(provider, &declared, |name| std::env::var(name).ok())
+        }
     }
 
     /// [`with_env_overrides`](Self::with_env_overrides) with the kind's `declared` option
@@ -183,6 +213,156 @@ impl fmt::Debug for ProviderOptions {
             } else {
                 map.entry(key, value);
             }
+        }
+        map.finish()
+    }
+}
+
+/// An application's provider profiles: profile name → option key → value, e.g. read from a
+/// config file's `[Provider:<name>]` sections or a JSON object.
+///
+/// Profile names and keys are case-insensitive and stored lowercase; values are kept as
+/// given. [`options`](Self::options) turns one profile into the [`ProviderOptions`] a
+/// `*_with` factory takes, with `TAGENT_<NAME>_<KEY>` environment variables taking
+/// precedence. `Debug` masks secret values ([`is_secret_option`](super::is_secret_option)),
+/// so a config struct holding this can derive `Debug` without leaking keys. With serde it
+/// is a plain `{"<profile>": {"<key>": "<value>"}}` object.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::{create_provider_with, ProviderProfiles};
+///
+/// let mut profiles = ProviderProfiles::new();
+/// profiles.insert("Work", "type", "google");
+/// profiles.insert("work", "api_key", "secret-0123456789");
+///
+/// let options = profiles.options_using("work", |_| None);
+/// let provider = create_provider_with("work", &options).unwrap();
+/// assert_eq!(provider.name(), "Google Translate (work)");
+/// assert!(!format!("{profiles:?}").contains("secret-0123456789"));
+/// ```
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "BTreeMap<String, BTreeMap<String, String>>")]
+pub struct ProviderProfiles(BTreeMap<String, BTreeMap<String, String>>);
+
+impl ProviderProfiles {
+    /// Creates an empty set of profiles.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets option `key` of profile `profile` to `value`, creating the profile if needed.
+    pub fn insert(&mut self, profile: &str, key: &str, value: impl Into<String>) {
+        self.0
+            .entry(profile.trim().to_lowercase())
+            .or_default()
+            .insert(key.trim().to_lowercase(), value.into());
+    }
+
+    /// The options of `profile` as configured (no environment overrides), if it exists.
+    pub fn get(&self, profile: &str) -> Option<&BTreeMap<String, String>> {
+        self.0.get(&profile.trim().to_lowercase())
+    }
+
+    /// Iterates over the profiles as `(name, options)`, names in sorted order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &BTreeMap<String, String>)> {
+        self.0
+            .iter()
+            .map(|(name, options)| (name.as_str(), options))
+    }
+
+    /// Returns `true` if there are no profiles.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The options for profile `profile`: its configured values, overridden by
+    /// `TAGENT_<NAME>_<KEY>` environment variables (see
+    /// [`ProviderOptions::with_env_overrides`]). A profile that isn't configured gets
+    /// whatever the environment supplies.
+    pub fn options(&self, profile: &str) -> ProviderOptions {
+        self.options_using(profile, |name| std::env::var(name).ok())
+    }
+
+    /// [`options`](Self::options) with the environment replaced by `lookup`.
+    pub fn options_using(
+        &self,
+        profile: &str,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> ProviderOptions {
+        self.get(profile)
+            .into_iter()
+            .flatten()
+            .collect::<ProviderOptions>()
+            .with_env_overrides_using(profile, lookup)
+    }
+
+    /// The provider kind of `profile`: its `type` option, or else its name (lowercase).
+    pub fn kind_of(&self, profile: &str) -> String {
+        match self.get(profile).and_then(|options| options.get(TYPE_KEY)) {
+            Some(kind) => kind.trim().to_lowercase(),
+            None => profile.trim().to_lowercase(),
+        }
+    }
+
+    /// The profiles whose kind is one of `kinds`, other than those kinds' own names: what
+    /// a picker listing `kinds` (e.g. [`TRANSLATION_PROVIDERS`](super::TRANSLATION_PROVIDERS))
+    /// can offer in addition. Sorted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::{ProviderProfiles, TRANSLATION_PROVIDERS};
+    ///
+    /// let mut profiles = ProviderProfiles::new();
+    /// profiles.insert("work", "type", "google");
+    /// profiles.insert("google", "max_retries", "0");
+    /// profiles.insert("llm", "type", "no-such-kind");
+    /// assert_eq!(profiles.profiles_of_kinds(TRANSLATION_PROVIDERS), ["work"]);
+    /// ```
+    pub fn profiles_of_kinds(&self, kinds: &[&str]) -> Vec<String> {
+        self.0
+            .keys()
+            .filter(|name| !kinds.contains(&name.as_str()))
+            .filter(|name| kinds.contains(&self.kind_of(name).as_str()))
+            .cloned()
+            .collect()
+    }
+}
+
+impl From<BTreeMap<String, BTreeMap<String, String>>> for ProviderProfiles {
+    /// Normalizes names and keys to lowercase (merging entries that differ only in case).
+    fn from(raw: BTreeMap<String, BTreeMap<String, String>>) -> Self {
+        let mut profiles = Self::new();
+        for (name, options) in raw {
+            for (key, value) in options {
+                profiles.insert(&name, &key, value);
+            }
+            // Keep a profile that has no options, too.
+            profiles.0.entry(name.trim().to_lowercase()).or_default();
+        }
+        profiles
+    }
+}
+
+impl fmt::Debug for ProviderProfiles {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut map = f.debug_map();
+        for (name, options) in &self.0 {
+            let kind = self.kind_of(name);
+            let shown: BTreeMap<&str, &str> = options
+                .iter()
+                .map(|(key, value)| {
+                    let value = if super::is_secret_option(&kind, key) {
+                        "<redacted>"
+                    } else {
+                        value.as_str()
+                    };
+                    (key.as_str(), value)
+                })
+                .collect();
+            map.entry(name, &shown);
         }
         map.finish()
     }
@@ -378,6 +558,69 @@ mod tests {
             ]),
         );
         assert_eq!(options.get("api_key"), Some("right"));
+    }
+
+    #[test]
+    fn profiles_normalize_case_and_keep_empty_profiles() {
+        let raw: BTreeMap<String, BTreeMap<String, String>> = [
+            (
+                "Work".to_string(),
+                [("API_Key".to_string(), "k".to_string())].into(),
+            ),
+            (
+                "work".to_string(),
+                [("type".to_string(), "google".to_string())].into(),
+            ),
+            ("empty".to_string(), BTreeMap::new()),
+        ]
+        .into();
+        let profiles = ProviderProfiles::from(raw);
+        let work = profiles.get("WORK").unwrap();
+        assert_eq!(work["api_key"], "k");
+        assert_eq!(work["type"], "google");
+        assert!(profiles.get("empty").unwrap().is_empty());
+        assert_eq!(profiles.kind_of("Work"), "google");
+        assert_eq!(profiles.kind_of("other"), "other");
+    }
+
+    #[test]
+    fn profiles_json_round_trip_is_a_plain_object() {
+        let json = r#"{"Deepl":{"API_KEY":"k"}}"#;
+        let profiles: ProviderProfiles = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            serde_json::to_string(&profiles).unwrap(),
+            r#"{"deepl":{"api_key":"k"}}"#
+        );
+    }
+
+    #[test]
+    fn profiles_options_env_overrides_config() {
+        let mut profiles = ProviderProfiles::new();
+        profiles.insert("work", "api_key", "file");
+        profiles.insert("work", "model", "m");
+        let env = fake_env(&[("TAGENT_WORK_API_KEY", "env")]);
+        let options = profiles.options_using("Work", env);
+        assert_eq!(options.get("api_key"), Some("env"));
+        assert_eq!(options.get("model"), Some("m"));
+        let env = fake_env(&[("TAGENT_NEW_API_KEY", "only-env")]);
+        assert_eq!(
+            profiles.options_using("new", env).get("api_key"),
+            Some("only-env")
+        );
+    }
+
+    #[test]
+    fn profiles_debug_masks_secrets() {
+        let sentinel = "SENTINEL-KEY-4711";
+        let mut profiles = ProviderProfiles::new();
+        profiles.insert("work", "api_key", sentinel);
+        profiles.insert("work", "timeout_secs", "15");
+        let debug = format!("{profiles:?}");
+        assert!(!debug.contains(sentinel), "{debug}");
+        assert!(
+            debug.contains("timeout_secs") && debug.contains("15"),
+            "{debug}"
+        );
     }
 
     #[test]

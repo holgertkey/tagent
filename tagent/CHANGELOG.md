@@ -60,7 +60,15 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   answer is retried), so an application can build pickers and settings forms without
   hardcoding them. Same names and order as `TRANSLATION_PROVIDERS` etc., which stay.
   `ProviderOptions::with_env_overrides` now also looks up every option the profile's
-  provider kind declares.
+  provider kind declares. For applications: `is_secret_option(kind, key)` says whether a
+  value should be masked, and `ProviderOptions::with_env_overrides_using` takes the
+  environment as a lookup function (for testing how config and environment combine).
+- **`ProviderProfiles`**: an application's configured provider profiles (profile → key →
+  value, case-insensitive, stored lowercase). `options(profile)` gives the
+  `ProviderOptions` for a `*_with` factory with environment overrides applied,
+  `profiles_of_kinds(kinds)` lists the profiles a picker for one axis can offer, `Debug`
+  masks secret values, and with serde it is a plain `{"<profile>": {"<key>": "<value>"}}`
+  object. Both applications keep their profiles in it.
 - **`TranslationProvider::capabilities()`** returns a `TranslationCapabilities`
   (`detects_language`, `max_text_len` in characters, `languages`), so an application can
   adapt up front, e.g. offer `"auto"` only when the provider detects languages. It has a

@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+007
+# Tagent Text Translator v0.16.0+008
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -253,6 +253,37 @@ EnableSpeechHotkey = true
 ; Speech backend, independent of TranslateProvider (google)
 SpeechProvider = google
 ```
+
+### Provider Profiles and API Keys
+
+`TranslateProvider`, `DictionaryProvider` and `SpeechProvider` take a **profile name**. A
+built-in provider name (`google`) works as is; a `[Provider:<name>]` section adds options
+for it, or defines a new profile whose optional `type` key picks the provider kind (default:
+the profile name). One profile can serve several of the three settings.
+
+```ini
+[Provider]
+TranslateProvider = work
+
+[Provider:work]
+type = google
+; Time budget for one request in seconds, retries included
+timeout_secs = 20
+; 0 disables the automatic retry
+max_retries = 0
+
+; Options for the built-in name itself
+[Provider:google]
+max_retries = 0
+```
+
+Comments go on their own lines (`;` or `#` at the start); text after a value is part of it.
+
+Keys are passed to the provider as written (lowercase, e.g. `api_key`, `endpoint`, `model`,
+for providers that need them). An environment variable `TAGENT_<NAME>_<KEY>` overrides a key,
+e.g. `TAGENT_WORK_API_KEY`, so an API key never has to be written to the file. `/config`
+lists every profile with its effective options, secret values masked and each value's origin
+shown. On Linux/macOS the config file is written with permissions `0600` (owner only).
 
 ### Customizing Hotkeys
 
@@ -582,7 +613,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+007
+**Current Version**: v0.16.0+008
 
 ## Contributing
 
@@ -605,4 +636,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+007** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.16.0+008** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
