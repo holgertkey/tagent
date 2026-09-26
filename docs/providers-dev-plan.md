@@ -141,7 +141,7 @@ foundation.
 
 ### Stage 0 — Release notes: collect every unpublished `tagent` section (prerequisite)
 
-**Status:** planned
+**Status:** done (2026-09-26, no crate version change)
 **Why:** `.github/scripts/release-notes.sh` includes only the changelog sections whose
 version equals the crate's *current* version. That works for the apps, since within a cycle
 only their `+BUILD` changes. It breaks for `tagent`, whose plain version can move several
@@ -166,6 +166,23 @@ that runs `release-notes.sh` against fixture changelogs and Cargo.toml files (se
 only if useful.
 **Done when:** a dry run on the real repo prints both 0.18.2 and 0.18.3 entries for `tagent`,
 and the test runs in CI.
+**Notes after landing:**
+- The previous release is the highest `v*` tag by version (`--sort=-v:refname`, not by
+  ancestry, so it works from `dev`), **skipping tags that point at HEAD**: during the release
+  run, the pushed tag itself is the latest one and would otherwise make the range empty.
+- A tag that predates the `tagent` crate (no `tagent/Cargo.toml`, e.g. `v0.9.0`) counts as
+  "no previous release" → every section up to the current version.
+- If `tagent`'s version didn't change since the previous release, the script falls back to the
+  old behavior (sections equal to the current version) rather than failing on an empty range;
+  `publish-crates.sh` skips the already-published crate anyway.
+- The "no entries" check stays tied to the **current** version: collecting 0.18.2/0.18.3 must
+  not hide a missing 0.19.0 section.
+- A shallow clone is an error; `release.yml`'s `verify` and `release` jobs now check out with
+  `fetch-depth: 0`.
+- Test: `.github/scripts/test-release-notes.sh` (range with a tag at HEAD, no tag, tag before
+  the crate, unchanged version, numeric `0.10.0 > 0.9.0` ordering, missing current section,
+  shallow clone), run on Linux in `ci.yml`. It fails against the old script. On the real repo
+  (last tag `v0.16.0`, `tagent` 0.18.1) the notes now carry both the 0.18.2 and 0.18.3 entries.
 
 ---
 

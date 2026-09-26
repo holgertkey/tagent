@@ -60,6 +60,10 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc -p tagent --no-deps --locked
 
+      - name: Release notes script tests
+        if: runner.os == 'Linux'
+        run: .github/scripts/test-release-notes.sh
+
       # Catches a missing/stale `version` on the `tagent` path dependency, missing
       # packaged files, and build scripts that don't work from the packaged sources.
       - name: crates.io packaging dry run

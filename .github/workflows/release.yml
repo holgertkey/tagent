@@ -25,7 +25,10 @@ jobs:
     name: Verify release
     runs-on: ubuntu-latest
     steps:
+      # Full history with tags: release-notes.sh finds the previous release by its tag.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -143,7 +146,10 @@ jobs:
       contents: write
 
     steps:
+      # Full history with tags: release-notes.sh finds the previous release by its tag.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

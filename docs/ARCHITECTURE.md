@@ -1277,7 +1277,10 @@ Later changes before the next release go into that same version and section, wit
 further bump. If a breaking change follows a patch bump within the cycle, the version is
 escalated to the next minor and the section header renamed. The last published version is
 `git show <latest v* tag>:tagent/Cargo.toml`. It is the library's counterpart of the apps'
-`+BUILD` counter.
+`+BUILD` counter. As a safety net for cycles where the version did move more than once,
+`.github/scripts/release-notes.sh` collects every `tagent` changelog section above the
+previous release's `tagent` version (not just the current version's, as for the apps), so an
+unpublished intermediate version's entries still reach the GitHub Release notes.
 `1.0.0` waits until the API settles and the crate is published. `0.17.0` still sorts
 above `0.12.0`, the last version the old single-crate `tagent` application published to
 crates.io (checked 2026-09-19), so `cargo add tagent` will resolve to the library rather
