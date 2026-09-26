@@ -6,7 +6,7 @@ Cross-platform text translation, split across three Cargo workspace crates:
 |---|---|---|
 | **`tagent`** | Translation/dictionary/TTS library (Google Translate provider, no app code) | [tagent/README.md](tagent/README.md) |
 | **`tagent-cli`** | The Tagent application — global hotkeys, interactive terminal, CLI mode | [tagent-cli/README.md](tagent-cli/README.md) |
-| **`tagent-gui`** | Slint desktop GUI prototype, translate-only, fully independent app | [tagent-gui/README.md](tagent-gui/README.md) |
+| **`tagent-gui`** | Slint desktop translator — transcript window, selection hotkeys with a popup, tray, dictionary, text-to-speech; a fully independent app | [tagent-gui/README.md](tagent-gui/README.md) |
 
 Both `tagent-cli` and `tagent-gui` depend on the `tagent` library; `tagent` depends on
 neither. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full breakdown.
@@ -28,8 +28,20 @@ cd tagent
 cargo build --release
 ```
 
-Builds all three crates. The `tagent-cli` package's binary is named `tagent-cli`, so
-it lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe` on Windows).
+Builds all three crates. The binaries land at `target/release/tagent-cli` and
+`target/release/tagent-gui` (`.exe` on Windows). On Linux the build needs the X11, XTest,
+ALSA and fontconfig development packages, e.g. on Debian/Ubuntu:
+
+```bash
+sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev
+```
+
+Prebuilt `tagent-cli` and `tagent-gui` binaries for Windows and Linux are attached to each
+[GitHub Release](https://github.com/holgertkey/tagent/releases).
+
+Plans and design notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+[`docs/providers-dev-plan.md`](docs/providers-dev-plan.md) (provider roadmap) and
+[`docs/tagent-gui-dev-plan.md`](docs/tagent-gui-dev-plan.md).
 
 See each crate's `CHANGELOG.md` (linked above) for version history and [LICENSE](LICENSE)
 for license terms (MIT).

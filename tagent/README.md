@@ -25,6 +25,11 @@ concern.
   hardcoding.
 - **`languages`** — human-readable language name ↔ BCP-47 code mapping
   (`name_to_code` / `code_to_name`).
+- **`article`** — the display layout of a dictionary entry, shared by both apps:
+  `article_lines` turns a `DictionaryEntry` into role-tagged lines (header, part of speech,
+  plain text, synonyms), `to_plain` gives the plain-text form, `render_with` lets a caller
+  paint each span (ANSI colors, markup, …), and `part_of_speech_label` localizes
+  part-of-speech names.
 - **`error`** — unified `Error` type (via `thiserror`) used across the crate.
 
 ## Usage
@@ -66,7 +71,7 @@ Runnable examples live in [`examples/`](https://github.com/holgertkey/tagent/tre
 cargo run -p tagent --example translate -- "Hello world" ru   # needs network
 cargo run -p tagent --example dictionary -- vialent           # needs network
 cargo run -p tagent --example speak -- "Hello world" en       # needs network, writes a temp-dir .mp3
-cargo run -p tagent --example custom_provider                 # offline: both traits on a toy backend
+cargo run -p tagent --example custom_provider                 # offline: all three traits on toy backends
 ```
 
 ## Status

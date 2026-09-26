@@ -72,9 +72,15 @@ Settings > "Hotkeys & Tray", to open the window at launch.
 ## What it does
 
 - **Translate.** Pick a source and target language, type text, press Enter (or click
-  Translate); Shift+Enter inserts a newline. The ⇄ button swaps the languages, and 📋
-  pulls the clipboard contents into the input box. Results accumulate in a selectable,
-  copyable transcript. The language list is fixed at Auto/English/Russian/Spanish/French/German.
+  Translate); Shift+Enter inserts a newline. The ⇄ button swaps the languages (disabled
+  while the source is Auto), and 📋 pulls the clipboard contents into the input box. The
+  language list is fixed at English/Russian/Spanish/French/German, plus Auto as a source
+  language.
+- **Transcript.** Results accumulate in a view-only transcript with highlighting: the
+  `[Language]:` prompt, parts of speech, synonyms, the spelling-correction notice and
+  errors each get their own color, derived from the background. Right-click a block to
+  copy it as plain text (a brief border flash confirms it); with `show_context_menu` on,
+  right-click opens a "Copy" menu instead.
 - **Dictionary.** A single word gets a dictionary entry instead of a plain translation
   (definitions grouped by part of speech, with a notice when the provider silently
   corrected a misspelling). Toggle with `show_dictionary` / `spell_check`.
@@ -84,9 +90,11 @@ Settings > "Hotkeys & Tray", to open the window at launch.
 - **Global hotkeys** (Linux and Windows):
   - `Alt+A` copies whatever you have selected in any application and translates it into
     the transcript, and shows the result in a small always-on-top popup next to the
-    mouse cursor. The popup hides itself after `popup_auto_hide_seconds` (default 3)
-    unless the cursor rests on it, and can be dragged; with
-    `remember_popup_position` on, it reappears where you dropped it.
+    mouse cursor, highlighted like the transcript. The popup hides itself after
+    `popup_auto_hide_seconds` (default 3) unless the cursor rests on it. Right-click the
+    phrase or the translation to copy that line; drag it with the left button to move it;
+    with `remember_popup_position` on, it reappears where you dropped it. With
+    `show_popup` off, the hotkey translates into the transcript only.
   - `Alt+S` speaks the current selection aloud, and adds a row with a replay button to
     the transcript. `Esc` stops whatever is speaking, from any application.
   - Both are configurable (see below) and take effect after a restart.
@@ -96,14 +104,16 @@ Settings > "Hotkeys & Tray", to open the window at launch.
   tray host, that is the way back in.
 - **Settings** (the ⚙ button, or "Settings…" in the tray menu):
   - *General* — translate, dictionary and speech providers (each an independent
-    choice), and the dictionary/spell-check/text-to-speech switches.
+    choice), the dictionary/spell-check/text-to-speech switches, the right-click menu
+    switch, and "Reset to Defaults".
   - *View* — theme (`Auto`/`Light`/`Dark`, applied live), color scheme, fonts, sizes and
-    colors of the transcript, spacing.
+    colors of the transcript, the prompt color, spacing.
   - *Hotkeys & Tray* — the two hotkeys (with a "Record" button that validates them
     live), the switch for the speech hotkey, start minimized, and remembering the window's
     size and position.
-  - *Popup* — the popup's font, colors, auto-hide delay, size limits and border, and
-    whether it remembers where you dragged it.
+  - *Popup* — whether the popup is shown at all, its font, colors (including the prompt),
+    what it shows (prompt, phrase), auto-hide delay, size limits and border, and whether
+    it remembers where you dragged it.
   - *About*.
 
 ## Platforms
@@ -140,6 +150,8 @@ The main keys:
 | `enable_speech_hotkey` | `true` | |
 | `show_dictionary` / `spell_check` | `true` | |
 | `enable_text_to_speech` | `true` | Shows the 🔊 buttons |
+| `show_context_menu` | `false` | Right-click opens a "Copy" menu instead of copying at once |
+| `show_popup` | `true` | Show the popup on the translate hotkey |
 | `popup_auto_hide_seconds` | `3` | `0` means the default, not "never" |
 | `remember_popup_position` | `false` | |
 | `start_minimized` | `true` | |

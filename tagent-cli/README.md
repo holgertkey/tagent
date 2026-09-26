@@ -1,6 +1,6 @@
 # Tagent Text Translator v0.16.0+006
 
-A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Supports Windows and Linux (X11, with partial Wayland support).
+A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
 ## Features
 
@@ -10,14 +10,14 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 - **CLI Mode**: One-time translations from command line
 
 ### 📚 **Smart Dictionary Lookup**
-- Detailed word definitions with part of speech
-- Synonyms and multiple meanings
+- Single words get a dictionary entry: translations grouped by part of speech, each with its synonyms
+- Part-of-speech names in the target language, highlighted in color
 - Automatic fallback to translation for phrases
 - Supports multiple target languages
 
 ### ✏️ **Spell Checking**
 - Automatically detects and corrects misspelled words during dictionary lookup
-- Shows a correction notice in the target language 
+- Shows a correction notice in the target language
 - Works transparently: typos like "vialent" or "violnt" resolve to the correct word "violent"
 - Can be disabled via `SpellCheck = false` in config
 
@@ -37,7 +37,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 - Works across all translation modes
 
 ### ⚙️ **Customizable Hotkeys**
-- Fully configurable translation hotkey
+- Fully configurable translation and speech hotkeys
 - Single keys (F1-F12)
 - Modifier combinations (Alt+Q, Ctrl+Shift+T)
 - Double-press patterns (Ctrl+Ctrl, Shift+Shift)
@@ -45,56 +45,60 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 
 ### ⚡ **Performance & Usability**
 - Instant translations using Google Translate API
-- Real-time configuration reloading (no restart required)
-- Automatic clipboard copying (configurable)
+- Configuration reloads automatically before each translation (hotkeys and providers need a restart)
+- Interactive prompt with line editing, persistent input history and Tab-completion of commands
+- Optional automatic clipboard copying
 - Smart terminal window management
 - Multi-language support
 - Colored terminal output (customizable)
 
 ## Platform Support
 
-| Feature | Windows | Linux (X11) | Linux (Wayland) |
-|---|---|---|---|
-| Interactive mode | Yes | Yes | Yes |
-| CLI mode | Yes | Yes | Yes |
-| Clipboard read/write | Yes | Yes | Yes |
-| Global hotkeys (Alt+Q, etc.) | Yes | Yes | No |
-| Auto-copy selected text | Yes | Yes | No |
-| Show/hide terminal | Yes | Yes | No |
-| Auto-hide terminal | Yes | Yes | No |
-| Text-to-speech | Yes | Yes | Yes |
+| Feature | Windows | Linux (X11 / XWayland) | Linux (pure Wayland) | macOS |
+|---|---|---|---|---|
+| Interactive mode | Yes | Yes | Yes | Yes |
+| CLI mode | Yes | Yes | Yes | Yes |
+| Text-to-speech | Yes | Yes | Yes | Yes |
+| Clipboard (`CopyToClipboard`) | Yes | Yes | No | No |
+| Global hotkeys (Alt+A, etc.) | Yes | Yes | No | No |
+| Auto-copy selected text | Yes | Yes | No | No |
+| Show/hide terminal | Yes | Yes | No | No |
+| Auto-hide terminal | Yes | Yes | No | No |
 
 **Wayland notes:**
-- On Wayland, the application runs in **interactive and CLI modes only**. Global hotkeys and window management are disabled due to Wayland's security model which prevents applications from intercepting input or managing other windows.
-- If XWayland is available, hotkeys may work through the X11 compatibility layer, but this is not guaranteed on all compositors.
-- Clipboard read/write works natively on Wayland via the `arboard` crate.
-- Full Wayland hotkey support (via `xdg-desktop-portal` GlobalShortcuts API) is planned for a future release.
+- Most Wayland desktops (GNOME, KDE) also run XWayland; with it, everything works as on X11.
+- On a pure Wayland session (no `DISPLAY`), the application runs in **interactive and CLI modes only**. Global hotkeys, auto-copy and window management are disabled, because Wayland's security model prevents applications from intercepting input or managing other windows.
+- Full Wayland hotkey support (via the `xdg-desktop-portal` GlobalShortcuts API) is planned for a future release.
+
+**macOS notes:** the platform layer (clipboard, global hotkeys, window management) is not implemented yet; the interactive and CLI modes work.
 
 ## Installation
 
 ### Prerequisites
 - **Windows**: Windows 10/11
-- **Linux**: X11 or Wayland display server (hotkey auto-copy needs X11/XWayland)
+- **Linux**: X11 or XWayland for the hotkeys (interactive and CLI modes work anywhere)
 - Internet connection for translations
 
 ## Download
 
-**Latest Release**: [Download tagent-cli.exe](https://github.com/holgertkey/tagent/releases/latest)
+**Latest Release**: [github.com/holgertkey/tagent/releases/latest](https://github.com/holgertkey/tagent/releases/latest)
 
 All releases: https://github.com/holgertkey/tagent/releases
 
 ### Download & Setup
-1. Download the latest release
-2. Extract to your preferred directory
-3. Run `tagent-cli.exe` to start unified mode
-4. Configuration file will be created automatically in `%APPDATA%\tagent-cli\tagent-cli.conf`
+1. Download the archive for your system: `tagent-cli-<version>-windows-x86_64.zip` or `tagent-cli-<version>-linux-x86_64.tar.gz`
+2. Extract it to your preferred directory
+3. Run `tagent-cli` (`tagent-cli.exe` on Windows) to start unified mode
+4. The configuration file is created automatically on first run (see [Configuration](#configuration))
+
+Or install from crates.io: `cargo install tagent-cli` (on Linux this needs the build packages listed in [Building from Source](#building-from-source)).
 
 ## Quick Start
 
 ### Unified Mode (Recommended)
 ```bash
 # Start unified mode (no arguments)
-tagent-cli.exe
+tagent-cli
 ```
 This starts both:
 - **Interactive prompt** in the terminal
@@ -102,7 +106,7 @@ This starts both:
 
 ### CLI Mode
 ```bash
-# Translate a single word
+# Translate a single word (shows a dictionary entry)
 tagent-cli hello
 
 # Translate a phrase
@@ -123,36 +127,43 @@ tagent-cli --help
 tagent-cli --config
 ```
 
+`-l` only affects that one run; it doesn't change the config file.
+
 ## Usage Guide
 
 ### GUI Hotkeys (System-wide)
 
 **Translation Hotkey** (default: Alt+A)
-1. Select any text in any Windows application
+1. Select text in any application
 2. Press the translation hotkey (Alt+A by default)
-3. Translation appears in terminal and copies to clipboard
-4. Paste anywhere with Ctrl+V
+3. The translation appears in the terminal (and is copied to the clipboard if `CopyToClipboard = true`)
 
 **Speech Hotkey** (default: Alt+S)
-1. Select any text in any Windows application
+1. Select text in any application
 2. Press the speech hotkey (Alt+S by default)
 3. Text is spoken aloud using Google TTS
 4. Press Esc to cancel playback
 
 ### Interactive Terminal
+The prompt shows the current language pair. Phrases are translated; single words get a dictionary entry:
 ```
-[auto → ru]: hello
-привет
+[auto → ru]: How are you?
+[Russian]: Как вы?
 
-[Word]: translate
+[auto → ru]: translate
+[Word]: переводить
 Глагол
-  переводить [перевести, толковать, интерпретировать]
-  транслировать [передавать, транслить]
-  перемещать [переносить, передвигать]
+  переводить [transfer, translate, convert, move, interpret, put]
+  транслировать [translate, transmit, relay, compile]
+  преобразовывать [translate, reform, reorganize, transfashion, reorganise]
+  переносить [transfer, carry, transport, bear, stand, translate]
+  переводиться [transfer, translate]
 
-[auto → ru]: exit
+[auto → ru]: /q
+
 Goodbye!
 ```
+The words in brackets are synonyms in the source language, i.e. other words with that meaning.
 
 ### Interactive Commands
 - `/?`, `/h`, `/help` - Show help
@@ -166,42 +177,44 @@ Goodbye!
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
 - `/save` - Save current configuration to file
 - `/clear`, `/cls` - Clear screen
-- `/exit`, `/quit`, `/q` - Exit program
+- `/exit`, `/quit`, `/q`, `/e` - Exit program
 
-Language names (`English`, `German`) and codes (`en`, `de`) are both accepted.
+Language names (`English`, `German`) and codes (`en`, `de`) are both accepted. Arrow keys edit the line, Ctrl+R searches the input history (kept across sessions), and Tab completes commands.
 
 ## Configuration
 
-Configuration is stored in `%APPDATA%\tagent-cli\tagent-cli.conf` (typically `C:\Users\<YourName>\AppData\Roaming\tagent-cli\tagent-cli.conf`) and reloads automatically:
+The configuration file is created with defaults on first run and reloads automatically:
+- **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf` (typically `C:\Users\<YourName>\AppData\Roaming\tagent-cli\tagent-cli.conf`)
+- **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
+
+The generated file documents every setting in its comments. Its sections, with the default values:
 
 ```ini
+[Provider]
+; Translation backend (google)
+TranslateProvider = google
+
 [Translation]
 ; Source language (Auto, English, Russian, Spanish, etc.)
 SourceLanguage = Auto
-
-; Target language
+; Target language (never Auto)
 TargetLanguage = Russian
 
-; Copy results to clipboard automatically
-CopyToClipboard = false
-
 [Dictionary]
-; Show detailed word information for single words
+; Show a dictionary entry for single words
 ShowDictionary = true
-
-; Detect and correct spelling errors, show correction notice
+; Detect and correct spelling errors, show a correction notice
 SpellCheck = true
-
-; Dictionary lookup backend, independent of TranslateProvider (google; restart required)
+; Dictionary backend, independent of TranslateProvider (google; restart required)
 DictionaryProvider = google
 
 [Interface]
-; Show terminal window during GUI translation
+; Show the terminal window during hotkey translation
 ShowTerminalOnTranslate = true
-
-; Auto-hide terminal after translation (seconds, 0 = disabled)
+; Auto-hide the terminal after translation (seconds, 0 = disabled)
 AutoHideTerminalSeconds = 3
-
+; Copy results to the clipboard automatically
+CopyToClipboard = false
 
 [Colors]
 ; Terminal output colors: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
@@ -216,30 +229,34 @@ NoticeColor = Magenta
 ErrorColor = Red
 
 [History]
-; Save all translations to file with timestamps
+; Save all translations to a file with timestamps
 SaveTranslationHistory = false
-
-; History file path (defaults to AppData\tagent-cli folder)
-HistoryFile = C:\Users\<YourName>\AppData\Roaming\tagent-cli\translation_history.txt
+; History file path (default: translation_history.txt in the per-user data folder,
+; %APPDATA%\tagent-cli on Windows, ~/.local/share/tagent-cli on Linux)
+HistoryFile = ...
 
 [Hotkeys]
-; Translation hotkey (configurable)
+; Translation hotkey (restart required)
 ; Formats:
 ;   - Single keys: F1-F12 (e.g., F9)
 ;   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
 ;   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
 TranslateHotkey = Alt+A
 
-; Text-to-speech hotkey (same formats as TranslateHotkey)
+[Speech]
+; Enable text-to-speech
+EnableTextToSpeech = true
+; Text-to-speech hotkey (same formats as TranslateHotkey; restart required)
 SpeechHotkey = Alt+S
-
 ; Enable or disable the speech hotkey
 EnableSpeechHotkey = true
+; Speech backend, independent of TranslateProvider (google)
+SpeechProvider = google
 ```
 
 ### Customizing Hotkeys
 
-Both translation and speech hotkeys are fully customizable. Edit `[Hotkeys]` section in config file:
+Both translation and speech hotkeys are fully customizable: `TranslateHotkey` in the `[Hotkeys]` section, `SpeechHotkey` in `[Speech]`.
 
 **Single Keys (F1-F12 only)**
 ```ini
@@ -254,7 +271,7 @@ TranslateHotkey = Win+T         # Windows key + T
 TranslateHotkey = Alt+Space     # Alt + Spacebar
 ```
 
-**Double-Press Patterns**
+**Double-Press Patterns** (F1-F12 or a modifier key)
 ```ini
 TranslateHotkey = Ctrl+Ctrl     # Double-press Ctrl
 TranslateHotkey = Shift+Shift   # Double-press Shift
@@ -264,6 +281,7 @@ TranslateHotkey = F8+F8         # Double-press F8
 
 **Speech Hotkey Examples**
 ```ini
+[Speech]
 SpeechHotkey = Alt+S          # Alt + S (default)
 SpeechHotkey = F10            # Function key F10
 SpeechHotkey = Ctrl+Shift+S   # Ctrl + Shift + S
@@ -276,13 +294,13 @@ EnableSpeechHotkey = false
 **Notes:**
 - Changes require application restart
 - Both hotkeys use the same format (single keys, combos, double-press)
-- Avoid dangerous combinations (Ctrl+Alt+Del, Win+L)
-- Some system shortcuts may be intercepted by Windows
-- Single non-function keys require modifiers for safety
-- Speech and translation hotkeys must be different
+- Dangerous combinations (Ctrl+Alt+Del, Win+L) are rejected
+- Some system shortcuts may be intercepted by the OS before they reach Tagent
+- Single non-function keys require modifiers for safety; Shift+Key alone isn't allowed (it interferes with typing)
+- Use different combinations for the speech and translation hotkeys
 
 ### Supported Languages
-- **Auto-detection**: Auto
+- **Auto-detection**: Auto (source language only)
 - **Major Languages**: English, Russian, Spanish, French, German, Chinese, Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
 - **Language Codes**: en, ru, es, fr, de, zh, ja, ko, it, pt, nl, pl, tr, ar, hi
 - **Speech Support**: All languages supported by Google TTS
@@ -292,17 +310,17 @@ EnableSpeechHotkey = false
 When enabled (`SaveTranslationHistory = true`), all translations are logged in a readable format:
 
 ```
-[2025-09-06 14:30:15 UTC] en -> ru
-IN:  hello
-OUT: привет
+[2026-09-26 14:30:15 UTC] auto -> ru
+IN:  How are you?
+OUT: Как вы?
 ---
 
-[2025-09-06 14:32:45 UTC] en -> ru
-IN:  cat
-OUT: [Word]: кот
-Существительное
-  кот [кошка, котенок]
-  кошка [котенок, котик]
+[2026-09-26 14:32:45 UTC] auto -> ru
+IN:  translate
+OUT: переводить
+Глагол
+  переводить [transfer, translate, convert, move, interpret, put]
+  транслировать [translate, transmit, relay, compile]
 ---
 ```
 
@@ -312,27 +330,23 @@ OUT: [Word]: кот
 ```bash
 # CLI
 tagent-cli "How are you?"
-# Output: Как дела?
+# Output: Как вы?
 
 # Interactive
 [auto → ru]: How are you?
-Как дела?
+[Russian]: Как вы?
 ```
 
 ### Dictionary Lookup
 ```bash
 # CLI
-tagent-cli beautiful
+tagent-cli translate
 # Output:
-# Прилагательное
-#   красивый [прекрасный, красивая]
-#   прекрасный [великолепный, чудесный]
-
-# Interactive
-[auto → ru]: beautiful
-Прилагательное
-  красивый [прекрасный, красивая]
-  прекрасный [великолепный, чудесный]
+# переводить
+# Глагол
+#   переводить [transfer, translate, convert, move, interpret, put]
+#   транслировать [translate, transmit, relay, compile]
+#   ...
 ```
 
 ### Spell Check
@@ -340,11 +354,12 @@ When a misspelled word is entered, the correct word is found automatically and a
 ```
 [en → ru]: vialent
 Показан перевод слова violent
-[Word]: жестокий
+[Word]: яростный
 Прилагательное
   насильственный [violent, forcible]
-  неистовый [violent, outrageous, frantic]
-  яростный [furious, violent, raging]
+  сильный [strong, keen, powerful, severe, heavy, violent]
+  неистовый [violent, outrageous, frantic, frenetic, berserk, fierce]
+  яростный [furious, violent, raging, rabid, stormy, rageful]
 ```
 The notice is shown in the target language. Works with both minor typos ("violnt") and heavily misspelled words ("vialent").
 
@@ -383,7 +398,7 @@ tagent-cli --speech "Привет, как дела?"
 **Speech Notes:**
 - **GUI Speech Hotkey**: Select text → Press Alt+S (or configured key)
 - Press **Esc** anytime to cancel speech playback
-- Speech language determined by `SourceLanguage` config setting; `/s` and `/ss` without text use the source and target language of the last translation (as they were when it was made)
+- Speech language is the `SourceLanguage` setting, detected from the text when it's Auto; `/s` and `/ss` without text use the source and target language of the last translation (as they were when it was made)
 - Long text is automatically chunked (100 char limit per chunk)
 - Works in GUI (hotkey), Interactive, and CLI modes
 
@@ -394,21 +409,33 @@ tagent-cli --config
 
 # Output:
 # === Current Configuration ===
+# Translation Provider: google
+# Dictionary Provider: google
+# Speech Provider: google
+#
 # Source Language: Auto (auto)
 # Target Language: Russian (ru)
 # Show Dictionary: Enabled
-# Copy to Clipboard: Enabled
-# Save Translation History: Disabled
-# History File: translation_history.txt
+# Copy to Clipboard: Disabled
+#
 # Translation Hotkey: Alt+A
+# Show Terminal on Translate: Enabled
+# Auto-hide Terminal: 3 seconds
+#
+# Text-to-Speech: Enabled
 # Speech Hotkey: Alt+S
 # Speech Hotkey Enabled: Yes
+#
+# Save Translation History: Disabled
+# History File: /home/<you>/.local/share/tagent-cli/translation_history.txt
+#
+# Config file: /home/<you>/.config/tagent-cli/tagent-cli.conf
 ```
 
 ## Advanced Usage
 
 ### Custom Language Pairs
-Edit `%APPDATA%\tagent-cli\tagent-cli.conf`:
+Edit `tagent-cli.conf` (or use `/l` in the interactive terminal, then `/save`):
 ```ini
 [Translation]
 SourceLanguage = English
@@ -424,26 +451,23 @@ HistoryFile = my_translations.txt
 
 ### Disable Automatic Features
 ```ini
-[Translation]
-CopyToClipboard = false
-
 [Dictionary]
 ShowDictionary = false
 SpellCheck = false
 
 [Interface]
 ShowTerminalOnTranslate = false
+CopyToClipboard = false
 ```
 
 ### Configure Hotkeys
 ```ini
 [Hotkeys]
-; Translation hotkeys
-TranslateHotkey = Alt+Q         # Use Alt+Q instead of Ctrl+Ctrl
+TranslateHotkey = Alt+Q         # Use Alt+Q instead of Alt+A
 TranslateHotkey = F9            # Or use function key
 TranslateHotkey = Shift+Shift   # Or double-press Shift
 
-; Speech hotkeys
+[Speech]
 SpeechHotkey = Alt+E            # Change speech hotkey to Alt+E
 SpeechHotkey = F10              # Or use F10
 EnableSpeechHotkey = false      # Disable speech hotkey if not needed
@@ -474,25 +498,25 @@ The clipboard and the history file always get plain text.
 - Ensure text is properly selected before pressing the translation hotkey
 - Try selecting text again
 - Check if another application is interfering with clipboard
+- On pure Wayland, auto-copy isn't available (see [Platform Support](#platform-support))
 
-**"Translation failed: HTTP error"**
+**"Translation failed: ..."**
 - Check internet connection
 - Verify firewall settings allow the application
 - Google Translate service may be temporarily unavailable
 
 **"Config reload error"**
-- Check config file syntax at `%APPDATA%\tagent-cli\tagent-cli.conf`
+- Check the config file syntax (see [Configuration](#configuration) for its location)
 - Ensure file is not locked by another application
-- Delete config file from AppData folder to regenerate default settings
+- Delete the config file to regenerate default settings
 
 **Hotkeys not working**
 - Run as administrator if needed (Windows)
-- Check if another application is capturing the hotkey
-- Ensure application has keyboard input permissions
+- Check if another application is capturing the hotkey (on Linux, Tagent logs a warning when the combination is already grabbed)
 - Try changing the hotkey in config file (e.g., Alt+Q, F9)
 - Restart the application after changing hotkey configuration
 - Verify hotkey format in config file is correct
-- **Linux (Wayland)**: Global hotkeys are not supported on Wayland — use interactive or CLI mode instead
+- **Linux (pure Wayland)** and **macOS**: global hotkeys are not supported — use interactive or CLI mode instead
 
 **Speech (TTS) not working**
 - Check internet connection (uses Google TTS API)
@@ -500,7 +524,7 @@ The clipboard and the history file always get plain text.
 - Try shorter text if speech fails
 - Press Esc to cancel stuck speech playback
 - Speech language is based on `SourceLanguage` config setting
-- Check if `EnableSpeechHotkey` is set to `true` in config
+- Check that `EnableTextToSpeech` and `EnableSpeechHotkey` are set to `true` in the `[Speech]` section
 - Verify speech hotkey is not conflicting with other applications
 - Try changing `SpeechHotkey` to a different key combination
 
@@ -508,28 +532,31 @@ The clipboard and the history file always get plain text.
 
 - Use `ShowTerminalOnTranslate = false` for faster GUI translations
 - Set `AutoHideTerminalSeconds = 0` to keep terminal visible
-- Disable history logging for maximum speed
-- Use specific source language instead of "Auto" for faster processing
 
 ## Technical Details
 
 ### Dependencies
+- **tagent**: the translation, dictionary and speech library from this repository
 - **Tokio**: Async runtime
-- **Reqwest**: HTTP client for Google Translate API
+- **rodio**: Audio playback for text-to-speech
+- **rustyline**: Line editing and input history in the interactive terminal
 - **Chrono**: Timestamp handling for history
-- **Windows API**: Clipboard and keyboard hook functionality
+- **Windows**: Win32 API (keyboard hook, window management) and `clipboard-win`
+- **Linux**: `rdev` and X11/XTest (hotkeys, simulated copy), `arboard` (clipboard)
+
+The full list is in [`Cargo.toml`](Cargo.toml).
 
 ### System Requirements
 - **Windows**: Windows 10 or later
-- **Linux**: X11 or Wayland (hotkey auto-copy needs X11/XWayland)
+- **Linux**: X11 or XWayland for the hotkeys; any terminal for interactive and CLI modes
 - ~5MB disk space
 - Network access for translations
 
 ### Architecture
 - **Rust**: Safe, fast systems programming
 - **Async/await**: Non-blocking translation requests
-- **Windows hooks**: Low-level keyboard capture
-- **Real-time config**: File watching for instant updates
+- **Platform layer**: low-level keyboard hook on Windows, X11 key grabbing on Linux
+- **Live config**: the file's modification time is checked before each translation
 
 ## Building from Source
 
@@ -538,53 +565,24 @@ The clipboard and the history file always get plain text.
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Windows-specific tools
-rustup target add x86_64-pc-windows-msvc
+# Linux (Debian/Ubuntu): X11, XTest and ALSA development packages
+sudo apt-get install libx11-dev libxtst-dev libasound2-dev
 ```
 
 ### Build
 ```bash
 git clone https://github.com/holgertkey/tagent
 cd tagent
-cargo build --release
+cargo build --release -p tagent-cli
 ```
 
-### Dependencies
-The project uses these Rust crates:
-```toml
-[dependencies]
-tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-clipboard-win = "5.0"
-chrono = { version = "0.4", features = ["serde"] }
-windows = { version = "0.52", features = [
-    "Win32_Foundation",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Console"
-] }
-url = "2.4"
-dirs = "5.0"
-```
+The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe` on Windows).
 
 ## Version History
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
 **Current Version**: v0.16.0+006
-
-**Recent Changes**:
-- Spell checking for single words with correction notice in target language
-- Code quality improvements (fixed all Clippy warnings)
-- Text-to-speech (TTS) with Esc cancellation
-- Fully configurable hotkeys (single keys, combos, double-press)
-- Customizable terminal colors
-- Translation history logging with timestamps
-- Unified GUI + Interactive interface
-- Configuration moved to AppData folder
 
 ## Contributing
 
