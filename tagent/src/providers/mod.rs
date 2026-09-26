@@ -79,8 +79,11 @@
 //! the `match`, so a branch whose name isn't listed is unreachable) and a
 //! [`ProviderDescriptor`] to the registry behind [`translation_providers`], declaring its
 //! options. Tests keep the three in step. The complete, offline example below implements
-//! all three methods; a real backend does the same with an HTTP call in `translate_text`
-//! and `detect_language`.
+//! all three required methods; a real backend does the same with an HTTP call in
+//! `translate_text` and `detect_language`. It should also override
+//! [`capabilities`](TranslationProvider::capabilities), whose default claims nothing (not
+//! even language detection); a backend without detection returns [`Error::Unsupported`]
+//! from `detect_language`.
 //!
 //! ```
 //! use async_trait::async_trait;
@@ -201,6 +204,37 @@ pub use registry::{
     dictionary_providers, speech_providers, translation_providers, OptionSpec, ProviderDescriptor,
     TransportDefaults,
 };
+
+/// What a [`TranslationProvider`] supports, as reported by
+/// [`TranslationProvider::capabilities`].
+///
+/// `#[non_exhaustive]`: outside this crate, start from [`Default::default`] and set the
+/// fields you know.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::TranslationCapabilities;
+///
+/// let mut capabilities = TranslationCapabilities::default();
+/// capabilities.detects_language = true;
+/// capabilities.max_text_len = Some(5000);
+/// assert!(capabilities.languages.is_none()); // unknown: any code may work
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TranslationCapabilities {
+    /// Whether [`TranslationProvider::detect_language`] works, and with it `"auto"` as the
+    /// source language. `false` means it returns [`Error::Unsupported`], or that the
+    /// provider doesn't say.
+    pub detects_language: bool,
+    /// The longest text one [`TranslationProvider::translate_text`] call accepts, in
+    /// characters (Unicode scalar values); `None` if unknown or unlimited.
+    pub max_text_len: Option<usize>,
+    /// The BCP-47 codes the provider accepts as source or target language; `None` if
+    /// unknown or unrestricted.
+    pub languages: Option<Vec<String>>,
+}
 
 /// Dictionary lookup result returned by a [`DictionaryProvider`].
 ///
@@ -359,10 +393,27 @@ pub trait TranslationProvider: Send + Sync {
     ///
     /// Most callers should go through [`resolve_source_language`], which also turns a
     /// detection failure into a `"en"` fallback instead of an error.
+    ///
+    /// # Errors
+    ///
+    /// A backend without language detection returns [`Error::Unsupported`] (and leaves
+    /// [`TranslationCapabilities::detects_language`] `false`); otherwise the same errors as
+    /// [`translate_text`](Self::translate_text).
     async fn detect_language(&self, text: &str) -> Result<String, Error>;
 
     /// Human-readable provider name for display purposes (e.g. `"Google Translate"`).
     fn name(&self) -> &str;
+
+    /// Describes what this provider supports, so a caller can adapt up front (e.g. offer
+    /// `"auto"` as a source language only when the provider detects languages) instead of
+    /// discovering it through errors.
+    ///
+    /// The default implementation returns [`TranslationCapabilities::default`], which
+    /// claims nothing: no language detection, no known length limit, unknown languages. A
+    /// provider overrides it to report what it actually supports.
+    fn capabilities(&self) -> TranslationCapabilities {
+        TranslationCapabilities::default()
+    }
     // A method added here, even one with a default implementation, must also be forwarded
     // in `profile::Profiled`, or profiled providers silently lose it.
 }
@@ -965,6 +1016,53 @@ mod tests {
             google::GoogleSpeechProvider::new().split_for_speech(&text)
         );
         assert!(speech.split_for_speech(&text).len() > 1);
+    }
+
+    /// A provider that doesn't override `capabilities()`, like an external implementor
+    /// written before it existed.
+    struct Minimal;
+
+    #[async_trait]
+    impl TranslationProvider for Minimal {
+        async fn translate_text(&self, text: &str, _: &str, _: &str) -> Result<String, Error> {
+            Ok(text.to_string())
+        }
+
+        async fn detect_language(&self, _: &str) -> Result<String, Error> {
+            Err(Error::Unsupported("language detection".to_string()))
+        }
+
+        fn name(&self) -> &str {
+            "Minimal"
+        }
+    }
+
+    #[test]
+    fn default_capabilities_claim_nothing() {
+        let capabilities = Minimal.capabilities();
+        assert_eq!(capabilities, TranslationCapabilities::default());
+        assert!(!capabilities.detects_language);
+        assert_eq!(capabilities.max_text_len, None);
+        assert_eq!(capabilities.languages, None);
+    }
+
+    #[test]
+    fn google_capabilities_survive_the_profile_wrapper() {
+        let google = create_provider("google").unwrap().capabilities();
+        assert_ne!(google, TranslationCapabilities::default());
+        assert!(google.detects_language);
+        // A profiled provider must forward capabilities(), not fall back to the default.
+        let options = ProviderOptions::new().with("type", "google");
+        let profiled = create_provider_with("work", &options).unwrap();
+        assert_eq!(profiled.capabilities(), google);
+    }
+
+    #[tokio::test]
+    async fn unsupported_detection_falls_back_to_english() {
+        assert_eq!(
+            resolve_source_language(&Minimal, "Hallo", "auto").await,
+            "en"
+        );
     }
 
     #[test]

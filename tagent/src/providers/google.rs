@@ -46,7 +46,7 @@
 
 use super::{
     Definition, DictionaryEntry, DictionaryProvider, PartOfSpeechEntry, SpeechProvider,
-    TranslationProvider,
+    TranslationCapabilities, TranslationProvider,
 };
 use crate::error::Error;
 use async_trait::async_trait;
@@ -210,6 +210,15 @@ impl TranslationProvider for GoogleTranslateProvider {
 
     fn name(&self) -> &str {
         "Google Translate"
+    }
+
+    /// Detects languages (`sl=auto`). No length limit or language list is reported: the
+    /// unofficial endpoint documents neither, and this provider enforces none.
+    fn capabilities(&self) -> TranslationCapabilities {
+        TranslationCapabilities {
+            detects_language: true,
+            ..TranslationCapabilities::default()
+        }
     }
 }
 

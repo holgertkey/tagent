@@ -49,6 +49,13 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   hardcoding them. Same names and order as `TRANSLATION_PROVIDERS` etc., which stay.
   `ProviderOptions::with_env_overrides` now also looks up every option the profile's
   provider kind declares.
+- **`TranslationProvider::capabilities()`** returns a `TranslationCapabilities`
+  (`detects_language`, `max_text_len` in characters, `languages`), so an application can
+  adapt up front, e.g. offer `"auto"` only when the provider detects languages. It has a
+  default implementation that claims nothing, so existing implementors keep compiling
+  unchanged. `GoogleTranslateProvider` reports language detection. A provider without
+  detection now documents `Error::Unsupported` from `detect_language`
+  (`resolve_source_language` already falls back to `"en"` on any error).
 
 ## [0.18.3] - 2026-09-25
 

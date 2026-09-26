@@ -3,8 +3,8 @@
 
 use super::options::{is_valid_profile_name, ProviderOptions, TYPE_KEY};
 use super::{
-    DictionaryEntry, DictionaryProvider, SpeechProvider, TranslationProvider, DICTIONARY_PROVIDERS,
-    SPEECH_PROVIDERS, TRANSLATION_PROVIDERS,
+    DictionaryEntry, DictionaryProvider, SpeechProvider, TranslationCapabilities,
+    TranslationProvider, DICTIONARY_PROVIDERS, SPEECH_PROVIDERS, TRANSLATION_PROVIDERS,
 };
 use crate::error::Error;
 use async_trait::async_trait;
@@ -160,6 +160,10 @@ impl TranslationProvider for Profiled<dyn TranslationProvider> {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn capabilities(&self) -> TranslationCapabilities {
+        self.inner.capabilities()
     }
 }
 

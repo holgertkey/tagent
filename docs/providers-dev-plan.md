@@ -434,7 +434,7 @@ consts; option keys are lowercase and unique per provider.
 
 ### Stage D — Capability metadata
 
-**Status:** planned
+**Status:** done (2026-09-26, tagent 0.19.0)
 **Goal:** let apps know in advance what a provider can do instead of discovering it through errors.
 
 **API sketch:**
@@ -462,6 +462,24 @@ trait TranslationProvider {
 
 **Semver:** additive → patch.
 **Tests:** the default impl returns defaults; Google's capabilities are non-default.
+**Notes after landing:**
+- Shipped as sketched: `TranslationCapabilities { detects_language, max_text_len,
+  languages }`, `#[non_exhaustive]`, `Clone, Debug, Default, PartialEq, Eq`, defined in
+  `providers/mod.rs` next to the trait. Outside the crate it's built from `default()` plus
+  field assignment (shown in its doc example).
+- **The default claims nothing**, including `detects_language: false`: a provider that
+  doesn't override `capabilities()` makes no promises. `resolve_source_language` does **not**
+  consult capabilities (it still just calls `detect_language` and falls back to `"en"`), so an
+  older external provider that does detect languages loses nothing.
+- `max_text_len` is in **characters** (Unicode scalar values), as translation APIs
+  document their limits; note that `Error::TextTooLong` (TTS chunks) counts bytes.
+- Google reports only `detects_language: true`; `max_text_len` and `languages` stay `None`,
+  since the unofficial endpoint documents neither and the provider enforces none.
+- `profile::Profiled` forwards `capabilities()`; a test checks a profiled Google provider
+  reports the same (non-default) capabilities. `examples/custom_provider.rs` compiles
+  unchanged, and a test provider without the method checks the default and the `"en"`
+  fallback on `Error::Unsupported`.
+- No dictionary/speech capability structs (YAGNI, as planned). No app changes.
 
 ---
 
