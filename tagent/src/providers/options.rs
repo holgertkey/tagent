@@ -260,6 +260,29 @@ impl ProviderProfiles {
             .insert(key.trim().to_lowercase(), value.into());
     }
 
+    /// Removes option `key` of `profile` and returns its value, if it was set. A profile
+    /// left without options is removed too.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::ProviderProfiles;
+    ///
+    /// let mut profiles = ProviderProfiles::new();
+    /// profiles.insert("google", "max_retries", "0");
+    /// assert_eq!(profiles.remove("Google", "MAX_RETRIES").as_deref(), Some("0"));
+    /// assert!(profiles.is_empty());
+    /// ```
+    pub fn remove(&mut self, profile: &str, key: &str) -> Option<String> {
+        let name = profile.trim().to_lowercase();
+        let options = self.0.get_mut(&name)?;
+        let removed = options.remove(&key.trim().to_lowercase());
+        if options.is_empty() {
+            self.0.remove(&name);
+        }
+        removed
+    }
+
     /// The options of `profile` as configured (no environment overrides), if it exists.
     pub fn get(&self, profile: &str) -> Option<&BTreeMap<String, String>> {
         self.0.get(&profile.trim().to_lowercase())

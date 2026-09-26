@@ -68,7 +68,8 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   `ProviderOptions` for a `*_with` factory with environment overrides applied,
   `profiles_of_kinds(kinds)` lists the profiles a picker for one axis can offer, `Debug`
   masks secret values, and with serde it is a plain `{"<profile>": {"<key>": "<value>"}}`
-  object. Both applications keep their profiles in it.
+  object. `insert`/`remove` edit it (a profile left empty is dropped). Both applications
+  keep their profiles in it.
 - **`TranslationProvider::capabilities()`** returns a `TranslationCapabilities`
   (`detects_language`, `max_text_len` in characters, `languages`), so an application can
   adapt up front, e.g. offer `"auto"` only when the provider detects languages. It has a

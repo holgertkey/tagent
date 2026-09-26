@@ -16,6 +16,7 @@ mod detach;
 mod dictionary;
 mod platform;
 mod popup_position;
+mod provider_form;
 mod speech;
 mod styled;
 
@@ -989,6 +990,45 @@ fn provider_choices(
     ));
     let index = combo_index(&model, current);
     (model, index)
+}
+
+/// Rebuilds Settings > General "Provider options" for the profiles the three provider
+/// pickers currently select: `profiles` are the saved ones, `edits` what was typed in this
+/// dialog so far (kept across picker changes).
+fn refresh_provider_option_fields(
+    dialog: &SettingsDialog,
+    profiles: &tagent::providers::ProviderProfiles,
+    edits: &provider_form::Edits,
+) {
+    let selected = [
+        combo_selection(&dialog.get_providers(), dialog.get_provider_index(), ""),
+        combo_selection(
+            &dialog.get_dictionary_providers(),
+            dialog.get_dictionary_provider_index(),
+            "",
+        ),
+        combo_selection(
+            &dialog.get_speech_providers(),
+            dialog.get_speech_provider_index(),
+            "",
+        ),
+    ];
+    let selected: Vec<&str> = selected.iter().map(String::as_str).collect();
+    let rows: Vec<ProviderOptionField> =
+        provider_form::fields(profiles, &selected, edits, |var| std::env::var(var).ok())
+            .into_iter()
+            .map(|field| ProviderOptionField {
+                profile: field.profile.into(),
+                heading: field.heading,
+                label: field.label.into(),
+                description: field.description.into(),
+                value: field.value.into(),
+                secret: field.secret,
+                required: field.required,
+                env_var: field.env_var.into(),
+            })
+            .collect();
+    dialog.set_provider_option_fields(ModelRc::new(VecModel::from(rows)));
 }
 
 /// Fills every `SettingsDialog` field from `config` -- used both to seed the
@@ -2078,6 +2118,38 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         seed_dialog_fields(&dialog, &current_config);
 
+        // Provider options: typed values live in `provider_option_edits` until OK, keyed
+        // by (profile, key), so switching a picker back and forth keeps them.
+        let provider_option_edits = Rc::new(RefCell::new(provider_form::Edits::new()));
+        let saved_profiles = Rc::new(current_config.provider_options.clone());
+        refresh_provider_option_fields(&dialog, &saved_profiles, &provider_option_edits.borrow());
+
+        let dialog_weak = dialog.as_weak();
+        let edits = provider_option_edits.clone();
+        let profiles = saved_profiles.clone();
+        dialog.on_provider_selection_changed(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                refresh_provider_option_fields(&dialog, &profiles, &edits.borrow());
+            }
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let edits = provider_option_edits.clone();
+        dialog.on_provider_option_edited(move |row, value| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let field = usize::try_from(row)
+                .ok()
+                .and_then(|row| dialog.get_provider_option_fields().row_data(row));
+            if let Some(field) = field.filter(|field| !field.heading) {
+                edits.borrow_mut().insert(
+                    (field.profile.to_string(), field.label.to_string()),
+                    value.to_string(),
+                );
+            }
+        });
+
         let dialog_weak = dialog.as_weak();
         dialog.on_translate_hotkey_edited(move |text| {
             if let Some(dialog) = dialog_weak.upgrade() {
@@ -2326,6 +2398,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         let dialog_weak = dialog.as_weak();
+        let provider_option_edits_for_save = provider_option_edits.clone();
         let config_manager_for_save = config_manager_for_settings.clone();
         let window_weak_for_save = window_weak_for_settings.clone();
         let popup_weak_for_save = popup_weak_for_settings.clone();
@@ -2438,7 +2511,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 provider_options: {
                     let mut manager = config_manager_for_save.lock().unwrap();
                     manager.check_and_reload();
-                    manager.config().provider_options.clone()
+                    let mut profiles = manager.config().provider_options.clone();
+                    provider_form::apply(&mut profiles, &provider_option_edits_for_save.borrow());
+                    profiles
                 },
                 remember_popup_position: dialog.get_remember_popup_position(),
                 // Also not dialog-editable (captured by dragging the popup), but read
@@ -2487,9 +2562,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         let dialog_weak = dialog.as_weak();
+        let saved_profiles_for_reset = saved_profiles.clone();
+        let provider_option_edits_for_reset = provider_option_edits.clone();
         dialog.on_reset_to_defaults_requested(move || {
             if let Some(dialog) = dialog_weak.upgrade() {
                 seed_dialog_fields(&dialog, &config::GuiConfig::default());
+                // Provider options aren't reset (they can hold API keys); the list just
+                // follows the pickers, which now point at the defaults.
+                refresh_provider_option_fields(
+                    &dialog,
+                    &saved_profiles_for_reset,
+                    &provider_option_edits_for_reset.borrow(),
+                );
             }
         });
 

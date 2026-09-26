@@ -594,9 +594,9 @@ trait TranslationProvider {
 
 ### Stage F — App-side options wiring
 
-**Status:** in progress — F1 (config, env, `0600`, `/config`, call sites, pickers) done
-2026-09-26 (`tagent-cli` 0.16.0+008, `tagent-gui` 0.14.0+021); F2 (`tagent-gui` Settings
-option fields) planned
+**Status:** done (2026-09-26) — F1 (config, env, `0600`, `/config`, call sites, pickers:
+`tagent-cli` 0.16.0+008, `tagent-gui` 0.14.0+021) and F2 (`tagent-gui` Settings option
+fields: 0.14.0+022)
 **Goal:** let users configure keys, endpoints and models in each app's own config, and
 pass them to the `*_with` factories.
 
@@ -719,8 +719,34 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 - Verified end to end with a throwaway `XDG_CONFIG_HOME`; `cargo check --target
   x86_64-pc-windows-gnu` for both apps is clean.
 
-**F2 (planned):** Settings > General renders, for each selected profile, one field per
-`OptionSpec` of its kind (`secret` → password input), saved into `provider_options`.
+**Notes after landing (F2):**
+- Settings > General "Provider options", below the pickers: for each distinct profile the
+  three pickers select, a heading (`work (google)`) and one `LineEdit` per `OptionSpec` its
+  kind declares on any axis (deduplicated by key), with the description underneath;
+  `secret` → `InputType.password`, `required` → `*` and a "required" placeholder. A field an
+  environment variable overrides right now names the variable. Profiles whose kind declares
+  nothing (or is unknown) get no rows.
+- Pure logic in `tagent-gui/src/provider_form.rs` (`fields`, `apply`, unit-tested); the
+  dialog gets a `[ProviderOptionField]` model, rebuilt on every picker `selected`. That
+  handler reads all three picker indices, which is correct because the std `ComboBox` sets
+  `current-index` *before* firing `selected` (checked in Slint 1.17.1's
+  `widgets/common/combobox-base.slint`, `select()`).
+- Edits to a profile that is no longer selected when OK is pressed are still saved (they
+  were typed in this dialog); kept deliberately, open for review.
+- Edits go through `provider-option-edited(row, value)` into an `Edits` map keyed by
+  `(profile, key)` (two-way binding to model rows isn't documented in Slint, so no `<=>`),
+  so switching a picker back and forth keeps typed values; nothing is written before OK.
+- On OK, only the edited keys are applied onto a fresh (reloaded) `provider_options`: an
+  empty value removes the key (new library `ProviderProfiles::remove`, which also drops a
+  profile left empty); untouched keys, `type` and other profiles are kept.
+- "Reset to Defaults" doesn't reset provider options (they can hold API keys); the list
+  just follows the pickers back to the defaults. Stated in the dialog's hint text.
+- No value validation in the dialog: an invalid value surfaces as the provider's own
+  `InvalidOptions` message at the next translation (a dictionary/speech profile degrades
+  with a warning instead).
+- Not verified live (Settings needs a click; GUI automation is off-limits without
+  agreement): build, `cargo check --target x86_64-pc-windows-gnu`, clippy and unit tests
+  only. Creating/deleting profiles in the UI stays in the Backlog.
 
 ---
 

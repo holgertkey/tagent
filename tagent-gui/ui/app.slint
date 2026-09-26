@@ -8,6 +8,21 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 // selectable `TextInput` -- there is no mouse selection or Ctrl+C in the
 // transcript any more, only a right-click "Copy" menu per block (see
 // `copy-block-requested`).
+// One row of Settings > General "Provider options" (built by main.rs from the
+// selected profiles' `tagent` descriptors, see provider_form.rs): a profile
+// heading, or an option field.
+export struct ProviderOptionField {
+    profile: string,
+    heading: bool,
+    label: string,
+    description: string,
+    value: string,
+    secret: bool,
+    required: bool,
+    // The environment variable overriding this option right now, or "".
+    env-var: string,
+}
+
 export struct TranscriptEntry {
     phrase: string,
     translation: string,
@@ -1198,6 +1213,12 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> dictionary-provider-index: 0;
     in-out property <[string]> speech-providers: ["google"];
     in-out property <int> speech-provider-index: 0;
+    // The option fields of the three selected profiles; rebuilt by main.rs on
+    // `provider-selection-changed`. Edits go to main.rs through
+    // `provider-option-edited` and are only written on OK.
+    in-out property <[ProviderOptionField]> provider-option-fields: [];
+    callback provider-selection-changed();
+    callback provider-option-edited(int /* row */, string /* value */);
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
     in-out property <bool> show-dictionary: true;
@@ -1415,6 +1436,7 @@ export component SettingsDialog inherits Dialog {
                         ComboBox {
                             model: providers;
                             current-index <=> provider-index;
+                            selected => { provider-selection-changed(); }
                         }
                     }
                     Row {
@@ -1422,6 +1444,7 @@ export component SettingsDialog inherits Dialog {
                         ComboBox {
                             model: dictionary-providers;
                             current-index <=> dictionary-provider-index;
+                            selected => { provider-selection-changed(); }
                         }
                     }
                     Row {
@@ -1429,7 +1452,39 @@ export component SettingsDialog inherits Dialog {
                         ComboBox {
                             model: speech-providers;
                             current-index <=> speech-provider-index;
+                            selected => { provider-selection-changed(); }
                         }
+                    }
+                }
+
+                if provider-option-fields.length > 0: Text {
+                    text: "Provider options (empty = the provider's default; saved on OK):";
+                    font-weight: 700;
+                }
+                for field[row] in provider-option-fields: VerticalLayout {
+                    spacing: 2px;
+                    if field.heading: Text { text: field.label; font-weight: 600; }
+                    if !field.heading: HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: field.label + (field.required ? " *" : "") + ":";
+                            vertical-alignment: center;
+                            min-width: 110px;
+                        }
+                        LineEdit {
+                            text: field.value;
+                            input-type: field.secret ? InputType.password : InputType.text;
+                            placeholder-text: field.required ? "required" : "default";
+                            edited(value) => { provider-option-edited(row, value); }
+                        }
+                    }
+                    if !field.heading: Text {
+                        text: field.env-var != ""
+                            ? field.description + " — currently overridden by " + field.env-var + "."
+                            : field.description;
+                        wrap: word-wrap;
+                        font-size: 11px;
+                        opacity: 0.75;
                     }
                 }
 
@@ -1452,7 +1507,7 @@ export component SettingsDialog inherits Dialog {
                     clicked => { reset-to-defaults-requested(); }
                 }
                 Text {
-                    text: "Resets every setting on every tab to its default value. Nothing is saved until you click OK.";
+                    text: "Resets every setting on every tab to its default value, except provider options. Nothing is saved until you click OK.";
                     wrap: word-wrap;
                 }
             }

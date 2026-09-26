@@ -12,6 +12,17 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+022] - 2026-09-26
+
+### Added
+- **Settings > General "Provider options"**: for each profile the three provider pickers
+  select, one field per option its provider declares (for Google: `timeout_secs` and
+  `max_retries`), with a short description; secret options (API keys) are password fields,
+  required ones are marked `*`. The list follows the pickers as they change, typed values
+  survive switching a picker back and forth, and nothing is written before OK. An empty
+  field removes the option (the provider's default applies). A field an environment
+  variable currently overrides says so. "Reset to Defaults" leaves provider options alone.
+
 ## [0.14.0+021] - 2026-09-26
 
 ### Added
@@ -22,7 +33,7 @@ decisions behind this project.
   `dictionary_provider` and `speech_provider` take a profile name; built-in names work as
   before. Profile names and keys are case-insensitive (saved back lowercase). A
   `TAGENT_<NAME>_<KEY>` environment variable overrides a value. Profiles are
-  hand-edited for now; the Settings pickers offer them on every axis their kind supports,
+  created by hand-editing; the Settings pickers offer them on every axis their kind supports,
   and saving Settings keeps them (read fresh at save time, so a hand-edit made while the
   dialog is open survives).
 
