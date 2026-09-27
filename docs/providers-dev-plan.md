@@ -751,6 +751,155 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 
 ---
 
+### Stage F3 — `tagent-cli` config in TOML
+
+**Status:** planned (decided 2026-09-27)
+**Goal:** replace `tagent-cli.conf` (INI, hand-written parser) with `tagent-cli.toml`
+before P1, so DeepL ships with the new format and its profile docs are written once.
+Only `tagent-cli` changes; `tagent-gui` keeps `tagent-gui.json` (its Settings dialog is the
+main path, JSON suits a machine-written file, and the app is independent).
+
+**Why:** the INI format's weak spots grew with Stage F:
+- `/save` rewrites the whole file from a template (`create_ini_content`), so a user's
+  comments are lost (it only ever changes the languages);
+- no inline comments: `key = value ; note` makes `; note` part of the value;
+- two key styles in one file (PascalCase keys, lowercase library keys in profiles);
+- `parse_ini` and the per-key string parsing are a few hundred lines of our own code.
+
+**Decisions (2026-09-27):**
+1. **TOML, one file** `tagent-cli.toml` in the same directory. No separate providers file:
+   secrets can already live in `TAGENT_<PROFILE>_<KEY>` env vars and the file is written
+   with mode `0600`; a second file would mean two places to look, two mtimes to watch and
+   cross-file references. An optional `include` can come later without a format change.
+2. **No migration and no hint.** The old `tagent-cli.conf` is simply not read any more;
+   on first start a default `tagent-cli.toml` is created. The CHANGELOG documents the
+   rename and the key mapping. The legacy color-key fallbacks (`AutoPromptColor` →
+   `SourcePromptColor`, `TranslationPromptColor` → `TargetPromptColor`) go too.
+3. **Names follow the earlier decisions** (Q1, Q3, Stage F), mechanically converted:
+   sections lowercase, keys snake_case, same sections as today. The profile-selecting
+   keys are named as in `tagent-gui.json` (`translate_provider`, `dictionary_provider`,
+   `speech_provider`), and profiles live under `provider_options` (as in
+   `tagent-gui.json`), one table per profile. Library option keys stay verbatim; with
+   snake_case everywhere they are no longer an exception.
+4. **`tagent-cli` version bump:** the format change is breaking, so the minor goes up
+   (`0.16.0+008` → `0.17.0`, release build per the build-mode rule; add the CHANGELOG
+   section first, then bump).
+
+**Layout** (the generated default file keeps explanatory comments, like today's):
+
+```toml
+[provider]
+translate_provider = "google"   # a profile name; a built-in kind is a profile too
+
+[translation]
+source_language = "Auto"
+target_language = "Russian"
+
+[dictionary]
+show_dictionary = true
+spell_check = true
+dictionary_provider = "google"
+
+[interface]
+show_terminal_on_translate = true
+auto_hide_terminal_seconds = 3
+copy_to_clipboard = false
+
+[colors]
+source_prompt_color = "None"
+target_prompt_color = "BrightYellow"
+dictionary_prompt_color = "BrightYellow"
+part_of_speech_color = "..."
+synonym_color = "..."
+notice_color = "..."
+error_color = "..."
+
+[history]
+save_translation_history = false
+history_file = "..."
+
+[hotkeys]
+translate_hotkey = "Alt+A"
+
+[speech]
+enable_text_to_speech = true
+speech_hotkey = "Alt+S"
+enable_speech_hotkey = true
+speech_provider = "google"
+
+# Provider profiles: name = [a-z0-9_-]+, `type` defaults to the name.
+[provider_options.deepl]
+api_key = "...:fx"              # or the env var TAGENT_DEEPL_API_KEY
+
+[provider_options.deepl-work]
+type = "deepl"
+api_key = "..."
+```
+
+(Default values are today's; the `...` are filled from the existing constants.)
+
+**Key mapping** (old → new, for the CHANGELOG): every `[Section] PascalKey` becomes
+`[section] snake_key` (`[Interface] AutoHideTerminalSeconds` →
+`[interface] auto_hide_terminal_seconds`), and `[Provider:<name>]` becomes
+`[provider_options.<name>]` with its keys unchanged.
+
+**Scope / files:**
+- `tagent-cli/Cargo.toml`: a TOML crate. Candidates: `toml` (serde) for reading plus
+  `toml_edit` for `/save`, or `toml_edit` alone (with its serde support). Choose after
+  reading their official docs.
+- `tagent-cli/src/config.rs`:
+  - Read: `serde` structs per section with `#[serde(default)]` (a missing key or section
+    = today's default). Values are typed (bools, integer seconds). Unknown keys are
+    ignored (kept on disk by `/save`, see below).
+  - `provider_options` deserializes into `ProviderProfiles` (names and keys lowercased,
+    as today; profile values are strings, so a non-string value is an error naming the
+    key).
+  - Errors: a syntax or type error names the file, line and key (from the TOML crate).
+    At startup it is fatal with that message; on hot reload the previous config stays in
+    effect and a warning is printed (today's reload behavior for a broken file is checked
+    and kept if it differs).
+  - `/save` edits the parsed document in place (`source_language`, `target_language`,
+    the only values the app changes), preserving comments, order, unknown keys and
+    `provider_options`. If the file is gone, it writes the default template with the
+    current values. Still through `write_config_file` (mode `0600`).
+  - The default template: generated with comments (including the list of providers
+    `tagent` offers, as `generated_config_comments_list_the_providers_tagent_offers`
+    checks today).
+  - Removed: `parse_ini`, `create_ini_content`, `PROVIDER_SECTION_PREFIX` and the
+    per-key string parsing. `provider_error_message` points an `InvalidOptions` at
+    `[provider_options.<name>]`.
+  - `/config` output shows the new key names and the file path.
+- Paths: `get_default_config_path()` → `tagent-cli.toml` (Windows
+  `%APPDATA%\tagent-cli\tagent-cli.toml`, Linux/macOS `~/.config/tagent-cli/tagent-cli.toml`).
+  `--config` and any help text follow.
+
+**Semver:** `tagent-cli` breaking config change → `0.17.0` (decision 4). `tagent` and
+`tagent-gui` unchanged.
+**Changelogs:** `tagent-cli/CHANGELOG.md` (`0.17.0`: Changed — breaking, file renamed and
+reformatted, the key mapping, no migration; Removed — legacy color keys).
+**Tests:**
+- The generated template parses back into `Config::default()`.
+- A full file with every key, and a minimal file (only one section) → defaults for the rest.
+- A type error (`copy_to_clipboard = "yes"`) and a syntax error → an error naming the key/line.
+- `/save` round trip: comments, key order, an unknown key and `provider_options` (with
+  `type` and a secret) survive; only the languages change.
+- `provider_options`: names/keys lowercased, a non-string value rejected, env overrides
+  still win, `Debug` masks a sentinel secret.
+- Mode `0600` on Unix for a new file and after `/save` (existing tests, adapted).
+- Hot reload: a broken edit keeps the previous config.
+**Docs:** `tagent-cli/README.md` (configuration section and example), CLAUDE.md
+("Configuration System", "Configuration File Location", "Changing Hotkey Combination",
+the provider sections that say `tagent-cli.conf`), `docs/ARCHITECTURE.md`; mentions of
+`tagent-cli.conf` in `tagent-gui` docs ("doesn't read it") updated to the new name. The
+provider examples in this plan (Stage F text stays as history; P1 uses the new form).
+**Done when:** `cargo test`, clippy `-D warnings`; a fresh start creates a commented
+`tagent-cli.toml`; hand-editing it hot-reloads; `/save` keeps comments; `/config` shows
+masked profile secrets; a release build syncs the `0.17.0` version into the docs.
+
+---
+
+
+
 
 
 
@@ -780,7 +929,7 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 
 | Stage | Provider | Axis | Kind | Depends on |
 |-------|----------|------|------|------------|
-| P1 | DeepL, plus Cargo features per provider (former Stage G) | translation | native, keyed | A–F |
+| P1 | DeepL, plus Cargo features per provider (former Stage G) | translation | native, keyed | A–F, F3 |
 | P2 | OpenAI-compatible chat | translation | generic | A, B, E |
 | P3 | OpenAI-compatible chat | dictionary | generic (structured JSON) | P2 |
 | P4 | Declarative HTTP (reference config: LibreTranslate) | translation | generic | A, B, E |
@@ -791,8 +940,9 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 **Status:** planned (plan agreed 2026-09-27)
 **Why first:** a well-documented keyed API. It validates options, auth errors, quota
 errors and language-code mapping end to end.
-**Goal:** `DeepLTranslateProvider`, selectable in both apps through a `[Provider:deepl]`
-profile / `provider_options` entry with an `api_key`, with no app code changes (the Stage F
+**Goal:** `DeepLTranslateProvider`, selectable in both apps through a `deepl` profile
+(`[provider_options.deepl]` in `tagent-cli.toml`, `provider_options` in `tagent-gui.json`)
+with an `api_key`, with no app code changes (the Stage F
 wiring and the registry-driven Settings fields pick it up). Part 2 then puts every
 provider behind its own Cargo feature.
 
@@ -900,8 +1050,8 @@ change no app code, so no `+BUILD` bumps; if an app needs a change, it gets one.
   (label `"DeepL (work)"`), registry/list/factory agreement (existing tests).
 - Live, `#[ignore]`: `TAGENT_LIVE_TESTS=1` plus `TAGENT_DEEPL_API_KEY` (a Free key is
   available): translate `en → de`, `auto → ru`, `detect_language`.
-- Manual: `tagent-cli` CLI mode with `TranslateProvider = deepl` and
-  `[Provider:deepl] api_key = ...`.
+- Manual: `tagent-cli` CLI mode with `translate_provider = "deepl"` and
+  `[provider_options.deepl]` `api_key = "..."` in `tagent-cli.toml`.
 
 **Docs:** `deepl` module rustdoc (options, code mapping, detection cost, Free/Pro),
 `cargo doc -p tagent` clean; CLAUDE.md ("Translation Provider Architecture": a DeepL
