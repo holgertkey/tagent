@@ -37,7 +37,10 @@ fn source_languages() -> Vec<&'static str> {
 /// Language names offered in the target-language dropdown: every language `tagent`
 /// knows ([`languages::LANGUAGES`]), in its order. `"Auto"` can't be a translation target.
 fn target_languages() -> Vec<&'static str> {
-    languages::LANGUAGES.iter().map(|language| language.name).collect()
+    languages::LANGUAGES
+        .iter()
+        .map(|language| language.name)
+        .collect()
 }
 
 /// Target language selected at startup.
@@ -47,7 +50,10 @@ const DEFAULT_TARGET_LANGUAGE: &str = "Russian";
 fn init_language_models(window: &AppWindow) {
     let to_model = |names: &[&str]| -> ModelRc<SharedString> {
         ModelRc::new(VecModel::from(
-            names.iter().map(|&name| SharedString::from(name)).collect::<Vec<_>>(),
+            names
+                .iter()
+                .map(|&name| SharedString::from(name))
+                .collect::<Vec<_>>(),
         ))
     };
     let targets = target_languages();
@@ -1573,9 +1579,12 @@ fn spawn_translation(
             // prefix under its own `popup_show_prompt` setting.
             let (translation_raw, translation_speech, is_error, translation_body_template) =
                 match &result {
-                    Ok((body, speech_text, body_template)) => {
-                        (body.clone(), speech_text.clone(), false, body_template.clone())
-                    }
+                    Ok((body, speech_text, body_template)) => (
+                        body.clone(),
+                        speech_text.clone(),
+                        false,
+                        body_template.clone(),
+                    ),
                     Err(err) => {
                         let message = format!("Error: {err}");
                         let body_template = styled::escape_markdown(&message);
@@ -3109,7 +3118,10 @@ mod tests {
     fn swap_is_unavailable_for_auto_source_or_bad_indices() {
         assert_eq!(swapped_language_indices(0, 1), None);
         assert_eq!(swapped_language_indices(-1, 0), None);
-        assert_eq!(swapped_language_indices(1, target_languages().len() as i32), None);
+        assert_eq!(
+            swapped_language_indices(1, target_languages().len() as i32),
+            None
+        );
     }
 
     #[test]
@@ -3124,11 +3136,15 @@ mod tests {
         assert_eq!(target.row_count(), target_languages().len());
         assert!(target.iter().all(|name| name != "Auto"));
         assert_eq!(
-            source.row_data(window.get_source_language_index() as usize).unwrap(),
+            source
+                .row_data(window.get_source_language_index() as usize)
+                .unwrap(),
             "Auto"
         );
         assert_eq!(
-            target.row_data(window.get_target_language_index() as usize).unwrap(),
+            target
+                .row_data(window.get_target_language_index() as usize)
+                .unwrap(),
             DEFAULT_TARGET_LANGUAGE
         );
     }

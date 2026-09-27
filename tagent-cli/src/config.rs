@@ -170,7 +170,10 @@ impl Config {
             if !lines.is_empty() {
                 lines.push(String::new());
             }
-            lines.push(format!("[provider_options.{}]", toml_edit::Key::new(name.as_str())));
+            lines.push(format!(
+                "[provider_options.{}]",
+                toml_edit::Key::new(name.as_str())
+            ));
             if options.is_empty() {
                 lines.push("# (no options)".to_string());
             }
@@ -248,7 +251,10 @@ fn mask_secret(value: &str) -> String {
     if chars.len() < 12 {
         "••••".to_string()
     } else {
-        format!("••••{}", chars[chars.len() - 4..].iter().collect::<String>())
+        format!(
+            "••••{}",
+            chars[chars.len() - 4..].iter().collect::<String>()
+        )
     }
 }
 
@@ -789,12 +795,12 @@ impl Default for Config {
             synonym_color: DEFAULT_SYNONYM_COLOR.to_string(),
             notice_color: DEFAULT_NOTICE_COLOR.to_string(),
             error_color: DEFAULT_ERROR_COLOR.to_string(),
-            translate_hotkey: "Alt+A".to_string(),               // Default translation hotkey
-            enable_text_to_speech: true,                         // TTS enabled by default
-            speech_hotkey: "Alt+S".to_string(),                  // Default speech hotkey
-            enable_speech_hotkey: true,                          // Enable speech hotkey by default
-            translate_provider: "google".to_string(),            // Default translation provider
-            speech_provider: "google".to_string(),               // Default speech provider
+            translate_hotkey: "Alt+A".to_string(), // Default translation hotkey
+            enable_text_to_speech: true,           // TTS enabled by default
+            speech_hotkey: "Alt+S".to_string(),    // Default speech hotkey
+            enable_speech_hotkey: true,            // Enable speech hotkey by default
+            translate_provider: "google".to_string(), // Default translation provider
+            speech_provider: "google".to_string(), // Default speech provider
             provider_options: ProviderProfiles::new(),
         }
     }
@@ -865,9 +871,8 @@ impl LanguagePair {
 
     fn finish(source: String, target: String, mut notices: Vec<String>) -> Self {
         if !is_auto(&source)
-            && tagent::languages::name_to_code(&source).eq_ignore_ascii_case(
-                tagent::languages::name_to_code(&target),
-            )
+            && tagent::languages::name_to_code(&source)
+                .eq_ignore_ascii_case(tagent::languages::name_to_code(&target))
         {
             notices.push("Note: source and target are the same language".to_string());
         }
@@ -1656,7 +1661,10 @@ mod tests {
         );
 
         // Any spelling of "auto" counts.
-        assert_eq!(LanguagePair::new("Russian", " AUTO ").target, AUTO_TARGET_FALLBACK);
+        assert_eq!(
+            LanguagePair::new("Russian", " AUTO ").target,
+            AUTO_TARGET_FALLBACK
+        );
     }
 
     #[test]
@@ -2323,15 +2331,26 @@ api_key = "deepl-key"
         assert_eq!(work["type"], "google");
         assert_eq!(work["api_key"], "file-key-0123456789");
         assert_eq!(work["timeout_secs"], "15");
-        assert_eq!(loaded.provider_options.get("deepl").unwrap()["api_key"], "deepl-key");
+        assert_eq!(
+            loaded.provider_options.get("deepl").unwrap()["api_key"],
+            "deepl-key"
+        );
         assert!(loaded.provider_options.get("empty").unwrap().is_empty());
 
         manager.save_config().unwrap();
         let written = fs::read_to_string(&path).unwrap();
-        assert!(written.contains("[provider_options.Work]\ntype = \"google\"\nAPI_Key = \"file-key-0123456789\""), "{written}");
+        assert!(
+            written.contains(
+                "[provider_options.Work]\ntype = \"google\"\nAPI_Key = \"file-key-0123456789\""
+            ),
+            "{written}"
+        );
         assert!(written.contains("[provider_options.empty]\n"), "{written}");
         manager.load_config().unwrap();
-        assert_eq!(manager.get_config().provider_options, loaded.provider_options);
+        assert_eq!(
+            manager.get_config().provider_options,
+            loaded.provider_options
+        );
         let _ = fs::remove_file(&path);
     }
 
@@ -2354,7 +2373,10 @@ api_key = "deepl-key"
 
         // A profile without a section still gets its key from the environment.
         let env = |var: &str| (var == "TAGENT_OTHER_API_KEY").then(|| "k".to_string());
-        assert_eq!(config.provider_options_using("other", env).get("api_key"), Some("k"));
+        assert_eq!(
+            config.provider_options_using("other", env).get("api_key"),
+            Some("k")
+        );
     }
 
     #[test]
@@ -2379,7 +2401,10 @@ api_key = "deepl-key"
             "{text}"
         );
         // The selected built-in providers are listed too.
-        assert!(text.contains("[provider_options.google]\n# (no options)"), "{text}");
+        assert!(
+            text.contains("[provider_options.google]\n# (no options)"),
+            "{text}"
+        );
         // Debug output (a log line, a panic message) never shows a configured key.
         let debug = format!("{config:?}");
         assert!(!debug.contains("file-key-0123456789"), "{debug}");
@@ -2396,13 +2421,22 @@ api_key = "deepl-key"
         };
         let lines = config.display_lines(no_env);
         let text = lines.join("\n");
-        assert!(text.starts_with("[provider]\ntranslate_provider = \"google\"\n"), "{text}");
+        assert!(
+            text.starts_with("[provider]\ntranslate_provider = \"google\"\n"),
+            "{text}"
+        );
         assert!(
             text.contains("[translation]\nsource_language = \"Auto\"  # auto\ntarget_language = \"Russian\"  # ru\n"),
             "{text}"
         );
-        assert!(text.contains("\nauto_hide_terminal_seconds = 3\n"), "{text}");
-        assert!(text.contains("\n[colors]\nsource_prompt_color = \"None\"\n"), "{text}");
+        assert!(
+            text.contains("\nauto_hide_terminal_seconds = 3\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("\n[colors]\nsource_prompt_color = \"None\"\n"),
+            "{text}"
+        );
 
         // Every `key = value` line matches the file: parsed back as TOML (the profile
         // comment lines aside), it is the same configuration.
@@ -2431,7 +2465,10 @@ api_key = "deepl-key"
             },
             ..Config::default()
         };
-        let message = config.create_translate_provider().err().expect("invalid timeout");
+        let message = config
+            .create_translate_provider()
+            .err()
+            .expect("invalid timeout");
         assert!(message.contains("timeout_secs"), "{message}");
         assert!(message.contains("[provider_options.google]"), "{message}");
         assert!(message.contains("TAGENT_GOOGLE_<KEY>"), "{message}");
@@ -2569,7 +2606,10 @@ api_key = "deepl-key"
         let first = toml.find("\n[provider_options.deepl-work]\n").unwrap();
         let second = toml.find("\n[provider_options.google]\n").unwrap();
         assert!(explanation < first && first < second, "{toml}");
-        assert!(toml.ends_with("[provider_options.google]\ntimeout_secs = \"15\"\n"), "{toml}");
+        assert!(
+            toml.ends_with("[provider_options.google]\ntimeout_secs = \"15\"\n"),
+            "{toml}"
+        );
         assert_eq!(parse_config(&toml).unwrap(), config);
     }
 
@@ -2614,7 +2654,10 @@ api_key = "secret-0123456789"  # from the account page
         manager.load_config().unwrap();
         let reloaded = manager.get_config();
         assert_eq!(
-            (reloaded.source_language.as_str(), reloaded.target_language.as_str()),
+            (
+                reloaded.source_language.as_str(),
+                reloaded.target_language.as_str()
+            ),
             ("English", "German")
         );
         assert!(reloaded.copy_to_clipboard);
@@ -2631,9 +2674,14 @@ api_key = "secret-0123456789"  # from the account page
         manager.save_config().unwrap();
 
         let written = fs::read_to_string(&path).unwrap();
-        assert!(written.starts_with("[interface]\ncopy_to_clipboard = true\n"), "{written}");
         assert!(
-            written.contains("[translation]\nsource_language = \"English\"\ntarget_language = \"German\"\n"),
+            written.starts_with("[interface]\ncopy_to_clipboard = true\n"),
+            "{written}"
+        );
+        assert!(
+            written.contains(
+                "[translation]\nsource_language = \"English\"\ntarget_language = \"German\"\n"
+            ),
             "{written}"
         );
         let _ = fs::remove_file(&path);
@@ -2647,7 +2695,10 @@ api_key = "secret-0123456789"  # from the account page
         manager.save_config().unwrap();
         let written = fs::read_to_string(&path).unwrap();
         let _ = fs::remove_file(&path);
-        assert!(written.contains("# Text Translator Configuration File"), "{written}");
+        assert!(
+            written.contains("# Text Translator Configuration File"),
+            "{written}"
+        );
         let config = parse_config(&written).unwrap();
         assert_eq!(config, manager.get_config());
     }
@@ -2689,7 +2740,10 @@ api_key = "secret-0123456789"  # from the account page
     fn a_broken_file_fails_at_startup() {
         let (_, path) = manager_at("broken_startup");
         fs::write(&path, "[interface]\ncopy_to_clipboard = \"yes\"\n").unwrap();
-        let error = ConfigManager::new(path.to_str().unwrap()).err().unwrap().to_string();
+        let error = ConfigManager::new(path.to_str().unwrap())
+            .err()
+            .unwrap()
+            .to_string();
         let _ = fs::remove_file(&path);
         assert!(error.contains(path.to_str().unwrap()), "{error}");
         assert!(error.contains("line 2"), "{error}");

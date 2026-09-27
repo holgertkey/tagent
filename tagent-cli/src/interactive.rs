@@ -161,10 +161,8 @@ impl InteractiveMode {
             // Rebuilt every iteration, so both reflect `/l` and config-file edits.
             let pair_label = config::language_pair_label(&source_code, &target_code);
             terminal_title.set(&format!("Tagent — {}", pair_label));
-            let prompt = config::colorize(
-                &format!("[{}]: ", pair_label),
-                &config.source_prompt_color,
-            );
+            let prompt =
+                config::colorize(&format!("[{}]: ", pair_label), &config.source_prompt_color);
 
             match editor.readline(&prompt) {
                 Ok(line) => {
@@ -234,13 +232,13 @@ impl InteractiveMode {
             if parts.is_empty() {
                 // Swap source and target languages
                 let config = self.config_manager.get_config();
-                let pair =
-                    LanguagePair::swapped(&config.source_language, &config.target_language);
+                let pair = LanguagePair::swapped(&config.source_language, &config.target_language);
                 for notice in &pair.notices {
                     println!("{}", notice);
                 }
 
-                self.config_manager.set_languages(&pair.source, &pair.target);
+                self.config_manager
+                    .set_languages(&pair.source, &pair.target);
                 println!(
                     "Languages swapped: {} ({}) -> {} ({})",
                     pair.source,
@@ -283,7 +281,8 @@ impl InteractiveMode {
             for notice in &pair.notices {
                 println!("{}", notice);
             }
-            self.config_manager.set_languages(&pair.source, &pair.target);
+            self.config_manager
+                .set_languages(&pair.source, &pair.target);
             println!(
                 "Languages set: {} ({}) -> {} ({})",
                 pair.source,

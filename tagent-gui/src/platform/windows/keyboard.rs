@@ -451,9 +451,8 @@ pub fn release_raw_keyboard_input() {
         dwFlags: RIDEV_REMOVE,
         hwndTarget: HWND::default(),
     }];
-    let result = unsafe {
-        RegisterRawInputDevices(&device, std::mem::size_of::<RAWINPUTDEVICE>() as u32)
-    };
+    let result =
+        unsafe { RegisterRawInputDevices(&device, std::mem::size_of::<RAWINPUTDEVICE>() as u32) };
     if let Err(err) = result {
         eprintln!(
             "Warning: failed to release raw keyboard input ({err}); global hotkeys and Esc \

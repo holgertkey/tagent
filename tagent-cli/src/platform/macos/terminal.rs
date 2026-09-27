@@ -61,6 +61,9 @@ mod tests {
 
     #[test]
     fn sanitize_removes_control_characters() {
-        assert_eq!(sanitize("Tagent\x07 — auto\x1b → ru\n"), "Tagent — auto → ru");
+        assert_eq!(
+            sanitize("Tagent\x07 — auto\x1b → ru\n"),
+            "Tagent — auto → ru"
+        );
     }
 }
