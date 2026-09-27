@@ -51,7 +51,7 @@ pub struct DictionaryLookup {
 #[derive(Clone)]
 pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
-    /// `None` when the configured `DictionaryProvider` could not be created; dictionary
+    /// `None` when the configured `dictionary_provider` could not be created; dictionary
     /// lookups then fail immediately and callers fall back to plain translation.
     dictionary_provider: Option<Arc<dyn DictionaryProvider>>,
     clipboard: ClipboardManager,
@@ -689,15 +689,15 @@ mod tests {
 
     fn test_config_manager(unique: &str) -> Arc<ConfigManager> {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_translator_{}_{}.conf",
+            "tagent_test_translator_{}_{}.toml",
             unique,
             std::process::id()
         ));
         std::fs::write(
             &path,
-            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n\
-             [Interface]\nCopyToClipboard = false\n\
-             [History]\nSaveTranslationHistory = false\n",
+            "[translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n\
+             [interface]\ncopy_to_clipboard = false\n\
+             [history]\nsave_translation_history = false\n",
         )
         .unwrap();
         let manager = Arc::new(ConfigManager::new(path.to_str().unwrap()).unwrap());
@@ -844,7 +844,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// A bad `DictionaryProvider` must never break translation: with none available the
+    /// A bad `dictionary_provider` must never break translation: with none available the
     /// lookup fails immediately, without touching the translate provider.
     #[tokio::test]
     async fn missing_dictionary_provider_fails_without_any_network_call() {

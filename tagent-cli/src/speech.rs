@@ -174,7 +174,7 @@ impl SpeechManager {
         text: &str,
         config_manager: &ConfigManager,
     ) -> Result<bool, String> {
-        config_manager.check_and_reload().ok();
+        config_manager.reload_or_warn();
         let (source_code, _) = config_manager.get_language_codes();
         self.speak_text_in(text, &source_code, config_manager).await
     }
@@ -191,7 +191,7 @@ impl SpeechManager {
             return Err("Empty text provided".to_string());
         }
 
-        config_manager.check_and_reload().ok();
+        config_manager.reload_or_warn();
         let config = config_manager.get_config();
 
         let provider = config

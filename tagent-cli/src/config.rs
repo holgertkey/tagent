@@ -1,7 +1,7 @@
 use crate::platform::keycodes;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
-use std::collections::{BTreeMap, HashMap};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -12,20 +12,18 @@ use tagent::providers::{
     self, DictionaryProvider, ProviderOptions, ProviderProfiles, SpeechProvider,
     TranslationProvider,
 };
+use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
-/// Prefix of the INI sections that hold provider profiles: `[Provider:<name>]`.
-const PROVIDER_SECTION_PREFIX: &str = "Provider:";
-
-/// Runtime configuration loaded from `tagent-cli.conf`.
+/// Runtime configuration loaded from `tagent-cli.toml`.
 ///
-/// All fields correspond directly to INI keys documented inside the generated
-/// configuration file. The [`Default`] impl reflects the same defaults that are
-/// written when a new configuration file is created.
+/// All fields correspond directly to TOML keys documented inside the generated
+/// configuration file (see [`ConfigFile`] for the on-disk layout). The [`Default`] impl
+/// reflects the same defaults that are written when a new configuration file is created.
 ///
 /// The config file is located at:
-/// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf`
-/// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
-#[derive(Debug, Clone)]
+/// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.toml`
+/// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// BCP-47 language code for the source language, or `"Auto"` for auto-detection.
     pub source_language: String,
@@ -76,14 +74,13 @@ pub struct Config {
     /// Name of the text-to-speech backend to use, e.g. `"google"`. Independent of
     /// `translate_provider`.
     pub speech_provider: String,
-    /// Provider profiles from the `[Provider:<name>]` sections. Modeled here (not just
-    /// read) so `/save`, which rewrites the whole file, keeps them; its `Debug` masks
+    /// Provider profiles from the `[provider_options.<name>]` tables. Its `Debug` masks
     /// secret values.
     pub provider_options: ProviderProfiles,
 }
 
 impl Config {
-    /// The options for provider profile `name`: its `[Provider:<name>]` section, with
+    /// The options for provider profile `name`: its `[provider_options.<name>]` table, with
     /// `TAGENT_<NAME>_<KEY>` environment variables taking precedence.
     pub fn provider_options(&self, name: &str) -> ProviderOptions {
         self.provider_options_using(name, |var| std::env::var(var).ok())
@@ -98,21 +95,21 @@ impl Config {
         self.provider_options.options_using(name, lookup)
     }
 
-    /// Builds the translation provider for `TranslateProvider`, with its profile's options.
+    /// Builds the translation provider for `translate_provider`, with its profile's options.
     /// The error is ready to show.
     pub fn create_translate_provider(&self) -> Result<Box<dyn TranslationProvider>, String> {
         let name = &self.translate_provider;
         providers::create_provider_with(name, &self.provider_options(name)).map_err(|e| {
             provider_error_message(
                 &e,
-                "TranslateProvider",
+                "translate_provider",
                 name,
                 providers::TRANSLATION_PROVIDERS,
             )
         })
     }
 
-    /// Builds the dictionary provider for `DictionaryProvider`, with its profile's options.
+    /// Builds the dictionary provider for `dictionary_provider`, with its profile's options.
     /// The error is ready to show.
     pub fn create_dictionary_provider(&self) -> Result<Box<dyn DictionaryProvider>, String> {
         let name = &self.dictionary_provider;
@@ -120,7 +117,7 @@ impl Config {
             |e| {
                 provider_error_message(
                     &e,
-                    "DictionaryProvider",
+                    "dictionary_provider",
                     name,
                     providers::DICTIONARY_PROVIDERS,
                 )
@@ -128,16 +125,16 @@ impl Config {
         )
     }
 
-    /// Builds the speech provider for `SpeechProvider`, with its profile's options. The
+    /// Builds the speech provider for `speech_provider`, with its profile's options. The
     /// error is ready to show.
     pub fn create_speech_provider(&self) -> Result<Box<dyn SpeechProvider>, String> {
         let name = &self.speech_provider;
         providers::create_speech_provider_with(name, &self.provider_options(name)).map_err(|e| {
-            provider_error_message(&e, "SpeechProvider", name, providers::SPEECH_PROVIDERS)
+            provider_error_message(&e, "speech_provider", name, providers::SPEECH_PROVIDERS)
         })
     }
 
-    /// The profiles `/config` describes: every `[Provider:<name>]` section plus the three
+    /// The profiles `/config` describes: every `[provider_options.<name>]` table plus the three
     /// selected providers, sorted, without duplicates.
     fn profile_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self
@@ -159,8 +156,9 @@ impl Config {
         names
     }
 
-    /// The `/config` lines describing each provider profile's effective options: secret
-    /// values masked, and each value's origin (config file or environment variable).
+    /// The `/config` lines describing each provider profile's effective options, as
+    /// `[provider_options.<name>]` tables: secret values masked, and a value taken from an
+    /// environment variable marked with a comment naming it.
     fn provider_profile_lines(&self, lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
         let mut lines = Vec::new();
         for name in self.profile_names() {
@@ -169,15 +167,17 @@ impl Config {
                 .get("type")
                 .map(|kind| kind.trim().to_lowercase())
                 .unwrap_or_else(|| name.clone());
-            let heading = if kind == name {
-                format!("  {name}")
-            } else {
-                format!("  {name} (type: {kind})")
-            };
-            lines.push(heading);
-            let mut any = false;
-            for (key, value) in options.iter().filter(|(key, _)| *key != "type") {
-                any = true;
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push(format!("[provider_options.{}]", toml_edit::Key::new(name.as_str())));
+            if options.is_empty() {
+                lines.push("# (no options)".to_string());
+            }
+            // `type` first: it says what the rest of the options configure.
+            let (kind_option, other_options): (Vec<_>, Vec<_>) =
+                options.iter().partition(|(key, _)| *key == "type");
+            for (key, value) in kind_option.into_iter().chain(other_options) {
                 let shown = if providers::is_secret_option(&kind, key) {
                     mask_secret(value)
                 } else {
@@ -185,25 +185,60 @@ impl Config {
                 };
                 let var = providers::env_var_name(&name, key);
                 let origin = if lookup(&var).is_some_and(|v| !v.is_empty()) {
-                    format!(" (from env {var})")
+                    format!("  # from env {var}")
                 } else {
                     String::new()
                 };
-                lines.push(format!("    {key} = {shown}{origin}"));
-            }
-            if !any {
-                lines.push("    (no options)".to_string());
+                lines.push(format!("{key} = {}{origin}", Value::from(shown)));
             }
         }
         lines
     }
-}
 
-/// `text` without `prefix`, if it starts with it ignoring ASCII case.
-fn strip_prefix_ignore_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
-    let head = text.get(..prefix.len())?;
-    head.eq_ignore_ascii_case(prefix)
-        .then(|| &text[prefix.len()..])
+    /// The `/config` lines for every setting, as `[section]` headers and `key = value`
+    /// lines named and formatted as in `tagent-cli.toml` (the language settings followed by
+    /// their code as a comment), then the provider profiles
+    /// ([`Self::provider_profile_lines`]).
+    fn display_lines(&self, lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
+        let values = toml_edit::ser::to_document(&ConfigFile::from(self))
+            .expect("the configuration serializes to TOML");
+        let mut lines = Vec::new();
+        for (section, item) in values.iter() {
+            let Some(table) = item.as_table_like() else {
+                continue;
+            };
+            if section == "provider_options" {
+                continue;
+            }
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push(format!("[{section}]"));
+            for (key, value) in table.iter() {
+                let Some(value) = value.as_value() else {
+                    continue;
+                };
+                let mut value = value.clone();
+                value.decor_mut().clear();
+                let note = match (section, key) {
+                    ("translation", "source_language") => format!(
+                        "  # {}",
+                        tagent::languages::name_to_code(&self.source_language)
+                    ),
+                    ("translation", "target_language") => format!(
+                        "  # {}",
+                        tagent::languages::name_to_code(&self.target_language)
+                    ),
+                    _ => String::new(),
+                };
+                lines.push(format!("{key} = {value}{note}"));
+            }
+        }
+        lines.push(String::new());
+        lines.push("# Provider profiles (effective options, secrets masked)".to_string());
+        lines.extend(self.provider_profile_lines(lookup));
+        lines
+    }
 }
 
 /// Masks a secret for display: `••••` plus its last 4 characters, or just `••••` when it's
@@ -237,31 +272,491 @@ fn write_config_file(path: &str, content: &str) -> std::io::Result<()> {
     file.write_all(content.as_bytes())
 }
 
-/// The `[Provider:<name>]` part of `tagent-cli.conf`: an explanation, then one section per
-/// profile.
-fn provider_sections_ini(profiles: &ProviderProfiles) -> String {
-    let mut ini = String::from(
-        r#"
-; Provider profiles
-; One [Provider:<name>] section per profile. TranslateProvider, DictionaryProvider and
-; SpeechProvider take a profile name; a built-in name (e.g. google) works without a
-; section. The optional `type` key picks the provider kind (default: the profile name),
-; so several configured instances of one kind can coexist. Keys are passed to the
-; provider as they are (lowercase: api_key, endpoint, model, timeout_secs, max_retries).
-; An environment variable TAGENT_<NAME>_<KEY> (e.g. TAGENT_DEEPL_API_KEY) overrides a key.
-; Example:
-;   [Provider:google]
-;   timeout_secs = 15
-;   max_retries = 0
-"#,
-    );
-    for (name, options) in profiles.iter() {
-        ini.push_str(&format!("\n[{PROVIDER_SECTION_PREFIX}{name}]\n"));
-        for (key, value) in options {
-            ini.push_str(&format!("{key} = {value}\n"));
+/// The on-disk layout of `tagent-cli.toml`: one table per section, plus the provider
+/// profiles under `provider_options`. A missing section or key takes
+/// [`Config::default`]'s value; unknown keys are ignored when reading (and kept on disk,
+/// since `/save` edits the file in place).
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct ConfigFile {
+    provider: ProviderSection,
+    translation: TranslationSection,
+    dictionary: DictionarySection,
+    interface: InterfaceSection,
+    colors: ColorsSection,
+    history: HistorySection,
+    hotkeys: HotkeysSection,
+    speech: SpeechSection,
+    /// Profile name → option key → value. Values must be strings; names and keys are
+    /// lowercased by [`ProviderProfiles`].
+    provider_options: ProviderProfiles,
+}
+
+/// `[provider]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct ProviderSection {
+    translate_provider: String,
+}
+
+/// `[translation]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct TranslationSection {
+    source_language: String,
+    target_language: String,
+}
+
+/// `[dictionary]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct DictionarySection {
+    show_dictionary: bool,
+    spell_check: bool,
+    dictionary_provider: String,
+}
+
+/// `[interface]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct InterfaceSection {
+    show_terminal_on_translate: bool,
+    auto_hide_terminal_seconds: u64,
+    copy_to_clipboard: bool,
+}
+
+/// `[colors]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct ColorsSection {
+    source_prompt_color: String,
+    target_prompt_color: String,
+    dictionary_prompt_color: String,
+    part_of_speech_color: String,
+    synonym_color: String,
+    notice_color: String,
+    error_color: String,
+}
+
+/// `[history]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct HistorySection {
+    save_translation_history: bool,
+    history_file: String,
+}
+
+/// `[hotkeys]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct HotkeysSection {
+    translate_hotkey: String,
+}
+
+/// `[speech]`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct SpeechSection {
+    enable_text_to_speech: bool,
+    speech_hotkey: String,
+    enable_speech_hotkey: bool,
+    speech_provider: String,
+}
+
+/// Each section's defaults are [`Config::default`]'s, so they are spelled out only once.
+macro_rules! section_defaults_from_config {
+    ($($section:ident => $field:ident),* $(,)?) => {
+        $(
+            impl Default for $section {
+                fn default() -> Self {
+                    ConfigFile::from(&Config::default()).$field
+                }
+            }
+        )*
+    };
+}
+
+section_defaults_from_config!(
+    ProviderSection => provider,
+    TranslationSection => translation,
+    DictionarySection => dictionary,
+    InterfaceSection => interface,
+    ColorsSection => colors,
+    HistorySection => history,
+    HotkeysSection => hotkeys,
+    SpeechSection => speech,
+);
+
+impl From<&Config> for ConfigFile {
+    fn from(config: &Config) -> Self {
+        let config = config.clone();
+        Self {
+            provider: ProviderSection {
+                translate_provider: config.translate_provider,
+            },
+            translation: TranslationSection {
+                source_language: config.source_language,
+                target_language: config.target_language,
+            },
+            dictionary: DictionarySection {
+                show_dictionary: config.show_dictionary,
+                spell_check: config.spell_check,
+                dictionary_provider: config.dictionary_provider,
+            },
+            interface: InterfaceSection {
+                show_terminal_on_translate: config.show_terminal_on_translate,
+                auto_hide_terminal_seconds: config.auto_hide_terminal_seconds,
+                copy_to_clipboard: config.copy_to_clipboard,
+            },
+            colors: ColorsSection {
+                source_prompt_color: config.source_prompt_color,
+                target_prompt_color: config.target_prompt_color,
+                dictionary_prompt_color: config.dictionary_prompt_color,
+                part_of_speech_color: config.part_of_speech_color,
+                synonym_color: config.synonym_color,
+                notice_color: config.notice_color,
+                error_color: config.error_color,
+            },
+            history: HistorySection {
+                save_translation_history: config.save_translation_history,
+                history_file: config.history_file,
+            },
+            hotkeys: HotkeysSection {
+                translate_hotkey: config.translate_hotkey,
+            },
+            speech: SpeechSection {
+                enable_text_to_speech: config.enable_text_to_speech,
+                speech_hotkey: config.speech_hotkey,
+                enable_speech_hotkey: config.enable_speech_hotkey,
+                speech_provider: config.speech_provider,
+            },
+            provider_options: config.provider_options,
         }
     }
-    ini
+}
+
+impl From<ConfigFile> for Config {
+    fn from(file: ConfigFile) -> Self {
+        Self {
+            source_language: file.translation.source_language,
+            target_language: file.translation.target_language,
+            show_terminal_on_translate: file.interface.show_terminal_on_translate,
+            auto_hide_terminal_seconds: file.interface.auto_hide_terminal_seconds,
+            show_dictionary: file.dictionary.show_dictionary,
+            spell_check: file.dictionary.spell_check,
+            dictionary_provider: file.dictionary.dictionary_provider,
+            copy_to_clipboard: file.interface.copy_to_clipboard,
+            save_translation_history: file.history.save_translation_history,
+            history_file: file.history.history_file,
+            target_prompt_color: file.colors.target_prompt_color,
+            dictionary_prompt_color: file.colors.dictionary_prompt_color,
+            source_prompt_color: file.colors.source_prompt_color,
+            part_of_speech_color: file.colors.part_of_speech_color,
+            synonym_color: file.colors.synonym_color,
+            notice_color: file.colors.notice_color,
+            error_color: file.colors.error_color,
+            translate_hotkey: file.hotkeys.translate_hotkey,
+            enable_text_to_speech: file.speech.enable_text_to_speech,
+            speech_hotkey: file.speech.speech_hotkey,
+            enable_speech_hotkey: file.speech.enable_speech_hotkey,
+            translate_provider: file.provider.translate_provider,
+            speech_provider: file.speech.speech_provider,
+            provider_options: file.provider_options,
+        }
+    }
+}
+
+/// Parses the contents of `tagent-cli.toml`. A hand-edited `target_language = "Auto"` is
+/// replaced in memory only (with a warning); the file itself is left untouched.
+///
+/// The error (a syntax error, or a value of the wrong type) names the line and column
+/// and shows the offending line.
+fn parse_config(content: &str) -> Result<Config, toml_edit::de::Error> {
+    let file: ConfigFile = toml_edit::de::from_str(content)?;
+    let mut config = Config::from(file);
+    let resolved = LanguagePair::new(&config.source_language, &config.target_language);
+    for notice in &resolved.notices {
+        eprintln!("Warning: {} (target_language in config)", notice);
+    }
+    config.source_language = resolved.source;
+    config.target_language = resolved.target;
+    Ok(config)
+}
+
+/// The commented template a new `tagent-cli.toml` starts from. [`render_config`] fills in
+/// the actual values, so the literal ones here only have to be valid.
+fn config_template() -> String {
+    format!(
+        r#"# Text Translator Configuration File (TOML)
+# This program translates selected text using keyboard shortcuts
+#
+# Usage:
+# 1. Select text in any application
+# 2. Press the translation hotkey (default: Alt+A)
+# 3. Translation will be shown (enable copy_to_clipboard below to also copy it)
+# 4. Type /q or /e in the interactive prompt to exit the program
+#
+# Configuration changes take effect immediately (no restart required),
+# except where noted. Strings are quoted; true/false and numbers are not.
+
+[provider]
+# Translation service provider: a provider profile name (see "Provider profiles"
+# at the end of this file); a built-in provider name works without a profile
+# Supported values: {translate_providers}
+# Default: google
+translate_provider = "google"
+
+[translation]
+# Source language for translation
+# Supported values: Auto, English, Russian, Spanish, French, German, Chinese,
+# Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
+# Use "Auto" for automatic language detection
+source_language = "Auto"
+
+# Target language for translation
+# Supported values: Russian, English, Spanish, French, German, etc.
+target_language = "Russian"
+
+[dictionary]
+# Show dictionary entry for single words instead of simple translation
+# Set to true to show detailed word information (definitions, part of speech, examples)
+# Set to false to always use simple translation
+# This feature works best with English words
+show_dictionary = true
+
+# Check spelling of single words and suggest the correct word if a typo is detected
+# When enabled, misspelled words are automatically corrected and the correction is shown
+# Set to false to disable spell checking (typos will fall back to simple translation)
+spell_check = true
+
+# Dictionary lookup backend (a provider profile name), independent of translate_provider
+# Supported values: {dictionary_providers}
+# Default: google
+# Note: Requires application restart to take effect
+dictionary_provider = "google"
+
+[interface]
+# Show terminal window on top when translating
+# Set to true to show terminal window during translation
+# Set to false to keep terminal in background
+show_terminal_on_translate = true
+
+# Auto-hide terminal after translation (in seconds)
+# Set to 0 to keep terminal visible (no auto-hide)
+# Set to any number > 0 to auto-hide after that many seconds
+# Example: 3 = hide terminal after 3 seconds
+auto_hide_terminal_seconds = 3
+
+# Automatically copy translation result to clipboard
+# Set to true to automatically copy result to clipboard after translation
+# Set to false to display result only (without copying to clipboard)
+# When enabled, you can paste the result anywhere with Ctrl+V
+copy_to_clipboard = false
+
+[colors]
+# Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+# BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta,
+# BrightCyan, BrightWhite. Use "None" to disable a color.
+
+# Source language prompt (e.g., "[Auto]: ", "[English]: "). Default: None (no color)
+source_prompt_color = "None"
+
+# Target language prompt (e.g., "[Russian]: "). Default: BrightYellow
+target_prompt_color = "BrightYellow"
+
+# Dictionary prompt (e.g., "[Word]: "). Default: BrightYellow
+dictionary_prompt_color = "BrightYellow"
+
+# Colors used inside a dictionary article and for status messages.
+# Part-of-speech labels (e.g., "Noun", "Существительное"). Default: Cyan
+part_of_speech_color = "Cyan"
+# Synonym brackets (e.g., "[fierce, brutal]"). Default: Green
+synonym_color = "Green"
+# Spelling-correction notice (e.g., "Showing translation for word violent"). Default: Magenta
+notice_color = "Magenta"
+# Error messages (translation, speech, clipboard, history). Default: Red
+error_color = "Red"
+
+[history]
+# Save translation history to file
+# Set to true to save all translations with timestamps to a text file
+# Set to false to disable history logging
+# History includes original text, translation, language direction, and timestamp
+save_translation_history = false
+
+# History file path
+# File where translation history will be saved
+# Path can be absolute or relative to the program directory
+# File will be created automatically if it doesn't exist
+# On Windows, write backslashes doubled ("C:\\Users\\...") or use single quotes
+history_file = ""
+
+[hotkeys]
+# Hotkey for translation
+# Supported formats:
+#   - Single keys: F1-F12 ONLY (other keys must use modifiers)
+#   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, Win+T, etc.
+#     NOTE: Shift+Key is NOT allowed (interferes with text input)
+#     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
+#   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.
+# Examples:
+#   translate_hotkey = "Alt+A" (default)
+#   translate_hotkey = "Ctrl+Ctrl"
+#   translate_hotkey = "F9"
+#   translate_hotkey = "Alt+Space"
+#   translate_hotkey = "Ctrl+Shift+C"
+#   translate_hotkey = "F8+F8"
+# Note: Hotkey changes require application restart to take effect
+translate_hotkey = "Alt+A"
+
+[speech]
+# Enable text-to-speech functionality
+# Set to true to enable TTS for selected text (default)
+# Set to false to disable TTS completely
+enable_text_to_speech = true
+
+# Hotkey for text-to-speech
+# Supported formats (same as translate_hotkey):
+#   - Single keys: F1-F12 ONLY
+#   - Modifier combinations: Alt+S, Ctrl+Shift+S, etc.
+#   - Double-press: Alt+Alt, Shift+Shift, etc.
+# Examples:
+#   speech_hotkey = "Alt+S"
+#   speech_hotkey = "F10"
+#   speech_hotkey = "Ctrl+Shift+S"
+# Note: Hotkey changes require application restart to take effect
+speech_hotkey = "Alt+S"
+
+# Enable or disable the speech hotkey
+# Set to true to enable the speech hotkey
+# Set to false to disable speech hotkey
+enable_speech_hotkey = true
+
+# Speech synthesis backend (a provider profile name), independent of translate_provider
+# Supported values: {speech_providers}
+# Default: google
+speech_provider = "google"
+
+# Provider profiles
+# One [provider_options.<name>] table per profile. translate_provider,
+# dictionary_provider and speech_provider take a profile name; a built-in name
+# (e.g. google) works without a table. The optional `type` key picks the provider
+# kind (default: the profile name), so several configured instances of one kind can
+# coexist. Keys are passed to the provider as they are (api_key, endpoint, model,
+# timeout_secs, max_retries, ...), and every value is a quoted string, numbers too.
+# An environment variable TAGENT_<NAME>_<KEY> (e.g. TAGENT_DEEPL_API_KEY) overrides a key.
+# Example:
+#   [provider_options.google]
+#   timeout_secs = "15"
+#   max_retries = "0"
+"#,
+        translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
+        dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
+        speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
+    )
+}
+
+/// A complete, commented `tagent-cli.toml` holding `config`'s values: the template, with
+/// every value replaced and the provider profiles appended.
+fn render_config(config: &Config) -> String {
+    let mut doc: DocumentMut = config_template()
+        .parse()
+        .expect("the config template is valid TOML");
+    let values = toml_edit::ser::to_document(&ConfigFile::from(config))
+        .expect("the configuration serializes to TOML");
+    for (section, item) in values.iter() {
+        let Some(source) = item.as_table_like() else {
+            continue;
+        };
+        if section == "provider_options" {
+            insert_profiles(&mut doc, source);
+            continue;
+        }
+        for (key, value) in source.iter() {
+            if let Some(value) = value.as_value() {
+                set_value(&mut doc, section, key, value.clone())
+                    .expect("the config template's sections are tables");
+            }
+        }
+    }
+    doc.to_string()
+}
+
+/// Appends one `[provider_options.<name>]` table per profile to `doc`, under an implicit
+/// `provider_options` table (so no empty `[provider_options]` header is written). The
+/// template's closing comment, which explains profiles, is moved above the first one.
+fn insert_profiles(doc: &mut DocumentMut, source: &dyn TableLike) {
+    let mut profiles = Table::new();
+    profiles.set_implicit(true);
+    for (name, options) in source.iter() {
+        let mut table = Table::new();
+        for (key, value) in options.as_table_like().into_iter().flat_map(|t| t.iter()) {
+            if let Some(value) = value.as_value() {
+                let mut value = value.clone();
+                value.decor_mut().clear();
+                table.insert(key, Item::Value(value));
+            }
+        }
+        profiles.insert(name, Item::Table(table));
+    }
+    if let Some((_, first)) = profiles.iter_mut().next() {
+        let comment = doc.trailing().as_str().unwrap_or_default().to_string();
+        if let Some(first) = first.as_table_mut() {
+            first.decor_mut().set_prefix(format!("{comment}\n"));
+        }
+        doc.set_trailing("");
+    }
+    doc.insert("provider_options", Item::Table(profiles));
+}
+
+/// Sets `[section] key` in `doc` to `value`, creating the section if needed. An existing
+/// key keeps its place and its comments: the ones above it belong to the key, and the
+/// inline one after it is copied from the old value.
+fn set_value(
+    doc: &mut DocumentMut,
+    section: &str,
+    key: &str,
+    mut value: Value,
+) -> Result<(), String> {
+    let table = doc
+        .as_table_mut()
+        .entry(section)
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_like_mut()
+        .ok_or_else(|| format!("`{section}` is not a table"))?;
+    match table.get_mut(key) {
+        Some(item) => {
+            if let Some(old) = item.as_value() {
+                *value.decor_mut() = old.decor().clone();
+            }
+            *item = Item::Value(value);
+        }
+        None => {
+            value.decor_mut().clear();
+            table.insert(key, Item::Value(value));
+        }
+    }
+    Ok(())
+}
+
+/// `content` (an existing `tagent-cli.toml`) with the languages set to `config`'s, the
+/// only values the app itself changes. Everything else — comments, order, unknown keys,
+/// provider profiles — stays as it is.
+fn with_languages(content: &str, config: &Config) -> Result<String, String> {
+    let mut doc: DocumentMut = content.parse().map_err(|e| format!("{e}"))?;
+    set_value(
+        &mut doc,
+        "translation",
+        "source_language",
+        Value::from(config.source_language.as_str()),
+    )?;
+    set_value(
+        &mut doc,
+        "translation",
+        "target_language",
+        Value::from(config.target_language.as_str()),
+    )?;
+    Ok(doc.to_string())
 }
 
 impl Default for Config {
@@ -305,13 +800,13 @@ impl Default for Config {
     }
 }
 
-/// Default `[Colors]` `PartOfSpeechColor`.
+/// Default `[colors]` `part_of_speech_color`.
 const DEFAULT_PART_OF_SPEECH_COLOR: &str = "Cyan";
-/// Default `[Colors]` `SynonymColor`.
+/// Default `[colors]` `synonym_color`.
 const DEFAULT_SYNONYM_COLOR: &str = "Green";
-/// Default `[Colors]` `NoticeColor`.
+/// Default `[colors]` `notice_color`.
 const DEFAULT_NOTICE_COLOR: &str = "Magenta";
-/// Default `[Colors]` `ErrorColor`.
+/// Default `[colors]` `error_color`.
 const DEFAULT_ERROR_COLOR: &str = "Red";
 
 /// Target language substituted wherever `"Auto"` would otherwise become the
@@ -397,8 +892,8 @@ fn is_auto(language: &str) -> bool {
 
 /// Formats a provider factory error for display. When the configured name is unknown, it
 /// appends the supported values and the setting to change (`setting` is the config key,
-/// e.g. `"SpeechProvider"`), because `tagent`'s own message only echoes the bad name. For
-/// invalid options it points at the profile's `[Provider:<profile>]` section and its
+/// e.g. `"speech_provider"`), because `tagent`'s own message only echoes the bad name. For
+/// invalid options it points at the profile's `[provider_options.<profile>]` table and its
 /// environment variables. Any other error is shown as is.
 pub fn provider_error_message(
     error: &tagent::error::Error,
@@ -412,7 +907,7 @@ pub fn provider_error_message(
             supported.join(", ")
         ),
         tagent::error::Error::InvalidOptions(_) => format!(
-            "{error} (check [{PROVIDER_SECTION_PREFIX}{}] in tagent-cli.conf, or the {}<KEY> environment variables)",
+            "{error} (check [provider_options.{}] in tagent-cli.toml, or the {}<KEY> environment variables)",
             profile.to_lowercase(),
             providers::env_var_name(profile, "")
         ),
@@ -422,7 +917,7 @@ pub fn provider_error_message(
 
 /// Thread-safe configuration manager with live-reload support.
 ///
-/// `ConfigManager` loads `tagent-cli.conf` on construction and can reload it at
+/// `ConfigManager` loads `tagent-cli.toml` on construction and can reload it at
 /// runtime without restarting the application. Use [`ConfigManager::new`] with
 /// the path returned by [`ConfigManager::get_default_config_path`].
 ///
@@ -441,10 +936,10 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-    /// Returns the platform-default path for `tagent-cli.conf`, creating parent directories as needed.
+    /// Returns the platform-default path for `tagent-cli.toml`, creating parent directories as needed.
     ///
-    /// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf`
-    /// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
+    /// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.toml`
+    /// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
     pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
@@ -455,7 +950,7 @@ impl ConfigManager {
             fs::create_dir_all(&config_dir)?;
         }
 
-        Ok(config_dir.join("tagent-cli.conf"))
+        Ok(config_dir.join("tagent-cli.toml"))
     }
 
     /// Returns the platform-default path for the interactive-mode line-editing history file,
@@ -506,10 +1001,7 @@ impl ConfigManager {
 
     /// Create default configuration file
     fn create_default_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let default_config = Config::default();
-        let ini_content = self.create_ini_content(&default_config);
-
-        write_config_file(&self.config_path, &ini_content)?;
+        write_config_file(&self.config_path, &render_config(&Config::default()))?;
         println!("Created default configuration file: {}", self.config_path);
 
         // Update last modified time
@@ -518,393 +1010,17 @@ impl ConfigManager {
         Ok(())
     }
 
-    /// Create INI format content
-    fn create_ini_content(&self, config: &Config) -> String {
-        let mut ini = format!(
-            r#"; Text Translator Configuration File
-; This program translates selected text using keyboard shortcuts
-;
-; Usage:
-; 1. Select text in any application
-; 2. Press the translation hotkey (default: Alt+A)
-; 3. Translation will be shown (enable CopyToClipboard below to also copy it)
-; 4. Type /q or /e in the interactive prompt to exit the program
-;
-; Configuration changes take effect immediately (no restart required)
-
-[Provider]
-; Translation service provider
-; Supported values: {translate_providers}
-; Default: google
-TranslateProvider = {}
-
-[Translation]
-; Source language for translation
-; Supported values: Auto, English, Russian, Spanish, French, German, Chinese,
-; Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
-; Use "Auto" for automatic language detection
-SourceLanguage = {}
-
-; Target language for translation
-; Supported values: Russian, English, Spanish, French, German, etc.
-TargetLanguage = {}
-
-[Dictionary]
-; Show dictionary entry for single words instead of simple translation
-; Set to true to show detailed word information (definitions, part of speech, examples)
-; Set to false to always use simple translation
-; This feature works best with English words
-ShowDictionary = {}
-
-; Check spelling of single words and suggest the correct word if a typo is detected
-; When enabled, misspelled words are automatically corrected and the correction is shown
-; Set to false to disable spell checking (typos will fall back to simple translation)
-SpellCheck = {}
-
-; Dictionary lookup backend, independent of TranslateProvider
-; Supported values: {dictionary_providers}
-; Default: google
-; Note: Requires application restart to take effect
-DictionaryProvider = {}
-
-[Interface]
-; Show terminal window on top when translating
-; Set to true to show terminal window during translation
-; Set to false to keep terminal in background
-ShowTerminalOnTranslate = {}
-
-; Auto-hide terminal after translation (in seconds)
-; Set to 0 to keep terminal visible (no auto-hide)
-; Set to any number > 0 to auto-hide after that many seconds
-; Example: 3 = hide terminal after 3 seconds
-AutoHideTerminalSeconds = {}
-
-; Automatically copy translation result to clipboard
-; Set to true to automatically copy result to clipboard after translation
-; Set to false to display result only (without copying to clipboard)
-; When enabled, you can paste the result anywhere with Ctrl+V
-CopyToClipboard = {}
-
-[Colors]
-; Color for source language prompt (e.g., "[Auto]: ", "[English]: ")
-; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
-; Use "None" to disable color
-; Default: None (no color)
-SourcePromptColor = {}
-
-; Color for target language prompt (e.g., "[Russian]: ")
-; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
-; Use "None" to disable color
-; Default: BrightYellow
-TargetPromptColor = {}
-
-; Color for dictionary prompt (e.g., "[Word]: ")
-; Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-; BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite
-; Use "None" to disable color
-; Default: BrightYellow
-DictionaryPromptColor = {}
-
-; Colors used inside a dictionary article and for status messages.
-; Same supported values as above; use "None" to disable a color.
-; Part-of-speech labels (e.g., "Noun", "Существительное"). Default: Cyan
-PartOfSpeechColor = {}
-; Synonym brackets (e.g., "[fierce, brutal]"). Default: Green
-SynonymColor = {}
-; Spelling-correction notice (e.g., "Showing translation for word violent"). Default: Magenta
-NoticeColor = {}
-; Error messages (translation, speech, clipboard, history). Default: Red
-ErrorColor = {}
-
-[History]
-; Save translation history to file
-; Set to true to save all translations with timestamps to a text file
-; Set to false to disable history logging
-; History includes original text, translation, language direction, and timestamp
-SaveTranslationHistory = {}
-
-; History file path
-; File where translation history will be saved
-; Path can be absolute or relative to the program directory
-; File will be created automatically if it doesn't exist
-HistoryFile = {}
-
-[Hotkeys]
-; Hotkey for translation
-; Supported formats:
-;   - Single keys: F1-F12 ONLY (other keys must use modifiers)
-;   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, Win+T, etc.
-;     NOTE: Shift+Key is NOT allowed (interferes with text input)
-;     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
-;   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.
-; Examples:
-;   TranslateHotkey = Alt+A (default)
-;   TranslateHotkey = Ctrl+Ctrl
-;   TranslateHotkey = F9
-;   TranslateHotkey = Alt+Space
-;   TranslateHotkey = Ctrl+Shift+C
-;   TranslateHotkey = F8+F8
-; Note: Hotkey changes require application restart to take effect
-TranslateHotkey = {}
-
-[Speech]
-; Enable text-to-speech functionality
-; Set to true to enable TTS for selected text (default)
-; Set to false to disable TTS completely
-EnableTextToSpeech = {}
-
-; Hotkey for text-to-speech
-; Supported formats (same as alternative hotkey):
-;   - Single keys: F1-F12 ONLY
-;   - Modifier combinations: Alt+S, Ctrl+Shift+S, etc.
-;   - Double-press: Alt+Alt, Shift+Shift, etc.
-; Examples:
-;   SpeechHotkey = Alt+S
-;   SpeechHotkey = F10
-;   SpeechHotkey = Ctrl+Shift+S
-; Note: Hotkey changes require application restart to take effect
-SpeechHotkey = {}
-
-; Enable or disable the speech hotkey
-; Set to true to enable the speech hotkey
-; Set to false to disable speech hotkey
-EnableSpeechHotkey = {}
-
-; Speech synthesis backend, independent of TranslateProvider
-; Supported values: {speech_providers}
-; Default: google
-SpeechProvider = {}
-"#,
-            config.translate_provider,
-            config.source_language,
-            config.target_language,
-            config.show_dictionary,
-            config.spell_check,
-            config.dictionary_provider,
-            config.show_terminal_on_translate,
-            config.auto_hide_terminal_seconds,
-            config.copy_to_clipboard,
-            config.source_prompt_color,
-            config.target_prompt_color,
-            config.dictionary_prompt_color,
-            config.part_of_speech_color,
-            config.synonym_color,
-            config.notice_color,
-            config.error_color,
-            config.save_translation_history,
-            config.history_file,
-            config.translate_hotkey,
-            config.enable_text_to_speech,
-            config.speech_hotkey,
-            config.enable_speech_hotkey,
-            config.speech_provider,
-            // Named (not positional) so adding them can't shift the positional values.
-            translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
-            dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
-            speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
-        );
-        ini.push_str(&provider_sections_ini(&config.provider_options));
-        ini
-    }
-
-    /// Load configuration from INI file
+    /// Load configuration from the TOML file. On an error the current configuration stays
+    /// in effect; the message names the file, and the line and column of the problem.
     fn load_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let content = fs::read_to_string(&self.config_path)?;
-        let parsed_config = self.parse_ini(&content)?;
-
-        let source_lang = parsed_config
-            .get("Translation")
-            .and_then(|section| section.get("SourceLanguage"))
-            .cloned()
-            .unwrap_or_else(|| "Auto".to_string());
-
-        let target_lang = parsed_config
-            .get("Translation")
-            .and_then(|section| section.get("TargetLanguage"))
-            .cloned()
-            .unwrap_or_else(|| "Russian".to_string());
-        // A hand-edited `TargetLanguage = Auto` is replaced in memory only; the file
-        // itself is left untouched.
-        let resolved = LanguagePair::new(&source_lang, &target_lang);
-        for notice in &resolved.notices {
-            eprintln!("Warning: {} (TargetLanguage in config)", notice);
-        }
-        let (source_lang, target_lang) = (resolved.source, resolved.target);
-
-        let show_dictionary = parsed_config
-            .get("Dictionary")
-            .and_then(|section| section.get("ShowDictionary"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
-        let spell_check = parsed_config
-            .get("Dictionary")
-            .and_then(|section| section.get("SpellCheck"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
-        let dictionary_provider = parsed_config
-            .get("Dictionary")
-            .and_then(|section| section.get("DictionaryProvider"))
-            .cloned()
-            .unwrap_or_else(|| "google".to_string());
-
-        let show_terminal = parsed_config
-            .get("Interface")
-            .and_then(|section| section.get("ShowTerminalOnTranslate"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
-        let auto_hide_seconds = parsed_config
-            .get("Interface")
-            .and_then(|section| section.get("AutoHideTerminalSeconds"))
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(3);
-
-        // Try new location first, fallback to old location for backward compatibility
-        let copy_to_clipboard = parsed_config
-            .get("Interface")
-            .and_then(|section| section.get("CopyToClipboard"))
-            .or_else(|| {
-                parsed_config
-                    .get("Translation")
-                    .and_then(|section| section.get("CopyToClipboard"))
-            })
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
-
-        let save_translation_history = parsed_config
-            .get("History")
-            .and_then(|section| section.get("SaveTranslationHistory"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
-
-        let history_file = parsed_config
-            .get("History")
-            .and_then(|section| section.get("HistoryFile"))
-            .cloned()
-            .unwrap_or_else(|| "translation_history.txt".to_string());
-
-        // Color settings
-        // Try new names first, fallback to old names for backward compatibility
-        let target_prompt_color = parsed_config
-            .get("Colors")
-            .and_then(|section| {
-                section
-                    .get("TargetPromptColor")
-                    .or_else(|| section.get("TranslationPromptColor"))
-            })
-            .cloned()
-            .unwrap_or_else(|| "BrightYellow".to_string());
-
-        let dictionary_prompt_color = parsed_config
-            .get("Colors")
-            .and_then(|section| section.get("DictionaryPromptColor"))
-            .cloned()
-            .unwrap_or_else(|| "BrightYellow".to_string());
-
-        let source_prompt_color = parsed_config
-            .get("Colors")
-            .and_then(|section| {
-                section
-                    .get("SourcePromptColor")
-                    .or_else(|| section.get("AutoPromptColor"))
-            })
-            .cloned()
-            .unwrap_or_else(|| "None".to_string());
-
-        let color = |key: &str, default: &str| {
-            parsed_config
-                .get("Colors")
-                .and_then(|section| section.get(key))
-                .cloned()
-                .unwrap_or_else(|| default.to_string())
-        };
-        let part_of_speech_color = color("PartOfSpeechColor", DEFAULT_PART_OF_SPEECH_COLOR);
-        let synonym_color = color("SynonymColor", DEFAULT_SYNONYM_COLOR);
-        let notice_color = color("NoticeColor", DEFAULT_NOTICE_COLOR);
-        let error_color = color("ErrorColor", DEFAULT_ERROR_COLOR);
-
-        // Hotkey settings
-        let translate_hotkey = parsed_config
-            .get("Hotkeys")
-            .and_then(|section| section.get("TranslateHotkey"))
-            .cloned()
-            .unwrap_or_else(|| "Alt+A".to_string());
-
-        // Speech settings
-        let enable_text_to_speech = parsed_config
-            .get("Speech")
-            .and_then(|section| section.get("EnableTextToSpeech"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
-        let speech_hotkey = parsed_config
-            .get("Speech")
-            .and_then(|section| section.get("SpeechHotkey"))
-            .cloned()
-            .unwrap_or_else(|| "Alt+S".to_string());
-
-        let enable_speech_hotkey = parsed_config
-            .get("Speech")
-            .and_then(|section| section.get("EnableSpeechHotkey"))
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(true);
-
-        // Provider settings
-        let translate_provider = parsed_config
-            .get("Provider")
-            .and_then(|section| section.get("TranslateProvider"))
-            .cloned()
-            .unwrap_or_else(|| "google".to_string());
-
-        let speech_provider = parsed_config
-            .get("Speech")
-            .and_then(|section| section.get("SpeechProvider"))
-            .cloned()
-            .unwrap_or_else(|| "google".to_string());
-
-        // `[Provider:<name>]` sections, the prefix matched case-insensitively: a section
-        // that isn't recognized here would be dropped by the next `/save`.
-        let mut raw_profiles: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-        for (section, values) in &parsed_config {
-            if let Some(profile) = strip_prefix_ignore_case(section, PROVIDER_SECTION_PREFIX) {
-                raw_profiles
-                    .entry(profile.to_string())
-                    .or_default()
-                    .extend(values.iter().map(|(k, v)| (k.clone(), v.clone())));
-            }
-        }
-        let provider_options = ProviderProfiles::from(raw_profiles);
-
-        let new_config = Config {
-            source_language: source_lang,
-            target_language: target_lang,
-            copy_to_clipboard,
-            show_dictionary,
-            spell_check,
-            dictionary_provider,
-            show_terminal_on_translate: show_terminal,
-            auto_hide_terminal_seconds: auto_hide_seconds,
-            save_translation_history,
-            history_file,
-            target_prompt_color,
-            dictionary_prompt_color,
-            source_prompt_color,
-            part_of_speech_color,
-            synonym_color,
-            notice_color,
-            error_color,
-            translate_hotkey,
-            enable_text_to_speech,
-            speech_hotkey,
-            enable_speech_hotkey,
-            translate_provider,
-            speech_provider,
-            provider_options,
-        };
+        let new_config = parse_config(&content).map_err(|e| {
+            format!(
+                "invalid configuration file {}:\n{}",
+                self.config_path,
+                e.to_string().trim_end()
+            )
+        })?;
 
         if let Ok(mut config) = self.config.lock() {
             *config = new_config;
@@ -915,49 +1031,23 @@ SpeechProvider = {}
         Ok(())
     }
 
-    /// Parse INI format content
-    fn parse_ini(
-        &self,
-        content: &str,
-    ) -> Result<HashMap<String, HashMap<String, String>>, Box<dyn Error + Send + Sync>> {
-        let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
-        let mut current_section: Option<String> = None;
-
-        for line in content.lines() {
-            let line = line.trim();
-
-            // Skip empty lines and comments
-            if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
-                continue;
-            }
-
-            // Section header
-            if line.starts_with('[') && line.ends_with(']') {
-                let section_name = line[1..line.len() - 1].to_string();
-                current_section = Some(section_name.clone());
-                sections.entry(section_name).or_default();
-            }
-            // Key-value pair
-            else if let Some(eq_pos) = line.find('=') {
-                let key = line[..eq_pos].trim().to_string();
-                let value = line[eq_pos + 1..].trim().to_string();
-
-                if let Some(section_name) = &current_section {
-                    if let Some(section) = sections.get_mut(section_name) {
-                        section.insert(key, value);
-                    }
-                }
-            }
-        }
-
-        Ok(sections)
-    }
-
-    /// Save the current in-memory configuration to the config file.
+    /// Save the current languages to the config file, editing it in place so comments,
+    /// key order, unknown keys and provider profiles are kept. A missing file is written
+    /// in full from the current configuration.
     pub fn save_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.get_config();
-        let ini_content = self.create_ini_content(&config);
-        write_config_file(&self.config_path, &ini_content)?;
+        let content = match fs::read_to_string(&self.config_path) {
+            Ok(existing) => with_languages(&existing, &config).map_err(|e| {
+                format!(
+                    "can't update configuration file {}:\n{}",
+                    self.config_path,
+                    e.trim_end()
+                )
+            })?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => render_config(&config),
+            Err(e) => return Err(e.into()),
+        };
+        write_config_file(&self.config_path, &content)?;
         self.update_last_modified_time()?;
         Ok(())
     }
@@ -1088,7 +1178,7 @@ SpeechProvider = {}
         println!("   - Select text anywhere in Windows");
         println!("   - Press configured hotkey (default: Alt+A)");
         println!("   - Result copied to clipboard automatically");
-        println!("   - Configure hotkeys in tagent-cli.conf [Hotkeys] section");
+        println!("   - Configure hotkeys in tagent-cli.toml [hotkeys] section");
         println!();
 
         println!("INTERACTIVE COMMANDS (must start with slash):");
@@ -1114,29 +1204,29 @@ SpeechProvider = {}
         if let Ok(config_path) = ConfigManager::get_default_config_path() {
             println!("  Config file: {}", config_path.display());
         } else {
-            println!("  Config file: tagent-cli.conf (typically in %APPDATA%\\tagent-cli\\)");
+            println!("  Config file: tagent-cli.toml (typically in %APPDATA%\\tagent-cli\\)");
         }
         println!();
-        println!("  Edit 'tagent-cli.conf' to change translation settings:");
-        println!("  - SourceLanguage: Source language (Auto, English, Russian, etc.)");
-        println!("  - TargetLanguage: Target language (Russian, English, etc.)");
+        println!("  Edit 'tagent-cli.toml' to change translation settings:");
+        println!("  - source_language: Source language (Auto, English, Russian, etc.)");
+        println!("  - target_language: Target language (Russian, English, etc.)");
         println!(
-            "  - TranslateProvider: Translation backend ({})",
+            "  - translate_provider: Translation backend ({})",
             tagent::providers::TRANSLATION_PROVIDERS.join(", ")
         );
-        println!("  - ShowDictionary: Enable dictionary lookup for single words");
+        println!("  - show_dictionary: Enable dictionary lookup for single words");
         println!(
-            "  - DictionaryProvider: Dictionary backend ({})",
+            "  - dictionary_provider: Dictionary backend ({})",
             tagent::providers::DICTIONARY_PROVIDERS.join(", ")
         );
-        println!("  - CopyToClipboard: Copy results to clipboard");
-        println!("  - TranslateHotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
-        println!("  - SpeechHotkey: Hotkey for text-to-speech (Alt+S, F10, etc.)");
+        println!("  - copy_to_clipboard: Copy results to clipboard");
+        println!("  - translate_hotkey: Custom hotkey (Ctrl+Ctrl, Alt+Q, F9, etc.)");
+        println!("  - speech_hotkey: Hotkey for text-to-speech (Alt+S, F10, etc.)");
         println!(
-            "  - SpeechProvider: Text-to-speech backend ({})",
+            "  - speech_provider: Text-to-speech backend ({})",
             tagent::providers::SPEECH_PROVIDERS.join(", ")
         );
-        println!("  - SaveTranslationHistory: Save all translations to file");
+        println!("  - save_translation_history: Save all translations to file");
         println!();
 
         println!("FEATURES:");
@@ -1156,100 +1246,18 @@ SpeechProvider = {}
     /// Display current configuration (unified for CLI and Interactive modes)
     pub fn display_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Reload config to get latest values
-        self.check_and_reload()?;
+        self.reload_or_warn();
         let config = self.get_config();
-        let (source_code, target_code) = self.get_language_codes();
 
         println!();
         println!("=== Current Configuration ===");
-        println!("Translation Provider: {}", config.translate_provider);
-        println!("Dictionary Provider: {}", config.dictionary_provider);
-        println!("Speech Provider: {}", config.speech_provider);
-        println!("Provider profiles:");
-        for line in config.provider_profile_lines(|var| std::env::var(var).ok()) {
+        for line in config.display_lines(|var| std::env::var(var).ok()) {
             println!("{line}");
         }
         println!();
-        println!(
-            "Source Language: {} ({})",
-            config.source_language, source_code
-        );
-        println!(
-            "Target Language: {} ({})",
-            config.target_language, target_code
-        );
-        println!(
-            "Show Dictionary: {}",
-            if config.show_dictionary {
-                "Enabled"
-            } else {
-                "Disabled"
-            }
-        );
-        println!(
-            "Copy to Clipboard: {}",
-            if config.copy_to_clipboard {
-                "Enabled"
-            } else {
-                "Disabled"
-            }
-        );
-        println!();
-        println!("Translation Hotkey: {}", config.translate_hotkey);
-        println!(
-            "Show Terminal on Translate: {}",
-            if config.show_terminal_on_translate {
-                "Enabled"
-            } else {
-                "Disabled"
-            }
-        );
-        println!(
-            "Auto-hide Terminal: {}",
-            if config.auto_hide_terminal_seconds == 0 {
-                "Disabled".to_string()
-            } else {
-                format!("{} seconds", config.auto_hide_terminal_seconds)
-            }
-        );
-        println!();
-        println!(
-            "Text-to-Speech: {}",
-            if config.enable_text_to_speech {
-                "Enabled"
-            } else {
-                "Disabled"
-            }
-        );
-        println!("Speech Hotkey: {}", config.speech_hotkey);
-        println!(
-            "Speech Hotkey Enabled: {}",
-            if config.enable_speech_hotkey {
-                "Yes"
-            } else {
-                "No"
-            }
-        );
-        println!();
-        println!(
-            "Save Translation History: {}",
-            if config.save_translation_history {
-                "Enabled"
-            } else {
-                "Disabled"
-            }
-        );
-        println!("History File: {}", config.history_file);
-        println!();
-
-        // Show config file location
-        if let Ok(config_path) = ConfigManager::get_default_config_path() {
-            println!("Config file: {}", config_path.display());
-        } else {
-            println!("Config file: tagent-cli.conf");
-        }
-        println!("Edit this file to change settings (changes take effect immediately)");
-        println!("============================");
+        println!("# Config file: {}", self.config_path);
+        println!("# Edit this file to change settings (changes take effect immediately)");
+        println!("=============================");
         println!();
 
         Ok(())
@@ -1276,11 +1284,25 @@ SpeechProvider = {}
         };
 
         if should_reload {
-            self.load_config()?;
+            // Recorded before loading, so a broken edit is reported once rather than on
+            // every call until the file changes again.
+            if let Ok(mut last_modified) = self.last_modified.lock() {
+                *last_modified = Some(current_modified);
+            }
+            self.load_config()
+                .map_err(|e| format!("{e}\n(keeping the previous settings)"))?;
             return Ok(true);
         }
 
         Ok(false)
+    }
+
+    /// [`Self::check_and_reload`], printing a warning instead of returning an error: for
+    /// callers that just go on with the configuration currently in effect.
+    pub fn reload_or_warn(&self) {
+        if let Err(e) = self.check_and_reload() {
+            eprintln!("Warning: {e}");
+        }
     }
 
     /// Update last modified time
@@ -1425,7 +1447,7 @@ pub fn colorize(label: &str, color_name: &str) -> String {
 }
 
 /// Render a dictionary article for the terminal, coloring each span per the
-/// `[Colors]` settings. The clipboard and the history file get
+/// `[colors]` settings. The clipboard and the history file get
 /// [`tagent::article::to_plain`] of the same lines instead, so no escape codes
 /// ever reach them.
 pub fn render_article(lines: &[tagent::article::Line], config: &Config) -> String {
@@ -1694,16 +1716,16 @@ mod tests {
         assert!(pair.notices.is_empty());
     }
 
-    /// A hand-edited `TargetLanguage = Auto` is replaced in memory on load.
+    /// A hand-edited `target_language = "Auto"` is replaced in memory on load.
     #[test]
     fn test_load_config_replaces_auto_target_language() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_auto_target_{}.conf",
+            "tagent_test_auto_target_{}.toml",
             std::process::id()
         ));
         fs::write(
             &path,
-            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Auto\n",
+            "[translation]\nsource_language = \"Auto\"\ntarget_language = \"Auto\"\n",
         )
         .unwrap();
 
@@ -1719,7 +1741,7 @@ mod tests {
         // The file itself is not rewritten.
         assert!(fs::read_to_string(&path)
             .unwrap()
-            .contains("TargetLanguage = Auto"));
+            .contains("target_language = \"Auto\""));
 
         let _ = fs::remove_file(&path);
     }
@@ -1902,12 +1924,12 @@ mod tests {
     #[test]
     fn test_load_config_missing_speech_section() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_missing_speech_{}.conf",
+            "tagent_test_missing_speech_{}.toml",
             std::process::id()
         ));
         fs::write(
             &path,
-            "[Translation]\nSourceLanguage = Auto\nTargetLanguage = Russian\n",
+            "[translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n",
         )
         .unwrap();
 
@@ -1932,10 +1954,10 @@ mod tests {
         assert_eq!(Config::default().speech_hotkey, "Alt+S");
 
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_speech_hotkey_default_{}.conf",
+            "tagent_test_speech_hotkey_default_{}.toml",
             std::process::id()
         ));
-        fs::write(&path, "[Speech]\nEnableTextToSpeech = true\n").unwrap();
+        fs::write(&path, "[speech]\nenable_text_to_speech = true\n").unwrap();
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
             config: Arc::new(Mutex::new(Config::default())),
@@ -1945,10 +1967,10 @@ mod tests {
         assert_eq!(manager.get_config().speech_hotkey, "Alt+S");
         let _ = fs::remove_file(&path);
 
-        let generated = manager.create_ini_content(&Config::default());
-        // Anchored to the start of a line so the commented example (`;   SpeechHotkey = ...`)
+        let generated = render_config(&Config::default());
+        // Anchored to the start of a line so the commented example (`#   speech_hotkey = ...`)
         // cannot satisfy it: this must be the live setting.
-        assert!(generated.contains("\nSpeechHotkey = Alt+S\n"));
+        assert!(generated.contains("\nspeech_hotkey = \"Alt+S\"\n"));
         assert!(
             !generated.contains("Alt+E"),
             "generated config still mentions the old Alt+E default"
@@ -1958,10 +1980,10 @@ mod tests {
     #[test]
     fn test_load_config_explicit_speech_provider_is_respected() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_explicit_speech_provider_{}.conf",
+            "tagent_test_explicit_speech_provider_{}.toml",
             std::process::id()
         ));
-        fs::write(&path, "[Speech]\nSpeechProvider = other\n").unwrap();
+        fs::write(&path, "[speech]\nspeech_provider = \"other\"\n").unwrap();
 
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
@@ -1978,45 +2000,15 @@ mod tests {
     }
 
     #[test]
-    fn test_generated_config_roundtrips_speech_provider() {
-        let path = std::env::temp_dir().join(format!(
-            "tagent_test_roundtrip_speech_provider_{}.conf",
-            std::process::id()
-        ));
-        let config = Config {
-            speech_provider: "roundtrip".to_string(),
-            ..Config::default()
-        };
-        let manager = ConfigManager {
-            config_path: path.to_str().unwrap().to_string(),
-            config: Arc::new(Mutex::new(Config::default())),
-            last_modified: Arc::new(Mutex::new(None)),
-        };
-        fs::write(&path, manager.create_ini_content(&config)).unwrap();
-        manager.load_config().unwrap();
-
-        let loaded = manager.get_config();
-        assert_eq!(loaded.speech_provider, "roundtrip");
-        // Every other value must survive the positional `format!` template unshifted.
-        assert_eq!(loaded.translate_provider, config.translate_provider);
-        assert_eq!(loaded.enable_text_to_speech, config.enable_text_to_speech);
-        assert_eq!(loaded.speech_hotkey, config.speech_hotkey);
-        assert_eq!(loaded.enable_speech_hotkey, config.enable_speech_hotkey);
-        assert_eq!(loaded.translate_hotkey, config.translate_hotkey);
-
-        let _ = fs::remove_file(&path);
-    }
-
-    #[test]
     fn test_load_config_dictionary_provider_defaults_when_absent() {
-        // Both when the whole `[Dictionary]` section is missing and when the section is
+        // Both when the whole `[dictionary]` section is missing and when the section is
         // present without the key (an older config file).
         for (label, content) in [
-            ("no_section", "[Translation]\nSourceLanguage = Auto\n"),
-            ("no_key", "[Dictionary]\nShowDictionary = false\n"),
+            ("no_section", "[translation]\nsource_language = \"Auto\"\n"),
+            ("no_key", "[dictionary]\nshow_dictionary = false\n"),
         ] {
             let path = std::env::temp_dir().join(format!(
-                "tagent_test_dictionary_provider_default_{}_{}.conf",
+                "tagent_test_dictionary_provider_default_{}_{}.toml",
                 label,
                 std::process::id()
             ));
@@ -2042,10 +2034,10 @@ mod tests {
     #[test]
     fn test_load_config_explicit_dictionary_provider_is_respected() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_explicit_dictionary_provider_{}.conf",
+            "tagent_test_explicit_dictionary_provider_{}.toml",
             std::process::id()
         ));
-        fs::write(&path, "[Dictionary]\nDictionaryProvider = other\n").unwrap();
+        fs::write(&path, "[dictionary]\ndictionary_provider = \"other\"\n").unwrap();
 
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
@@ -2062,11 +2054,10 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// `create_ini_content` is one positional `format!`, and `[Dictionary]` sits in the
-    /// middle of the template, so a placeholder/argument pair inserted out of step would
-    /// shift every later value by one slot. Every field here is deliberately non-default
-    /// (bools flipped, strings unique sentinels), because a shifted value that happens to
-    /// equal the default would otherwise pass unnoticed.
+    /// `render_config` and the two `ConfigFile` conversions list every field by hand, so a
+    /// field mapped to the wrong key would go unnoticed if its value happened to equal the
+    /// default. Every field here is deliberately non-default (bools flipped, strings unique
+    /// sentinels).
     #[test]
     fn test_generated_config_roundtrips_every_field_with_distinct_values() {
         let defaults = Config::default();
@@ -2102,7 +2093,7 @@ mod tests {
         };
 
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_roundtrip_all_fields_{}.conf",
+            "tagent_test_roundtrip_all_fields_{}.toml",
             std::process::id()
         ));
         let manager = ConfigManager {
@@ -2110,7 +2101,7 @@ mod tests {
             config: Arc::new(Mutex::new(Config::default())),
             last_modified: Arc::new(Mutex::new(None)),
         };
-        fs::write(&path, manager.create_ini_content(&config)).unwrap();
+        fs::write(&path, render_config(&config)).unwrap();
         manager.load_config().unwrap();
         let _ = fs::remove_file(&path);
 
@@ -2157,8 +2148,8 @@ mod tests {
     fn provider_error_message_lists_supported_values_for_unknown_provider() {
         let error = tagent::error::Error::UnknownProvider("bogus".to_string());
         assert_eq!(
-            provider_error_message(&error, "SpeechProvider", "bogus", &["google", "other"]),
-            "unknown provider: bogus (supported values for SpeechProvider: google, other)"
+            provider_error_message(&error, "speech_provider", "bogus", &["google", "other"]),
+            "unknown provider: bogus (supported values for speech_provider: google, other)"
         );
     }
 
@@ -2166,7 +2157,7 @@ mod tests {
     fn provider_error_message_leaves_other_errors_unchanged() {
         let error = tagent::error::Error::Network("down".to_string());
         assert_eq!(
-            provider_error_message(&error, "SpeechProvider", "google", &["google"]),
+            provider_error_message(&error, "speech_provider", "google", &["google"]),
             error.to_string()
         );
     }
@@ -2175,31 +2166,26 @@ mod tests {
     /// lists, so they can't go stale when a backend is added.
     #[test]
     fn generated_config_comments_list_the_providers_tagent_offers() {
-        let manager = ConfigManager {
-            config_path: "unused.conf".to_string(),
-            config: Arc::new(Mutex::new(Config::default())),
-            last_modified: Arc::new(Mutex::new(None)),
-        };
-        let ini = manager.create_ini_content(&Config::default());
+        let toml = render_config(&Config::default());
         for list in [
             tagent::providers::TRANSLATION_PROVIDERS,
             tagent::providers::DICTIONARY_PROVIDERS,
             tagent::providers::SPEECH_PROVIDERS,
         ] {
-            let line = format!("; Supported values: {}\n", list.join(", "));
-            assert!(ini.contains(&line), "missing {line:?} in generated config");
+            let line = format!("# Supported values: {}\n", list.join(", "));
+            assert!(toml.contains(&line), "missing {line:?} in generated config");
         }
-        assert!(!ini.contains("{translate_providers}"));
+        assert!(!toml.contains("{translate_providers}"));
     }
 
     /// A config file written before the article/status colors existed gets their defaults.
     #[test]
     fn test_load_config_article_colors_default_when_absent() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_missing_article_colors_{}.conf",
+            "tagent_test_missing_article_colors_{}.toml",
             std::process::id()
         ));
-        fs::write(&path, "[Colors]\nTargetPromptColor = Blue\n").unwrap();
+        fs::write(&path, "[colors]\ntarget_prompt_color = \"Blue\"\n").unwrap();
 
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
@@ -2272,10 +2258,10 @@ mod tests {
     #[test]
     fn test_load_config_explicit_false_is_respected() {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_explicit_false_speech_{}.conf",
+            "tagent_test_explicit_false_speech_{}.toml",
             std::process::id()
         ));
-        fs::write(&path, "[Speech]\nEnableTextToSpeech = false\n").unwrap();
+        fs::write(&path, "[speech]\nenable_text_to_speech = false\n").unwrap();
 
         let manager = ConfigManager {
             config_path: path.to_str().unwrap().to_string(),
@@ -2289,33 +2275,11 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    #[test]
-    fn test_parse_ini_duplicate_section_merges() {
-        let manager = ConfigManager {
-            config_path: "unused.conf".to_string(),
-            config: Arc::new(Mutex::new(Config::default())),
-            last_modified: Arc::new(Mutex::new(None)),
-        };
-        let sections = manager
-            .parse_ini(
-                "[Translation]\nSourceLanguage = Auto\n\n[Other]\nFoo = Bar\n\n[Translation]\nTargetLanguage = Russian\n",
-            )
-            .unwrap();
-
-        let translation = &sections["Translation"];
-        assert_eq!(translation.get("SourceLanguage"), Some(&"Auto".to_string()));
-        assert_eq!(
-            translation.get("TargetLanguage"),
-            Some(&"Russian".to_string())
-        );
-        assert_eq!(sections["Other"].get("Foo"), Some(&"Bar".to_string()));
-    }
-
-    // --- Provider profiles ([Provider:<name>] sections) --------------------------------
+    // --- Provider profiles ([provider_options.<name>] tables) ---------------------------
 
     fn manager_at(label: &str) -> (ConfigManager, PathBuf) {
         let path = std::env::temp_dir().join(format!(
-            "tagent_test_profiles_{}_{}.conf",
+            "tagent_test_profiles_{}_{}.toml",
             label,
             std::process::id()
         ));
@@ -2332,16 +2296,26 @@ mod tests {
         None
     }
 
-    const PROFILES_INI: &str = "[Provider]\nTranslateProvider = work\n\n\
-        [Provider:Work]\ntype = google\nAPI_Key = file-key-0123456789\ntimeout_secs = 15\n\n\
-        [provider:deepl]\napi_key = deepl-key\n\n[Provider:empty]\n";
+    const PROFILES_TOML: &str = r#"[provider]
+translate_provider = "work"
 
-    /// The trap Stage F guards against: `/save` rewrites the whole file from `Config`, so
-    /// anything not modeled there would be dropped.
+[provider_options.Work]
+type = "google"
+API_Key = "file-key-0123456789"
+timeout_secs = "15"
+
+[provider_options.deepl]
+api_key = "deepl-key"
+
+[provider_options.empty]
+"#;
+
+    /// Profile names and keys are lowercased on load, and `/save` (which edits the file in
+    /// place) leaves the profile tables exactly as they were.
     #[test]
     fn provider_profiles_survive_save() {
         let (manager, path) = manager_at("roundtrip");
-        fs::write(&path, PROFILES_INI).unwrap();
+        fs::write(&path, PROFILES_TOML).unwrap();
         manager.load_config().unwrap();
         let loaded = manager.get_config();
         assert_eq!(loaded.translate_provider, "work");
@@ -2349,15 +2323,13 @@ mod tests {
         assert_eq!(work["type"], "google");
         assert_eq!(work["api_key"], "file-key-0123456789");
         assert_eq!(work["timeout_secs"], "15");
-        // A lowercase `[provider:...]` header is recognized too, not silently dropped.
         assert_eq!(loaded.provider_options.get("deepl").unwrap()["api_key"], "deepl-key");
         assert!(loaded.provider_options.get("empty").unwrap().is_empty());
 
         manager.save_config().unwrap();
         let written = fs::read_to_string(&path).unwrap();
-        assert!(written.contains("[Provider:work]\n"), "{written}");
-        assert!(written.contains("[Provider:deepl]\n"), "{written}");
-        assert!(written.contains("[Provider:empty]\n"), "{written}");
+        assert!(written.contains("[provider_options.Work]\ntype = \"google\"\nAPI_Key = \"file-key-0123456789\""), "{written}");
+        assert!(written.contains("[provider_options.empty]\n"), "{written}");
         manager.load_config().unwrap();
         assert_eq!(manager.get_config().provider_options, loaded.provider_options);
         let _ = fs::remove_file(&path);
@@ -2366,7 +2338,7 @@ mod tests {
     #[test]
     fn provider_options_env_overrides_file() {
         let (manager, path) = manager_at("env");
-        fs::write(&path, PROFILES_INI).unwrap();
+        fs::write(&path, PROFILES_TOML).unwrap();
         manager.load_config().unwrap();
         let config = manager.get_config();
         let _ = fs::remove_file(&path);
@@ -2388,7 +2360,7 @@ mod tests {
     #[test]
     fn profile_lines_mask_secrets_and_name_their_origin() {
         let (manager, path) = manager_at("display");
-        fs::write(&path, PROFILES_INI).unwrap();
+        fs::write(&path, PROFILES_TOML).unwrap();
         manager.load_config().unwrap();
         let config = manager.get_config();
         let _ = fs::remove_file(&path);
@@ -2398,16 +2370,48 @@ mod tests {
         let text = config.provider_profile_lines(env).join("\n");
         assert!(!text.contains(sentinel), "{text}");
         assert!(!text.contains("file-key-0123456789"), "{text}");
-        assert!(text.contains("  work (type: google)"), "{text}");
-        assert!(text.contains("api_key = ••••6789\n"), "{text}");
-        assert!(text.contains("timeout_secs = 15"), "{text}");
-        assert!(text.contains("api_key = ••••4711 (from env TAGENT_DEEPL_API_KEY)"), "{text}");
+        assert!(
+            text.contains("[provider_options.work]\ntype = \"google\"\napi_key = \"••••6789\"\ntimeout_secs = \"15\""),
+            "{text}"
+        );
+        assert!(
+            text.contains("api_key = \"••••4711\"  # from env TAGENT_DEEPL_API_KEY"),
+            "{text}"
+        );
         // The selected built-in providers are listed too.
-        assert!(text.contains("  google\n    (no options)"), "{text}");
+        assert!(text.contains("[provider_options.google]\n# (no options)"), "{text}");
         // Debug output (a log line, a panic message) never shows a configured key.
         let debug = format!("{config:?}");
         assert!(!debug.contains("file-key-0123456789"), "{debug}");
         assert!(!debug.contains("deepl-key"), "{debug}");
+    }
+
+    /// `/config` shows every setting under its file key, formatted as in the file, so it
+    /// can be copied into `tagent-cli.toml` as is.
+    #[test]
+    fn display_lines_use_the_file_keys() {
+        let config = Config {
+            history_file: "history.txt".to_string(),
+            ..Config::default()
+        };
+        let lines = config.display_lines(no_env);
+        let text = lines.join("\n");
+        assert!(text.starts_with("[provider]\ntranslate_provider = \"google\"\n"), "{text}");
+        assert!(
+            text.contains("[translation]\nsource_language = \"Auto\"  # auto\ntarget_language = \"Russian\"  # ru\n"),
+            "{text}"
+        );
+        assert!(text.contains("\nauto_hide_terminal_seconds = 3\n"), "{text}");
+        assert!(text.contains("\n[colors]\nsource_prompt_color = \"None\"\n"), "{text}");
+
+        // Every `key = value` line matches the file: parsed back as TOML (the profile
+        // comment lines aside), it is the same configuration.
+        let settings: Vec<&str> = lines
+            .iter()
+            .map(String::as_str)
+            .take_while(|line| !line.starts_with("# Provider profiles"))
+            .collect();
+        assert_eq!(parse_config(&settings.join("\n")).unwrap(), config);
     }
 
     #[test]
@@ -2429,7 +2433,7 @@ mod tests {
         };
         let message = config.create_translate_provider().err().expect("invalid timeout");
         assert!(message.contains("timeout_secs"), "{message}");
-        assert!(message.contains("[Provider:google]"), "{message}");
+        assert!(message.contains("[provider_options.google]"), "{message}");
         assert!(message.contains("TAGENT_GOOGLE_<KEY>"), "{message}");
         // The other axes of the same profile fail the same way.
         assert!(config.create_dictionary_provider().is_err());
@@ -2462,4 +2466,232 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
+    // --- TOML format ----------------------------------------------------------------
+
+    /// A freshly generated file means exactly the defaults.
+    #[test]
+    fn generated_template_parses_back_into_defaults() {
+        let toml = render_config(&Config::default());
+        assert_eq!(parse_config(&toml).unwrap(), Config::default());
+        // No profiles: no `[provider_options]` header at all, and the explanation stays.
+        assert!(!toml.contains("\n[provider_options"), "{toml}");
+        assert!(toml.contains("# Provider profiles\n"), "{toml}");
+        // The literal template is itself valid and matches the defaults, apart from
+        // `history_file`, which depends on the platform's data directory.
+        let template = parse_config(&config_template()).unwrap();
+        assert_eq!(
+            template,
+            Config {
+                history_file: String::new(),
+                ..Config::default()
+            }
+        );
+    }
+
+    #[test]
+    fn a_file_with_one_section_takes_defaults_for_the_rest() {
+        let config = parse_config("[interface]\ncopy_to_clipboard = true\n").unwrap();
+        assert_eq!(
+            config,
+            Config {
+                copy_to_clipboard: true,
+                ..Config::default()
+            }
+        );
+        assert_eq!(parse_config("").unwrap(), Config::default());
+    }
+
+    #[test]
+    fn unknown_sections_and_keys_are_ignored() {
+        let config =
+            parse_config("[interface]\nfuture_key = 1\n[future_section]\nx = \"y\"\n").unwrap();
+        assert_eq!(config, Config::default());
+    }
+
+    /// Errors name the line and column and show the offending line (which holds the key).
+    #[test]
+    fn type_and_syntax_errors_name_the_line() {
+        let error = parse_config("[interface]\n\ncopy_to_clipboard = \"yes\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("line 3"), "{error}");
+        assert!(error.contains("copy_to_clipboard = \"yes\""), "{error}");
+        assert!(error.contains("expected a boolean"), "{error}");
+
+        let error = parse_config("[translation]\nsource_language = Auto\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("line 2"), "{error}");
+        assert!(error.contains("source_language = Auto"), "{error}");
+    }
+
+    /// The old INI file is not valid TOML: a leftover would fail loudly, not load silently.
+    #[test]
+    fn an_ini_style_file_is_rejected() {
+        assert!(parse_config("[Translation]\nSourceLanguage = Auto\n").is_err());
+    }
+
+    /// Profile values are strings; a number names its line instead of being dropped.
+    #[test]
+    fn provider_option_values_must_be_strings() {
+        let error = parse_config("[provider_options.google]\ntimeout_secs = 15\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("line 2"), "{error}");
+        assert!(error.contains("expected a string"), "{error}");
+    }
+
+    /// Backslashes (a Windows path) and quotes are escaped by the TOML writer.
+    #[test]
+    fn rendered_values_are_escaped() {
+        let config = Config {
+            history_file: r#"C:\Users\me\AppData\Roaming\tagent-cli\hist "1".txt"#.to_string(),
+            ..Config::default()
+        };
+        assert_eq!(parse_config(&render_config(&config)).unwrap(), config);
+    }
+
+    /// Profiles are appended below the explanation, one table each, with no
+    /// `[provider_options]` header of their own.
+    #[test]
+    fn rendered_profiles_follow_their_explanation() {
+        let mut provider_options = ProviderProfiles::new();
+        provider_options.insert("deepl-work", "type", "deepl");
+        provider_options.insert("deepl-work", "api_key", "key-0123456789");
+        provider_options.insert("google", "timeout_secs", "15");
+        let config = Config {
+            provider_options,
+            ..Config::default()
+        };
+        let toml = render_config(&config);
+        assert!(!toml.contains("\n[provider_options]"), "{toml}");
+        let explanation = toml.find("# Provider profiles").unwrap();
+        let first = toml.find("\n[provider_options.deepl-work]\n").unwrap();
+        let second = toml.find("\n[provider_options.google]\n").unwrap();
+        assert!(explanation < first && first < second, "{toml}");
+        assert!(toml.ends_with("[provider_options.google]\ntimeout_secs = \"15\"\n"), "{toml}");
+        assert_eq!(parse_config(&toml).unwrap(), config);
+    }
+
+    const HAND_EDITED_TOML: &str = r#"# My own notes about this file
+
+[translation]
+# which languages I usually want
+source_language = "Auto"  # auto-detect
+target_language = "Russian"
+my_future_key = "kept"
+
+[interface]
+copy_to_clipboard = true
+
+[provider_options.deepl-work]
+type = "deepl"
+api_key = "secret-0123456789"  # from the account page
+"#;
+
+    /// `/save` changes only the languages: comments (above and after a key), key order,
+    /// unknown keys, other sections and the provider profiles all survive byte for byte.
+    #[test]
+    fn save_edits_only_the_languages_in_place() {
+        let (manager, path) = manager_at("save_in_place");
+        fs::write(&path, HAND_EDITED_TOML).unwrap();
+        manager.load_config().unwrap();
+        manager.set_languages("English", "German");
+        manager.save_config().unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        let expected = HAND_EDITED_TOML
+            .replace(
+                "source_language = \"Auto\"  # auto-detect",
+                "source_language = \"English\"  # auto-detect",
+            )
+            .replace(
+                "target_language = \"Russian\"",
+                "target_language = \"German\"",
+            );
+        assert_eq!(written, expected);
+
+        manager.load_config().unwrap();
+        let reloaded = manager.get_config();
+        assert_eq!(
+            (reloaded.source_language.as_str(), reloaded.target_language.as_str()),
+            ("English", "German")
+        );
+        assert!(reloaded.copy_to_clipboard);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A file without a `[translation]` table gets a proper one (not an inline table).
+    #[test]
+    fn save_adds_a_missing_translation_table() {
+        let (manager, path) = manager_at("save_missing_section");
+        fs::write(&path, "[interface]\ncopy_to_clipboard = true\n").unwrap();
+        manager.load_config().unwrap();
+        manager.set_languages("English", "German");
+        manager.save_config().unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with("[interface]\ncopy_to_clipboard = true\n"), "{written}");
+        assert!(
+            written.contains("[translation]\nsource_language = \"English\"\ntarget_language = \"German\"\n"),
+            "{written}"
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    /// With the file gone, `/save` writes a complete, commented one.
+    #[test]
+    fn save_without_a_file_writes_the_template() {
+        let (manager, path) = manager_at("save_no_file");
+        manager.set_languages("English", "German");
+        manager.save_config().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!(written.contains("# Text Translator Configuration File"), "{written}");
+        let config = parse_config(&written).unwrap();
+        assert_eq!(config, manager.get_config());
+    }
+
+    /// A broken hand edit is reported once, and the previous settings stay in effect until
+    /// the file is fixed.
+    #[test]
+    fn a_broken_edit_keeps_the_previous_config() {
+        let (manager, path) = manager_at("broken_reload");
+        let set_mtime = |secs: u64| {
+            let file = fs::File::options().write(true).open(&path).unwrap();
+            file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+                .unwrap();
+        };
+        fs::write(&path, "[translation]\ntarget_language = \"German\"\n").unwrap();
+        set_mtime(1_000_000);
+        assert!(manager.check_and_reload().unwrap());
+        assert_eq!(manager.get_config().target_language, "German");
+
+        fs::write(&path, "[translation]\ntarget_language = German\n").unwrap();
+        set_mtime(2_000_000);
+        let error = manager.check_and_reload().unwrap_err().to_string();
+        assert!(error.contains(&manager.config_path), "{error}");
+        assert!(error.contains("line 2"), "{error}");
+        assert!(error.contains("keeping the previous settings"), "{error}");
+        assert_eq!(manager.get_config().target_language, "German");
+        // Reported once per edit, not on every call.
+        assert!(!manager.check_and_reload().unwrap());
+
+        fs::write(&path, "[translation]\ntarget_language = \"French\"\n").unwrap();
+        set_mtime(3_000_000);
+        assert!(manager.check_and_reload().unwrap());
+        assert_eq!(manager.get_config().target_language, "French");
+        let _ = fs::remove_file(&path);
+    }
+
+    /// At startup, a broken file is an error naming the file (the caller exits with it).
+    #[test]
+    fn a_broken_file_fails_at_startup() {
+        let (_, path) = manager_at("broken_startup");
+        fs::write(&path, "[interface]\ncopy_to_clipboard = \"yes\"\n").unwrap();
+        let error = ConfigManager::new(path.to_str().unwrap()).err().unwrap().to_string();
+        let _ = fs::remove_file(&path);
+        assert!(error.contains(path.to_str().unwrap()), "{error}");
+        assert!(error.contains("line 2"), "{error}");
+    }
 }

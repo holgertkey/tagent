@@ -20,7 +20,8 @@ it. The only thing the two share is the `tagent` library. "Independent" means:
 
 - **Own interface**: a Slint desktop GUI with its own look, layout and interaction model.
 - **Own configuration**: its own `tagent-gui.json` in its own directory, never
-  `tagent-cli.conf` (no migration path from the old inline reader). The file is plain
+  `tagent-cli`'s config file (`tagent-cli.toml`; no migration path from the old inline
+  reader). The file is plain
   JSON, meant to be hand-editable, and live-reloaded by mtime before each translation.
 - **Own feature set**: the roadmap is not "catch up with `tagent-cli`". Features are chosen
   on their own merits and reimagined for a windowed app; e.g. global hotkeys lead to a popup

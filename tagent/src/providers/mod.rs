@@ -374,7 +374,7 @@ impl Definition {
 ///    entry is required: the factory rejects unlisted kinds before its `match`, and
 ///    pickers are built from the list. Tests check that the list, the descriptors and the
 ///    factory agree.
-/// 3. Users select it with `TranslateProvider = yourprovider` in `tagent-cli.conf`, or
+/// 3. Users select it with `translate_provider = "yourprovider"` in `tagent-cli.toml`, or
 ///    `translate_provider` in `tagent-gui.json`.
 #[async_trait]
 pub trait TranslationProvider: Send + Sync {
@@ -424,8 +424,8 @@ pub trait TranslationProvider: Send + Sync {
 /// Abstraction over a bilingual dictionary backend.
 ///
 /// Independent of [`TranslationProvider`]: which backend translates and which one looks
-/// words up are separate choices (`TranslateProvider` × `DictionaryProvider` in
-/// `tagent-cli`'s config, `translate_provider` × `dictionary_provider` in `tagent-gui`'s), so
+/// words up are separate choices (`translate_provider` × `dictionary_provider` in both
+/// `tagent-cli`'s and `tagent-gui`'s config), so
 /// an implementation of this trait never needs to know anything about translation.
 /// See [`google::GoogleDictionaryProvider`] for a reference implementation.
 ///
@@ -456,8 +456,8 @@ pub trait TranslationProvider: Send + Sync {
 ///    existing backend in the same file).
 /// 2. Register it in [`create_dictionary_provider`] with a matching name string, and add
 ///    that name to [`DICTIONARY_PROVIDERS`] so pickers offer it.
-/// 3. Users set `DictionaryProvider = yourprovider` in `tagent-cli.conf`'s `[Dictionary]`
-///    section (or `dictionary_provider` in `tagent-gui.json`).
+/// 3. Users set `dictionary_provider = "yourprovider"` in `tagent-cli.toml`'s `[dictionary]`
+///    table (or `dictionary_provider` in `tagent-gui.json`).
 ///
 /// # Examples
 ///
@@ -522,8 +522,8 @@ pub trait DictionaryProvider: Send + Sync {
 /// Abstraction over a text-to-speech backend.
 ///
 /// Independent of [`TranslationProvider`]: which backend translates and which one
-/// speaks are separate choices (`TranslateProvider` × `SpeechProvider` in `tagent-cli`'s
-/// config, `translate_provider` × `speech_provider` in `tagent-gui`'s), so an
+/// speaks are separate choices (`translate_provider` × `speech_provider` in both
+/// `tagent-cli`'s and `tagent-gui`'s config), so an
 /// implementation of this trait never needs to know anything about translation.
 /// See [`google::GoogleSpeechProvider`] for a reference implementation.
 ///
@@ -538,8 +538,8 @@ pub trait DictionaryProvider: Send + Sync {
 ///    existing backend in the same file).
 /// 2. Register it in [`create_speech_provider`] with a matching name string, and add that
 ///    name to [`SPEECH_PROVIDERS`] so pickers offer it.
-/// 3. Users set `SpeechProvider = yourprovider` in `tagent-cli.conf` (or `speech_provider`
-///    in `tagent-gui.json`).
+/// 3. Users set `speech_provider = "yourprovider"` in `tagent-cli.toml` (or
+///    `speech_provider` in `tagent-gui.json`).
 ///
 /// # Examples
 ///

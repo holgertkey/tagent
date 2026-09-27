@@ -16,7 +16,7 @@ reverse:
 ```
 tagent          (library)   -- providers (trait + Google Translate impl), languages
                                 (name/code mapping), error (unified Error type). No
-                                app/UI/platform code, no INI parsing, no config file
+                                app/UI/platform code, no config parsing, no config file
                                 of its own.
 tagent-cli      (binary)    -- today's application: hotkeys, interactive terminal, CLI,
                                 config file, history, clipboard, platform integration.
@@ -99,8 +99,9 @@ the old single-crate `tagent`).
   `0.17.0` → `0.18.0`, no compatibility shim) for a `DictionaryProvider` trait
   (`lookup(word, from, to)` + `name()`), a `create_dictionary_provider()` factory
   (`"google"` only) and `GoogleDictionaryProvider`. The three axes —
-  `TranslateProvider` × `DictionaryProvider` × `SpeechProvider` in `tagent-cli.conf`,
-  `translate_provider` × `dictionary_provider` × `speech_provider` in `tagent-gui.json` —
+  `translate_provider` × `dictionary_provider` × `speech_provider` in `tagent-cli`'s
+  config (then `tagent-cli.conf`'s PascalCase keys, `tagent-cli.toml` since 0.17.0) and in
+  `tagent-gui.json` —
   combine freely. Zero user-visible change; the point is that the next backend is "add a
   file + one `match` arm" instead of a cross-crate refactor.
   - **The trait keeps the positional `word + from + to` signature; extensibility lives on
@@ -187,6 +188,37 @@ the old single-crate `tagent`).
   and logging to stderr on failure rather than propagating an error. This preserves the
   old `SpeechManager::detect_speech_language`'s best-effort behavior exactly (never
   surface a language-detection failure as a speech error to the user).
+
+## `tagent-cli`'s config file: `tagent-cli.toml`
+
+Since `tagent-cli` 0.17.0 (Stage F3 in [the provider plan](providers-dev-plan.md)) the
+config is TOML, replacing the INI `tagent-cli.conf` and its hand-written parser. The old
+file is not read and not migrated; a fresh default `tagent-cli.toml` is created instead.
+Sections are lowercase, keys snake_case, and provider profiles are
+`[provider_options.<name>]` tables whose values are strings (the same shape as
+`tagent-gui.json`'s `provider_options`), so there is one key style across the file and the
+library's option keys need no mapping.
+
+- **Crate**: `toml_edit` alone, with its `serde` feature: `toml_edit::de::from_str` reads
+  (errors carry line/column and the offending line), and `DocumentMut` edits the file for
+  `/save` without losing comments. `toml` would have needed `toml_edit` anyway for the
+  second part.
+- **Reading**: `ConfigFile` mirrors the file (one `#[serde(default)]` struct per section,
+  each defaulting from `Config::default()` through a small macro, so defaults are spelled
+  once) and converts into the flat `Config` the rest of the app uses. Unknown keys are
+  ignored.
+- **Errors**: fatal at startup (`main.rs` prints the `Display` form and exits 1, because a
+  `Result` returned from `main` would print the multi-line message through `Debug`). On hot
+  reload, `check_and_reload` stores the new mtime *before* loading: a broken edit is
+  reported once and the last good config stays in effect until the file changes again.
+- **Writing**: a new file is `render_config` — the commented `config_template()` parsed
+  as a document, each value set with `set_value`, the profiles appended below the
+  template's closing "Provider profiles" comment under an *implicit* `provider_options`
+  table (no empty header). `/save` changes only the two languages in the existing
+  document. `set_value` replaces a value through `get_mut` rather than `insert`, which
+  would drop the comment lines above the key (they are the key's decor), and copies the
+  old value's decor onto the new one to keep an inline `# comment`. A missing section is
+  inserted as a real table, since indexing a missing key would create an inline one.
 
 ## Platform abstraction layer
 
@@ -293,7 +325,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `serde`/`serde_json` to `tagent-gui.json` at `dirs::config_dir().join("tagent-gui")`.
   This avoids reusing `tagent-cli`'s `ConfigManager` directly: pulling that in would
   mean pulling in all of `tagent-cli` (rustyline, rdev, x11, arboard, ctrlc, the whole
-  `platform/` tree), just to read one string. Unlike `tagent-cli.conf`'s INI format
+  `platform/` tree), just to read one string. Unlike `tagent-cli.toml`
   (commented, meant to be self-documenting), `tagent-gui.json` is plain JSON with no
   comment support — but it's still meant to be hand-editable (there's no Settings
   window yet), not just a machine-written cache: `load_from_path()` leaves an existing
@@ -1037,7 +1069,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     provider) against `"violent\n"` (the untrimmed original) would then
     spuriously report a spelling correction that never happened.
   - `show_dictionary`/`spell_check` are two new `GuiConfig` fields (both
-    default `true`, matching `tagent-cli`'s `ShowDictionary`/`SpellCheck`),
+    default `true`, matching `tagent-cli`'s `show_dictionary`/`spell_check`),
     read under the same `check_and_reload()` lock as `translate_provider`/
     `show_prompt` at both `spawn_translation` call sites — live-reloaded, no
     restart needed, same as those two. Settings UI: two checkboxes on the
@@ -1076,7 +1108,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   only constructed for `"auto"` — see "Speech Provider Architecture" above), rather than trying to recover what Google actually
   detected at translation time (`translate_text` doesn't hand that back). New
   `enable_text_to_speech` `GuiConfig` field (default `true`, matching
-  `tagent-cli`'s `EnableTextToSpeech`, live-reloaded), gating a `tts-enabled`
+  `tagent-cli`'s `enable_text_to_speech`, live-reloaded), gating a `tts-enabled`
   window property re-set at every point that already reads config
   (`on_translate_requested`, the hotkey path, Settings save) plus once at
   startup; Settings checkbox on the General tab next to Stage 9's two.
@@ -1250,7 +1282,7 @@ Stage 7 above. Two halves, both needed:
 
 - **Language list and history logging aren't configurable at all yet** — no
   field exists for either (the language list is `tagent`'s `LANGUAGES` table).
-  `tagent-cli.conf` is not read at all any more (no migration path — see the
+  `tagent-cli`'s config file (`tagent-cli.toml`) is not read at all (no migration path — see the
   "own configuration" concept in [the development plan](tagent-gui-dev-plan.md)). (`translate_hotkey`
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —
   Stage 8, shipped 2026-09-16, gave both a "Hotkeys & Tray" tab control; TTS
@@ -1344,8 +1376,8 @@ than the old app once it is published (not done yet).
 
 ## Other known gaps worth knowing about
 
-- **`[Colors]` and `[Speech]` config sections** (`SourcePromptColor`, `TargetPromptColor`,
-  `DictionaryPromptColor`, `PartOfSpeechColor`, `SynonymColor`, `NoticeColor`,
-  `ErrorColor`, `EnableTextToSpeech`, `SpeechHotkey`, `EnableSpeechHotkey`)
+- **`[colors]` and `[speech]` config tables** (`source_prompt_color`, `target_prompt_color`,
+  `dictionary_prompt_color`, `part_of_speech_color`, `synonym_color`, `notice_color`,
+  `error_color`, `enable_text_to_speech`, `speech_hotkey`, `enable_speech_hotkey`)
   exist in `config.rs` and are used by CLI/interactive/keyboard-hook code, but have no
   equivalent in `tagent-gui`.

@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.16.0+008"
+version = "0.17.0+001"
 dependencies = [
  "arboard",
  "async-trait",
@@ -5780,8 +5780,10 @@ dependencies = [
  "rdev",
  "rodio",
  "rustyline",
+ "serde",
  "tagent",
  "tokio",
+ "toml_edit 0.25.4+spec-1.1.0",
  "windows 0.52.0",
  "winres",
  "x11",
@@ -6108,6 +6110,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7193cbd0ce53dc966037f54351dbbcf0d5a642c7f0038c382ef9e677ce8c13f2"
 dependencies = [
  "indexmap",
+ "serde_core",
+ "serde_spanned",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "toml_writer",

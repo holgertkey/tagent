@@ -26,8 +26,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let cli_handler = match CliHandler::new() {
             Ok(handler) => handler,
             Err(e) => {
-                println!("Failed to initialize CLI handler: {}", e);
-                return Err(e);
+                // Printed with `Display` and exited here: returning the error from `main`
+                // would print it again with `Debug`, which mangles a multi-line TOML error.
+                eprintln!("Failed to initialize CLI handler: {}", e);
+                std::process::exit(1);
             }
         };
 
@@ -39,7 +41,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Create shared ConfigManager
     let config_path = ConfigManager::get_default_config_path()?;
-    let config_manager = Arc::new(ConfigManager::new(config_path.to_string_lossy().as_ref())?);
+    let config_manager = match ConfigManager::new(config_path.to_string_lossy().as_ref()) {
+        Ok(manager) => Arc::new(manager),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let translator = match Translator::new_with_config(config_manager.clone()) {
         Ok(t) => t,

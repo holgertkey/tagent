@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+001] - 2026-09-27
+
+### Changed
+- **`/config` (and `--config`) shows the settings as they appear in `tagent-cli.toml`:**
+  `[section]` headers and `key = value` lines with the file's key names and value format
+  (the languages followed by their code, e.g. `target_language = "Russian"  # ru`), so a
+  line can be copied into the file as is. It now lists every setting, colors and
+  `spell_check` included, which the old labeled list ("Translation Provider: google")
+  left out. Provider profiles appear as `[provider_options.<name>]` tables with `type`
+  first, secrets still masked, and a value from the environment marked with
+  `# from env TAGENT_<NAME>_<KEY>`.
+
+## [0.17.0] - 2026-09-27
+
+### Changed
+- **Breaking: the configuration file is now TOML, `tagent-cli.toml`,** in the same folder
+  as before (`~/.config/tagent-cli/` on Linux/macOS, `%APPDATA%\tagent-cli\` on Windows).
+  **The old `tagent-cli.conf` is no longer read and is not migrated:** on first start a
+  commented default `tagent-cli.toml` is created; copy your settings over by hand, then
+  delete the old file. Key mapping: every `[Section] PascalKey = value` becomes
+  `[section] snake_key = value`, with string values quoted (`[Interface]
+  AutoHideTerminalSeconds = 3` → `[interface] auto_hide_terminal_seconds = 3`,
+  `[Translation] TargetLanguage = German` → `[translation] target_language = "German"`,
+  `[Provider] TranslateProvider = google` → `[provider] translate_provider = "google"`).
+  A provider profile `[Provider:<name>]` becomes `[provider_options.<name>]` with the same
+  keys, and its values are quoted strings, numbers too (`timeout_secs = "15"`).
+- **Comments survive `/save`.** It now changes only `source_language` and
+  `target_language` in the existing file; comments, key order, unknown keys and provider
+  profiles stay as they are (it used to rewrite the whole file from a template). A comment
+  can also follow a value on the same line now (`copy_to_clipboard = true  # note`); in
+  the INI file it became part of the value.
+- **A mistake in the config file is reported with its line and column** (e.g.
+  `copy_to_clipboard = "yes"`, or a string without quotes). At startup it is fatal; a
+  broken edit while the app runs prints one warning and keeps the previous settings until
+  the file is fixed. (In the INI file, an unreadable value silently fell back to its
+  default.) The warning is now also printed by interactive mode, CLI mode and speech,
+  which ignored reload errors before.
+- The help text, `/config` and error messages use the new key names
+  (`supported values for speech_provider`, `check [provider_options.<name>] in
+  tagent-cli.toml`).
+
+### Removed
+- The legacy color keys `AutoPromptColor` and `TranslationPromptColor` (read as
+  `SourcePromptColor`/`TargetPromptColor` until now), and `CopyToClipboard` under
+  `[Translation]` (read as a fallback for `[Interface]`). Use `source_prompt_color`,
+  `target_prompt_color` and `[interface] copy_to_clipboard`.
+
 ## [0.16.0+008] - 2026-09-26
 
 ### Added

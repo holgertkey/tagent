@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.16.0+008
+# Tagent Text Translator v0.17.0+001
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -19,7 +19,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 - Automatically detects and corrects misspelled words during dictionary lookup
 - Shows a correction notice in the target language
 - Works transparently: typos like "vialent" or "violnt" resolve to the correct word "violent"
-- Can be disabled via `SpellCheck = false` in config
+- Can be disabled via `spell_check = false` in config
 
 ### 🔊 **Text-to-Speech (TTS)**
 - Built-in speech synthesis using Google TTS API
@@ -59,7 +59,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 | Interactive mode | Yes | Yes | Yes | Yes |
 | CLI mode | Yes | Yes | Yes | Yes |
 | Text-to-speech | Yes | Yes | Yes | Yes |
-| Clipboard (`CopyToClipboard`) | Yes | Yes | No | No |
+| Clipboard (`copy_to_clipboard`) | Yes | Yes | No | No |
 | Global hotkeys (Alt+A, etc.) | Yes | Yes | No | No |
 | Auto-copy selected text | Yes | Yes | No | No |
 | Show/hide terminal | Yes | Yes | No | No |
@@ -136,7 +136,7 @@ tagent-cli --config
 **Translation Hotkey** (default: Alt+A)
 1. Select text in any application
 2. Press the translation hotkey (Alt+A by default)
-3. The translation appears in the terminal (and is copied to the clipboard if `CopyToClipboard = true`)
+3. The translation appears in the terminal (and is copied to the clipboard if `copy_to_clipboard = true`)
 
 **Speech Hotkey** (default: Alt+S)
 1. Select text in any application
@@ -183,143 +183,152 @@ Language names (`English`, `German`) and codes (`en`, `de`) are both accepted. A
 
 ## Configuration
 
-The configuration file is created with defaults on first run and reloads automatically:
-- **Windows**: `%APPDATA%\tagent-cli\tagent-cli.conf` (typically `C:\Users\<YourName>\AppData\Roaming\tagent-cli\tagent-cli.conf`)
-- **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.conf`
+The configuration file is [TOML](https://toml.io), created with defaults on first run and reloaded automatically:
+- **Windows**: `%APPDATA%\tagent-cli\tagent-cli.toml` (typically `C:\Users\<YourName>\AppData\Roaming\tagent-cli\tagent-cli.toml`)
+- **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
 
 The generated file documents every setting in its comments. Its sections, with the default values:
 
-```ini
-[Provider]
-; Translation backend (google)
-TranslateProvider = google
+```toml
+[provider]
+# Translation backend: a provider profile name (google)
+translate_provider = "google"
 
-[Translation]
-; Source language (Auto, English, Russian, Spanish, etc.)
-SourceLanguage = Auto
-; Target language (never Auto)
-TargetLanguage = Russian
+[translation]
+# Source language (Auto, English, Russian, Spanish, etc.)
+source_language = "Auto"
+# Target language (never Auto)
+target_language = "Russian"
 
-[Dictionary]
-; Show a dictionary entry for single words
-ShowDictionary = true
-; Detect and correct spelling errors, show a correction notice
-SpellCheck = true
-; Dictionary backend, independent of TranslateProvider (google; restart required)
-DictionaryProvider = google
+[dictionary]
+# Show a dictionary entry for single words
+show_dictionary = true
+# Detect and correct spelling errors, show a correction notice
+spell_check = true
+# Dictionary backend, independent of translate_provider (google; restart required)
+dictionary_provider = "google"
 
-[Interface]
-; Show the terminal window during hotkey translation
-ShowTerminalOnTranslate = true
-; Auto-hide the terminal after translation (seconds, 0 = disabled)
-AutoHideTerminalSeconds = 3
-; Copy results to the clipboard automatically
-CopyToClipboard = false
+[interface]
+# Show the terminal window during hotkey translation
+show_terminal_on_translate = true
+# Auto-hide the terminal after translation (seconds, 0 = disabled)
+auto_hide_terminal_seconds = 3
+# Copy results to the clipboard automatically
+copy_to_clipboard = false
 
-[Colors]
-; Terminal output colors: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-; their Bright* variants (e.g. BrightYellow), or None
-SourcePromptColor = None
-TargetPromptColor = BrightYellow
-DictionaryPromptColor = BrightYellow
-; Dictionary article highlighting and status messages
-PartOfSpeechColor = Cyan
-SynonymColor = Green
-NoticeColor = Magenta
-ErrorColor = Red
+[colors]
+# Terminal output colors: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+# their Bright* variants (e.g. BrightYellow), or None
+source_prompt_color = "None"
+target_prompt_color = "BrightYellow"
+dictionary_prompt_color = "BrightYellow"
+# Dictionary article highlighting and status messages
+part_of_speech_color = "Cyan"
+synonym_color = "Green"
+notice_color = "Magenta"
+error_color = "Red"
 
-[History]
-; Save all translations to a file with timestamps
-SaveTranslationHistory = false
-; History file path (default: translation_history.txt in the per-user data folder,
-; %APPDATA%\tagent-cli on Windows, ~/.local/share/tagent-cli on Linux)
-HistoryFile = ...
+[history]
+# Save all translations to a file with timestamps
+save_translation_history = false
+# History file path (default: translation_history.txt in the per-user data folder,
+# %APPDATA%\tagent-cli on Windows, ~/.local/share/tagent-cli on Linux)
+history_file = "..."
 
-[Hotkeys]
-; Translation hotkey (restart required)
-; Formats:
-;   - Single keys: F1-F12 (e.g., F9)
-;   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
-;   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
-TranslateHotkey = Alt+A
+[hotkeys]
+# Translation hotkey (restart required)
+# Formats:
+#   - Single keys: F1-F12 (e.g., F9)
+#   - Modifier combos: Alt+Q, Ctrl+Shift+T, Win+T
+#   - Double-press: Ctrl+Ctrl, Shift+Shift, Alt+Alt, F8+F8
+translate_hotkey = "Alt+A"
 
-[Speech]
-; Enable text-to-speech
-EnableTextToSpeech = true
-; Text-to-speech hotkey (same formats as TranslateHotkey; restart required)
-SpeechHotkey = Alt+S
-; Enable or disable the speech hotkey
-EnableSpeechHotkey = true
-; Speech backend, independent of TranslateProvider (google)
-SpeechProvider = google
+[speech]
+# Enable text-to-speech
+enable_text_to_speech = true
+# Text-to-speech hotkey (same formats as translate_hotkey; restart required)
+speech_hotkey = "Alt+S"
+# Enable or disable the speech hotkey
+enable_speech_hotkey = true
+# Speech backend, independent of translate_provider (google)
+speech_provider = "google"
 ```
+
+Strings are quoted; `true`/`false` and numbers are not. A comment can follow a value on the
+same line (`copy_to_clipboard = true  # handy`). On Windows, a path with backslashes goes in
+single quotes (`history_file = 'C:\Users\me\history.txt'`) or has them doubled. A missing
+key or section takes its default, and unknown keys are ignored.
+
+A mistake in the file (a syntax error, or e.g. `copy_to_clipboard = "yes"`) is reported
+with its line and column: at startup Tagent exits with the message; while running it prints
+a warning once and keeps the previous settings until the file is fixed.
+
+`/save` updates only `source_language` and `target_language` in the file, in place: your
+comments, the key order and everything else stay as they are.
 
 ### Provider Profiles and API Keys
 
-`TranslateProvider`, `DictionaryProvider` and `SpeechProvider` take a **profile name**. A
-built-in provider name (`google`) works as is; a `[Provider:<name>]` section adds options
-for it, or defines a new profile whose optional `type` key picks the provider kind (default:
-the profile name). One profile can serve several of the three settings.
+`translate_provider`, `dictionary_provider` and `speech_provider` take a **profile name**. A
+built-in provider name (`google`) works as is; a `[provider_options.<name>]` table adds
+options for it, or defines a new profile whose optional `type` key picks the provider kind
+(default: the profile name). One profile can serve several of the three settings.
 
-```ini
-[Provider]
-TranslateProvider = work
+```toml
+[provider]
+translate_provider = "work"
 
-[Provider:work]
-type = google
-; Time budget for one request in seconds, retries included
-timeout_secs = 20
-; 0 disables the automatic retry
-max_retries = 0
+[provider_options.work]
+type = "google"
+timeout_secs = "20"   # time budget for one request in seconds, retries included
+max_retries = "0"     # 0 disables the automatic retry
 
-; Options for the built-in name itself
-[Provider:google]
-max_retries = 0
+# Options for the built-in name itself
+[provider_options.google]
+max_retries = "0"
 ```
 
-Comments go on their own lines (`;` or `#` at the start); text after a value is part of it.
-
-Keys are passed to the provider as written (lowercase, e.g. `api_key`, `endpoint`, `model`,
-for providers that need them). An environment variable `TAGENT_<NAME>_<KEY>` overrides a key,
-e.g. `TAGENT_WORK_API_KEY`, so an API key never has to be written to the file. `/config`
-lists every profile with its effective options, secret values masked and each value's origin
-shown. On Linux/macOS the config file is written with permissions `0600` (owner only).
+Every option value is a quoted string, numbers too. Keys are passed to the provider as
+written (e.g. `api_key`, `endpoint`, `model`, for providers that need them). An environment
+variable `TAGENT_<NAME>_<KEY>` overrides a key, e.g. `TAGENT_WORK_API_KEY`, so an API key
+never has to be written to the file. `/config` lists every profile with its effective
+options, secret values masked and each value's origin shown. On Linux/macOS the config file
+is written with permissions `0600` (owner only).
 
 ### Customizing Hotkeys
 
-Both translation and speech hotkeys are fully customizable: `TranslateHotkey` in the `[Hotkeys]` section, `SpeechHotkey` in `[Speech]`.
+Both translation and speech hotkeys are fully customizable: `translate_hotkey` in the `[hotkeys]` section, `speech_hotkey` in `[speech]`. Pick one line from each example.
 
 **Single Keys (F1-F12 only)**
-```ini
-TranslateHotkey = F9
+```toml
+translate_hotkey = "F9"
 ```
 
 **Modifier Combinations**
-```ini
-TranslateHotkey = Alt+Q         # Alt + Q
-TranslateHotkey = Ctrl+Shift+T  # Ctrl + Shift + T
-TranslateHotkey = Win+T         # Windows key + T
-TranslateHotkey = Alt+Space     # Alt + Spacebar
+```toml
+translate_hotkey = "Alt+Q"          # Alt + Q
+translate_hotkey = "Ctrl+Shift+T"   # Ctrl + Shift + T
+translate_hotkey = "Win+T"          # Windows key + T
+translate_hotkey = "Alt+Space"      # Alt + Spacebar
 ```
 
 **Double-Press Patterns** (F1-F12 or a modifier key)
-```ini
-TranslateHotkey = Ctrl+Ctrl     # Double-press Ctrl
-TranslateHotkey = Shift+Shift   # Double-press Shift
-TranslateHotkey = Alt+Alt       # Double-press Alt
-TranslateHotkey = F8+F8         # Double-press F8
+```toml
+translate_hotkey = "Ctrl+Ctrl"      # Double-press Ctrl
+translate_hotkey = "Shift+Shift"    # Double-press Shift
+translate_hotkey = "Alt+Alt"        # Double-press Alt
+translate_hotkey = "F8+F8"          # Double-press F8
 ```
 
 **Speech Hotkey Examples**
-```ini
-[Speech]
-SpeechHotkey = Alt+S          # Alt + S (default)
-SpeechHotkey = F10            # Function key F10
-SpeechHotkey = Ctrl+Shift+S   # Ctrl + Shift + S
-SpeechHotkey = Win+S          # Windows key + S
+```toml
+[speech]
+speech_hotkey = "Alt+S"             # Alt + S (default)
+speech_hotkey = "F10"               # Function key F10
+speech_hotkey = "Ctrl+Shift+S"      # Ctrl + Shift + S
+speech_hotkey = "Win+S"             # Windows key + S
 
-; Disable speech hotkey
-EnableSpeechHotkey = false
+# Disable speech hotkey
+enable_speech_hotkey = false
 ```
 
 **Notes:**
@@ -338,7 +347,7 @@ EnableSpeechHotkey = false
 
 ## Translation History
 
-When enabled (`SaveTranslationHistory = true`), all translations are logged in a readable format:
+When enabled (`save_translation_history = true`), all translations are logged in a readable format:
 
 ```
 [2026-09-26 14:30:15 UTC] auto -> ru
@@ -429,7 +438,7 @@ tagent-cli --speech "Привет, как дела?"
 **Speech Notes:**
 - **GUI Speech Hotkey**: Select text → Press Alt+S (or configured key)
 - Press **Esc** anytime to cancel speech playback
-- Speech language is the `SourceLanguage` setting, detected from the text when it's Auto; `/s` and `/ss` without text use the source and target language of the last translation (as they were when it was made)
+- Speech language is the `source_language` setting, detected from the text when it's Auto; `/s` and `/ss` without text use the source and target language of the last translation (as they were when it was made)
 - Long text is automatically chunked (100 char limit per chunk)
 - Works in GUI (hotkey), Interactive, and CLI modes
 
@@ -438,83 +447,81 @@ tagent-cli --speech "Привет, как дела?"
 # Show current settings
 tagent-cli --config
 
-# Output:
+# Output (the settings as they appear in tagent-cli.toml):
 # === Current Configuration ===
-# Translation Provider: google
-# Dictionary Provider: google
-# Speech Provider: google
+# [provider]
+# translate_provider = "google"
 #
-# Source Language: Auto (auto)
-# Target Language: Russian (ru)
-# Show Dictionary: Enabled
-# Copy to Clipboard: Disabled
+# [translation]
+# source_language = "Auto"  # auto
+# target_language = "Russian"  # ru
 #
-# Translation Hotkey: Alt+A
-# Show Terminal on Translate: Enabled
-# Auto-hide Terminal: 3 seconds
+# [dictionary]
+# show_dictionary = true
+# ...
 #
-# Text-to-Speech: Enabled
-# Speech Hotkey: Alt+S
-# Speech Hotkey Enabled: Yes
+# [speech]
+# enable_text_to_speech = true
+# speech_hotkey = "Alt+S"
+# enable_speech_hotkey = true
+# speech_provider = "google"
 #
-# Save Translation History: Disabled
-# History File: /home/<you>/.local/share/tagent-cli/translation_history.txt
+# # Provider profiles (effective options, secrets masked)
+# [provider_options.google]
+# # (no options)
 #
-# Config file: /home/<you>/.config/tagent-cli/tagent-cli.conf
+# # Config file: /home/<you>/.config/tagent-cli/tagent-cli.toml
 ```
 
 ## Advanced Usage
 
 ### Custom Language Pairs
-Edit `tagent-cli.conf` (or use `/l` in the interactive terminal, then `/save`):
-```ini
-[Translation]
-SourceLanguage = English
-TargetLanguage = Spanish
+Edit `tagent-cli.toml` (or use `/l` in the interactive terminal, then `/save`):
+```toml
+[translation]
+source_language = "English"
+target_language = "Spanish"
 ```
 
 ### Enable History Logging
-```ini
-[History]
-SaveTranslationHistory = true
-HistoryFile = my_translations.txt
+```toml
+[history]
+save_translation_history = true
+history_file = "my_translations.txt"
 ```
 
 ### Disable Automatic Features
-```ini
-[Dictionary]
-ShowDictionary = false
-SpellCheck = false
+```toml
+[dictionary]
+show_dictionary = false
+spell_check = false
 
-[Interface]
-ShowTerminalOnTranslate = false
-CopyToClipboard = false
+[interface]
+show_terminal_on_translate = false
+copy_to_clipboard = false
 ```
 
 ### Configure Hotkeys
-```ini
-[Hotkeys]
-TranslateHotkey = Alt+Q         # Use Alt+Q instead of Alt+A
-TranslateHotkey = F9            # Or use function key
-TranslateHotkey = Shift+Shift   # Or double-press Shift
+```toml
+[hotkeys]
+translate_hotkey = "Alt+Q"          # Use Alt+Q instead of Alt+A
 
-[Speech]
-SpeechHotkey = Alt+E            # Change speech hotkey to Alt+E
-SpeechHotkey = F10              # Or use F10
-EnableSpeechHotkey = false      # Disable speech hotkey if not needed
+[speech]
+speech_hotkey = "F10"               # Change the speech hotkey to F10
+enable_speech_hotkey = false        # Or disable it if not needed
 ```
 
 ### Customize Colors
-```ini
-[Colors]
-; Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, their Bright* variants, or None
-SourcePromptColor = None        ; "[auto → ru]: " prompt
-TargetPromptColor = BrightYellow ; "[Russian]: " label
-DictionaryPromptColor = BrightYellow ; "[Word]: " label
-PartOfSpeechColor = Cyan        ; "Noun", "Прилагательное", ... in a dictionary entry
-SynonymColor = Green            ; "[fierce, brutal]" in a dictionary entry
-NoticeColor = Magenta           ; spelling-correction notice
-ErrorColor = Red                ; translation, speech, clipboard and history errors
+```toml
+[colors]
+# Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, their Bright* variants, or None
+source_prompt_color = "None"             # "[auto → ru]: " prompt
+target_prompt_color = "BrightYellow"     # "[Russian]: " label
+dictionary_prompt_color = "BrightYellow" # "[Word]: " label
+part_of_speech_color = "Cyan"            # "Noun", "Прилагательное", ... in a dictionary entry
+synonym_color = "Green"                  # "[fierce, brutal]" in a dictionary entry
+notice_color = "Magenta"                 # spelling-correction notice
+error_color = "Red"                      # translation, speech, clipboard and history errors
 ```
 
 Colors are only emitted when output goes to a terminal: piping or redirecting
@@ -536,10 +543,11 @@ The clipboard and the history file always get plain text.
 - Verify firewall settings allow the application
 - Google Translate service may be temporarily unavailable
 
-**"Config reload error"**
-- Check the config file syntax (see [Configuration](#configuration) for its location)
+**"invalid configuration file ..." / "Config reload error"**
+- The message names the line and column: fix the value there (strings need quotes, `true`/`false` and numbers don't; provider option values are always quoted)
 - Ensure file is not locked by another application
 - Delete the config file to regenerate default settings
+- An old `tagent-cli.conf` (the INI file of versions before 0.17.0) is no longer read: copy your settings into `tagent-cli.toml` (see [Configuration](#configuration))
 
 **Hotkeys not working**
 - Run as administrator if needed (Windows)
@@ -554,15 +562,15 @@ The clipboard and the history file always get plain text.
 - Verify audio device is working
 - Try shorter text if speech fails
 - Press Esc to cancel stuck speech playback
-- Speech language is based on `SourceLanguage` config setting
-- Check that `EnableTextToSpeech` and `EnableSpeechHotkey` are set to `true` in the `[Speech]` section
+- Speech language is based on the `source_language` config setting
+- Check that `enable_text_to_speech` and `enable_speech_hotkey` are set to `true` in the `[speech]` section
 - Verify speech hotkey is not conflicting with other applications
-- Try changing `SpeechHotkey` to a different key combination
+- Try changing `speech_hotkey` to a different key combination
 
 ### Performance Tips
 
-- Use `ShowTerminalOnTranslate = false` for faster GUI translations
-- Set `AutoHideTerminalSeconds = 0` to keep terminal visible
+- Use `show_terminal_on_translate = false` for faster GUI translations
+- Set `auto_hide_terminal_seconds = 0` to keep terminal visible
 
 ## Technical Details
 
@@ -613,7 +621,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.16.0+008
+**Current Version**: v0.17.0+001
 
 ## Contributing
 
@@ -636,4 +644,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.16.0+008** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+001** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

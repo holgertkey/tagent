@@ -1,6 +1,6 @@
 [package]
 name = "tagent-cli"
-version = "0.16.0+008"
+version = "0.17.0+001"
 edition = "2021"
 description = "Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate"
 authors = ["Holgert K"]
@@ -32,6 +32,9 @@ rodio = { version = "0.21", features = ["symphonia-mp3"] }
 arboard = "3.4"
 ctrlc = "3.4"
 rustyline = "18.0.1"
+# `tagent-cli.toml`: serde for reading, the format-preserving document for `/save`.
+serde = { version = "1.0", features = ["derive"] }
+toml_edit = { version = "0.25", features = ["serde"] }
 
 [dev-dependencies]
 async-trait = "0.1"

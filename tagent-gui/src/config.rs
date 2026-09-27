@@ -89,7 +89,7 @@ fn default_popup_border_width() -> i32 {
     1
 }
 
-/// Default global hotkey, same format and default value as `tagent-cli`'s `TranslateHotkey`.
+/// Default global hotkey, same format and default value as `tagent-cli`'s `translate_hotkey`.
 fn default_translate_hotkey() -> String {
     "Alt+A".to_string()
 }
@@ -151,7 +151,7 @@ fn default_show_context_menu() -> bool {
     false
 }
 
-/// `tagent-gui`'s own configuration, independent of `tagent-cli.conf`.
+/// `tagent-gui`'s own configuration, independent of `tagent-cli.toml`.
 ///
 /// Stored as plain, pretty-printed JSON at [`config_path`] and meant to be
 /// hand-editable (not only written via a future Settings window).

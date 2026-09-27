@@ -753,7 +753,7 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 
 ### Stage F3 — `tagent-cli` config in TOML
 
-**Status:** planned (decided 2026-09-27)
+**Status:** done (2026-09-27, tagent-cli 0.17.0)
 **Goal:** replace `tagent-cli.conf` (INI, hand-written parser) with `tagent-cli.toml`
 before P1, so DeepL ships with the new format and its profile docs are written once.
 Only `tagent-cli` changes; `tagent-gui` keeps `tagent-gui.json` (its Settings dialog is the
@@ -896,6 +896,34 @@ provider examples in this plan (Stage F text stays as history; P1 uses the new f
 `tagent-cli.toml`; hand-editing it hot-reloads; `/save` keeps comments; `/config` shows
 masked profile secrets; a release build syncs the `0.17.0` version into the docs.
 
+
+**Implementation notes (2026-09-27):**
+- Crate: `toml_edit` 0.25 alone, `serde` feature (`de::from_str` to read, `DocumentMut`
+  for `/save`); `toml` would have needed `toml_edit` for the in-place edit anyway.
+- `ConfigFile` (one `#[serde(default)]` struct per section, defaults taken from
+  `Config::default()` via a small macro) ↔ the flat `Config`, which the rest of the app
+  keeps using unchanged. `Config` gained `PartialEq` for the tests.
+- Errors carry line and column plus the offending line (so the key is visible), not a key
+  path; that turned out to be enough. `main.rs` prints a startup error with `Display` and
+  exits 1 (returning it from `main` printed the `Debug` form). Reload behavior changed
+  for a broken file: the INI parser never failed, so there was nothing to keep; now the
+  mtime is recorded before loading, so a broken edit warns once and the old config stays.
+  The `.ok()` reload callers (interactive, CLI, speech) now print it (`reload_or_warn`).
+- `render_config` = the commented template parsed, values set with `set_value`, profiles
+  appended under an implicit `provider_options`, below the template's closing
+  explanation. Two `toml_edit` traps found by experiment: `Table::insert` on an existing
+  key drops the comment lines above it (they are the key's decor), so values are replaced
+  through `get_mut`; indexing a missing section creates an inline table, so a real
+  `Table` is inserted instead.
+- `/save` = `with_languages`: only the two language values of the existing document
+  (their inline comments kept); a missing file gets the full template.
+- Checked live with `XDG_CONFIG_HOME` in a scratch dir: a fresh start creates a commented
+  `tagent-cli.toml` (mode `0600`); `/config` masks a profile's `api_key`; a wrong value
+  type exits with the line. Hot reload and `/save` are covered by unit tests only (the
+  unified mode would grab the real global hotkeys).
+- `/config` (0.17.0+001) prints the settings as `[section]` + `key = value` lines, generated
+  from the same `ConfigFile` serialization as the file (so no field list of its own), and
+  profiles as `[provider_options.<name>]` tables; a test parses the settings part back.
 ---
 
 
@@ -1126,7 +1154,8 @@ from its official docs) in the docs and in a test.
 **Constraints:** translation only; no scripting or conditionals, since a growing schema
 would turn into a programming language. Anything that needs logic gets a native adapter.
 **Naming/selection** (Q3): kind `http`. Each declarative service is a user profile, e.g.
-`[Provider:libre] type = http` plus its templates, selected with `TranslateProvider = libre`.
+`[provider_options.libre]` with `type = "http"` plus its templates (in `tagent-cli.toml`),
+selected with `translate_provider = "libre"`.
 The LibreTranslate reference config is documented as such a profile.
 **Tests:** template substitution and escaping (injection-safe), the JSON-path subset,
 LibreTranslate reference config against the mock server.
@@ -1155,7 +1184,8 @@ LibreTranslate reference config against the mock server.
   - Env var naming: `TAGENT_<PROVIDER>_<KEY>` (uppercase, non-alphanumerics → `_`). The
     prefix is shared by both apps, and the rule lives in the library (`env_var_name`,
     Stage B).
-  - Config file: `[Provider:<name>]` sections in `tagent-cli.conf` (library keys verbatim)
+  - Config file: `[Provider:<name>]` sections in `tagent-cli.conf` (library keys verbatim;
+    `[provider_options.<name>]` tables in `tagent-cli.toml` since Stage F3)
     and `provider_options` in `tagent-gui.json`. Both are modeled in the config structs, so
     saves don't drop them. The file is written with mode `0600` on Unix, and secrets are
     masked in `/config` and Settings.

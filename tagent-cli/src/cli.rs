@@ -151,7 +151,7 @@ impl CliHandler {
         }
 
         // Load current configuration
-        self.config_manager.check_and_reload().ok();
+        self.config_manager.reload_or_warn();
         let config = self.config_manager.get_config();
         let (source_code, target_code) = self.config_manager.get_language_codes();
 

@@ -40,7 +40,7 @@ impl ClipboardManager {
         unsafe {
             // Capture the foreground window as the very first thing, before any sleep or
             // simulated input -- by the time those run, focus may already have moved (e.g.
-            // this app's own terminal popping up per ShowTerminalOnTranslate).
+            // this app's own terminal popping up per show_terminal_on_translate).
             let foreground = GetForegroundWindow();
 
             // Wait a bit before touching anything, to let the initial hotkey keystroke

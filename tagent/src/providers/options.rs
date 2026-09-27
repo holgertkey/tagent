@@ -219,7 +219,7 @@ impl fmt::Debug for ProviderOptions {
 }
 
 /// An application's provider profiles: profile name → option key → value, e.g. read from a
-/// config file's `[Provider:<name>]` sections or a JSON object.
+/// config file's `[provider_options.<name>]` tables or a JSON object.
 ///
 /// Profile names and keys are case-insensitive and stored lowercase; values are kept as
 /// given. [`options`](Self::options) turns one profile into the [`ProviderOptions`] a
@@ -431,8 +431,7 @@ pub fn env_var_name(provider: &str, key: &str) -> String {
 }
 
 /// Whether `name` is a valid profile name: non-empty, only `a-z`, `0-9`, `_` and `-`
-/// once lowercased (in particular no `:`, so a `[Provider:<name>]` section parses
-/// unambiguously).
+/// once lowercased, so it is a bare TOML key and an environment variable name part.
 pub(crate) fn is_valid_profile_name(name: &str) -> bool {
     !name.is_empty()
         && name

@@ -138,7 +138,7 @@ A missing file is created with defaults on first run. Changes are live-reloaded 
 before each translation), except for the hotkeys, `start_minimized` and the tray, which
 are read at startup. A file that is present but invalid is left untouched: the app logs
 a warning and keeps using its last valid settings. It does not read `tagent-cli`'s
-`tagent-cli.conf`.
+`tagent-cli.toml`.
 
 The main keys:
 
