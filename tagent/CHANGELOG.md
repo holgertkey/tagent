@@ -36,6 +36,11 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- **`languages::LANGUAGES`**: the public table of every language `name_to_code` /
+  `code_to_name` know (15, as `Language { code, name }`, in display order; `"auto"` is
+  accepted by both functions but not listed), so an application can build its language
+  pickers from it. Both functions now look up this table instead of two separate `match`
+  blocks, with unchanged results.
 - **`Error` variants for keyed and paid services**, groundwork for providers beyond Google
   (no built-in provider returns them yet): `Auth` (credentials missing, invalid or expired;
   HTTP 401/403), `RateLimited { retry_after }` (HTTP 429, with the service's `Retry-After`

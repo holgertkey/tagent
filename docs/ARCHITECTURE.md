@@ -1150,9 +1150,10 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     empty with `translation_is_error: true` to hide the (inapplicable)
     translation button.
 - **Scope**: a bare-bones translate-only prototype — no history logging (TTS
-  playback shipped at Stage 10, above). `app.slint` hardcodes a 6-language
-  list (Auto/English/Russian/Spanish/French/German), much smaller than the
-  ~16 languages `config.rs` supports for CLI/interactive mode.
+  playback shipped at Stage 10, above). The language dropdowns are filled from
+  `tagent::languages::LANGUAGES` (`source_languages`/`target_languages` in
+  `main.rs`, 0.14.0+025), the same table `name_to_code`/`code_to_name` use, so
+  both apps know the same 15 languages; "Auto" is prepended to the source list only.
 - **Detaching from the terminal** (`tagent-gui/src/detach.rs`, `#[cfg(unix)]`,
   0.14.0+013): a Linux/macOS launch from a terminal would otherwise hold it until
   Quit. First thing in `main` (before any thread exists, since it may `exit`),
@@ -1248,7 +1249,7 @@ Stage 7 above. Two halves, both needed:
     together and remove this entry.
 
 - **Language list and history logging aren't configurable at all yet** — no
-  field exists for either (the 6-language list stays hardcoded).
+  field exists for either (the language list is `tagent`'s `LANGUAGES` table).
   `tagent-cli.conf` is not read at all any more (no migration path — see the
   "own configuration" concept in [the development plan](tagent-gui-dev-plan.md)). (`translate_hotkey`
   and `popup_auto_hide_seconds` used to be listed here as hand-edit-only —

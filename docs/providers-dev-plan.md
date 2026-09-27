@@ -751,6 +751,29 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 
 ---
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Provider stages
 
 Each provider stage follows the template at the end. Planned order (it can be changed):

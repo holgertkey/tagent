@@ -12,6 +12,15 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+025] - 2026-09-27
+
+### Changed
+- **All 15 languages the `tagent` library knows are offered**, up from 5: the source and
+  target dropdowns are built from `tagent::languages::LANGUAGES` (Chinese, Japanese,
+  Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic and Hindi are new), with
+  Auto still offered as a source only. English/Russian/Spanish/French/German stay first,
+  and Russian is still the default target.
+
 ## [0.14.0+024] - 2026-09-26
 
 ### Added

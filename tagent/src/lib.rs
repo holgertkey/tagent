@@ -116,6 +116,5 @@
 pub mod article;
 /// Unified error type for the `tagent` library.
 pub mod error;
-/// Human-readable language name ↔ BCP-47 code mapping.
 pub mod languages;
 pub mod providers;

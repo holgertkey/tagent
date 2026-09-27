@@ -28,13 +28,17 @@ use platform::{ClipboardManager, KeyboardHook};
 
 slint::include_modules!();
 
-/// Language names offered in the source-language dropdown; `"Auto"` (auto-detect)
-/// is the default.
-const SOURCE_LANGUAGES: [&str; 6] = ["Auto", "English", "Russian", "Spanish", "French", "German"];
+/// Language names offered in the source-language dropdown: `"Auto"` (auto-detect, the
+/// default) followed by the target languages.
+fn source_languages() -> Vec<&'static str> {
+    std::iter::once("Auto").chain(target_languages()).collect()
+}
 
-/// Language names offered in the target-language dropdown: the source list minus
-/// `"Auto"`, which can't be a translation target.
-const TARGET_LANGUAGES: [&str; 5] = ["English", "Russian", "Spanish", "French", "German"];
+/// Language names offered in the target-language dropdown: every language `tagent`
+/// knows ([`languages::LANGUAGES`]), in its order. `"Auto"` can't be a translation target.
+fn target_languages() -> Vec<&'static str> {
+    languages::LANGUAGES.iter().map(|language| language.name).collect()
+}
 
 /// Target language selected at startup.
 const DEFAULT_TARGET_LANGUAGE: &str = "Russian";
@@ -46,11 +50,12 @@ fn init_language_models(window: &AppWindow) {
             names.iter().map(|&name| SharedString::from(name)).collect::<Vec<_>>(),
         ))
     };
-    window.set_source_languages(to_model(&SOURCE_LANGUAGES));
-    window.set_target_languages(to_model(&TARGET_LANGUAGES));
+    let targets = target_languages();
+    window.set_source_languages(to_model(&source_languages()));
+    window.set_target_languages(to_model(&targets));
     window.set_source_language_index(0);
     window.set_target_language_index(
-        TARGET_LANGUAGES
+        targets
             .iter()
             .position(|&name| name == DEFAULT_TARGET_LANGUAGE)
             .unwrap_or(0) as i32,
@@ -62,10 +67,11 @@ fn init_language_models(window: &AppWindow) {
 /// index is out of range). The two dropdowns list different languages, so the swap
 /// goes by language name, not by index.
 fn swapped_language_indices(source_index: i32, target_index: i32) -> Option<(i32, i32)> {
-    let source = SOURCE_LANGUAGES.get(usize::try_from(source_index).ok()?)?;
-    let target = TARGET_LANGUAGES.get(usize::try_from(target_index).ok()?)?;
-    let new_source = SOURCE_LANGUAGES.iter().position(|name| name == target)?;
-    let new_target = TARGET_LANGUAGES.iter().position(|name| name == source)?;
+    let (sources, targets) = (source_languages(), target_languages());
+    let source = sources.get(usize::try_from(source_index).ok()?)?;
+    let target = targets.get(usize::try_from(target_index).ok()?)?;
+    let new_source = sources.iter().position(|name| name == target)?;
+    let new_target = targets.iter().position(|name| name == source)?;
     Some((new_source as i32, new_target as i32))
 }
 
@@ -3077,16 +3083,18 @@ mod tests {
     /// must otherwise list exactly the source languages, in the same order.
     #[test]
     fn target_languages_are_source_languages_without_auto() {
-        assert_eq!(SOURCE_LANGUAGES[0], "Auto");
-        assert!(!TARGET_LANGUAGES.contains(&"Auto"));
-        assert_eq!(&SOURCE_LANGUAGES[1..], &TARGET_LANGUAGES[..]);
-        assert!(TARGET_LANGUAGES.contains(&DEFAULT_TARGET_LANGUAGE));
+        let (sources, targets) = (source_languages(), target_languages());
+        assert_eq!(sources[0], "Auto");
+        assert!(!targets.contains(&"Auto"));
+        assert_eq!(&sources[1..], &targets[..]);
+        assert!(targets.contains(&DEFAULT_TARGET_LANGUAGE));
+        assert_eq!(targets.len(), languages::LANGUAGES.len());
     }
 
     #[test]
     fn swap_goes_by_language_name_across_the_two_lists() {
-        let src = |name: &str| SOURCE_LANGUAGES.iter().position(|&n| n == name).unwrap() as i32;
-        let tgt = |name: &str| TARGET_LANGUAGES.iter().position(|&n| n == name).unwrap() as i32;
+        let src = |name: &str| source_languages().iter().position(|&n| n == name).unwrap() as i32;
+        let tgt = |name: &str| target_languages().iter().position(|&n| n == name).unwrap() as i32;
         assert_eq!(
             swapped_language_indices(src("English"), tgt("Russian")),
             Some((src("Russian"), tgt("English")))
@@ -3101,7 +3109,7 @@ mod tests {
     fn swap_is_unavailable_for_auto_source_or_bad_indices() {
         assert_eq!(swapped_language_indices(0, 1), None);
         assert_eq!(swapped_language_indices(-1, 0), None);
-        assert_eq!(swapped_language_indices(1, TARGET_LANGUAGES.len() as i32), None);
+        assert_eq!(swapped_language_indices(1, target_languages().len() as i32), None);
     }
 
     #[test]
@@ -3112,8 +3120,8 @@ mod tests {
 
         let source = window.get_source_languages();
         let target = window.get_target_languages();
-        assert_eq!(source.row_count(), SOURCE_LANGUAGES.len());
-        assert_eq!(target.row_count(), TARGET_LANGUAGES.len());
+        assert_eq!(source.row_count(), source_languages().len());
+        assert_eq!(target.row_count(), target_languages().len());
         assert!(target.iter().all(|name| name != "Auto"));
         assert_eq!(
             source.row_data(window.get_source_language_index() as usize).unwrap(),

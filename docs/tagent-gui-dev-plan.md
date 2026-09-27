@@ -71,7 +71,8 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 
 - **Translation**: an input box (Enter submits, Shift+Enter inserts a newline) and a
   transcript. Single words go to a dictionary lookup (`show_dictionary`, `spell_check`).
-  There's a hardcoded 6-language list, and "Auto" is offered only as a source language.
+  The language dropdowns list every language of `tagent::languages::LANGUAGES` (15,
+  since 0.14.0+025), and "Auto" is offered only as a source language.
 - **Transcript**: view-only `StyledText` blocks with semantic highlighting (part of speech,
   synonyms, correction notice, prompt, errors; colors derived from each block's
   background). Right-click copies a block, optionally through a one-item menu
@@ -121,8 +122,9 @@ Linux (no `xdotool` needed), and the shared `tagent::article`. See the changelog
 
 Candidates, not yet scheduled; the order is a suggestion.
 
-1. **Stage 2 — Language list expansion.** The 6-language list is `tagent-gui`'s own call
-   (not tied to `tagent-cli`'s ~16). Low effort, self-contained.
+1. ~~**Stage 2 — Language list expansion.**~~ Done in 0.14.0+025 (2026-09-27): the
+   dropdowns are built from the new `tagent::languages::LANGUAGES` table instead of a
+   hardcoded 5-language list.
 2. **History logging.** A candidate, not prioritized; no design yet.
 3. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
