@@ -765,19 +765,128 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 
 ### Stage P1 — DeepL (translation)
 
-**Status:** planned
+**Status:** planned (plan agreed 2026-09-27)
 **Why first:** a well-documented keyed API. It validates options, auth errors, quota
 errors and language-code mapping end to end.
-**Before starting:** read the official DeepL API docs (endpoints for free vs pro keys, auth
-header format, language-code list, limits, quota status code). Link them here.
-**Scope:** `tagent/src/providers/deepl.rs`, `DeepLTranslateProvider`; options `api_key`
-(required, secret) and possibly `endpoint`; BCP-47 ↔ DeepL code mapping inside the adapter;
-`capabilities()` filled in; registry and const-list entries.
-**Tests:** request building and response parsing (pure functions); mock-server tests for
-success/401/429/quota; a live test behind `#[ignore]` plus an env var.
-**Semver:** additive; it goes into the current cycle's `tagent` version (0.19.0 while that
-is unpublished). The apps only need the Stage F wiring (and, with the features below, to
-enable `deepl`).
+**Goal:** `DeepLTranslateProvider`, selectable in both apps through a `[Provider:deepl]`
+profile / `provider_options` entry with an `api_key`, with no app code changes (the Stage F
+wiring and the registry-driven Settings fields pick it up). Part 2 then puts every
+provider behind its own Cargo feature.
+
+**Official docs** (read 2026-09-27; re-check before landing):
+- Translate text: <https://developers.deepl.com/api-reference/translate>
+- Authentication: <https://developers.deepl.com/docs/getting-started/auth>
+- Error handling: <https://developers.deepl.com/docs/best-practices/error-handling>
+- Supported languages: <https://developers.deepl.com/docs/getting-started/supported-languages>
+- OpenAPI spec (machine-readable, used to confirm the limits below):
+  <https://github.com/DeepLcom/openapi/blob/main/openapi.yaml>
+
+**API facts the adapter relies on:**
+- `POST {base}/v2/translate`, JSON body `{"text": ["..."], "target_lang": "DE",
+  "source_lang": "EN"}`; `source_lang` omitted → DeepL detects the language itself.
+  Response: `{"translations": [{"detected_source_language": "EN", "text": "..."}]}`.
+- Base URL: `https://api-free.deepl.com` for a Free key (suffix `:fx`),
+  `https://api.deepl.com` otherwise.
+- Auth header: `Authorization: DeepL-Auth-Key <key>` (header only, fits `secret_header`).
+- Limit: the whole request body ≤ 128 KiB. The "1024 UTF-8 bytes" figure in the docs is a
+  glossary-entry limit, not a text limit (confirmed in the OpenAPI spec).
+- Statuses: 403 auth, 456 quota exhausted (terminal), 429 and 529 too many requests,
+  500/503/504 temporary. The error body is JSON with `message` (or `error.message`).
+- Codes are case-insensitive. Sources are base codes only (`EN`, `PT`, `ZH`); targets
+  also take variants (`EN-GB`, `EN-US`, `PT-BR`, `PT-PT`, `ZH-HANS`, `ZH-HANT`, `ES-419`,
+  ...), and a bare `EN`/`PT` target is still accepted. There is no detection endpoint.
+
+**Decisions (2026-09-27):**
+1. **`detect_language` via `/translate`** on a short prefix of the text (≈100
+   characters, cut on a char boundary), reading `detected_source_language` and discarding
+   the translated text. `target_lang` is a fixed `EN`; the live test checks that English
+   input still reports `EN` (if DeepL rejects or misreports a same-language request, use
+   `DE` instead). It bills those characters, but its only caller is the TTS `"auto"`
+   resolution, and without it "DeepL + speech of `auto` text" would always speak as `en`.
+   `capabilities().detects_language = true`.
+2. **A bare target `en` / `pt` is passed as `EN` / `PT`**, no variant option: DeepL picks
+   the variant, and a user who wants one sets `en-GB` etc. as the target language.
+3. **HTTP 529 counts as rate limiting.** The transport gains a crate-private
+   `rate_limit_statuses(&[u16])` (default `&[429]`, so Google is unchanged); DeepL sets
+   `&[429, 529]`, so 529 becomes `RateLimited` and is retried with a short `Retry-After`
+   like 429.
+4. **The `deepl` feature is not in `default`** (part 2): library users opt in, the apps
+   enable it in their own `Cargo.toml`.
+
+Deliberate deviation from DeepL's advice: DeepL calls 500 retryable, but the Q2 policy
+(no retry on 500) is kept for every provider.
+
+**Scope / files (part 1, one commit):**
+- New `tagent/src/providers/deepl.rs`, `pub struct DeepLTranslateProvider` with
+  `with_options(&ProviderOptions) -> Result<Self, Error>` (no infallible `new()`: a key is
+  required). Base URL from the key's `:fx` suffix, overridden by `endpoint` (which is also
+  how mock-server tests point it at the mock; no `#[cfg(test)]` hook needed). Transport:
+  `HttpTransport::builder(DEEPL_TRANSPORT).secret_header("Authorization",
+  "DeepL-Auth-Key ", key)?.quota_statuses(&[456]).rate_limit_statuses(&[429, 529])
+  .options(&options)?.build()?`; 403 → `Auth` via the default `auth_statuses`.
+- Pure, unit-tested functions: `build_request_body(text, from, to)`,
+  `parse_response(bytes) -> (text, detected)`, `to_deepl_source`, `to_deepl_target`,
+  `from_deepl`.
+- `tagent/src/providers/http.rs`: `rate_limit_statuses` (decision 3) plus its tests.
+- `tagent/src/providers/mod.rs`: `pub mod deepl;`, `"deepl"` in `TRANSLATION_PROVIDERS`,
+  a branch in `create_provider_with`; module docs mention the second provider.
+- `tagent/src/providers/registry.rs`: `DEEPL_TRANSPORT` (2 retries, 10 s,
+  `retry_on_rate_limit: true`, per Q2) and a descriptor with display name `"DeepL"` and a
+  full option list of its own (`api_key`, `endpoint`, `timeout_secs`, `max_retries`; a
+  `static` can't concatenate `TRANSPORT_OPTIONS`, so the two generic entries are repeated
+  or shared as separate `const OptionSpec`s).
+- `capabilities()`: `detects_language: true`, `max_text_len: None` (the limit is bytes of
+  the whole request, not characters), `languages: None` (DeepL's list keeps growing; a
+  hardcoded one would go stale).
+
+**Options:**
+
+| Key | Required | Secret | Default |
+|---|---|---|---|
+| `api_key` | yes (`InvalidOptions` if missing/empty) | yes | — (env `TAGENT_DEEPL_API_KEY` works through Stage B) |
+| `endpoint` | no | no | by key: `https://api-free.deepl.com` (`:fx`) or `https://api.deepl.com`; the adapter appends `/v2/translate` |
+| `timeout_secs`, `max_retries` | no | no | transport defaults (10 s, 2) |
+
+**Language codes** (BCP-47 in, DeepL at the edge; case-insensitive):
+- Source: the primary subtag, uppercased (`en-US` → `EN`, `zh-TW` → `ZH`); `"auto"` → no
+  `source_lang`.
+- Target: `zh`, `zh-CN`, `zh-Hans`, `zh-SG` → `ZH-HANS`; `zh-TW`, `zh-HK`, `zh-Hant` →
+  `ZH-HANT`; other region tags uppercased as is (`pt-BR` → `PT-BR`, `en-GB` → `EN-GB`);
+  a bare code uppercased (`en` → `EN`). An unsupported code is left to DeepL, whose 400
+  surfaces as `Api` with its `message`.
+- Back (`detect_language`): lowercased primary subtag (`EN` → `en`, `ZH` → `zh`).
+
+**Semver:** additive; goes into the current cycle's `tagent` 0.19.0 (unpublished; the
+latest `v*` tag carries 0.18.1), same changelog section, no bump. Part 1 is expected to
+change no app code, so no `+BUILD` bumps; if an app needs a change, it gets one.
+**Changelogs:** `tagent/CHANGELOG.md`, 0.19.0 section: the DeepL provider (with its
+529 handling; `rate_limit_statuses` itself is crate-private and not mentioned). The apps get a short
+"DeepL available via a profile" note only when they change (part 2 does change their
+`Cargo.toml`).
+
+**Tests:**
+- Unit: request body (with/without `source_lang`), response parsing (incl. missing
+  `translations`, empty list → `Decode`), every code-mapping row, key → base URL (`:fx`
+  vs Pro vs `endpoint` override), missing `api_key` → `InvalidOptions`,
+  `capabilities()`, the prefix cut for detection (multi-byte text).
+- Mock server (`wiremock`): success, checking the `Authorization` header and the JSON
+  body; `detect_language` round trip; 403 → `Auth`; 456 → `QuotaExceeded` (not retried);
+  429 / 529 with short `Retry-After` retried, without → `RateLimited`; 503 retried; a
+  sentinel key never appears in error messages; `max_retries = 0`.
+- Factory: `create_provider_with("deepl", ..)`, a profile `work` with `type = deepl`
+  (label `"DeepL (work)"`), registry/list/factory agreement (existing tests).
+- Live, `#[ignore]`: `TAGENT_LIVE_TESTS=1` plus `TAGENT_DEEPL_API_KEY` (a Free key is
+  available): translate `en → de`, `auto → ru`, `detect_language`.
+- Manual: `tagent-cli` CLI mode with `TranslateProvider = deepl` and
+  `[Provider:deepl] api_key = ...`.
+
+**Docs:** `deepl` module rustdoc (options, code mapping, detection cost, Free/Pro),
+`cargo doc -p tagent` clean; CLAUDE.md ("Translation Provider Architecture": a DeepL
+bullet next to Google's) and `docs/ARCHITECTURE.md`; fill "Notes after landing" here.
+**Done when:** `cargo test`, clippy `-D warnings`, `cargo doc -p tagent` clean; the live
+tests pass with the Free key; a CLI translation through a `deepl` profile works;
+`tagent-gui` Settings offers DeepL with `api_key` as a password field (checked by build
+and unit tests; the dialog itself only if a live check is agreed).
 
 #### P1 part 2 — Cargo features per provider (former Stage G)
 
@@ -786,16 +895,27 @@ choose between, and DeepL is the first provider worth leaving out. Done after De
 works, in its own commit.
 
 **Goal:** users of the library compile only the providers they need.
-- Features named after the provider kinds: `google` (default), `deepl`, and later
-  `openai-compat`, `http`. The registry (descriptors and `*_PROVIDERS` lists), the factory
-  branches, the provider modules and their tests are all `cfg`-gated consistently; the
-  shared transport and `ProviderOptions`/`ProviderProfiles` stay unconditional.
+- Features named after the provider kinds: `google` (default), `deepl` (**not** default,
+  decision 4), and later `openai-compat`, `http`. The registry (descriptors and
+  `*_PROVIDERS` lists), the factory branches, the provider modules and their tests are all
+  `cfg`-gated consistently; the shared transport and `ProviderOptions`/`ProviderProfiles`
+  stay unconditional. Keeping `google` in `default` makes the change additive.
 - A profile whose `type` names a kind that is compiled out gets `UnknownProvider`, the same
   as an unknown kind, and the reserved built-in names follow the enabled features.
-- The apps enable what they ship (`google` + `deepl`). CI builds with `--all-features` and
-  runs `cargo check -p tagent --no-default-features` plus each feature alone.
-- Decide whether `deepl` is on by default. Keeping `google` in `default` makes the change
-  additive.
+- With `--no-default-features` every list is empty: the factories' `match` needs a
+  fallback arm (`UnknownProvider`), and items used only by providers (e.g. `GOOGLE_*`
+  constants, transport helpers) must not trigger dead-code warnings.
+- `examples/*` that need Google get `required-features = ["google"]`.
+- The apps enable what they ship: `tagent = { path = "../tagent", version = "0.19.0",
+  features = ["deepl"] }` in `tagent-cli` and `tagent-gui` (Google comes from `default`),
+  with `+BUILD` bumps and changelog entries ("DeepL translation provider available via a
+  profile").
+- CI (`ci.yml`): build/test with `--all-features`, plus `cargo check -p tagent
+  --no-default-features`, `--no-default-features --features google` and
+  `--no-default-features --features deepl`; the packaging dry run covers the app
+  dependencies. Check `release.yml` for anything that builds `tagent` alone.
+- Docs: the "Adding a New … Provider" sections in CLAUDE.md / ARCHITECTURE.md gain the
+  feature step; the `tagent` README lists the features.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
