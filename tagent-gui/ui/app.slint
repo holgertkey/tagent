@@ -8,12 +8,10 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 // selectable `TextInput` -- there is no mouse selection or Ctrl+C in the
 // transcript any more, only a right-click "Copy" menu per block (see
 // `copy-block-requested`).
-// One row of Settings > General "Provider options" (built by main.rs from the
-// selected profiles' `tagent` descriptors, see provider_form.rs): a profile
-// heading, or an option field.
+// One field of Settings > General's provider options panel (built by main.rs
+// from the profile's `tagent` descriptor, see provider_form.rs).
 export struct ProviderOptionField {
     profile: string,
-    heading: bool,
     label: string,
     description: string,
     value: string,
@@ -1217,12 +1215,28 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> dictionary-provider-index: 0;
     in-out property <[string]> speech-providers: ["google"];
     in-out property <int> speech-provider-index: 0;
-    // The option fields of the three selected profiles; rebuilt by main.rs on
-    // `provider-selection-changed`. Edits go to main.rs through
-    // `provider-option-edited` and are only written on OK.
+    // Provider options live in a panel over the dialog, one profile at a time:
+    // a picker's "Options…" button asks main.rs (`provider-options-requested`,
+    // with the picker's index: 0 translation, 1 dictionary, 2 speech) to fill
+    // `provider-option-fields`/`options-panel-title`/`options-panel-note` and
+    // open it. Typing goes to main.rs through `provider-option-edited`; the
+    // panel's OK keeps those edits for the dialog, its Cancel drops them, and
+    // nothing is written before the dialog's own OK.
     in-out property <[ProviderOptionField]> provider-option-fields: [];
+    in-out property <bool> options-panel-open: false;
+    in-out property <string> options-panel-title: "";
+    in-out property <string> options-panel-note: "";
+    // Per picker, what its profile still lacks ("deepl: api_key required"),
+    // or ""; shown as a ⚠ on the row. `provider-warning-text` spells them out
+    // below the pickers, each profile once (several pickers can share one).
+    // Both refreshed by main.rs on every picker change and panel OK.
+    in-out property <[string]> provider-warnings: ["", "", ""];
+    in-out property <string> provider-warning-text: "";
     callback provider-selection-changed();
+    callback provider-options-requested(int /* picker */);
     callback provider-option-edited(int /* row */, string /* value */);
+    callback provider-options-accepted();
+    callback provider-options-cancelled();
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
     in-out property <bool> show-dictionary: true;
@@ -1424,347 +1438,443 @@ export component SettingsDialog inherits Dialog {
     // global hotkey, popup auto-hide delay, start-minimized and
     // remember-window-geometry toggles. Adding a category later means adding
     // another `Tab { ... }` here, not restructuring the dialog.
-    TabWidget {
-        Tab {
-            title: "General";
+    // The dialog's single main element (a Dialog allows only one besides its
+    // StandardButtons): the tabs, with the provider options panel on top of
+    // them while it is open.
+    Rectangle {
+        min-width: tabs.min-width;
+        min-height: tabs.min-height;
+        preferred-width: tabs.preferred-width;
+        preferred-height: tabs.preferred-height;
 
-            VerticalBox {
-                alignment: start;
+        tabs := TabWidget {
+            width: parent.width;
+            height: parent.height;
+            Tab {
+                title: "General";
 
-                // Label/dropdown pairs share a row, so the General tab doesn't
-                // grow by two lines per provider axis.
-                GridLayout {
-                    spacing: 8px;
-                    Row {
-                        Text { text: "Translate provider:"; vertical-alignment: center; }
-                        ComboBox {
-                            model: providers;
-                            current-index <=> provider-index;
-                            selected => { provider-selection-changed(); }
-                        }
-                    }
-                    Row {
-                        Text { text: "Dictionary provider:"; vertical-alignment: center; }
-                        ComboBox {
-                            model: dictionary-providers;
-                            current-index <=> dictionary-provider-index;
-                            selected => { provider-selection-changed(); }
-                        }
-                    }
-                    Row {
-                        Text { text: "Speech provider:"; vertical-alignment: center; }
-                        ComboBox {
-                            model: speech-providers;
-                            current-index <=> speech-provider-index;
-                            selected => { provider-selection-changed(); }
-                        }
-                    }
-                }
+                VerticalBox {
+                    alignment: start;
 
-                if provider-option-fields.length > 0: Text {
-                    text: "Provider options (empty = the provider's default; saved on OK):";
-                    font-weight: 700;
-                }
-                for field[row] in provider-option-fields: VerticalLayout {
-                    spacing: 2px;
-                    if field.heading: Text { text: field.label; font-weight: 600; }
-                    if !field.heading: HorizontalLayout {
+                    // Label/dropdown pairs share a row, so the General tab doesn't
+                    // grow by two lines per provider axis.
+                    GridLayout {
                         spacing: 8px;
-                        Text {
-                            text: field.label + (field.required ? " *" : "") + ":";
-                            vertical-alignment: center;
-                            min-width: 110px;
+                        Row {
+                            Text { text: "Translate provider:"; vertical-alignment: center; }
+                            ComboBox {
+                                model: providers;
+                                current-index <=> provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Button {
+                                text: "Options…";
+                                clicked => { provider-options-requested(0); }
+                            }
+                            Text {
+                                text: provider-warnings[0] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
                         }
+                        Row {
+                            Text { text: "Dictionary provider:"; vertical-alignment: center; }
+                            ComboBox {
+                                model: dictionary-providers;
+                                current-index <=> dictionary-provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Button {
+                                text: "Options…";
+                                clicked => { provider-options-requested(1); }
+                            }
+                            Text {
+                                text: provider-warnings[1] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
+                        }
+                        Row {
+                            Text { text: "Speech provider:"; vertical-alignment: center; }
+                            ComboBox {
+                                model: speech-providers;
+                                current-index <=> speech-provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Button {
+                                text: "Options…";
+                                clicked => { provider-options-requested(2); }
+                            }
+                            Text {
+                                text: provider-warnings[2] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
+                        }
+                    }
+
+                    if provider-warning-text != "": Text {
+                        text: provider-warning-text;
+                        wrap: word-wrap;
+                    }
+
+                    CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }
+                    CheckBox { text: "Spell check suggestions"; checked <=> spell-check; }
+                    CheckBox { text: "Enable text-to-speech"; checked <=> enable-text-to-speech; }
+                    Text {
+                        text: "Applies to the next translation immediately — no restart needed. \"Spell check suggestions\" has no effect while \"Show dictionary\" is off.";
+                        wrap: word-wrap;
+                    }
+
+                    CheckBox { text: "Show menu on right-click"; checked <=> show-context-menu; }
+                    Text {
+                        text: "When off (default), right-click a transcript block copies it immediately -- a brief border flash confirms it. When on, right-click opens a \"Copy\" menu instead. Applies immediately, no restart needed.";
+                        wrap: word-wrap;
+                    }
+
+                    Button {
+                        text: "Reset to Defaults";
+                        clicked => { reset-to-defaults-requested(); }
+                    }
+                    Text {
+                        text: "Resets every setting on every tab to its default value, except provider options. Nothing is saved until you click OK.";
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Tab {
+                title: "View";
+
+                ScrollView {
+                    VerticalBox {
+                        alignment: start;
+
+                        Text { text: "Theme:"; }
+                        ComboBox {
+                            model: themes;
+                            current-index <=> theme-index;
+                        }
+
+                        Text { text: "Color scheme:"; }
+                        color-scheme-combo := ComboBox {
+                            model: color-scheme-options;
+                            current-index <=> color-scheme-index;
+                        }
+
+                        background-color-field := ColorPickerField { label: "Background color:"; }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Blocks spacing (px):"; vertical-alignment: center; }
+                            SpinBox { minimum: 0; maximum: 200; value <=> block-spacing-px; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Phrases spacing (px):"; vertical-alignment: center; }
+                            SpinBox { minimum: 0; maximum: 100; value <=> phrases-spacing-px; }
+                        }
+                        CheckBox { text: "Show prompt"; checked <=> show-prompt; }
+                        prompt-text-color-field := ColorPickerField { label: "Prompt color:"; }
+
+                        Text { text: "Phrase"; font-weight: 700; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Font:"; vertical-alignment: center; }
+                            ComboBox { model: font-options; current-index <=> phrase-font-index; }
+                            Text { text: "Size:"; vertical-alignment: center; }
+                            SpinBox { minimum: 8; maximum: 48; value <=> phrase-size; }
+                        }
+                        phrase-text-color-field := ColorPickerField { label: "Text color:"; }
+                        phrase-bg-color-field := ColorPickerField { label: "Background:"; }
+
+                        Text { text: "Translation"; font-weight: 700; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Font:"; vertical-alignment: center; }
+                            ComboBox { model: font-options; current-index <=> translation-font-index; }
+                            Text { text: "Size:"; vertical-alignment: center; }
+                            SpinBox { minimum: 8; maximum: 48; value <=> translation-size; }
+                        }
+                        translation-text-color-field := ColorPickerField { label: "Text color:"; }
+                        translation-bg-color-field := ColorPickerField { label: "Background:"; }
+                    }
+                }
+            }
+
+            Tab {
+                title: "Hotkeys & Tray";
+
+                VerticalBox {
+                    alignment: start;
+
+                    Text { text: "Global hotkey (translate):"; }
+                    HorizontalLayout {
+                        spacing: 8px;
                         LineEdit {
-                            text: field.value;
-                            input-type: field.secret ? InputType.password : InputType.text;
-                            placeholder-text: field.required ? "required" : "default";
-                            edited(value) => { provider-option-edited(row, value); }
+                            visible: !is-recording-translate;
+                            text <=> translate-hotkey;
+                            edited(text) => { translate-hotkey-edited(text); }
                         }
-                    }
-                    if !field.heading: Text {
-                        text: field.env-var != ""
-                            ? field.description + " — currently overridden by " + field.env-var + "."
-                            : field.description;
-                        wrap: word-wrap;
-                        font-size: 11px;
-                        opacity: 0.75;
-                    }
-                }
-
-                CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }
-                CheckBox { text: "Spell check suggestions"; checked <=> spell-check; }
-                CheckBox { text: "Enable text-to-speech"; checked <=> enable-text-to-speech; }
-                Text {
-                    text: "Applies to the next translation immediately — no restart needed. \"Spell check suggestions\" has no effect while \"Show dictionary\" is off.";
-                    wrap: word-wrap;
-                }
-
-                CheckBox { text: "Show menu on right-click"; checked <=> show-context-menu; }
-                Text {
-                    text: "When off (default), right-click a transcript block copies it immediately -- a brief border flash confirms it. When on, right-click opens a \"Copy\" menu instead. Applies immediately, no restart needed.";
-                    wrap: word-wrap;
-                }
-
-                Button {
-                    text: "Reset to Defaults";
-                    clicked => { reset-to-defaults-requested(); }
-                }
-                Text {
-                    text: "Resets every setting on every tab to its default value, except provider options. Nothing is saved until you click OK.";
-                    wrap: word-wrap;
-                }
-            }
-        }
-
-        Tab {
-            title: "View";
-
-            ScrollView {
-                VerticalBox {
-                    alignment: start;
-
-                    Text { text: "Theme:"; }
-                    ComboBox {
-                        model: themes;
-                        current-index <=> theme-index;
-                    }
-
-                    Text { text: "Color scheme:"; }
-                    color-scheme-combo := ComboBox {
-                        model: color-scheme-options;
-                        current-index <=> color-scheme-index;
-                    }
-
-                    background-color-field := ColorPickerField { label: "Background color:"; }
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Blocks spacing (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 0; maximum: 200; value <=> block-spacing-px; }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Phrases spacing (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 0; maximum: 100; value <=> phrases-spacing-px; }
-                    }
-                    CheckBox { text: "Show prompt"; checked <=> show-prompt; }
-                    prompt-text-color-field := ColorPickerField { label: "Prompt color:"; }
-
-                    Text { text: "Phrase"; font-weight: 700; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Font:"; vertical-alignment: center; }
-                        ComboBox { model: font-options; current-index <=> phrase-font-index; }
-                        Text { text: "Size:"; vertical-alignment: center; }
-                        SpinBox { minimum: 8; maximum: 48; value <=> phrase-size; }
-                    }
-                    phrase-text-color-field := ColorPickerField { label: "Text color:"; }
-                    phrase-bg-color-field := ColorPickerField { label: "Background:"; }
-
-                    Text { text: "Translation"; font-weight: 700; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Font:"; vertical-alignment: center; }
-                        ComboBox { model: font-options; current-index <=> translation-font-index; }
-                        Text { text: "Size:"; vertical-alignment: center; }
-                        SpinBox { minimum: 8; maximum: 48; value <=> translation-size; }
-                    }
-                    translation-text-color-field := ColorPickerField { label: "Text color:"; }
-                    translation-bg-color-field := ColorPickerField { label: "Background:"; }
-                }
-            }
-        }
-
-        Tab {
-            title: "Hotkeys & Tray";
-
-            VerticalBox {
-                alignment: start;
-
-                Text { text: "Global hotkey (translate):"; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    LineEdit {
-                        visible: !is-recording-translate;
-                        text <=> translate-hotkey;
-                        edited(text) => { translate-hotkey-edited(text); }
-                    }
-                    translate-recorder := HotkeyRecorder {
-                        visible: is-recording-translate;
-                        height: 32px;
-                        map-key-to-token(text) => { root.map-key-to-token(text) }
-                        captured(hotkey) => {
-                            is-recording-translate = false;
-                            root.recording-changed(is-recording-speech);
-                            translate-hotkey = hotkey;
-                            translate-hotkey-edited(hotkey);
+                        translate-recorder := HotkeyRecorder {
+                            visible: is-recording-translate;
+                            height: 32px;
+                            map-key-to-token(text) => { root.map-key-to-token(text) }
+                            captured(hotkey) => {
+                                is-recording-translate = false;
+                                root.recording-changed(is-recording-speech);
+                                translate-hotkey = hotkey;
+                                translate-hotkey-edited(hotkey);
+                            }
+                            unrecognized => {
+                                is-recording-translate = false;
+                                root.recording-changed(is-recording-speech);
+                                root.translate-hotkey-unrecognized();
+                            }
+                            cancelled => {
+                                is-recording-translate = false;
+                                root.recording-changed(is-recording-speech);
+                            }
                         }
-                        unrecognized => {
-                            is-recording-translate = false;
-                            root.recording-changed(is-recording-speech);
-                            root.translate-hotkey-unrecognized();
-                        }
-                        cancelled => {
-                            is-recording-translate = false;
-                            root.recording-changed(is-recording-speech);
-                        }
-                    }
-                    Button {
-                        text: is-recording-translate ? "Cancel" : "Record";
-                        clicked => {
-                            is-recording-translate = !is-recording-translate;
-                            root.recording-changed(is-recording-translate || is-recording-speech);
-                            if is-recording-translate {
-                                translate-recorder.focus();
+                        Button {
+                            text: is-recording-translate ? "Cancel" : "Record";
+                            clicked => {
+                                is-recording-translate = !is-recording-translate;
+                                root.recording-changed(is-recording-translate || is-recording-speech);
+                                if is-recording-translate {
+                                    translate-recorder.focus();
+                                }
                             }
                         }
                     }
-                }
-                Text {
-                    text: translate-hotkey-error;
-                    color: #e05252;
-                    wrap: word-wrap;
-                    visible: translate-hotkey-error != "";
-                }
-
-                Text { text: "Global hotkey (speech):"; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    LineEdit {
-                        visible: !is-recording-speech;
-                        text <=> speech-hotkey;
-                        edited(text) => { speech-hotkey-edited(text); }
-                    }
-                    speech-recorder := HotkeyRecorder {
-                        visible: is-recording-speech;
-                        height: 32px;
-                        map-key-to-token(text) => { root.map-key-to-token(text) }
-                        captured(hotkey) => {
-                            is-recording-speech = false;
-                            root.recording-changed(is-recording-translate);
-                            speech-hotkey = hotkey;
-                            speech-hotkey-edited(hotkey);
-                        }
-                        unrecognized => {
-                            is-recording-speech = false;
-                            root.recording-changed(is-recording-translate);
-                            root.speech-hotkey-unrecognized();
-                        }
-                        cancelled => {
-                            is-recording-speech = false;
-                            root.recording-changed(is-recording-translate);
-                        }
-                    }
-                    Button {
-                        text: is-recording-speech ? "Cancel" : "Record";
-                        clicked => {
-                            is-recording-speech = !is-recording-speech;
-                            root.recording-changed(is-recording-translate || is-recording-speech);
-                            if is-recording-speech {
-                                speech-recorder.focus();
-                            }
-                        }
-                    }
-                }
-                Text {
-                    text: speech-hotkey-error;
-                    color: #e05252;
-                    wrap: word-wrap;
-                    visible: speech-hotkey-error != "";
-                }
-                CheckBox { text: "Enable speech hotkey"; checked <=> enable-speech-hotkey; }
-
-                CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
-                CheckBox {
-                    text: "Remember window size and position";
-                    checked <=> remember-window-geometry;
-                }
-
-                Text {
-                    text: "The global hotkeys take effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts. Pressing Esc while the speech hotkey (or a transcript speaker button) is playing stops it, even if Tagent isn't the focused window.";
-                    wrap: word-wrap;
-                }
-            }
-        }
-
-        Tab {
-            title: "Popup";
-
-            ScrollView {
-                VerticalBox {
-                    alignment: start;
-
                     Text {
-                        text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection. Drag it with the mouse to move it; with \"Remember position after dragging\" on, it reappears where you left it instead of next to the cursor. Turn off \"Show popup on hotkey\" to have the hotkey translate into the transcript only.";
+                        text: translate-hotkey-error;
+                        color: #e05252;
                         wrap: word-wrap;
+                        visible: translate-hotkey-error != "";
                     }
 
-                    CheckBox { text: "Show popup on hotkey"; checked <=> show-popup; }
-                    CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
-                    popup-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
-                    CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }
+                    Text { text: "Global hotkey (speech):"; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit {
+                            visible: !is-recording-speech;
+                            text <=> speech-hotkey;
+                            edited(text) => { speech-hotkey-edited(text); }
+                        }
+                        speech-recorder := HotkeyRecorder {
+                            visible: is-recording-speech;
+                            height: 32px;
+                            map-key-to-token(text) => { root.map-key-to-token(text) }
+                            captured(hotkey) => {
+                                is-recording-speech = false;
+                                root.recording-changed(is-recording-translate);
+                                speech-hotkey = hotkey;
+                                speech-hotkey-edited(hotkey);
+                            }
+                            unrecognized => {
+                                is-recording-speech = false;
+                                root.recording-changed(is-recording-translate);
+                                root.speech-hotkey-unrecognized();
+                            }
+                            cancelled => {
+                                is-recording-speech = false;
+                                root.recording-changed(is-recording-translate);
+                            }
+                        }
+                        Button {
+                            text: is-recording-speech ? "Cancel" : "Record";
+                            clicked => {
+                                is-recording-speech = !is-recording-speech;
+                                root.recording-changed(is-recording-translate || is-recording-speech);
+                                if is-recording-speech {
+                                    speech-recorder.focus();
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: speech-hotkey-error;
+                        color: #e05252;
+                        wrap: word-wrap;
+                        visible: speech-hotkey-error != "";
+                    }
+                    CheckBox { text: "Enable speech hotkey"; checked <=> enable-speech-hotkey; }
+
+                    CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                     CheckBox {
-                        text: "Remember position after dragging";
-                        checked <=> remember-popup-position;
-                    }
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Font:"; vertical-alignment: center; }
-                        ComboBox { model: font-options; current-index <=> popup-font-index; }
-                        Text { text: "Size:"; vertical-alignment: center; }
-                        SpinBox { minimum: 8; maximum: 48; value <=> popup-size; }
-                    }
-                    popup-text-color-field := ColorPickerField { label: "Text color:"; }
-                    popup-bg-color-field := ColorPickerField { label: "Background:"; }
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Auto-hide (seconds):"; vertical-alignment: center; }
-                        SpinBox { minimum: 0; maximum: 60; value <=> popup-auto-hide-seconds; }
-                        Text { text: "(0 = default 3s)"; vertical-alignment: center; }
-                    }
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Max width (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 150; maximum: 1000; value <=> popup-max-width; }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Max height (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 80; maximum: 1000; value <=> popup-max-height; }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: "Border width (px):"; vertical-alignment: center; }
-                        SpinBox { minimum: 0; maximum: 20; value <=> popup-border-width; }
+                        text: "Remember window size and position";
+                        checked <=> remember-window-geometry;
                     }
 
                     Text {
-                        text: "Text taller than the max height scrolls instead of growing the popup further. \"Theme default\" follows the transcript's own Color scheme (View tab), not just the raw Auto/Light/Dark theme. Everything on this tab applies immediately.";
+                        text: "The global hotkeys take effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts. Pressing Esc while the speech hotkey (or a transcript speaker button) is playing stops it, even if Tagent isn't the focused window.";
                         wrap: word-wrap;
                     }
                 }
             }
+
+            Tab {
+                title: "Popup";
+
+                ScrollView {
+                    VerticalBox {
+                        alignment: start;
+
+                        Text {
+                            text: "Style for the small popup shown next to the cursor after the global hotkey translates your selection. Drag it with the mouse to move it; with \"Remember position after dragging\" on, it reappears where you left it instead of next to the cursor. Turn off \"Show popup on hotkey\" to have the hotkey translate into the transcript only.";
+                            wrap: word-wrap;
+                        }
+
+                        CheckBox { text: "Show popup on hotkey"; checked <=> show-popup; }
+                        CheckBox { text: "Show prompt"; checked <=> popup-show-prompt; }
+                        popup-prompt-color-field := ColorPickerField { label: "Prompt color:"; }
+                        CheckBox { text: "Show phrase"; checked <=> popup-show-phrase; }
+                        CheckBox {
+                            text: "Remember position after dragging";
+                            checked <=> remember-popup-position;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Font:"; vertical-alignment: center; }
+                            ComboBox { model: font-options; current-index <=> popup-font-index; }
+                            Text { text: "Size:"; vertical-alignment: center; }
+                            SpinBox { minimum: 8; maximum: 48; value <=> popup-size; }
+                        }
+                        popup-text-color-field := ColorPickerField { label: "Text color:"; }
+                        popup-bg-color-field := ColorPickerField { label: "Background:"; }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Auto-hide (seconds):"; vertical-alignment: center; }
+                            SpinBox { minimum: 0; maximum: 60; value <=> popup-auto-hide-seconds; }
+                            Text { text: "(0 = default 3s)"; vertical-alignment: center; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Max width (px):"; vertical-alignment: center; }
+                            SpinBox { minimum: 150; maximum: 1000; value <=> popup-max-width; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Max height (px):"; vertical-alignment: center; }
+                            SpinBox { minimum: 80; maximum: 1000; value <=> popup-max-height; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Border width (px):"; vertical-alignment: center; }
+                            SpinBox { minimum: 0; maximum: 20; value <=> popup-border-width; }
+                        }
+
+                        Text {
+                            text: "Text taller than the max height scrolls instead of growing the popup further. \"Theme default\" follows the transcript's own Color scheme (View tab), not just the raw Auto/Light/Dark theme. Everything on this tab applies immediately.";
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: "About";
+
+                VerticalBox {
+                    alignment: start;
+
+                    Text { text: "Tagent"; font-weight: 700; }
+                    Text { text: "Version " + app-version; }
+                }
+            }
         }
 
-        Tab {
-            title: "About";
+        // Provider options panel: covers the tabs (not a second window, so no
+        // modality/focus handling of its own). Its OK/Cancel only decide
+        // whether this panel's edits are kept for the dialog; see
+        // `options-panel-open`.
+        if options-panel-open: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: Palette.background;
+
+            // Swallows clicks, so nothing under the panel can be reached.
+            TouchArea {}
 
             VerticalBox {
-                alignment: start;
+                Text {
+                    text: "Options: " + options-panel-title;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                if options-panel-note != "": Text {
+                    text: options-panel-note;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: provider-option-fields.length > 0
+                        ? "Empty = the provider's default. Saved when you click OK in Settings."
+                        : "This provider has no options.";
+                    wrap: word-wrap;
+                    font-size: 11px;
+                    opacity: 0.75;
+                }
 
-                Text { text: "Tagent"; font-weight: 700; }
-                Text { text: "Version " + app-version; }
+                ScrollView {
+                    vertical-stretch: 1;
+
+                    VerticalBox {
+                        alignment: start;
+
+                        for field[row] in provider-option-fields: VerticalLayout {
+                            spacing: 2px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: field.label + (field.required ? " *" : "") + ":";
+                                    vertical-alignment: center;
+                                    min-width: 110px;
+                                }
+                                LineEdit {
+                                    text: field.value;
+                                    input-type: field.secret ? InputType.password : InputType.text;
+                                    placeholder-text: field.required ? "required" : "default";
+                                    edited(value) => { provider-option-edited(row, value); }
+                                }
+                            }
+                            Text {
+                                text: field.env-var != ""
+                                    ? field.description + " — currently overridden by " + field.env-var + "."
+                                    : field.description;
+                                wrap: word-wrap;
+                                font-size: 11px;
+                                opacity: 0.75;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: "OK";
+                        primary: true;
+                        clicked => { provider-options-accepted(); }
+                    }
+                    Button {
+                        text: "Cancel";
+                        clicked => { provider-options-cancelled(); }
+                    }
+                }
             }
         }
     }
 
     StandardButton {
         kind: ok;
-        enabled: translate-hotkey-error == "" && speech-hotkey-error == "";
+        // Also off while the provider options panel is open: its own OK/Cancel
+        // decide first whether its edits are kept.
+        enabled: translate-hotkey-error == "" && speech-hotkey-error == "" && !options-panel-open;
         clicked => { save-requested(providers[provider-index], themes[theme-index]); }
     }
     // `kind` alone only affects the button's label/position -- unlike OK's

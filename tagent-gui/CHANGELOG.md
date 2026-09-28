@@ -12,6 +12,22 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+028] - 2026-09-28
+
+### Changed
+- **Provider options moved behind an "Options…" button** next to each of Settings >
+  General's three provider pickers, instead of one long list under them. The button opens
+  a panel over the Settings tabs with the fields of that provider only. When another
+  picker selects the same profile (e.g. `google` for both dictionary and speech), the panel
+  says so, since the options apply to both. The panel's OK keeps the edits and its Cancel
+  drops them; nothing is saved until Settings' own OK, which is disabled while the panel is
+  open.
+
+### Added
+- **A ⚠ next to a provider picker** whose provider lacks a required option, with a line
+  below the pickers naming it (e.g. `deepl: api_key required`). An environment variable
+  such as `TAGENT_DEEPL_API_KEY` counts as set.
+
 ## [0.14.0+027] - 2026-09-28
 
 ### Added

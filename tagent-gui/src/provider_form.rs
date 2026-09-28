@@ -1,5 +1,6 @@
-//! Settings > General "Provider options": which option fields to show for the selected
-//! provider profiles, and how the edits made there go back into `provider_options`.
+//! Settings > General provider options: which option fields the "Options…" panel shows
+//! for a selected provider profile, which required options are still missing (the ⚠ next
+//! to a picker), and how the edits made there go back into `provider_options`.
 //!
 //! Pure logic (no Slint types), so it's unit-tested here; `main.rs` converts [`Field`]s
 //! into the dialog's `ProviderOptionField` model.
@@ -124,6 +125,68 @@ pub fn fields(
     rows
 }
 
+/// The required options of `profile` that have no value: neither an edit, nor a saved
+/// value, nor an environment override. Empty when the provider can be built as far as its
+/// options go.
+pub fn missing_required(
+    profiles: &ProviderProfiles,
+    profile: &str,
+    edits: &Edits,
+    env: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    fields(profiles, &[profile], edits, env)
+        .into_iter()
+        .filter(|field| {
+            !field.heading
+                && field.required
+                && field.value.trim().is_empty()
+                && field.env_var.is_empty()
+        })
+        .map(|field| field.label)
+        .collect()
+}
+
+/// The warning shown next to a provider picker: `"<profile>: <keys> required"`, or empty
+/// when nothing required is missing.
+pub fn warning(
+    profiles: &ProviderProfiles,
+    profile: &str,
+    edits: &Edits,
+    env: impl Fn(&str) -> Option<String>,
+) -> String {
+    let missing = missing_required(profiles, profile, edits, env);
+    if missing.is_empty() {
+        String::new()
+    } else {
+        format!("{}: {} required", profile.trim().to_lowercase(), missing.join(", "))
+    }
+}
+
+/// The provider axes, in the order of Settings > General's pickers.
+pub const AXES: [&str; 3] = ["translation", "dictionary", "speech"];
+
+/// The note shown in the options panel of picker `axis` when other pickers select the same
+/// profile (its options are shared, so an edit applies to all of them), or empty.
+pub fn sharing_note(selected: &[&str; 3], axis: usize) -> String {
+    let Some(profile) = selected.get(axis).map(|name| name.trim().to_lowercase()) else {
+        return String::new();
+    };
+    let others: Vec<&str> = selected
+        .iter()
+        .enumerate()
+        .filter(|&(other, name)| other != axis && name.trim().to_lowercase() == profile)
+        .map(|(other, _)| AXES[other])
+        .collect();
+    if others.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Also selected for {}: these options apply there too.",
+            others.join(" and ")
+        )
+    }
+}
+
 /// Applies `edits` to `profiles`: a non-empty value sets the key, an empty (or
 /// whitespace-only) one removes it. Untouched keys, `type` and other profiles are kept.
 pub fn apply(profiles: &mut ProviderProfiles, edits: &Edits) {
@@ -218,6 +281,60 @@ mod tests {
         assert_eq!(rows[1].value, "30");
         assert_eq!(rows[2].env_var, "TAGENT_WORK_MAX_RETRIES");
         assert_eq!(rows[1].env_var, "");
+    }
+
+    #[test]
+    fn missing_required_key_is_reported_until_set_by_edit_file_or_env() {
+        let empty = ProviderProfiles::new();
+        assert_eq!(
+            missing_required(&empty, "deepl", &Edits::new(), no_env),
+            ["api_key"]
+        );
+        assert_eq!(
+            warning(&empty, "DeepL", &Edits::new(), no_env),
+            "deepl: api_key required"
+        );
+
+        // A whitespace-only edit doesn't count.
+        let blank: Edits = [(("deepl".into(), "api_key".into()), "  ".into())].into();
+        assert_eq!(missing_required(&empty, "deepl", &blank, no_env), ["api_key"]);
+
+        let edited: Edits = [(("deepl".into(), "api_key".into()), "k:fx".into())].into();
+        assert!(missing_required(&empty, "deepl", &edited, no_env).is_empty());
+
+        let mut saved = ProviderProfiles::new();
+        saved.insert("deepl", "api_key", "k:fx");
+        assert!(missing_required(&saved, "deepl", &Edits::new(), no_env).is_empty());
+        // ...unless this dialog's edit clears it.
+        let cleared: Edits = [(("deepl".into(), "api_key".into()), "".into())].into();
+        assert_eq!(missing_required(&saved, "deepl", &cleared, no_env), ["api_key"]);
+
+        let env = |var: &str| (var == "TAGENT_DEEPL_API_KEY").then(|| "k".to_string());
+        assert!(missing_required(&empty, "deepl", &Edits::new(), env).is_empty());
+        assert_eq!(warning(&empty, "deepl", &Edits::new(), env), "");
+    }
+
+    #[test]
+    fn providers_without_required_options_never_warn() {
+        assert!(warning(&profiles(), "work", &Edits::new(), no_env).is_empty());
+        assert!(warning(&profiles(), "google", &Edits::new(), no_env).is_empty());
+        assert!(warning(&profiles(), "no-such-kind", &Edits::new(), no_env).is_empty());
+    }
+
+    #[test]
+    fn sharing_note_names_the_other_axes_with_the_same_profile() {
+        let selected = ["deepl", "google", "Google"];
+        assert_eq!(sharing_note(&selected, 0), "");
+        assert_eq!(
+            sharing_note(&selected, 1),
+            "Also selected for speech: these options apply there too."
+        );
+        let all = ["work", "work", "work"];
+        assert_eq!(
+            sharing_note(&all, 0),
+            "Also selected for dictionary and speech: these options apply there too."
+        );
+        assert_eq!(sharing_note(&all, 3), "");
     }
 
     #[test]

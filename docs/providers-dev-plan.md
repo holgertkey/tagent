@@ -742,6 +742,14 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
   profile left empty); untouched keys, `type` and other profiles are kept.
 - "Reset to Defaults" doesn't reset provider options (they can hold API keys); the list
   just follows the pickers back to the defaults. Stated in the dialog's hint text.
+- Reorganized in `tagent-gui` 0.14.0+028: the inline list became an "Options…" button per
+  picker that opens a panel over the tabs (a `Rectangle` sibling of the `TabWidget`, not a
+  second window, so there's no modality/focus handling) with one profile's fields and a
+  note when another picker selects the same profile (`provider_form::sharing_note`). What
+  is typed there goes to a panel-local `Edits`; the panel's OK appends it to the dialog's,
+  its Cancel drops it, and the dialog's OK is disabled while the panel is open. A ⚠ next to
+  a picker, spelled out below the pickers, names required options with no value from an
+  edit, the file or the environment (`provider_form::missing_required`/`warning`).
 - No value validation in the dialog: an invalid value surfaces as the provider's own
   `InvalidOptions` message at the next translation (a dictionary/speech profile degrades
   with a warning instead).
