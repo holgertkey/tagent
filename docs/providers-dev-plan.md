@@ -965,8 +965,7 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 
 ### Stage P1 — DeepL (translation)
 
-**Status:** in progress — part 1 implemented 2026-09-28 (tagent 0.19.0), live tests and
-part 2 pending
+**Status:** in progress — part 1 done 2026-09-28 (tagent 0.19.0), part 2 pending
 **Why first:** a well-documented keyed API. It validates options, auth errors, quota
 errors and language-code mapping end to end.
 **Goal:** `DeepLTranslateProvider`, selectable in both apps through a `deepl` profile
@@ -1107,7 +1106,10 @@ and unit tests; the dialog itself only if a live check is agreed).
   provider with a required option refuses to build without it.
 - Live tests are the first to use the `TAGENT_LIVE_TESTS=1` convention: `#[ignore]` plus an
   early return without it. Run: `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=...
-  cargo test -p tagent deepl::tests::live -- --ignored --nocapture`.
+  cargo test -p tagent deepl::tests::live -- --ignored --nocapture`. Passed with a Free
+  key on 2026-09-28, including English input detected as `en` with the `EN` detection
+  target, so decision 1 stands (no switch to `DE`). A real `tagent-cli` translation
+  through a `[provider_options.deepl]` profile works too.
 - No app code changed. A `tagent-gui` test pinning "DeepL's `api_key` is a password
   field" is left for part 2, which changes the apps' `Cargo.toml` anyway.
 
