@@ -1011,7 +1011,11 @@ provider behind its own Cargo feature.
    `rate_limit_statuses(&[u16])` (default `&[429]`, so Google is unchanged); DeepL sets
    `&[429, 529]`, so 529 becomes `RateLimited` and is retried with a short `Retry-After`
    like 429.
-4. **The `deepl` feature is not in `default`** (part 2): library users opt in, the apps
+4. ~~**The `deepl` feature is not in `default`**~~ — **revised 2026-09-28: `deepl` is in
+   `default`**, permanently: it has no dependencies of its own and does nothing without a
+   key, and taking it out of `default` later would be breaking. Rule from now on: a
+   provider without dependencies of its own is default, one with heavy dependencies is
+   opt-in. Original text: library users opt in, the apps
    enable it in their own `Cargo.toml`.
 
 Deliberate deviation from DeepL's advice: DeepL calls 500 retryable, but the Q2 policy
@@ -1106,8 +1110,8 @@ and unit tests; the dialog itself only if a live check is agreed).
   provider with a required option refuses to build without it.
 - Live tests are the first to use the `TAGENT_LIVE_TESTS=1` convention: `#[ignore]` plus an
   early return without it. Run: `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=... cargo test
-  -p tagent --features deepl deepl::tests::live -- --ignored --nocapture` (since part 2,
-  without `--features deepl` it silently matches no test). Passed with a Free key on
+  -p tagent deepl::tests::live -- --ignored --nocapture` (`deepl` is a default feature;
+  with `--no-default-features` the command silently matches no test). Passed with a Free key on
   2026-09-28, including English input detected as `en` with the `EN` detection
   target, so decision 1 stands (no switch to `DE`). A real `tagent-cli` translation
   through a `[provider_options.deepl]` profile works too.
@@ -1121,8 +1125,8 @@ choose between, and DeepL is the first provider worth leaving out. Done after De
 works, in its own commit.
 
 **Goal:** users of the library compile only the providers they need.
-- Features named after the provider kinds: `google` (default), `deepl` (**not** default,
-  decision 4), and later `openai-compat`, `http`. The registry (descriptors and
+- Features named after the provider kinds: `google` (default), `deepl` (planned as not
+  default, decision 4; made default on 2026-09-28), and later `openai-compat`, `http`. The registry (descriptors and
   `*_PROVIDERS` lists), the factory branches, the provider modules and their tests are all
   `cfg`-gated consistently; the shared transport and `ProviderOptions`/`ProviderProfiles`
   stay unconditional. Keeping `google` in `default` makes the change additive.
@@ -1144,7 +1148,8 @@ works, in its own commit.
   feature step; the `tagent` README lists the features.
 
 **Notes after landing (part 2):**
-- Features `google` (default) and `deepl` in `tagent/Cargo.toml`, plus
+- Features `google` and `deepl` in `tagent/Cargo.toml`, both default (decision 4
+  revised, see above; the apps still list `deepl` explicitly), plus
   `[package.metadata.docs.rs] all-features = true` and `required-features = ["google"]`
   on the `translate`/`dictionary`/`speak` examples (`custom_provider` is offline and needs
   none). `url`/`reqwest` stay unconditional since the transport is.
@@ -1161,15 +1166,14 @@ works, in its own commit.
   `google`, `DEEPL_OPTIONS` on `deepl`.
 - Tests: provider-specific tests are gated; `profile::tests::builtin_name_with_a_foreign_type_is_invalid`
   needs `google` (reserved names follow the features, as planned). Unit tests pass in all
-  four combinations. **Doc examples assume the default `google` feature** and are not run
+  four combinations. **Doc examples assume the default features** and are not run
   for the reduced builds; wrapping ~10 of them in `cfg` was judged not worth the noise.
   Rustdoc links to `deepl` items became plain code (they'd break a default-feature doc
   build); `cargo doc -p tagent` is clean with default features and with `--all-features`.
 - CI (`ci.yml`, Linux): a "tagent feature combinations" step runs clippy
   `--all-targets -D warnings` and `cargo test --lib` for `--no-default-features`, `google`
   alone, `deepl` alone and `--all-features`; the docs step also builds `--all-features`.
-  The workspace steps already cover `google + deepl` through the apps (feature
-  unification). `release.yml` only builds the apps, so nothing there builds `tagent` alone;
+  The workspace steps already cover `google + deepl` (the defaults). `release.yml` only builds the apps, so nothing there builds `tagent` alone;
   the packaging dry run passes with the apps' `features = ["deepl"]`.
 - Apps: `features = ["deepl"]` on the `tagent` dependency, `+BUILD` bumps, changelog
   entries; a `tagent-cli` test builds DeepL from a `[provider_options.*]` TOML profile

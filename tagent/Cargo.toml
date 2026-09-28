@@ -16,9 +16,10 @@ name = "tagent"
 path = "src/lib.rs"
 
 [features]
-default = ["google"]
+default = ["google", "deepl"]
 # One feature per built-in provider kind; the shared transport, options and profiles are
-# always compiled.
+# always compiled. A provider without dependencies of its own is in `default`; one that
+# brings heavy dependencies is opt-in.
 # Google Translate, dictionary and TTS over Google's unofficial endpoints.
 google = []
 # DeepL translation over its official, keyed API.

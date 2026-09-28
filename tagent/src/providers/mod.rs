@@ -1,7 +1,7 @@
 //! Translation, dictionary and speech provider traits, their factories, and the built-in
-//! implementations: Google (all three axes, [`google`]; Cargo feature `google`, on by
-//! default) and DeepL (translation, keyed, `deepl`; feature `deepl`, off by default). A
-//! kind whose feature is off is unknown to the factories and missing from the registry.
+//! implementations: Google (all three axes, [`google`]) and DeepL (translation, keyed,
+//! [`deepl`]), each behind a Cargo feature of the same name, both on by default. A kind
+//! whose feature is off is unknown to the factories and missing from the registry.
 //!
 //! There are three independent provider axes, and a backend implements only the ones it
 //! provides:

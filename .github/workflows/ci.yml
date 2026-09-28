@@ -51,8 +51,8 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
-      # The workspace build above has every `tagent` provider feature on (the apps enable
-      # `deepl`, `google` is default). Lint each provider alone and none at all, so a
+      # The workspace build above has every `tagent` provider feature on (all of them are
+      # in `default` today). Lint each provider alone and none at all, so a
       # missing `cfg` or a helper only one provider uses (dead code) is caught, and run
       # the unit tests of the reduced builds (the doc examples assume `google`), and
       # everything, doc examples too, with every feature on.

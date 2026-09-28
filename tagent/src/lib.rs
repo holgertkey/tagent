@@ -9,7 +9,7 @@
 //!
 //! | Axis        | Trait                              | Factory                                 | Built-in                                        |
 //! |-------------|------------------------------------|-----------------------------------------|-------------------------------------------------|
-//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`], `providers::deepl::DeepLTranslateProvider` (feature `deepl`) |
+//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`], [`providers::deepl::DeepLTranslateProvider`] |
 //! | Dictionary  | [`providers::DictionaryProvider`]  | [`providers::create_dictionary_provider`] | [`providers::google::GoogleDictionaryProvider`] |
 //! | Speech      | [`providers::SpeechProvider`]      | [`providers::create_speech_provider`]   | [`providers::google::GoogleSpeechProvider`]     |
 //!
@@ -95,25 +95,28 @@
 //!   need a Tokio runtime.
 //! - **Network caveats.** The built-in Google providers talk to *unofficial* endpoints with
 //!   no API key and no service guarantees — see [`providers::google`] before depending on
-//!   them. DeepL (`providers::deepl`, feature `deepl`) uses its official API and needs an
-//!   `api_key`.
+//!   them. DeepL ([`providers::deepl`]) uses its official API and needs an `api_key`.
 //!
 //! ## Cargo features
 //!
-//! Each built-in provider kind is a feature, so a library user compiles only the ones it
-//! needs:
+//! Each built-in provider kind is a feature, so a library user can leave out the ones it
+//! doesn't need (`default-features = false`, then list the wanted ones):
 //!
 //! | Feature  | Default | Provides |
 //! |----------|---------|----------|
 //! | `google` | yes     | `"google"` on all three axes ([`providers::google`]) |
-//! | `deepl`  | no      | `"deepl"` translation (`providers::deepl`) |
+//! | `deepl`  | yes     | `"deepl"` translation ([`providers::deepl`]) |
+//!
+//! Both are in `default` because neither brings dependencies of its own (DeepL does
+//! nothing without an `api_key`); a future provider with heavy dependencies would be
+//! opt-in.
 //!
 //! A kind that is compiled out is simply unknown: it is missing from
 //! [`providers::TRANSLATION_PROVIDERS`] and the registry, and a factory (or a profile's
 //! `type`) naming it gets [`error::Error::UnknownProvider`]. The shared parts (traits,
 //! options, profiles, the registry types, the HTTP transport) are always there, so
 //! `default-features = false` without any provider still builds, for an application
-//! that brings its own. The documentation examples assume the default `google` feature.
+//! that brings its own. The documentation examples assume the default features.
 //!
 //! ## Modules
 //!
