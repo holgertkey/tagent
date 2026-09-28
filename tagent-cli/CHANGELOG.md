@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+002] - 2026-09-28
+
+### Added
+- **DeepL translation provider available via a profile.** Set `translate_provider =
+  "deepl"` and give it a key in `[provider_options.deepl]` (`api_key = "..."`, a Free key
+  ends in `:fx`) or in the `TAGENT_DEEPL_API_KEY` environment variable. Optional:
+  `endpoint`, `timeout_secs`, `max_retries`. A named profile works too
+  (`[provider_options.work]` with `type = "deepl"`). DeepL is translation only; keep
+  `dictionary_provider`/`speech_provider` on `google`. Speaking `Auto`-source text with
+  DeepL selected detects the language through DeepL, which bills up to 100 characters.
+
 ## [0.17.0+001] - 2026-09-27
 
 ### Changed

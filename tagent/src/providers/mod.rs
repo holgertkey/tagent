@@ -1,6 +1,7 @@
 //! Translation, dictionary and speech provider traits, their factories, and the built-in
-//! implementations: Google (all three axes, [`google`]) and DeepL (translation, keyed,
-//! [`deepl`]).
+//! implementations: Google (all three axes, [`google`]; Cargo feature `google`, on by
+//! default) and DeepL (translation, keyed, `deepl`; feature `deepl`, off by default). A
+//! kind whose feature is off is unknown to the factories and missing from the registry.
 //!
 //! There are three independent provider axes, and a backend implements only the ones it
 //! provides:
@@ -81,7 +82,8 @@
 //! [`create_provider_with`] here, its name to [`TRANSLATION_PROVIDERS`] (checked before
 //! the `match`, so a branch whose name isn't listed is unreachable) and a
 //! [`ProviderDescriptor`] to the registry behind [`translation_providers`], declaring its
-//! options. Tests keep the three in step. The complete, offline example below implements
+//! options, all behind a Cargo feature named after the kind. Tests keep the three in
+//! step. The complete, offline example below implements
 //! all three required methods; a real backend does the same with an HTTP call in
 //! `translate_text` and `detect_language`. It should also override
 //! [`capabilities`](TranslationProvider::capabilities), whose default claims nothing (not
@@ -197,8 +199,12 @@
 use crate::error::Error;
 use async_trait::async_trait;
 
+#[cfg(feature = "deepl")]
 pub mod deepl;
+#[cfg(feature = "google")]
 pub mod google;
+// Without any provider feature, nothing uses the transport.
+#[cfg_attr(not(any(feature = "google", feature = "deepl")), allow(dead_code))]
 mod http;
 mod options;
 mod profile;
@@ -371,13 +377,16 @@ impl Definition {
 /// 1. Create `src/providers/yourprovider.rs` and implement this trait, doing HTTP through
 ///    the crate's shared transport (`providers/http.rs`), which owns the time budget,
 ///    retries and status → [`Error`] mapping; the adapter itself never retries.
-/// 2. Add `pub mod yourprovider;` here, add a branch for it in [`create_provider_with`]
-///    (read credentials etc. from its `options` there), and add its name to
-///    [`TRANSLATION_PROVIDERS`] and a [`ProviderDescriptor`] (display name, the
-///    [`OptionSpec`]s it reads, [`TransportDefaults`]) to `providers/registry.rs`. The list
-///    entry is required: the factory rejects unlisted kinds before its `match`, and
-///    pickers are built from the list. Tests check that the list, the descriptors and the
-///    factory agree.
+/// 2. Add `pub mod yourprovider;` here, add a branch for it in `build_translation` (the
+///    `match` behind [`create_provider_with`]; read credentials etc. from its `options`
+///    there), and add its name to [`TRANSLATION_PROVIDERS`] and a [`ProviderDescriptor`]
+///    (display name, the [`OptionSpec`]s it reads, [`TransportDefaults`]) to
+///    `providers/registry.rs`. The list entry is required: the factory rejects unlisted
+///    kinds before its `match`, and pickers are built from the list. Tests check that the
+///    list, the descriptors and the factory agree. Put all four (module, branch, list
+///    entry, descriptor) and the provider's tests behind a Cargo feature named after the
+///    kind (`#[cfg(feature = "yourprovider")]`, declared in `Cargo.toml`), and enable it
+///    in the applications that should offer it.
 /// 3. Users select it with `translate_provider = "yourprovider"` in `tagent-cli.toml`, or
 ///    `translate_provider` in `tagent-gui.json`.
 #[async_trait]
@@ -630,17 +639,28 @@ pub trait SpeechProvider: Send + Sync {
 ///     assert!(create_provider_with(name, &options).is_ok());
 /// }
 /// ```
-pub const TRANSLATION_PROVIDERS: &[&str] = &["google", "deepl"];
+pub const TRANSLATION_PROVIDERS: &[&str] = &[
+    #[cfg(feature = "google")]
+    "google",
+    #[cfg(feature = "deepl")]
+    "deepl",
+];
 
 /// Names [`create_dictionary_provider`] accepts, in the canonical (lowercase) spelling.
 ///
 /// See [`TRANSLATION_PROVIDERS`]; the same rules apply.
-pub const DICTIONARY_PROVIDERS: &[&str] = &["google"];
+pub const DICTIONARY_PROVIDERS: &[&str] = &[
+    #[cfg(feature = "google")]
+    "google",
+];
 
 /// Names [`create_speech_provider`] accepts, in the canonical (lowercase) spelling.
 ///
 /// See [`TRANSLATION_PROVIDERS`]; the same rules apply.
-pub const SPEECH_PROVIDERS: &[&str] = &["google"];
+pub const SPEECH_PROVIDERS: &[&str] = &[
+    #[cfg(feature = "google")]
+    "google",
+];
 
 /// Instantiate a translation provider by name.
 ///
@@ -726,12 +746,31 @@ pub fn create_provider_with(
         label,
         options,
     } = profile::resolve(name, options, TRANSLATION_PROVIDERS)?;
-    let provider: Box<dyn TranslationProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleTranslateProvider::with_options(&options)?),
-        "deepl" => Box::new(deepl::DeepLTranslateProvider::with_options(&options)?),
-        _ => return Err(Error::UnknownProvider(kind)),
-    };
+    let provider = build_translation(&kind, &options)?;
     Ok(profile::label_translation(provider, label))
+}
+
+/// Builds a translation provider of a resolved `kind` (one of [`TRANSLATION_PROVIDERS`]).
+#[cfg_attr(
+    not(any(feature = "google", feature = "deepl")),
+    allow(unused_variables)
+)]
+fn build_translation(
+    kind: &str,
+    options: &ProviderOptions,
+) -> Result<Box<dyn TranslationProvider>, Error> {
+    match kind {
+        #[cfg(feature = "google")]
+        "google" => Ok(Box::new(google::GoogleTranslateProvider::with_options(
+            options,
+        )?)),
+        #[cfg(feature = "deepl")]
+        "deepl" => Ok(Box::new(deepl::DeepLTranslateProvider::with_options(
+            options,
+        )?)),
+        // Unreachable for a listed kind; `profile::resolve` rejects unlisted ones.
+        _ => Err(Error::UnknownProvider(kind.to_string())),
+    }
 }
 
 /// Instantiate a dictionary provider by name.
@@ -789,11 +828,23 @@ pub fn create_dictionary_provider_with(
         label,
         options,
     } = profile::resolve(name, options, DICTIONARY_PROVIDERS)?;
-    let provider: Box<dyn DictionaryProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleDictionaryProvider::with_options(&options)?),
-        _ => return Err(Error::UnknownProvider(kind)),
-    };
+    let provider = build_dictionary(&kind, &options)?;
     Ok(profile::label_dictionary(provider, label))
+}
+
+/// Builds a dictionary provider of a resolved `kind` (one of [`DICTIONARY_PROVIDERS`]).
+#[cfg_attr(not(feature = "google"), allow(unused_variables))]
+fn build_dictionary(
+    kind: &str,
+    options: &ProviderOptions,
+) -> Result<Box<dyn DictionaryProvider>, Error> {
+    match kind {
+        #[cfg(feature = "google")]
+        "google" => Ok(Box::new(google::GoogleDictionaryProvider::with_options(
+            options,
+        )?)),
+        _ => Err(Error::UnknownProvider(kind.to_string())),
+    }
 }
 
 /// Instantiate a speech provider by name.
@@ -847,11 +898,20 @@ pub fn create_speech_provider_with(
         label,
         options,
     } = profile::resolve(name, options, SPEECH_PROVIDERS)?;
-    let provider: Box<dyn SpeechProvider> = match kind.as_str() {
-        "google" => Box::new(google::GoogleSpeechProvider::with_options(&options)?),
-        _ => return Err(Error::UnknownProvider(kind)),
-    };
+    let provider = build_speech(&kind, &options)?;
     Ok(profile::label_speech(provider, label))
+}
+
+/// Builds a speech provider of a resolved `kind` (one of [`SPEECH_PROVIDERS`]).
+#[cfg_attr(not(feature = "google"), allow(unused_variables))]
+fn build_speech(kind: &str, options: &ProviderOptions) -> Result<Box<dyn SpeechProvider>, Error> {
+    match kind {
+        #[cfg(feature = "google")]
+        "google" => Ok(Box::new(google::GoogleSpeechProvider::with_options(
+            options,
+        )?)),
+        _ => Err(Error::UnknownProvider(kind.to_string())),
+    }
 }
 
 /// Resolves `from` to a concrete BCP-47 language code, calling
@@ -919,6 +979,7 @@ mod tests {
     }
 
     /// DeepL needs a key, so the name-only factory can't build it.
+    #[cfg(feature = "deepl")]
     #[test]
     fn name_only_factory_rejects_keyed_providers() {
         assert!(matches!(
@@ -934,6 +995,7 @@ mod tests {
             DICTIONARY_PROVIDERS,
             SPEECH_PROVIDERS,
         ] {
+            #[cfg(feature = "google")]
             assert!(!list.is_empty());
             for (i, name) in list.iter().enumerate() {
                 assert_eq!(*name, name.to_lowercase());
@@ -942,12 +1004,14 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn create_dictionary_provider_google_succeeds() {
         let provider = create_dictionary_provider("google").expect("google is registered");
         assert_eq!(provider.name(), "Google Dictionary");
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn create_dictionary_provider_is_case_insensitive() {
         assert!(create_dictionary_provider("GoOgLe").is_ok());
@@ -981,12 +1045,14 @@ mod tests {
         assert_eq!(corrected.corrected_word.as_deref(), Some("violent"));
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn create_speech_provider_google_succeeds() {
         let provider = create_speech_provider("google").expect("google is registered");
         assert_eq!(provider.name(), "Google TTS");
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn create_speech_provider_is_case_insensitive() {
         assert!(create_speech_provider("GoOgLe").is_ok());
@@ -994,6 +1060,7 @@ mod tests {
 
     /// The name-only factories are thin wrappers now; these are the behaviors callers
     /// (e.g. `tagent-cli`'s `provider_error_message`) rely on.
+    #[cfg(feature = "google")]
     #[test]
     fn name_only_factories_behave_as_before() {
         assert_eq!(
@@ -1017,6 +1084,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn with_factories_name_profiles_on_every_axis() {
         let options = ProviderOptions::new().with("type", "google");
@@ -1069,6 +1137,7 @@ mod tests {
         assert_eq!(capabilities.languages, None);
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn google_capabilities_survive_the_profile_wrapper() {
         let google = create_provider("google").unwrap().capabilities();
@@ -1088,6 +1157,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "google")]
     #[test]
     fn with_factories_reject_bad_profiles() {
         let foreign = ProviderOptions::new().with("type", "deepl");

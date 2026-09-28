@@ -648,7 +648,7 @@ mod tests {
     }
 
     /// Run with:
-    /// `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=... cargo test -p tagent deepl::tests::live -- --ignored --nocapture`
+    /// `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=... cargo test -p tagent --features deepl deepl::tests::live -- --ignored --nocapture`
     #[tokio::test]
     #[ignore]
     async fn live_translate_en_to_de() {

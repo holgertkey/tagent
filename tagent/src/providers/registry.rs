@@ -1,6 +1,7 @@
 //! Static descriptions of the built-in providers: names, display names, the options each
 //! accepts and their transport defaults.
 
+#[cfg(feature = "google")]
 use super::google::GOOGLE_TIMEOUT;
 use std::time::Duration;
 
@@ -67,6 +68,7 @@ pub struct OptionSpec {
 
 /// The generic time-budget option (handled by the shared transport, not by the
 /// provider's own code).
+#[cfg(any(feature = "google", feature = "deepl"))]
 const TIMEOUT_SECS: OptionSpec = OptionSpec {
     key: "timeout_secs",
     required: false,
@@ -75,6 +77,7 @@ const TIMEOUT_SECS: OptionSpec = OptionSpec {
 };
 
 /// The generic retry-count option (handled by the shared transport).
+#[cfg(any(feature = "google", feature = "deepl"))]
 const MAX_RETRIES: OptionSpec = OptionSpec {
     key: "max_retries",
     required: false,
@@ -83,9 +86,11 @@ const MAX_RETRIES: OptionSpec = OptionSpec {
 };
 
 /// The generic transport options every HTTP provider accepts.
+#[cfg(feature = "google")]
 const TRANSPORT_OPTIONS: &[OptionSpec] = &[TIMEOUT_SECS, MAX_RETRIES];
 
 /// DeepL's options: its key, an endpoint override and the transport options.
+#[cfg(feature = "deepl")]
 const DEEPL_OPTIONS: &[OptionSpec] = &[
     OptionSpec {
         key: "api_key",
@@ -106,6 +111,7 @@ const DEEPL_OPTIONS: &[OptionSpec] = &[
 
 /// Google's unofficial free endpoint: one retry, but never on a 429, since insisting
 /// risks captchas or IP blocks.
+#[cfg(feature = "google")]
 pub(crate) const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
     max_retries: 1,
     timeout: GOOGLE_TIMEOUT,
@@ -113,6 +119,7 @@ pub(crate) const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
 };
 
 /// DeepL's official API: two retries, including a 429/529 with a short `Retry-After`.
+#[cfg(feature = "deepl")]
 pub(crate) const DEEPL_TRANSPORT: TransportDefaults = TransportDefaults {
     max_retries: 2,
     timeout: Duration::from_secs(10),
@@ -120,12 +127,14 @@ pub(crate) const DEEPL_TRANSPORT: TransportDefaults = TransportDefaults {
 };
 
 static TRANSLATION: &[ProviderDescriptor] = &[
+    #[cfg(feature = "google")]
     ProviderDescriptor {
         name: "google",
         display_name: "Google Translate",
         options: TRANSPORT_OPTIONS,
         transport: GOOGLE_TRANSPORT,
     },
+    #[cfg(feature = "deepl")]
     ProviderDescriptor {
         name: "deepl",
         display_name: "DeepL",
@@ -134,19 +143,25 @@ static TRANSLATION: &[ProviderDescriptor] = &[
     },
 ];
 
-static DICTIONARY: &[ProviderDescriptor] = &[ProviderDescriptor {
-    name: "google",
-    display_name: "Google Dictionary",
-    options: TRANSPORT_OPTIONS,
-    transport: GOOGLE_TRANSPORT,
-}];
+static DICTIONARY: &[ProviderDescriptor] = &[
+    #[cfg(feature = "google")]
+    ProviderDescriptor {
+        name: "google",
+        display_name: "Google Dictionary",
+        options: TRANSPORT_OPTIONS,
+        transport: GOOGLE_TRANSPORT,
+    },
+];
 
-static SPEECH: &[ProviderDescriptor] = &[ProviderDescriptor {
-    name: "google",
-    display_name: "Google TTS",
-    options: TRANSPORT_OPTIONS,
-    transport: GOOGLE_TRANSPORT,
-}];
+static SPEECH: &[ProviderDescriptor] = &[
+    #[cfg(feature = "google")]
+    ProviderDescriptor {
+        name: "google",
+        display_name: "Google TTS",
+        options: TRANSPORT_OPTIONS,
+        transport: GOOGLE_TRANSPORT,
+    },
+];
 
 /// The built-in translation providers, in the same order as
 /// [`TRANSLATION_PROVIDERS`](super::TRANSLATION_PROVIDERS).
@@ -227,6 +242,7 @@ pub(crate) fn required_options(descriptor: &ProviderDescriptor) -> super::Provid
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(feature = "google", feature = "deepl"))]
     use super::super::http::{MAX_RETRIES_KEY, TIMEOUT_SECS_KEY};
     use super::super::options::{is_secret_key, TYPE_KEY};
     use super::super::*;
@@ -345,22 +361,30 @@ mod tests {
             }
         }
         // Google's free endpoint must never insist on a 429.
-        assert!(!translation_providers()[0].transport.retry_on_rate_limit);
+        #[cfg(feature = "google")]
+        for d in [TRANSLATION, DICTIONARY, SPEECH].concat() {
+            if d.name == "google" {
+                assert!(!d.transport.retry_on_rate_limit);
+            }
+        }
     }
 
     #[test]
     fn declared_option_keys_of_unknown_kind_is_empty() {
         assert!(declared_option_keys("no-such-kind").is_empty());
+        #[cfg(feature = "google")]
         assert_eq!(
             declared_option_keys("google"),
             [MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
         );
+        #[cfg(feature = "deepl")]
         assert_eq!(
             declared_option_keys("deepl"),
             ["api_key", "endpoint", MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
         );
     }
 
+    #[cfg(feature = "deepl")]
     #[test]
     fn deepl_key_is_a_required_secret() {
         let deepl = translation_providers()

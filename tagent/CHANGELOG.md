@@ -36,8 +36,14 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
-- **DeepL translation provider** (`providers::deepl::DeepLTranslateProvider`, name
-  `"deepl"`, display name `"DeepL"`), over DeepL's official API. It needs an `api_key`
+- **Cargo features per provider**: `google` (default) and `deepl` (off by default). A
+  library user compiles only the providers it enables; a kind that is compiled out is
+  missing from `TRANSLATION_PROVIDERS` etc. and the registry, and the factories return
+  `Error::UnknownProvider` for it (also as a profile's `type`). With
+  `default-features = false` and no provider feature the crate still builds (traits,
+  options, profiles, registry types). Default builds are unchanged: Google only.
+- **DeepL translation provider** (feature `deepl`; `providers::deepl::DeepLTranslateProvider`,
+  name `"deepl"`, display name `"DeepL"`), over DeepL's official API. It needs an `api_key`
   (a Free key, ending in `:fx`, uses `api-free.deepl.com`, any other key `api.deepl.com`;
   the `endpoint` option overrides the base URL), so it is built through
   `create_provider_with` / a profile, e.g. `[provider_options.deepl]` with `api_key`, or
@@ -48,8 +54,8 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   `Error::RateLimited`, retried when `Retry-After` is at most 2 seconds; the transport
   defaults are a 10-second budget and two retries. `detect_language` works by translating
   the first 100 characters into English (DeepL has no detection endpoint), so it bills
-  those characters. `TRANSLATION_PROVIDERS` and `translation_providers()` now list
-  `"deepl"` after `"google"`.
+  those characters. With the feature on, `TRANSLATION_PROVIDERS` and `translation_providers()`
+  list `"deepl"` after `"google"`.
 - **`languages::LANGUAGES`**: the public table of every language `name_to_code` /
   `code_to_name` know (15, as `Language { code, name }`, in display order; `"auto"` is
   accepted by both functions but not listed), so an application can build its language

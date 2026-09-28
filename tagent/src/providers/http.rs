@@ -229,7 +229,8 @@ impl HttpTransportBuilder {
     /// # Errors
     ///
     /// [`Error::InvalidOptions`] if the value isn't a valid header value.
-    #[allow(dead_code)] // For keyed providers; Google sends no credentials.
+    // For keyed providers; Google sends no credentials.
+    #[cfg_attr(not(feature = "deepl"), allow(dead_code))]
     pub fn secret_header(
         mut self,
         name: &'static str,
@@ -250,6 +251,8 @@ impl HttpTransportBuilder {
     /// Sets which statuses mean rejected credentials ([`Error::Auth`]); default 401/403.
     /// A provider without credentials passes `&[]`, so those statuses stay
     /// [`Error::Api`].
+    // Only Google (no credentials) needs this.
+    #[cfg_attr(not(feature = "google"), allow(dead_code))]
     pub fn auth_statuses(mut self, statuses: &'static [u16]) -> Self {
         self.auth_statuses = statuses;
         self
@@ -257,7 +260,8 @@ impl HttpTransportBuilder {
 
     /// Sets which statuses mean the quota is used up ([`Error::QuotaExceeded`]), e.g.
     /// DeepL's 456.
-    #[allow(dead_code)] // For keyed providers; Google has no quota status.
+    // For keyed providers; Google has no quota status.
+    #[cfg_attr(not(feature = "deepl"), allow(dead_code))]
     pub fn quota_statuses(mut self, statuses: &'static [u16]) -> Self {
         self.quota_statuses = statuses;
         self
@@ -266,6 +270,7 @@ impl HttpTransportBuilder {
     /// Sets which statuses mean throttling ([`Error::RateLimited`], retried after a short
     /// `Retry-After` if the provider allows it); default 429. DeepL adds its 529.
     /// A status listed here must not also be a gateway error (502-504).
+    #[cfg_attr(not(feature = "deepl"), allow(dead_code))]
     pub fn rate_limit_statuses(mut self, statuses: &'static [u16]) -> Self {
         self.rate_limit_statuses = statuses;
         self

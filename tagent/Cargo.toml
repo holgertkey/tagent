@@ -15,6 +15,18 @@ categories = ["internationalization"]
 name = "tagent"
 path = "src/lib.rs"
 
+[features]
+default = ["google"]
+# One feature per built-in provider kind; the shared transport, options and profiles are
+# always compiled.
+# Google Translate, dictionary and TTS over Google's unofficial endpoints.
+google = []
+# DeepL translation over its official, keyed API.
+deepl = []
+
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 async-trait = "0.1"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
@@ -29,3 +41,15 @@ tokio = { version = "1.0", features = ["time"] }
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }
 wiremock = "0.6"
+
+[[example]]
+name = "translate"
+required-features = ["google"]
+
+[[example]]
+name = "dictionary"
+required-features = ["google"]
+
+[[example]]
+name = "speak"
+required-features = ["google"]

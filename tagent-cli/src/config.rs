@@ -2477,6 +2477,44 @@ api_key = "deepl-key"
         assert!(config.create_speech_provider().is_err());
     }
 
+    /// DeepL comes from `tagent`'s `deepl` feature, which this crate enables. The profile
+    /// names are unusual so a `TAGENT_DEEPL_API_KEY` in the developer's shell can't
+    /// interfere.
+    #[test]
+    fn deepl_profile_from_the_config_file_builds() {
+        let config = parse_config(
+            r#"
+            [provider]
+            translate_provider = "cli-test-deepl"
+
+            [provider_options.cli-test-deepl]
+            type = "deepl"
+            api_key = "dummy-key:fx"
+
+            [provider_options.cli-test-nokey]
+            type = "deepl"
+            "#,
+        )
+        .unwrap();
+        let provider = config.create_translate_provider().unwrap();
+        assert_eq!(provider.name(), "DeepL (cli-test-deepl)");
+        assert!(tagent::providers::TRANSLATION_PROVIDERS.contains(&"deepl"));
+
+        let no_key = Config {
+            translate_provider: "cli-test-nokey".to_string(),
+            ..config
+        };
+        let message = no_key
+            .create_translate_provider()
+            .err()
+            .expect("no api_key");
+        assert!(message.contains("api_key"), "{message}");
+        assert!(
+            message.contains("[provider_options.cli-test-nokey]"),
+            "{message}"
+        );
+    }
+
     #[test]
     fn default_config_builds_every_provider() {
         let config = Config::default();

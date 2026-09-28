@@ -12,6 +12,17 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+026] - 2026-09-28
+
+### Added
+- **DeepL translation provider** in Settings > General's translation picker. Its
+  "Provider options" show `api_key` (a password field, required; a Free key ends in `:fx`),
+  `endpoint`, `timeout_secs` and `max_retries`; the key can also come from the
+  `TAGENT_DEEPL_API_KEY` environment variable, or a named profile in `provider_options`
+  with `"type": "deepl"`. DeepL is translation only; dictionary and speech stay on Google.
+  Speaking `Auto`-source text with DeepL selected detects the language through DeepL,
+  which bills up to 100 characters.
+
 ## [0.14.0+025] - 2026-09-27
 
 ### Changed

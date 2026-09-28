@@ -51,6 +51,26 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      # The workspace build above has every `tagent` provider feature on (the apps enable
+      # `deepl`, `google` is default). Lint each provider alone and none at all, so a
+      # missing `cfg` or a helper only one provider uses (dead code) is caught, and run
+      # the unit tests of the reduced builds (the doc examples assume `google`), and
+      # everything, doc examples too, with every feature on.
+      - name: tagent feature combinations
+        if: runner.os == 'Linux'
+        run: |
+          for features in "--no-default-features" \
+                          "--no-default-features --features google" \
+                          "--no-default-features --features deepl"; do
+            echo "::group::tagent $features"
+            cargo clippy -p tagent --all-targets --locked $features -- -D warnings
+            cargo test -p tagent --lib --locked $features
+            echo "::endgroup::"
+          done
+          # Every provider on, doc examples included.
+          cargo clippy -p tagent --all-targets --locked --all-features -- -D warnings
+          cargo test -p tagent --locked --all-features
+
       - name: Build
         run: cargo build --workspace --locked
 
@@ -58,7 +78,9 @@ jobs:
         if: runner.os == 'Linux'
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc -p tagent --no-deps --locked
+        run: |
+          cargo doc -p tagent --no-deps --locked
+          cargo doc -p tagent --no-deps --locked --all-features
 
       - name: Release notes script tests
         if: runner.os == 'Linux'

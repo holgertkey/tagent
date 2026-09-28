@@ -965,7 +965,7 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 
 ### Stage P1 — DeepL (translation)
 
-**Status:** in progress — part 1 done 2026-09-28 (tagent 0.19.0), part 2 pending
+**Status:** done (2026-09-28, tagent 0.19.0; tagent-cli 0.17.0+002, tagent-gui 0.14.0+026)
 **Why first:** a well-documented keyed API. It validates options, auth errors, quota
 errors and language-code mapping end to end.
 **Goal:** `DeepLTranslateProvider`, selectable in both apps through a `deepl` profile
@@ -1105,9 +1105,10 @@ and unit tests; the dialog itself only if a live check is agreed).
   dummy value (`registry::required_options`, test-only); a new test checks that a
   provider with a required option refuses to build without it.
 - Live tests are the first to use the `TAGENT_LIVE_TESTS=1` convention: `#[ignore]` plus an
-  early return without it. Run: `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=...
-  cargo test -p tagent deepl::tests::live -- --ignored --nocapture`. Passed with a Free
-  key on 2026-09-28, including English input detected as `en` with the `EN` detection
+  early return without it. Run: `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=... cargo test
+  -p tagent --features deepl deepl::tests::live -- --ignored --nocapture` (since part 2,
+  without `--features deepl` it silently matches no test). Passed with a Free key on
+  2026-09-28, including English input detected as `en` with the `EN` detection
   target, so decision 1 stands (no switch to `DE`). A real `tagent-cli` translation
   through a `[provider_options.deepl]` profile works too.
 - No app code changed. A `tagent-gui` test pinning "DeepL's `api_key` is a password
@@ -1141,6 +1142,40 @@ works, in its own commit.
   dependencies. Check `release.yml` for anything that builds `tagent` alone.
 - Docs: the "Adding a New … Provider" sections in CLAUDE.md / ARCHITECTURE.md gain the
   feature step; the `tagent` README lists the features.
+
+**Notes after landing (part 2):**
+- Features `google` (default) and `deepl` in `tagent/Cargo.toml`, plus
+  `[package.metadata.docs.rs] all-features = true` and `required-features = ["google"]`
+  on the `translate`/`dictionary`/`speak` examples (`custom_provider` is offline and needs
+  none). `url`/`reqwest` stay unconditional since the transport is.
+- `cfg` on array elements gates the `*_PROVIDERS` lists and the registry statics in place.
+  The factory `match` moved into `build_translation`/`build_dictionary`/`build_speech`
+  (`Result`-returning): with every arm compiled out, a `_ => return Err(..)` inside the
+  old `let provider = match ..` made the code after it unreachable, which `-D warnings`
+  rejects. Their `options` parameter gets `cfg_attr(.., allow(unused_variables))` for the
+  empty build.
+- Dead code per combination: `secret_header`/`quota_statuses`/`rate_limit_statuses` are
+  DeepL-only, `auth_statuses` Google-only (`cfg_attr(not(feature), allow(dead_code))`
+  each); the `http` module as a whole gets the allow when no provider is enabled.
+  `TIMEOUT_SECS`/`MAX_RETRIES` are gated on "any provider", `TRANSPORT_OPTIONS` on
+  `google`, `DEEPL_OPTIONS` on `deepl`.
+- Tests: provider-specific tests are gated; `profile::tests::builtin_name_with_a_foreign_type_is_invalid`
+  needs `google` (reserved names follow the features, as planned). Unit tests pass in all
+  four combinations. **Doc examples assume the default `google` feature** and are not run
+  for the reduced builds; wrapping ~10 of them in `cfg` was judged not worth the noise.
+  Rustdoc links to `deepl` items became plain code (they'd break a default-feature doc
+  build); `cargo doc -p tagent` is clean with default features and with `--all-features`.
+- CI (`ci.yml`, Linux): a "tagent feature combinations" step runs clippy
+  `--all-targets -D warnings` and `cargo test --lib` for `--no-default-features`, `google`
+  alone, `deepl` alone and `--all-features`; the docs step also builds `--all-features`.
+  The workspace steps already cover `google + deepl` through the apps (feature
+  unification). `release.yml` only builds the apps, so nothing there builds `tagent` alone;
+  the packaging dry run passes with the apps' `features = ["deepl"]`.
+- Apps: `features = ["deepl"]` on the `tagent` dependency, `+BUILD` bumps, changelog
+  entries; a `tagent-cli` test builds DeepL from a `[provider_options.*]` TOML profile
+  (and checks the missing-key message), a `tagent-gui` test checks the Settings rows
+  (`api_key` required + password). `tagent-cli/README.md` gained a DeepL example;
+  `tagent-gui/README.md` waits for its next semver bump.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 

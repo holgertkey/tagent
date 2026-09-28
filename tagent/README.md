@@ -16,7 +16,7 @@ concern.
 
   | Axis | Trait | Factory | Built in |
   |---|---|---|---|
-  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (needs an `api_key`) |
+  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (feature `deepl`; needs an `api_key`) |
   | Dictionary | `DictionaryProvider` | `create_dictionary_provider()` | Google |
   | Speech (TTS) | `SpeechProvider` | `create_speech_provider()` | Google |
 
@@ -67,6 +67,24 @@ Run `cargo doc -p tagent --open` for the full API reference. The crate and `prov
 module documentation cover the shared contracts (language codes, the `"auto"` source
 language, the error variants) and how to write a new provider; the `google` module
 documentation lists the caveats of the built-in providers, which use unofficial endpoints.
+
+## Cargo features
+
+Each built-in provider kind is a feature, so you compile only what you use:
+
+| Feature | Default | Provides |
+|---|---|---|
+| `google` | yes | Google translation, dictionary and TTS (unofficial endpoints, no key) |
+| `deepl` | no | DeepL translation (official API, needs an `api_key`) |
+
+```toml
+tagent = { version = "0.19", features = ["deepl"] }                            # Google + DeepL
+tagent = { version = "0.19", default-features = false, features = ["deepl"] }  # DeepL only
+```
+
+A provider whose feature is off is unknown to the factories (`Error::UnknownProvider`)
+and missing from `TRANSLATION_PROVIDERS` and the registry. The examples below need the
+default `google` feature.
 
 ## Examples
 

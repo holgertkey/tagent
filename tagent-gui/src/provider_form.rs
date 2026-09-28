@@ -184,6 +184,25 @@ mod tests {
         assert!(rows.iter().all(|row| !row.secret && !row.required));
     }
 
+    /// DeepL comes from `tagent`'s `deepl` feature, which this crate enables; its key is
+    /// a required password field, with no GUI code of its own.
+    #[test]
+    fn deepl_key_is_a_required_password_field() {
+        let rows = fields(&ProviderProfiles::new(), &["deepl"], &Edits::new(), no_env);
+        assert_eq!(
+            labels(&rows),
+            [
+                "deepl",
+                "api_key",
+                "endpoint",
+                "timeout_secs",
+                "max_retries"
+            ]
+        );
+        assert!(rows[1].secret && rows[1].required);
+        assert!(rows[2..].iter().all(|row| !row.secret && !row.required));
+    }
+
     #[test]
     fn unknown_kinds_get_no_rows() {
         let mut profiles = profiles();

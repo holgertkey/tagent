@@ -22,7 +22,8 @@ pub(crate) struct Resolved {
 }
 
 /// Whether `name` (lowercase) is a built-in provider kind on any axis. Those names are
-/// reserved: a profile may only use one for the kind of the same name.
+/// reserved: a profile may only use one for the kind of the same name. Only the kinds
+/// compiled in (their Cargo features) count.
 fn is_builtin_kind(name: &str) -> bool {
     [
         TRANSLATION_PROVIDERS,
@@ -241,6 +242,8 @@ mod tests {
         assert_eq!(resolved.label, None);
     }
 
+    /// Built-in names are reserved only for the kinds compiled in.
+    #[cfg(feature = "google")]
     #[test]
     fn builtin_name_with_a_foreign_type_is_invalid() {
         assert!(matches!(

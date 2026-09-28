@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+001
+# Tagent Text Translator v0.17.0+002
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -191,7 +191,7 @@ The generated file documents every setting in its comments. Its sections, with t
 
 ```toml
 [provider]
-# Translation backend: a provider profile name (google)
+# Translation backend: a provider profile name (google, deepl)
 translate_provider = "google"
 
 [translation]
@@ -293,6 +293,23 @@ variable `TAGENT_<NAME>_<KEY>` overrides a key, e.g. `TAGENT_WORK_API_KEY`, so a
 never has to be written to the file. `/config` lists every profile with its effective
 options, secret values masked and each value's origin shown. On Linux/macOS the config file
 is written with permissions `0600` (owner only).
+
+#### DeepL
+
+DeepL (translation only) needs an API key from your DeepL account; a Free key ends in `:fx`
+and is sent to DeepL's Free API automatically:
+
+```toml
+[provider]
+translate_provider = "deepl"
+
+[provider_options.deepl]
+api_key = "your-key:fx"   # or leave it out and set TAGENT_DEEPL_API_KEY
+# endpoint = "https://api.deepl.com"   # optional; normally chosen by the key
+```
+
+Keep `dictionary_provider` and `speech_provider` on `google`. Speaking text whose source
+language is `Auto` asks DeepL to detect the language, which bills up to 100 characters.
 
 ### Customizing Hotkeys
 
@@ -621,7 +638,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+001
+**Current Version**: v0.17.0+002
 
 ## Contributing
 
@@ -644,4 +661,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+001** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+002** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

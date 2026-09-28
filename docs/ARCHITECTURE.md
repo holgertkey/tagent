@@ -186,7 +186,19 @@ the old single-crate `tagent`).
   `detected_source_language` — a billed call, accepted because its only caller is TTS
   of `"auto"`-source text, which would otherwise always speak as `en`. No app code
   knows DeepL: both apps pick it up from `TRANSLATION_PROVIDERS` and the registry's
-  `OptionSpec`s (`tagent-gui`'s Settings form shows `api_key` as a password field).
+  `OptionSpec`s (`tagent-gui`'s Settings form shows `api_key` as a password field); their
+  only DeepL-specific line is `features = ["deepl"]` on the `tagent` dependency.
+- **Cargo features per provider** (Stage P1 part 2): `google` (default) and `deepl`
+  (opt-in, since it needs a key). Everything a kind adds is `cfg`-gated together (module,
+  the factory `match` arm, now in `build_translation`/`build_dictionary`/`build_speech`
+  so a build with no arms has no unreachable code, the `*_PROVIDERS` entry, the registry
+  descriptor, tests); the shared transport, options, profiles and registry types are
+  not, so `default-features = false` still builds for an application with its own
+  providers. A compiled-out kind is simply unknown (`UnknownProvider`, also as a profile
+  `type`), and built-in profile names are reserved only for compiled-in kinds. Transport
+  helpers used by one provider (`secret_header`, `quota_statuses`, `rate_limit_statuses`
+  by DeepL, `auth_statuses` by Google) carry `cfg_attr(not(feature), allow(dead_code))`.
+  CI lints and unit-tests each feature alone and none; doc examples assume `google`.
 - **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
