@@ -37,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // No arguments - start unified GUI+Interactive mode
-    show_unified_mode_info();
 
     // Create shared ConfigManager
     let config_path = ConfigManager::get_default_config_path()?;
@@ -56,6 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return Err(e);
         }
     };
+
+    // Banner: language pair, providers and active hotkeys. After the translator is built,
+    // so it names the providers actually in use.
+    let config = config_manager.get_config();
+    ConfigManager::display_banner(&config, &translator.active_providers(&config));
 
     // Create interactive mode with shared translator
     let interactive_mode =
@@ -96,16 +100,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     Ok(())
-}
-
-/// Display unified mode information
-fn show_unified_mode_info() {
-    use config::ConfigManager;
-
-    // Load config to show the language pair and active hotkeys
-    let config = ConfigManager::get_default_config_path()
-        .ok()
-        .and_then(|path| ConfigManager::new(path.to_string_lossy().as_ref()).ok())
-        .map(|manager| manager.get_config());
-    ConfigManager::display_banner(config.as_ref());
 }

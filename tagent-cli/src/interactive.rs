@@ -387,7 +387,11 @@ impl InteractiveMode {
                     io::stdout()
                         .flush()
                         .map_err(|e| format!("IO error: {}", e))?;
-                    ConfigManager::display_banner(Some(&self.config_manager.get_config()));
+                    let config = self.config_manager.get_config();
+                    ConfigManager::display_banner(
+                        &config,
+                        &self.translator.active_providers(&config),
+                    );
                     Ok(true)
                 }
 

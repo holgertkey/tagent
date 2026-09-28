@@ -920,6 +920,39 @@ pub fn provider_error_message(
     }
 }
 
+/// The providers the banner reports: each one's display name (its `name()`, e.g.
+/// `"Google Translate"`, or `"DeepL (work)"` for a profile), or why it is unavailable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveProviders {
+    /// The translation provider in use.
+    pub translation: Result<String, String>,
+    /// The dictionary provider in use.
+    pub dictionary: Result<String, String>,
+    /// The speech provider the next playback will use.
+    pub speech: Result<String, String>,
+}
+
+/// The banner's `Providers:` block. The dictionary line is shown only with
+/// `show_dictionary`, the speech line only with `enable_text_to_speech`, like the
+/// speech hotkey line.
+fn provider_banner_lines(config: &Config, providers: &ActiveProviders) -> Vec<String> {
+    let line = |label: &str, provider: &Result<String, String>| match provider {
+        Ok(name) => format!("  {label}: {name}"),
+        Err(reason) => format!("  {label}: unavailable ({reason})"),
+    };
+    let mut lines = vec![
+        "Providers:".to_string(),
+        line("Translation", &providers.translation),
+    ];
+    if config.show_dictionary {
+        lines.push(line("Dictionary", &providers.dictionary));
+    }
+    if config.enable_text_to_speech {
+        lines.push(line("Speech", &providers.speech));
+    }
+    lines
+}
+
 /// Thread-safe configuration manager with live-reload support.
 ///
 /// `ConfigManager` loads `tagent-cli.toml` on construction and can reload it at
@@ -1081,31 +1114,34 @@ impl ConfigManager {
         }
     }
 
-    /// Print the interactive-mode banner: version, the current language pair,
-    /// active hotkeys (when `config` is available) and a command summary.
+    /// Print the interactive-mode banner: version, the current language pair, the
+    /// providers in use, active hotkeys and a command summary.
     ///
     /// Shown at startup and again after `/clear`.
-    pub fn display_banner(config: Option<&Config>) {
+    pub fn display_banner(config: &Config, providers: &ActiveProviders) {
         println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
         println!();
 
-        if let Some(config) = config {
-            println!(
-                "Languages: {} ({}) -> {} ({})",
-                config.source_language,
-                tagent::languages::name_to_code(&config.source_language),
-                config.target_language,
-                tagent::languages::name_to_code(&config.target_language)
-            );
-            println!();
+        println!(
+            "Languages: {} ({}) -> {} ({})",
+            config.source_language,
+            tagent::languages::name_to_code(&config.source_language),
+            config.target_language,
+            tagent::languages::name_to_code(&config.target_language)
+        );
+        println!();
 
-            println!("Active Hotkeys:");
-            println!("  Translation: {}", config.translate_hotkey);
-            if config.enable_speech_hotkey && config.enable_text_to_speech {
-                println!("  Speech: {}", config.speech_hotkey);
-            }
-            println!();
+        for line in provider_banner_lines(config, providers) {
+            println!("{line}");
         }
+        println!();
+
+        println!("Active Hotkeys:");
+        println!("  Translation: {}", config.translate_hotkey);
+        if config.enable_speech_hotkey && config.enable_text_to_speech {
+            println!("  Speech: {}", config.speech_hotkey);
+        }
+        println!();
 
         println!(
             r#"Commands:
@@ -2785,5 +2821,71 @@ api_key = "secret-0123456789"  # from the account page
         let _ = fs::remove_file(&path);
         assert!(error.contains(path.to_str().unwrap()), "{error}");
         assert!(error.contains("line 2"), "{error}");
+    }
+
+    fn google_providers() -> ActiveProviders {
+        ActiveProviders {
+            translation: Ok("Google Translate".to_string()),
+            dictionary: Ok("Google Dictionary".to_string()),
+            speech: Ok("Google TTS".to_string()),
+        }
+    }
+
+    #[test]
+    fn banner_lists_every_provider_by_default() {
+        assert_eq!(
+            provider_banner_lines(&Config::default(), &google_providers()),
+            [
+                "Providers:",
+                "  Translation: Google Translate",
+                "  Dictionary: Google Dictionary",
+                "  Speech: Google TTS",
+            ]
+        );
+    }
+
+    /// Like the speech hotkey line: a feature that is off doesn't list its provider.
+    #[test]
+    fn banner_leaves_out_disabled_dictionary_and_speech() {
+        let config = Config {
+            show_dictionary: false,
+            enable_text_to_speech: false,
+            ..Config::default()
+        };
+        assert_eq!(
+            provider_banner_lines(&config, &google_providers()),
+            ["Providers:", "  Translation: Google Translate"]
+        );
+    }
+
+    #[test]
+    fn banner_says_why_a_provider_is_unavailable() {
+        let providers = ActiveProviders {
+            speech: Err("unknown provider: nope".to_string()),
+            ..google_providers()
+        };
+        let lines = provider_banner_lines(&Config::default(), &providers);
+        assert_eq!(lines[3], "  Speech: unavailable (unknown provider: nope)");
+    }
+
+    /// The names the banner shows are the providers' own `name()`, so a profile carries
+    /// its name, as `tagent` reports it. The profile name is unusual so no
+    /// `TAGENT_<NAME>_<KEY>` in the developer's shell can interfere.
+    #[test]
+    fn banner_names_come_from_the_built_providers() {
+        let config = parse_config(
+            r#"
+            [speech]
+            speech_provider = "cli-test-banner"
+
+            [provider_options.cli-test-banner]
+            type = "google"
+            "#,
+        )
+        .unwrap();
+        let speech = config.create_speech_provider().unwrap();
+        assert_eq!(speech.name(), "Google TTS (cli-test-banner)");
+        let translate = config.create_translate_provider().unwrap();
+        assert_eq!(translate.name(), "Google Translate");
     }
 }

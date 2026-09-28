@@ -51,9 +51,9 @@ pub struct DictionaryLookup {
 #[derive(Clone)]
 pub struct Translator {
     provider: Arc<dyn TranslationProvider>,
-    /// `None` when the configured `dictionary_provider` could not be created; dictionary
-    /// lookups then fail immediately and callers fall back to plain translation.
-    dictionary_provider: Option<Arc<dyn DictionaryProvider>>,
+    /// The error message when the configured `dictionary_provider` could not be created;
+    /// dictionary lookups then fail immediately and callers fall back to plain translation.
+    dictionary_provider: Result<Arc<dyn DictionaryProvider>, String>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Option<Arc<WindowManager>>,
@@ -105,15 +105,14 @@ impl Translator {
 
         // A bad dictionary provider must never break translation: warn once and disable
         // dictionary lookups instead of failing to start (unlike the translate provider).
-        let dictionary_provider = match config.create_dictionary_provider() {
-            Ok(dictionary) => Some(Arc::from(dictionary)),
-            Err(message) => {
+        let dictionary_provider = config
+            .create_dictionary_provider()
+            .map(Arc::from)
+            .inspect_err(|message| {
                 eprintln!(
                     "Dictionary provider unavailable: {message}; dictionary lookups disabled"
                 );
-                None
-            }
-        };
+            });
 
         Ok(Self {
             provider: Arc::from(provider),
@@ -125,6 +124,23 @@ impl Translator {
             printer: Arc::new(Mutex::new(None)),
             last_translation: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// The providers for the banner: translation and dictionary as built at startup (they
+    /// are kept for the whole run), speech from `config`, since it is built again for
+    /// every playback.
+    pub fn active_providers(&self, config: &config::Config) -> config::ActiveProviders {
+        config::ActiveProviders {
+            translation: Ok(self.provider.name().to_string()),
+            dictionary: self
+                .dictionary_provider
+                .as_ref()
+                .map(|dictionary| dictionary.name().to_string())
+                .map_err(Clone::clone),
+            speech: config
+                .create_speech_provider()
+                .map(|speech| speech.name().to_string()),
+        }
     }
 
     /// Install the external printer used to route [`translate_clipboard`](Self::translate_clipboard)
@@ -467,7 +483,7 @@ impl Translator {
         let dictionary_provider = self
             .dictionary_provider
             .as_ref()
-            .ok_or("Dictionary provider unavailable")?;
+            .map_err(|_| "Dictionary provider unavailable")?;
 
         // Run regular translation and dictionary lookup concurrently
         let (translation_result, dict_result) = tokio::join!(
@@ -723,7 +739,7 @@ mod tests {
         ));
         let translator = Translator {
             provider,
-            dictionary_provider: None,
+            dictionary_provider: Err("no dictionary provider".to_string()),
             clipboard: ClipboardManager::new(),
             config_manager: config_manager.clone(),
             window_manager: None,
@@ -783,7 +799,9 @@ mod tests {
     ) -> Translator {
         Translator {
             provider: Arc::new(provider),
-            dictionary_provider: dictionary.map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>),
+            dictionary_provider: dictionary
+                .map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>)
+                .ok_or_else(|| "no dictionary provider".to_string()),
             clipboard: ClipboardManager::new(),
             config_manager: test_config_manager(unique),
             window_manager: None,
@@ -856,6 +874,28 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// The banner names the translator's own providers, and says why the dictionary
+    /// provider is missing when it couldn't be built.
+    #[test]
+    fn active_providers_name_the_providers_in_use() {
+        let translator = translator_with(
+            MockProvider::new("x"),
+            Some(MockDictionary { entry: None }),
+            "active_ok",
+        );
+        let providers = translator.active_providers(&config::Config::default());
+        assert_eq!(providers.translation.as_deref(), Ok("mock"));
+        assert_eq!(providers.dictionary.as_deref(), Ok("mock dictionary"));
+        assert_eq!(providers.speech.as_deref(), Ok("Google TTS"));
+
+        let translator = translator_with(MockProvider::new("x"), None, "active_none");
+        let providers = translator.active_providers(&config::Config::default());
+        assert_eq!(
+            providers.dictionary,
+            Err("no dictionary provider".to_string())
+        );
     }
 
     /// `/s` and `/ss` replay what `perform_translation` (the hotkey path) records.

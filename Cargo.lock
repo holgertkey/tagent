@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.17.0+002"
+version = "0.17.0+003"
 dependencies = [
  "arboard",
  "async-trait",
@@ -5791,7 +5791,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+026"
+version = "0.14.0+027"
 dependencies = [
  "arboard",
  "clipboard-win",

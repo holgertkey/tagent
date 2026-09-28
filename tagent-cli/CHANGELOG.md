@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+003] - 2026-09-28
+
+### Added
+- **The startup banner (and `/clear`) shows the providers in use**, in a `Providers:` block
+  between the languages and the hotkeys: `Translation: Google Translate`,
+  `Dictionary: Google Dictionary`, `Speech: Google TTS`. Each is the provider's own name,
+  so a profile shows as e.g. `DeepL (work)`. The dictionary line appears only with
+  `show_dictionary`, the speech line only with `enable_text_to_speech`. A provider that
+  can't be built shows `unavailable (<reason>)`. Translation and dictionary are the ones
+  built at startup (a change to them needs a restart); speech follows the current config.
+
 ## [0.17.0+002] - 2026-09-28
 
 ### Added

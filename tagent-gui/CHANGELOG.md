@@ -12,6 +12,17 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+027] - 2026-09-28
+
+### Added
+- **The transcript header shows the providers in use**, in a `Providers:` block before the
+  active hotkeys: `Translation: Google Translate`, `Dictionary: Google Dictionary`,
+  `Speech: Google TTS`. Each is the provider's own name, so a profile shows as e.g.
+  `DeepL (work)`. The dictionary line appears only with `show_dictionary`, the speech line
+  only with `enable_text_to_speech`. A provider that can't be built (e.g. a DeepL profile
+  without `api_key`) shows `unavailable (<reason>)`. Follows the config live: a Settings
+  save or a hand-edit of `tagent-gui.json` updates it with the next translation.
+
 ## [0.14.0+026] - 2026-09-28
 
 ### Added

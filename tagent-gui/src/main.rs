@@ -1222,6 +1222,93 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     );
 }
 
+/// The transcript header's `Providers:` lines (without that heading), one per provider:
+/// its display name, or why it is unavailable. The dictionary line is shown only with
+/// `show_dictionary`, the speech line only with `enable_text_to_speech`, like the speech
+/// hotkey line.
+fn provider_header_lines(
+    config: &config::GuiConfig,
+    translation: Result<String, String>,
+    dictionary: Result<String, String>,
+    speech: Result<String, String>,
+) -> String {
+    let line = |label: &str, provider: Result<String, String>| match provider {
+        Ok(name) => format!("  {label}: {name}"),
+        Err(reason) => format!("  {label}: unavailable ({reason})"),
+    };
+    let mut lines = vec![line("Translation", translation)];
+    if config.show_dictionary {
+        lines.push(line("Dictionary", dictionary));
+    }
+    if config.enable_text_to_speech {
+        lines.push(line("Speech", speech));
+    }
+    lines.join("\n")
+}
+
+/// [`provider_header_lines`] for `config`'s selected providers, named by building each
+/// one through `tagent`'s factories (no network involved) and asking for its `name()`,
+/// so a profile shows the way `tagent` labels it, e.g. `"DeepL (work)"`.
+fn providers_header(config: &config::GuiConfig) -> String {
+    let translation = config.provider_choice(&config.translate_provider);
+    let dictionary = config.provider_choice(&config.dictionary_provider);
+    let speech = config.provider_choice(&config.speech_provider);
+    provider_header_lines(
+        config,
+        providers::create_provider_with(&translation.name, &translation.options)
+            .map(|p| p.name().to_string())
+            .map_err(|e| e.to_string()),
+        providers::create_dictionary_provider_with(&dictionary.name, &dictionary.options)
+            .map(|p| p.name().to_string())
+            .map_err(|e| e.to_string()),
+        providers::create_speech_provider_with(&speech.name, &speech.options)
+            .map(|p| p.name().to_string())
+            .map_err(|e| e.to_string()),
+    )
+}
+
+/// The config fields the `Providers:` header depends on.
+type ProvidersHeaderKey = (
+    String,
+    String,
+    String,
+    tagent::providers::ProviderProfiles,
+    bool,
+    bool,
+);
+
+thread_local! {
+    /// The [`ProvidersHeaderKey`] the header was last built from -- `None` until the first
+    /// [`refresh_providers_header`]. UI-thread-only, like this file's other `thread_local!`s.
+    static LAST_PROVIDERS_HEADER_KEY: RefCell<Option<ProvidersHeaderKey>> =
+        const { RefCell::new(None) };
+}
+
+/// Updates the transcript header's `Providers:` block from the current config. Called
+/// wherever the UI thread reloads the config (and at startup, and on a Settings save);
+/// rebuilds the providers only when a field it depends on changed since the last call, so
+/// the translate and hotkey paths don't pay for it every time. Tracking the fields rather
+/// than `check_and_reload`'s result keeps it right when another path (e.g. speech, on its
+/// own thread) consumed the reload.
+fn refresh_providers_header(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+    // Cloned so the providers are built without holding the config lock.
+    let config = config_manager.lock().unwrap().config().clone();
+    let key: ProvidersHeaderKey = (
+        config.translate_provider.clone(),
+        config.dictionary_provider.clone(),
+        config.speech_provider.clone(),
+        config.provider_options.clone(),
+        config.show_dictionary,
+        config.enable_text_to_speech,
+    );
+    let changed = LAST_PROVIDERS_HEADER_KEY.with(|cell| cell.borrow().as_ref() != Some(&key));
+    if !changed {
+        return;
+    }
+    window.set_active_providers(providers_header(&config).into());
+    LAST_PROVIDERS_HEADER_KEY.with(|cell| *cell.borrow_mut() = Some(key));
+}
+
 /// Appends one entry to the transcript; `app.slint` then scrolls to show it.
 ///
 /// The scroll happens on the `.slint` side (`scroll-to-transcript-end`, driven by
@@ -1910,6 +1997,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .config()
             .enable_text_to_speech,
     );
+    refresh_providers_header(&window, &config_manager);
 
     // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
     // re-shown) on every hotkey trigger rather than constructed per trigger --
@@ -2081,6 +2169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         if let Some(window) = weak.upgrade() {
             window.set_tts_enabled(enable_text_to_speech);
+            refresh_providers_header(&window, config_manager);
         }
 
         spawn_translation(
@@ -2582,6 +2671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if let Some(window) = window_weak_for_save.upgrade() {
                 apply_style(&window, &new_config);
                 window.set_tts_enabled(new_config.enable_text_to_speech);
+                refresh_providers_header(&window, &config_manager_for_save);
             }
             if let Some(popup) = popup_weak_for_save.upgrade() {
                 apply_popup_style(&popup, &new_config);
@@ -2803,6 +2893,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.config().enable_text_to_speech
                     };
                     window.set_tts_enabled(enable_text_to_speech);
+                    refresh_providers_header(&window, &config_manager);
                     if !enable_text_to_speech {
                         is_speech_processing.store(false, Ordering::SeqCst);
                         return;
@@ -2994,6 +3085,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         )
                     };
                     window.set_tts_enabled(enable_text_to_speech);
+                    refresh_providers_header(&window, &config_manager);
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
                     let to_code = languages::name_to_code(&to_lang).to_string();
@@ -3422,5 +3514,55 @@ mod tests {
         let m = model(&["google"]);
         assert_eq!(combo_selection(&m, 5, "fallback"), "fallback");
         assert_eq!(combo_selection(&m, -1, "fallback"), "fallback");
+    }
+
+    #[test]
+    fn provider_header_lists_every_provider_by_default() {
+        assert_eq!(
+            providers_header(&config::GuiConfig::default()),
+            "  Translation: Google Translate\n  Dictionary: Google Dictionary\n  Speech: Google TTS"
+        );
+    }
+
+    /// Like the speech hotkey line: a feature that is off doesn't list its provider.
+    #[test]
+    fn provider_header_leaves_out_disabled_dictionary_and_speech() {
+        let config = config::GuiConfig {
+            show_dictionary: false,
+            enable_text_to_speech: false,
+            ..config::GuiConfig::default()
+        };
+        assert_eq!(
+            provider_header_lines(
+                &config,
+                Ok("Google Translate".into()),
+                Ok("Google Dictionary".into()),
+                Ok("Google TTS".into()),
+            ),
+            "  Translation: Google Translate"
+        );
+    }
+
+    /// A profile shows as `tagent` labels it; one that can't be built says why. The
+    /// profile names are unusual so no `TAGENT_<NAME>_<KEY>` in the developer's shell can
+    /// interfere.
+    #[test]
+    fn provider_header_names_profiles_and_unavailable_providers() {
+        let mut profiles = tagent::providers::ProviderProfiles::new();
+        profiles.insert("gui-test-header", "type", "google");
+        profiles.insert("gui-test-nokey", "type", "deepl");
+        let config = config::GuiConfig {
+            translate_provider: "gui-test-nokey".to_string(),
+            speech_provider: "gui-test-header".to_string(),
+            provider_options: profiles,
+            ..config::GuiConfig::default()
+        };
+        let header = providers_header(&config);
+        let lines: Vec<&str> = header.lines().collect();
+        assert!(
+            lines[0].starts_with("  Translation: unavailable (") && lines[0].contains("api_key"),
+            "{header}"
+        );
+        assert_eq!(lines[2], "  Speech: Google TTS (gui-test-header)");
     }
 }

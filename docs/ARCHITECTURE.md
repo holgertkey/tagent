@@ -145,7 +145,8 @@ the old single-crate `tagent`).
   - **Failure isolation: a bad `DictionaryProvider` value never breaks translation.**
     `tagent-cli`'s `Translator::build` still `?`s the translate provider but builds the
     dictionary provider non-fatally — one warning (`Dictionary provider unavailable
-    (...); dictionary lookups disabled`) and `dictionary_provider: None`; its
+    (...); dictionary lookups disabled`) and `dictionary_provider: Err(message)` (the
+    message is kept for the banner's `Dictionary: unavailable (...)` line); its
     `get_dictionary_entry` (signature unchanged, so `cli.rs`/`interactive.rs` are
     untouched) then returns `Err` before any network call, and the callers' existing
     fallback to plain translation runs. `tagent-gui`'s `spawn_translation` builds it only

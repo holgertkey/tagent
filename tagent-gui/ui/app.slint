@@ -214,14 +214,18 @@ export component AppWindow inherits Window {
     // pattern as phrase-background/translation-background.
     in-out property <color> panel-background: #000000;
 
-    // Transcript header ("=== Tagent vX ===" plus the active hotkeys). The two
-    // hotkey properties are set once from Rust, at startup, to the hotkeys the
-    // keyboard hook actually registered (empty = not registered, so no line);
-    // the speech line additionally follows tts-enabled, which is live.
+    // Transcript header ("=== Tagent vX ===", the providers in use, and the
+    // active hotkeys). The two hotkey properties are set once from Rust, at
+    // startup, to the hotkeys the keyboard hook actually registered (empty = not
+    // registered, so no line); the speech line additionally follows tts-enabled,
+    // which is live. active-providers is the block's indented lines, built in Rust
+    // (main.rs's `refresh_providers_header`) and kept live with the config.
     in-out property <string> app-version: "";
     in-out property <string> active-translate-hotkey: "";
     in-out property <string> active-speech-hotkey: "";
+    in-out property <string> active-providers: "";
     property <string> header-text: "=== Tagent v" + app-version + " ===\nType text and press Enter to translate."
+        + (active-providers != "" ? "\n\nProviders:\n" + active-providers : "")
         + (active-translate-hotkey != ""
             ? "\n\nActive Hotkeys:\n  Translation: " + active-translate-hotkey
                 + (active-speech-hotkey != "" && tts-enabled ? "\n  Speech: " + active-speech-hotkey : "")
