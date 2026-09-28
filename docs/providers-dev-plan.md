@@ -965,7 +965,8 @@ Each provider stage follows the template at the end. Planned order (it can be ch
 
 ### Stage P1 — DeepL (translation)
 
-**Status:** planned (plan agreed 2026-09-27)
+**Status:** in progress — part 1 implemented 2026-09-28 (tagent 0.19.0), live tests and
+part 2 pending
 **Why first:** a well-documented keyed API. It validates options, auth errors, quota
 errors and language-code mapping end to end.
 **Goal:** `DeepLTranslateProvider`, selectable in both apps through a `deepl` profile
@@ -1088,6 +1089,27 @@ bullet next to Google's) and `docs/ARCHITECTURE.md`; fill "Notes after landing" 
 tests pass with the Free key; a CLI translation through a `deepl` profile works;
 `tagent-gui` Settings offers DeepL with `api_key` as a password field (checked by build
 and unit tests; the dialog itself only if a live check is agreed).
+
+**Notes after landing (part 1):**
+- Shipped as planned: `providers/deepl.rs` (`DeepLTranslateProvider::with_options`, pure
+  `base_url`/`build_request_body`/`parse_response`/`to_deepl_source`/`to_deepl_target`/
+  `from_deepl`/`detection_prefix`), `DEEPL_TRANSPORT` and `DEEPL_OPTIONS` in the registry
+  (the generic options became two `const OptionSpec`s, `TIMEOUT_SECS`/`MAX_RETRIES`,
+  shared by both lists), `rate_limit_statuses` in the transport (the two hardcoded 429s —
+  retry decision and `status_error` — now read it; `status_error` takes a `StatusMap`).
+- Small additions beyond the plan: blank text → `Error::EmptyText` with no request (no
+  billed call for nothing); `endpoint` must be an `http(s)` URL (`InvalidOptions`
+  otherwise); the key is trimmed before the `:fx` check; `zh-MO` and `zh-Hant-TW` map to
+  `ZH-HANT`; `_` is accepted as a subtag separator; `User-Agent: tagent/<version>`.
+- Tests that built every listed provider with empty options (registry, factory list, the
+  `TRANSLATION_PROVIDERS` doctest) now fill each descriptor's `required` options with a
+  dummy value (`registry::required_options`, test-only); a new test checks that a
+  provider with a required option refuses to build without it.
+- Live tests are the first to use the `TAGENT_LIVE_TESTS=1` convention: `#[ignore]` plus an
+  early return without it. Run: `TAGENT_LIVE_TESTS=1 TAGENT_DEEPL_API_KEY=...
+  cargo test -p tagent deepl::tests::live -- --ignored --nocapture`.
+- No app code changed. A `tagent-gui` test pinning "DeepL's `api_key` is a password
+  field" is left for part 2, which changes the apps' `Cargo.toml` anyway.
 
 #### P1 part 2 — Cargo features per provider (former Stage G)
 

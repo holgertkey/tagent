@@ -171,6 +171,22 @@ the old single-crate `tagent`).
     appended). `test_generated_config_roundtrips_every_field_with_distinct_values` sets
     every `Config` field to a non-default value and reads it back, so a shifted value
     can't hide by coinciding with a default.
+- **DeepL** (`providers/deepl.rs`, `tagent` 0.19.0, Stage P1 of
+  `docs/providers-dev-plan.md`) — the first keyed provider, translation only
+  (`DeepLTranslateProvider`). It exercises everything the provider foundation added for
+  keyed services: a required secret option (`api_key`, so it can only be built through
+  `create_provider_with`/a profile), `secret_header` (the key never lands in a URL or an
+  error message), `quota_statuses(&[456])`, and `rate_limit_statuses(&[429, 529])` — a
+  crate-private transport knob added for it, default `&[429]`, so Google is unchanged.
+  The base URL follows the key (`:fx` → Free host); the `endpoint` option overrides it
+  and doubles as the mock-server hook in tests, so the adapter has no `#[cfg(test)]`
+  constructor. Language codes are translated only at the edge (BCP-47 in and out,
+  DeepL's `EN`/`PT-BR`/`ZH-HANT` on the wire). DeepL has no detection endpoint, so
+  `detect_language` translates a 100-character prefix into English and keeps only
+  `detected_source_language` — a billed call, accepted because its only caller is TTS
+  of `"auto"`-source text, which would otherwise always speak as `en`. No app code
+  knows DeepL: both apps pick it up from `TRANSLATION_PROVIDERS` and the registry's
+  `OptionSpec`s (`tagent-gui`'s Settings form shows `api_key` as a password field).
 - **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
@@ -178,7 +194,8 @@ the old single-crate `tagent`).
 - **`error`** — `tagent::error::Error`, a `thiserror`-based enum (`Network`, `Api`,
   `NotFound`, `EmptyText`, `TextTooLong { len, max }`, `Decode`, `UnknownProvider`;
   since `tagent` 0.19.0 also `Auth`, `RateLimited { retry_after }`, `QuotaExceeded`,
-  `Unsupported`, `InvalidOptions` for keyed services, and `#[non_exhaustive]`, so apps
+  `Unsupported`, `InvalidOptions` for keyed services (DeepL returns all but
+  `Unsupported`), and `#[non_exhaustive]`, so apps
   match it with a wildcard arm) used across the provider boundary. `tagent-cli` still uses `Box<dyn Error + Send +
   Sync>` internally as before; `Error`'s `?` conversion into that boxed type is
   automatic since it implements `std::error::Error + Send + Sync`, so no `From` impls

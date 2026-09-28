@@ -36,6 +36,20 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- **DeepL translation provider** (`providers::deepl::DeepLTranslateProvider`, name
+  `"deepl"`, display name `"DeepL"`), over DeepL's official API. It needs an `api_key`
+  (a Free key, ending in `:fx`, uses `api-free.deepl.com`, any other key `api.deepl.com`;
+  the `endpoint` option overrides the base URL), so it is built through
+  `create_provider_with` / a profile, e.g. `[provider_options.deepl]` with `api_key`, or
+  the `TAGENT_DEEPL_API_KEY` environment variable; `create_provider("deepl")` returns
+  `Error::InvalidOptions`. Language codes are mapped at the edge (`en-US` → source `EN`,
+  `pt-BR` → target `PT-BR`, `zh-TW` → `ZH-HANT`; `"auto"` lets DeepL detect the source).
+  HTTP 403 is `Error::Auth`, 456 `Error::QuotaExceeded`, and both 429 and DeepL's 529 are
+  `Error::RateLimited`, retried when `Retry-After` is at most 2 seconds; the transport
+  defaults are a 10-second budget and two retries. `detect_language` works by translating
+  the first 100 characters into English (DeepL has no detection endpoint), so it bills
+  those characters. `TRANSLATION_PROVIDERS` and `translation_providers()` now list
+  `"deepl"` after `"google"`.
 - **`languages::LANGUAGES`**: the public table of every language `name_to_code` /
   `code_to_name` know (15, as `Language { code, name }`, in display order; `"auto"` is
   accepted by both functions but not listed), so an application can build its language
@@ -47,7 +61,7 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   if it sent one), `QuotaExceeded` (quota or character allowance used up), `Unsupported`
   (an operation or language pair the provider can't handle) and `InvalidOptions` (a
   missing or invalid provider option). The error table in the `providers` module docs
-  lists them.
+  lists them. DeepL (below) returns all of them except `Unsupported`.
 - **Provider options and profiles**: `create_provider_with`, `create_dictionary_provider_with`
   and `create_speech_provider_with` take a `ProviderOptions` (a case-insensitive string map
   for API keys, endpoints, models, ...) next to the name. The name is a *profile* name: the

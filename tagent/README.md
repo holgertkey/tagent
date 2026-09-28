@@ -1,7 +1,7 @@
 # tagent
 
 Translation, dictionary lookup, and text-to-speech library, powered by the Google
-Translate API. This is the reusable core behind
+Translate API, with DeepL as a keyed alternative for translation. This is the reusable core behind
 [Tagent](https://github.com/holgertkey/tagent/tree/main/tagent-cli)'s CLI/hotkey
 application and the
 [`tagent-gui`](https://github.com/holgertkey/tagent/tree/main/tagent-gui) desktop app —
@@ -16,7 +16,7 @@ concern.
 
   | Axis | Trait | Factory | Built in |
   |---|---|---|---|
-  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google |
+  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (needs an `api_key`) |
   | Dictionary | `DictionaryProvider` | `create_dictionary_provider()` | Google |
   | Speech (TTS) | `SpeechProvider` | `create_speech_provider()` | Google |
 

@@ -9,8 +9,8 @@
 //! |---|---|
 //! | Connection failure (the request never reached the server) | yes, after a short backoff |
 //! | HTTP 502 / 503 / 504 | yes, after a short backoff |
-//! | HTTP 429 with `Retry-After` ≤ 2 s, if the provider allows it | yes, after that delay |
-//! | HTTP 429 otherwise | no → [`Error::RateLimited`] |
+//! | HTTP 429 (or another rate-limit status, e.g. DeepL's 529) with `Retry-After` ≤ 2 s, if the provider allows it | yes, after that delay |
+//! | HTTP 429 / rate-limit status otherwise | no → [`Error::RateLimited`] |
 //! | Timeout | no: the whole budget was spent waiting |
 //! | HTTP 500, 401/403, quota, other 4xx | no |
 //!
@@ -66,6 +66,7 @@ pub(crate) struct HttpTransport {
     retry_on_rate_limit: bool,
     auth_statuses: &'static [u16],
     quota_statuses: &'static [u16],
+    rate_limit_statuses: &'static [u16],
     /// Secrets sent in default headers, redacted from error messages.
     secrets: Vec<String>,
     timing: Timing,
@@ -80,6 +81,7 @@ impl std::fmt::Debug for HttpTransport {
             .field("retry_on_rate_limit", &self.retry_on_rate_limit)
             .field("auth_statuses", &self.auth_statuses)
             .field("quota_statuses", &self.quota_statuses)
+            .field("rate_limit_statuses", &self.rate_limit_statuses)
             .finish_non_exhaustive()
     }
 }
@@ -92,13 +94,16 @@ pub(crate) struct HttpTransportBuilder {
     secrets: Vec<String>,
     auth_statuses: &'static [u16],
     quota_statuses: &'static [u16],
+    rate_limit_statuses: &'static [u16],
     timing: Timing,
 }
 
 impl HttpTransport {
     /// Starts a transport with a provider's defaults. HTTP 401/403 map to
     /// [`Error::Auth`] unless [`auth_statuses`](HttpTransportBuilder::auth_statuses) says
-    /// otherwise; no status maps to [`Error::QuotaExceeded`] unless configured.
+    /// otherwise, HTTP 429 to [`Error::RateLimited`] unless
+    /// [`rate_limit_statuses`](HttpTransportBuilder::rate_limit_statuses) says otherwise;
+    /// no status maps to [`Error::QuotaExceeded`] unless configured.
     pub fn builder(defaults: TransportDefaults) -> HttpTransportBuilder {
         HttpTransportBuilder {
             defaults,
@@ -107,6 +112,7 @@ impl HttpTransport {
             secrets: Vec::new(),
             auth_statuses: &[401, 403],
             quota_statuses: &[],
+            rate_limit_statuses: &[429],
             timing: Timing::default(),
         }
     }
@@ -170,20 +176,24 @@ impl HttpTransport {
             .map(str::to_string);
         let body = response.bytes().await.unwrap_or_default();
 
-        let delay = match status.as_u16() {
-            502..=504 => Some(self.backoff()),
-            429 if self.retry_on_rate_limit => {
-                retry_after.filter(|wait| *wait <= MAX_RATE_LIMIT_WAIT)
-            }
-            _ => None,
+        let code = status.as_u16();
+        let delay = if self.rate_limit_statuses.contains(&code) {
+            retry_after.filter(|wait| self.retry_on_rate_limit && *wait <= MAX_RATE_LIMIT_WAIT)
+        } else if (502..=504).contains(&code) {
+            Some(self.backoff())
+        } else {
+            None
         };
         let error = status_error(
             status,
             retry_after,
             content_type.as_deref(),
             &body,
-            self.auth_statuses,
-            self.quota_statuses,
+            &StatusMap {
+                auth: self.auth_statuses,
+                quota: self.quota_statuses,
+                rate_limit: self.rate_limit_statuses,
+            },
             &self.secrets,
         );
         Err((error, delay))
@@ -253,6 +263,14 @@ impl HttpTransportBuilder {
         self
     }
 
+    /// Sets which statuses mean throttling ([`Error::RateLimited`], retried after a short
+    /// `Retry-After` if the provider allows it); default 429. DeepL adds its 529.
+    /// A status listed here must not also be a gateway error (502-504).
+    pub fn rate_limit_statuses(mut self, statuses: &'static [u16]) -> Self {
+        self.rate_limit_statuses = statuses;
+        self
+    }
+
     /// Replaces the backoff/minimum-attempt timing (tests only).
     #[cfg(test)]
     pub fn timing(mut self, timing: Timing) -> Self {
@@ -309,6 +327,7 @@ impl HttpTransportBuilder {
             retry_on_rate_limit: self.defaults.retry_on_rate_limit,
             auth_statuses: self.auth_statuses,
             quota_statuses: self.quota_statuses,
+            rate_limit_statuses: self.rate_limit_statuses,
             secrets: self.secrets,
             timing: self.timing,
         })
@@ -324,6 +343,13 @@ fn parse_retry_after(value: &str) -> Option<Duration> {
     value.trim().parse::<u64>().ok().map(Duration::from_secs)
 }
 
+/// Which statuses map onto which [`Error`] variant (anything else is [`Error::Api`]).
+struct StatusMap<'a> {
+    auth: &'a [u16],
+    quota: &'a [u16],
+    rate_limit: &'a [u16],
+}
+
 /// Maps a non-success status (with its `Retry-After`, content type and body) onto an
 /// [`Error`].
 fn status_error(
@@ -331,18 +357,17 @@ fn status_error(
     retry_after: Option<Duration>,
     content_type: Option<&str>,
     body: &[u8],
-    auth_statuses: &[u16],
-    quota_statuses: &[u16],
+    map: &StatusMap<'_>,
     secrets: &[String],
 ) -> Error {
     let code = status.as_u16();
-    if code == 429 {
+    if map.rate_limit.contains(&code) {
         return Error::RateLimited { retry_after };
     }
     let message = describe(status, content_type, body, secrets);
-    if auth_statuses.contains(&code) {
+    if map.auth.contains(&code) {
         Error::Auth(message)
-    } else if quota_statuses.contains(&code) {
+    } else if map.quota.contains(&code) {
         Error::QuotaExceeded(message)
     } else {
         Error::Api(message)
@@ -529,6 +554,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn extra_rate_limit_statuses_are_treated_like_429() {
+        let throttled = || ResponseTemplate::new(529).insert_header("Retry-After", "0");
+        let deepl_like = || {
+            HttpTransport::builder(defaults(1, true))
+                .rate_limit_statuses(&[429, 529])
+                .timing(FAST)
+                .build()
+                .unwrap()
+        };
+
+        let server = first_then_ok(throttled()).await;
+        assert_eq!(get(&deepl_like(), &server.uri()).await.unwrap(), b"ok");
+        assert_requests(&server, 2).await;
+
+        let server = first_then_ok(ResponseTemplate::new(529)).await;
+        let error = get(&deepl_like(), &server.uri()).await.unwrap_err();
+        assert!(
+            matches!(error, Error::RateLimited { retry_after: None }),
+            "{error:?}"
+        );
+        assert_requests(&server, 1).await;
+
+        // By default 529 is a plain API error and never retried (Google's behavior).
+        let server = first_then_ok(throttled()).await;
+        let error = get(&transport(1, true), &server.uri()).await.unwrap_err();
+        assert!(
+            matches!(&error, Error::Api(m) if m.contains("529")),
+            "{error:?}"
+        );
+        assert_requests(&server, 1).await;
+    }
+
+    #[tokio::test]
     async fn connection_failures_are_retried() {
         // A port nothing listens on: connect is refused.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -621,8 +679,11 @@ mod tests {
             None,
             content_type,
             body.as_bytes(),
-            &[401, 403],
-            &[456],
+            &StatusMap {
+                auth: &[401, 403],
+                quota: &[456],
+                rate_limit: &[429],
+            },
             &[],
         )
     }
@@ -636,8 +697,21 @@ mod tests {
         assert!(matches!(map(500, None, ""), Error::Api(_)));
         assert!(matches!(map(404, None, ""), Error::Api(_)));
         // Without credentials, 403 is just an API error.
-        let no_auth = status_error(StatusCode::FORBIDDEN, None, None, b"", &[], &[], &[]);
+        let no_auth = status_error(
+            StatusCode::FORBIDDEN,
+            None,
+            None,
+            b"",
+            &StatusMap {
+                auth: &[],
+                quota: &[],
+                rate_limit: &[429],
+            },
+            &[],
+        );
         assert!(matches!(no_auth, Error::Api(_)));
+        // 529 is an API error unless configured as a rate-limit status (DeepL).
+        assert!(matches!(map(529, None, ""), Error::Api(_)));
     }
 
     #[test]

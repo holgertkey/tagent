@@ -65,21 +65,43 @@ pub struct OptionSpec {
     pub description: &'static str,
 }
 
-/// The generic transport options every HTTP provider accepts (handled by the shared
-/// transport, not by the provider's own code).
-const TRANSPORT_OPTIONS: &[OptionSpec] = &[
+/// The generic time-budget option (handled by the shared transport, not by the
+/// provider's own code).
+const TIMEOUT_SECS: OptionSpec = OptionSpec {
+    key: "timeout_secs",
+    required: false,
+    secret: false,
+    description: "Time budget for one call in whole seconds, retries included",
+};
+
+/// The generic retry-count option (handled by the shared transport).
+const MAX_RETRIES: OptionSpec = OptionSpec {
+    key: "max_retries",
+    required: false,
+    secret: false,
+    description: "How often a failed request is retried; 0 disables retries",
+};
+
+/// The generic transport options every HTTP provider accepts.
+const TRANSPORT_OPTIONS: &[OptionSpec] = &[TIMEOUT_SECS, MAX_RETRIES];
+
+/// DeepL's options: its key, an endpoint override and the transport options.
+const DEEPL_OPTIONS: &[OptionSpec] = &[
     OptionSpec {
-        key: "timeout_secs",
-        required: false,
-        secret: false,
-        description: "Time budget for one call in whole seconds, retries included",
+        key: "api_key",
+        required: true,
+        secret: true,
+        description: "DeepL authentication key (a Free key ends in `:fx`)",
     },
     OptionSpec {
-        key: "max_retries",
+        key: "endpoint",
         required: false,
         secret: false,
-        description: "How often a failed request is retried; 0 disables retries",
+        description:
+            "API base URL; default by key: https://api-free.deepl.com or https://api.deepl.com",
     },
+    TIMEOUT_SECS,
+    MAX_RETRIES,
 ];
 
 /// Google's unofficial free endpoint: one retry, but never on a 429, since insisting
@@ -90,12 +112,27 @@ pub(crate) const GOOGLE_TRANSPORT: TransportDefaults = TransportDefaults {
     retry_on_rate_limit: false,
 };
 
-static TRANSLATION: &[ProviderDescriptor] = &[ProviderDescriptor {
-    name: "google",
-    display_name: "Google Translate",
-    options: TRANSPORT_OPTIONS,
-    transport: GOOGLE_TRANSPORT,
-}];
+/// DeepL's official API: two retries, including a 429/529 with a short `Retry-After`.
+pub(crate) const DEEPL_TRANSPORT: TransportDefaults = TransportDefaults {
+    max_retries: 2,
+    timeout: Duration::from_secs(10),
+    retry_on_rate_limit: true,
+};
+
+static TRANSLATION: &[ProviderDescriptor] = &[
+    ProviderDescriptor {
+        name: "google",
+        display_name: "Google Translate",
+        options: TRANSPORT_OPTIONS,
+        transport: GOOGLE_TRANSPORT,
+    },
+    ProviderDescriptor {
+        name: "deepl",
+        display_name: "DeepL",
+        options: DEEPL_OPTIONS,
+        transport: DEEPL_TRANSPORT,
+    },
+];
 
 static DICTIONARY: &[ProviderDescriptor] = &[ProviderDescriptor {
     name: "google",
@@ -176,6 +213,18 @@ pub(crate) fn declared_option_keys(kind: &str) -> Vec<&'static str> {
     keys
 }
 
+/// Options that satisfy every [`required`](OptionSpec::required) option of `descriptor`
+/// with a dummy value, so tests can build any listed provider without a network call.
+#[cfg(test)]
+pub(crate) fn required_options(descriptor: &ProviderDescriptor) -> super::ProviderOptions {
+    descriptor
+        .options
+        .iter()
+        .filter(|option| option.required)
+        .map(|option| (option.key, "test-value"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::http::{MAX_RETRIES_KEY, TIMEOUT_SECS_KEY};
@@ -210,20 +259,44 @@ mod tests {
 
     #[test]
     fn every_descriptor_builds_and_reports_its_display_name() {
-        let options = ProviderOptions::new();
         for d in translation_providers() {
+            let options = required_options(d);
             assert_eq!(
                 create_provider_with(d.name, &options).unwrap().name(),
                 d.display_name
             );
         }
         for d in dictionary_providers() {
-            let provider = create_dictionary_provider_with(d.name, &options).unwrap();
+            let provider = create_dictionary_provider_with(d.name, &required_options(d)).unwrap();
             assert_eq!(provider.name(), d.display_name);
         }
         for d in speech_providers() {
-            let provider = create_speech_provider_with(d.name, &options).unwrap();
+            let provider = create_speech_provider_with(d.name, &required_options(d)).unwrap();
             assert_eq!(provider.name(), d.display_name);
+        }
+    }
+
+    /// A provider with a required option can't be built without it.
+    #[test]
+    fn required_options_are_enforced() {
+        for (axis, descriptors, _) in axes() {
+            for d in descriptors
+                .iter()
+                .filter(|d| d.options.iter().any(|o| o.required))
+            {
+                let built = match axis {
+                    "translation" => create_provider_with(d.name, &ProviderOptions::new()).err(),
+                    "dictionary" => {
+                        create_dictionary_provider_with(d.name, &ProviderOptions::new()).err()
+                    }
+                    _ => create_speech_provider_with(d.name, &ProviderOptions::new()).err(),
+                };
+                assert!(
+                    matches!(built, Some(Error::InvalidOptions(_))),
+                    "{axis}/{}: {built:?}",
+                    d.name
+                );
+            }
         }
     }
 
@@ -282,5 +355,22 @@ mod tests {
             declared_option_keys("google"),
             [MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
         );
+        assert_eq!(
+            declared_option_keys("deepl"),
+            ["api_key", "endpoint", MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
+        );
+    }
+
+    #[test]
+    fn deepl_key_is_a_required_secret() {
+        let deepl = translation_providers()
+            .iter()
+            .find(|d| d.name == "deepl")
+            .unwrap();
+        let api_key = deepl.options.iter().find(|o| o.key == "api_key").unwrap();
+        assert!(api_key.required && api_key.secret);
+        assert!(deepl.transport.retry_on_rate_limit);
+        assert!(is_secret_option("DeepL", "API_KEY"));
+        assert!(!is_secret_option("deepl", "endpoint"));
     }
 }

@@ -1,5 +1,6 @@
 //! Translation, dictionary and speech provider traits, their factories, and the built-in
-//! Google implementations.
+//! implementations: Google (all three axes, [`google`]) and DeepL (translation, keyed,
+//! [`deepl`]).
 //!
 //! There are three independent provider axes, and a backend implements only the ones it
 //! provides:
@@ -61,8 +62,10 @@
 //!   | [`Error::InvalidOptions`]   | A provider option is missing or invalid, or a profile is malformed (see [`create_provider_with`]). |
 //!
 //!   [`Error::NotFound`] exists but no built-in provider returns it: a dictionary miss is
-//!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error. Neither do the last five
-//!   rows yet: they are there for keyed and paid services. [`Error`] is
+//!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error. The last five rows are
+//!   for keyed and paid services: DeepL returns all of them but [`Error::Unsupported`],
+//!   Google (no credentials) only [`Error::RateLimited`] and [`Error::InvalidOptions`] for
+//!   a bad transport option. [`Error`] is
 //!   `#[non_exhaustive]`, so a `match` on it outside this crate needs a wildcard arm.
 //! - **`Send + Sync`**. All three traits require it, so one provider can be shared across tasks.
 //!   The factories build a *new* provider (with a fresh HTTP client) on every call, so
@@ -194,6 +197,7 @@
 use crate::error::Error;
 use async_trait::async_trait;
 
+pub mod deepl;
 pub mod google;
 mod http;
 mod options;
@@ -610,20 +614,23 @@ pub trait SpeechProvider: Send + Sync {
 /// a picker or listing the choices in a message.
 ///
 /// Matching is case-insensitive, so `"Google"` also works; this list holds one spelling per
-/// provider. A test checks that every name here is accepted by the factory.
+/// provider. A test checks that the factory builds every name here, given the options its
+/// [`ProviderDescriptor`] marks as required (DeepL needs an `api_key`).
 /// [`translation_providers`] describes the same providers, in the same order, in more
 /// detail (display name, options, transport defaults).
 ///
 /// # Examples
 ///
 /// ```
-/// use tagent::providers::{create_provider, TRANSLATION_PROVIDERS};
+/// use tagent::providers::{create_provider_with, ProviderOptions, TRANSLATION_PROVIDERS};
 ///
+/// // Keyed providers (DeepL) need their key; a dummy one is enough to build them.
+/// let options = ProviderOptions::new().with("api_key", "dummy-key");
 /// for name in TRANSLATION_PROVIDERS {
-///     assert!(create_provider(name).is_ok());
+///     assert!(create_provider_with(name, &options).is_ok());
 /// }
 /// ```
-pub const TRANSLATION_PROVIDERS: &[&str] = &["google"];
+pub const TRANSLATION_PROVIDERS: &[&str] = &["google", "deepl"];
 
 /// Names [`create_dictionary_provider`] accepts, in the canonical (lowercase) spelling.
 ///
@@ -642,12 +649,14 @@ pub const SPEECH_PROVIDERS: &[&str] = &["google"];
 /// | Name       | Provider              |
 /// |------------|-----------------------|
 /// | `"google"` | Google Translate API  |
+/// | `"deepl"`  | DeepL API (needs an `api_key`, so use [`create_provider_with`]) |
 ///
 /// The same names are listed in [`TRANSLATION_PROVIDERS`].
 ///
 /// # Errors
 ///
-/// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider.
+/// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider,
+/// and [`Error::InvalidOptions`] for a provider that needs options (`"deepl"`).
 ///
 /// # Examples
 ///
@@ -719,6 +728,7 @@ pub fn create_provider_with(
     } = profile::resolve(name, options, TRANSLATION_PROVIDERS)?;
     let provider: Box<dyn TranslationProvider> = match kind.as_str() {
         "google" => Box::new(google::GoogleTranslateProvider::with_options(&options)?),
+        "deepl" => Box::new(deepl::DeepLTranslateProvider::with_options(&options)?),
         _ => return Err(Error::UnknownProvider(kind)),
     };
     Ok(profile::label_translation(provider, label))
@@ -893,18 +903,28 @@ mod tests {
     /// be offered, and a listed name the factory rejects would be a broken choice.
     #[test]
     fn every_listed_provider_name_is_accepted_by_its_factory() {
-        for name in TRANSLATION_PROVIDERS {
-            assert!(create_provider(name).is_ok(), "translation: {name}");
+        use registry::required_options;
+        for d in translation_providers() {
+            let built = create_provider_with(d.name, &required_options(d));
+            assert!(built.is_ok(), "translation: {}", d.name);
         }
-        for name in DICTIONARY_PROVIDERS {
-            assert!(
-                create_dictionary_provider(name).is_ok(),
-                "dictionary: {name}"
-            );
+        for d in dictionary_providers() {
+            let built = create_dictionary_provider_with(d.name, &required_options(d));
+            assert!(built.is_ok(), "dictionary: {}", d.name);
         }
-        for name in SPEECH_PROVIDERS {
-            assert!(create_speech_provider(name).is_ok(), "speech: {name}");
+        for d in speech_providers() {
+            let built = create_speech_provider_with(d.name, &required_options(d));
+            assert!(built.is_ok(), "speech: {}", d.name);
         }
+    }
+
+    /// DeepL needs a key, so the name-only factory can't build it.
+    #[test]
+    fn name_only_factory_rejects_keyed_providers() {
+        assert!(matches!(
+            create_provider("deepl"),
+            Err(Error::InvalidOptions(_))
+        ));
     }
 
     #[test]

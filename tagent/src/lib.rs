@@ -1,7 +1,7 @@
 //! # Tagent
 //!
 //! Translation, dictionary lookup, and text-to-speech library, powered by the
-//! Google Translate API.
+//! Google Translate API, with DeepL as a keyed alternative for translation.
 //!
 //! The crate is provider-agnostic. It has three independent provider axes, so the
 //! backend that translates, the one that looks words up, and the one that speaks are
@@ -9,7 +9,7 @@
 //!
 //! | Axis        | Trait                              | Factory                                 | Built-in                                        |
 //! |-------------|------------------------------------|-----------------------------------------|-------------------------------------------------|
-//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`]  |
+//! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`], [`providers::deepl::DeepLTranslateProvider`] |
 //! | Dictionary  | [`providers::DictionaryProvider`]  | [`providers::create_dictionary_provider`] | [`providers::google::GoogleDictionaryProvider`] |
 //! | Speech      | [`providers::SpeechProvider`]      | [`providers::create_speech_provider`]   | [`providers::google::GoogleSpeechProvider`]     |
 //!
@@ -95,12 +95,12 @@
 //!   need a Tokio runtime.
 //! - **Network caveats.** The built-in Google providers talk to *unofficial* endpoints with
 //!   no API key and no service guarantees — see [`providers::google`] before depending on
-//!   them.
+//!   them. DeepL ([`providers::deepl`]) uses its official API and needs an `api_key`.
 //!
 //! ## Modules
 //!
 //! - [`providers`] — Translation, dictionary and speech provider traits and factories,
-//!   plus the Google implementations. Start here to use, or to extend, the crate.
+//!   plus the Google and DeepL implementations. Start here to use, or to extend, the crate.
 //! - [`languages`] — Human-readable language name ↔ BCP-47 code mapping.
 //! - [`article`] — Role-tagged display layout of a dictionary entry, for plain or
 //!   highlighted rendering.
