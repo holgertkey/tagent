@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+004] - 2026-09-28
+
+### Added
+- **Ready-made provider profiles in a new `tagent-cli.toml`.** The "Provider profiles"
+  section at the end of the file now holds one commented-out `[provider_options.<name>]`
+  block per available provider (today `google` and `deepl`), plus a second-instance
+  example (`[provider_options.deepl-work]` with `type = "deepl"`). Remove the leading `# `
+  from a block's lines and fill in the empty values: required keys (DeepL's `api_key`)
+  are empty strings, `timeout_secs`/`max_retries` show the provider's defaults, and other
+  optional keys (`endpoint`) stay commented out. Each key carries its description, and a
+  secret names its environment variable (`TAGENT_DEEPL_API_KEY`). The blocks are
+  generated from `tagent`'s provider registry, so they follow the providers this build
+  includes. Only a newly created config file gets them; an existing one is left as it is
+  (delete or rename it to have a fresh one written).
+
 ## [0.17.0+003] - 2026-09-28
 
 ### Added

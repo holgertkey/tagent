@@ -94,7 +94,10 @@ mod tests {
     fn a_vanished_profile_falls_back_to_the_configured_provider() {
         let mut choice = None;
         select(&mut choice, "work", "google");
-        assert_eq!(resolve(&mut choice, "google", |name| name != "work"), "google");
+        assert_eq!(
+            resolve(&mut choice, "google", |name| name != "work"),
+            "google"
+        );
         assert_eq!(choice, None);
     }
 }

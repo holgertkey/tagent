@@ -158,7 +158,11 @@ pub fn warning(
     if missing.is_empty() {
         String::new()
     } else {
-        format!("{}: {} required", profile.trim().to_lowercase(), missing.join(", "))
+        format!(
+            "{}: {} required",
+            profile.trim().to_lowercase(),
+            missing.join(", ")
+        )
     }
 }
 
@@ -297,7 +301,10 @@ mod tests {
 
         // A whitespace-only edit doesn't count.
         let blank: Edits = [(("deepl".into(), "api_key".into()), "  ".into())].into();
-        assert_eq!(missing_required(&empty, "deepl", &blank, no_env), ["api_key"]);
+        assert_eq!(
+            missing_required(&empty, "deepl", &blank, no_env),
+            ["api_key"]
+        );
 
         let edited: Edits = [(("deepl".into(), "api_key".into()), "k:fx".into())].into();
         assert!(missing_required(&empty, "deepl", &edited, no_env).is_empty());
@@ -307,7 +314,10 @@ mod tests {
         assert!(missing_required(&saved, "deepl", &Edits::new(), no_env).is_empty());
         // ...unless this dialog's edit clears it.
         let cleared: Edits = [(("deepl".into(), "api_key".into()), "".into())].into();
-        assert_eq!(missing_required(&saved, "deepl", &cleared, no_env), ["api_key"]);
+        assert_eq!(
+            missing_required(&saved, "deepl", &cleared, no_env),
+            ["api_key"]
+        );
 
         let env = |var: &str| (var == "TAGENT_DEEPL_API_KEY").then(|| "k".to_string());
         assert!(missing_required(&empty, "deepl", &Edits::new(), env).is_empty());

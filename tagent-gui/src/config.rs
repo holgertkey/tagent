@@ -1093,12 +1093,16 @@ mod tests {
             target_language: "Ru".to_string(),
             ..GuiConfig::default()
         };
-        assert!(config.normalize_languages_with(|| unreachable!()).is_empty());
+        assert!(config
+            .normalize_languages_with(|| unreachable!())
+            .is_empty());
         assert_eq!(config.source_language, "en");
         assert_eq!(config.target_language, "ru");
 
         config.source_language = "Auto".to_string();
-        assert!(config.normalize_languages_with(|| unreachable!()).is_empty());
+        assert!(config
+            .normalize_languages_with(|| unreachable!())
+            .is_empty());
         assert_eq!(config.source_language, "auto");
     }
 

@@ -94,7 +94,10 @@ thread_local! {
 /// that pair changes (a Settings save or a hand-edit). In between, a pick in the window
 /// holds for the run, like its translation provider picker.
 fn refresh_default_languages(window: &AppWindow, config: &config::GuiConfig) {
-    let pair = (config.source_language.clone(), config.target_language.clone());
+    let pair = (
+        config.source_language.clone(),
+        config.target_language.clone(),
+    );
     let changed = LAST_DEFAULT_LANGUAGES.with(|cell| cell.borrow().as_ref() != Some(&pair));
     if !changed {
         return;
@@ -1408,7 +1411,9 @@ fn effective_translate_provider(config: &config::GuiConfig) -> (String, bool) {
             providers::TRANSLATION_PROVIDERS
                 .iter()
                 .any(|known| known.eq_ignore_ascii_case(name))
-                || offered.iter().any(|profile| profile.eq_ignore_ascii_case(name))
+                || offered
+                    .iter()
+                    .any(|profile| profile.eq_ignore_ascii_case(name))
         },
     );
     let session = name != config.translate_provider;
@@ -3853,7 +3858,9 @@ mod tests {
             "gui-test-picker: api_key required"
         );
 
-        config.provider_options.insert("gui-test-picker", "api_key", "k:fx");
+        config
+            .provider_options
+            .insert("gui-test-picker", "api_key", "k:fx");
         refresh_translate_provider_picker(&window, &config);
         assert_eq!(window.get_translate_provider_warning(), "");
 

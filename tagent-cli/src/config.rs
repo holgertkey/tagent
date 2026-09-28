@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tagent::providers::{
-    self, DictionaryProvider, ProviderOptions, ProviderProfiles, SpeechProvider,
-    TranslationProvider,
+    self, DictionaryProvider, OptionSpec, ProviderDescriptor, ProviderOptions, ProviderProfiles,
+    SpeechProvider, TranslationProvider,
 };
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
@@ -651,15 +651,114 @@ speech_provider = "google"
 # coexist. Keys are passed to the provider as they are (api_key, endpoint, model,
 # timeout_secs, max_retries, ...), and every value is a quoted string, numbers too.
 # An environment variable TAGENT_<NAME>_<KEY> (e.g. TAGENT_DEEPL_API_KEY) overrides a key.
-# Example:
-#   [provider_options.google]
-#   timeout_secs = "15"
-#   max_retries = "0"
-"#,
+#
+# Ready-made profiles for every available provider follow. To use one, remove the
+# leading hash and space from each line of its block and fill in the empty values; the
+# numbers shown are the defaults. Lines starting with ## are explanations, and a
+# #key = "" line is an optional key: uncomment it too if you need it.
+#
+{profile_examples}"#,
         translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
         dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
         speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
+        profile_examples = profile_examples(),
     )
+}
+
+/// The built-in provider kinds, each with its descriptors on every axis it serves, in
+/// registry order (translation, then dictionary, then speech).
+fn provider_kinds() -> Vec<(&'static str, Vec<&'static ProviderDescriptor>)> {
+    let mut kinds: Vec<(&'static str, Vec<&'static ProviderDescriptor>)> = Vec::new();
+    for descriptor in providers::translation_providers()
+        .iter()
+        .chain(providers::dictionary_providers())
+        .chain(providers::speech_providers())
+    {
+        match kinds.iter_mut().find(|(name, _)| *name == descriptor.name) {
+            Some((_, descriptors)) => descriptors.push(descriptor),
+            None => kinds.push((descriptor.name, vec![descriptor])),
+        }
+    }
+    kinds
+}
+
+/// The commented-out `[provider_options.<kind>]` blocks at the end of a new config file:
+/// one per built-in provider kind, generated from `tagent`'s registry, so a new provider
+/// (or a compiled-out one) is reflected without touching the template. Removing the
+/// leading `"# "` from a block's lines gives a working profile: required keys are empty
+/// strings to fill in, the transport options carry the provider's defaults, and any other
+/// optional key stays commented out (`#key`). Every line starts with `"# "` and blocks are
+/// separated by a lone `"#"`.
+fn profile_examples() -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut second_instance = None;
+    for (kind, descriptors) in provider_kinds() {
+        let names: Vec<&str> = descriptors.iter().map(|d| d.display_name).collect();
+        let transport = descriptors[0].transport;
+        let mut options: Vec<&OptionSpec> = Vec::new();
+        for option in descriptors.iter().flat_map(|d| d.options) {
+            if !options.iter().any(|o| o.key == option.key) {
+                options.push(option);
+            }
+        }
+        let required: Vec<&str> = options
+            .iter()
+            .filter(|o| o.required)
+            .map(|o| o.key)
+            .collect();
+        if second_instance.is_none() && !required.is_empty() {
+            second_instance = Some((kind, required));
+        }
+
+        lines.push(format!("## {kind}: {}", names.join(", ")));
+        lines.push(format!("[provider_options.{kind}]"));
+        for option in options {
+            let mut note = option.description.to_string();
+            if option.required {
+                note.push_str(". Required");
+            }
+            lines.push(format!("## {note}"));
+            if option.secret {
+                lines.push(format!(
+                    "## (or set {} instead of storing it in this file)",
+                    providers::env_var_name(kind, option.key)
+                ));
+            }
+            let default = match option.key {
+                "timeout_secs" => Some(transport.timeout.as_secs().to_string()),
+                "max_retries" => Some(transport.max_retries.to_string()),
+                _ => None,
+            };
+            match default {
+                Some(value) => lines.push(format!("{} = {}", option.key, Value::from(value))),
+                None if option.required => lines.push(format!("{} = \"\"", option.key)),
+                None => lines.push(format!("#{} = \"\"", option.key)),
+            }
+        }
+        lines.push(String::new());
+    }
+    if let Some((kind, required)) = second_instance {
+        lines.push(format!(
+            "## A second {kind} profile (e.g. another account), selected by its own name"
+        ));
+        lines.push(format!("[provider_options.{kind}-work]"));
+        lines.push(format!("type = \"{kind}\""));
+        for key in required {
+            lines.push(format!("{key} = \"\""));
+        }
+        lines.push(String::new());
+    }
+    lines.pop();
+    lines
+        .iter()
+        .map(|line| {
+            if line.is_empty() {
+                "#\n".to_string()
+            } else {
+                format!("# {line}\n")
+            }
+        })
+        .collect()
 }
 
 /// A complete, commented `tagent-cli.toml` holding `config`'s values: the template, with
@@ -2597,6 +2696,133 @@ api_key = "deepl-key"
                 ..Config::default()
             }
         );
+    }
+
+    /// `toml` with the commented-out example block `[provider_options.<name>]` enabled the
+    /// way the file tells the user to: `"# "` removed from each line of the block.
+    fn uncomment_example(toml: &str, name: &str) -> String {
+        let header = format!("# [provider_options.{name}]");
+        let mut in_block = false;
+        toml.lines()
+            .map(|line| {
+                if line == header {
+                    in_block = true;
+                } else if in_block && !line.starts_with("# ") {
+                    in_block = false;
+                }
+                let line = match line.strip_prefix("# ") {
+                    Some(rest) if in_block => rest,
+                    _ => line,
+                };
+                format!("{line}\n")
+            })
+            .collect()
+    }
+
+    /// Builds profile `name` on every axis its kind serves, with the file's options only.
+    fn build_example_profile(config: &Config, kind: &str, name: &str) -> Result<(), String> {
+        let options = config.provider_options_using(name, no_env);
+        let built = |result: Result<(), tagent::error::Error>| result.map_err(|e| e.to_string());
+        if providers::TRANSLATION_PROVIDERS.contains(&kind) {
+            built(providers::create_provider_with(name, &options).map(drop))?;
+        }
+        if providers::DICTIONARY_PROVIDERS.contains(&kind) {
+            built(providers::create_dictionary_provider_with(name, &options).map(drop))?;
+        }
+        if providers::SPEECH_PROVIDERS.contains(&kind) {
+            built(providers::create_speech_provider_with(name, &options).map(drop))?;
+        }
+        Ok(())
+    }
+
+    /// Every built-in provider kind gets a commented-out example with every option it
+    /// declares, and the examples change nothing until uncommented.
+    #[test]
+    fn generated_config_has_an_example_profile_per_provider() {
+        let toml = render_config(&Config::default());
+        let kinds = provider_kinds();
+        assert!(kinds.iter().any(|(kind, _)| *kind == "deepl"), "{kinds:?}");
+        for (kind, descriptors) in kinds {
+            let header = format!("\n# [provider_options.{kind}]\n");
+            let start = toml
+                .find(&header)
+                .unwrap_or_else(|| panic!("{kind}: {toml}"));
+            let block: String = toml[start + 1..]
+                .lines()
+                .take_while(|line| line.starts_with("# "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            for option in descriptors.iter().flat_map(|d| d.options) {
+                assert!(
+                    block.contains(&format!("{} = ", option.key)),
+                    "{kind}/{}: {block}",
+                    option.key
+                );
+            }
+        }
+        assert!(!toml.contains("{profile_examples}"));
+        assert_eq!(parse_config(&toml).unwrap(), Config::default());
+    }
+
+    /// An uncommented example is a working profile: a kind without required options
+    /// builds as is, with its transport defaults; one with required options fails until
+    /// they are filled in, naming the missing key. The environment is not consulted.
+    #[test]
+    fn uncommented_example_profiles_build() {
+        let toml = render_config(&Config::default());
+        let mut names: Vec<(&str, String)> = provider_kinds()
+            .into_iter()
+            .map(|(kind, _)| (kind, kind.to_string()))
+            .collect();
+        names.push(("deepl", "deepl-work".to_string()));
+        for (kind, name) in names {
+            let enabled = uncomment_example(&toml, &name);
+            let config =
+                parse_config(&enabled).unwrap_or_else(|e| panic!("{name}: {e}\n{enabled}"));
+            let options = config.provider_options.get(&name).expect(&name);
+            if kind != name {
+                assert_eq!(options["type"], kind);
+            }
+            let required: Vec<&str> = provider_kinds()
+                .into_iter()
+                .filter(|(k, _)| *k == kind)
+                .flat_map(|(_, descriptors)| descriptors)
+                .flat_map(|d| d.options)
+                .filter(|o| o.required)
+                .map(|o| o.key)
+                .collect();
+            if required.is_empty() {
+                build_example_profile(&config, kind, &name)
+                    .unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert!(options.contains_key("timeout_secs"), "{name}: {options:?}");
+                continue;
+            }
+            let error = build_example_profile(&config, kind, &name).unwrap_err();
+            assert!(error.contains(required[0]), "{name}: {error}");
+
+            let mut filled = config.clone();
+            for key in &required {
+                filled.provider_options.insert(&name, key, "dummy-value:fx");
+            }
+            build_example_profile(&filled, kind, &name)
+                .unwrap_or_else(|e| panic!("{name} filled: {e}"));
+        }
+    }
+
+    /// Real profiles are written below the examples, which stay comments.
+    #[test]
+    fn rendered_profiles_keep_the_examples_commented() {
+        let mut provider_options = ProviderProfiles::new();
+        provider_options.insert("google", "timeout_secs", "15");
+        let config = Config {
+            provider_options,
+            ..Config::default()
+        };
+        let toml = render_config(&config);
+        let example = toml.find("# [provider_options.google]\n").unwrap();
+        let real = toml.find("\n[provider_options.google]\n").unwrap();
+        assert!(example < real, "{toml}");
+        assert_eq!(parse_config(&toml).unwrap(), config);
     }
 
     #[test]
