@@ -12,6 +12,18 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+029] - 2026-09-28
+
+### Added
+- **Translation provider picker in the main window**, next to ⚙, with the same choices
+  as Settings > General (built-in providers and translation profiles from
+  `provider_options`). A pick is saved to `tagent-gui.json` at once and applies to the
+  next translation, from the window and from the hotkey. The picker follows the config:
+  a Settings save or a hand-edit of the file shows up in it, and a pick made while Settings
+  is open updates Settings' own picker too. While the selected provider lacks a required
+  option (e.g. DeepL without `api_key`), a ⚠ appears next to it; clicking it opens
+  Settings.
+
 ## [0.14.0+028] - 2026-09-28
 
 ### Changed

@@ -1322,18 +1322,40 @@ type ProvidersHeaderKey = (
 
 thread_local! {
     /// The [`ProvidersHeaderKey`] the header was last built from -- `None` until the first
-    /// [`refresh_providers_header`]. UI-thread-only, like this file's other `thread_local!`s.
+    /// [`refresh_provider_views`]. UI-thread-only, like this file's other `thread_local!`s.
     static LAST_PROVIDERS_HEADER_KEY: RefCell<Option<ProvidersHeaderKey>> =
         const { RefCell::new(None) };
 }
 
-/// Updates the transcript header's `Providers:` block from the current config. Called
-/// wherever the UI thread reloads the config (and at startup, and on a Settings save);
-/// rebuilds the providers only when a field it depends on changed since the last call, so
-/// the translate and hotkey paths don't pay for it every time. Tracking the fields rather
-/// than `check_and_reload`'s result keeps it right when another path (e.g. speech, on its
-/// own thread) consumed the reload.
-fn refresh_providers_header(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+/// Fills the main window's translation provider picker from `config`: the same choices
+/// as Settings > General's, the configured one selected, and a warning when it lacks a
+/// required option.
+fn refresh_translate_provider_picker(window: &AppWindow, config: &config::GuiConfig) {
+    let (model, index) = provider_choices(
+        providers::TRANSLATION_PROVIDERS,
+        &config.profiles_of_kinds(providers::TRANSLATION_PROVIDERS),
+        &config.translate_provider,
+    );
+    window.set_translate_providers(model);
+    window.set_translate_provider_index(index);
+    window.set_translate_provider_warning(
+        provider_form::warning(
+            &config.provider_options,
+            &config.translate_provider,
+            &provider_form::Edits::new(),
+            |var| std::env::var(var).ok(),
+        )
+        .into(),
+    );
+}
+
+/// Updates the transcript header's `Providers:` block and the main window's translation
+/// provider picker from the current config. Called wherever the UI thread reloads the
+/// config (and at startup, and on a Settings save); rebuilds them only when a field they
+/// depend on changed since the last call, so the translate and hotkey paths don't pay for
+/// it every time. Tracking the fields rather than `check_and_reload`'s result keeps it
+/// right when another path (e.g. speech, on its own thread) consumed the reload.
+fn refresh_provider_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
     // Cloned so the providers are built without holding the config lock.
     let config = config_manager.lock().unwrap().config().clone();
     let key: ProvidersHeaderKey = (
@@ -1349,6 +1371,7 @@ fn refresh_providers_header(window: &AppWindow, config_manager: &Arc<Mutex<GuiCo
         return;
     }
     window.set_active_providers(providers_header(&config).into());
+    refresh_translate_provider_picker(window, &config);
     LAST_PROVIDERS_HEADER_KEY.with(|cell| *cell.borrow_mut() = Some(key));
 }
 
@@ -2040,7 +2063,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .config()
             .enable_text_to_speech,
     );
-    refresh_providers_header(&window, &config_manager);
+    refresh_provider_views(&window, &config_manager);
 
     // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
     // re-shown) on every hotkey trigger rather than constructed per trigger --
@@ -2212,7 +2235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         if let Some(window) = weak.upgrade() {
             window.set_tts_enabled(enable_text_to_speech);
-            refresh_providers_header(&window, config_manager);
+            refresh_provider_views(&window, config_manager);
         }
 
         spawn_translation(
@@ -2268,11 +2291,41 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     });
 
+    // The Settings dialog opened last (dead once it's closed), so a pick in the main
+    // window's provider picker can update its translation picker too; otherwise its OK
+    // would write back the provider it showed when it opened.
+    let open_settings: Rc<RefCell<slint::Weak<SettingsDialog>>> = Rc::default();
+
+    let window_weak = window.as_weak();
+    let config_manager_for_picker = config_manager.clone();
+    let open_settings_for_picker = open_settings.clone();
+    window.on_translate_provider_selected(move |provider| {
+        {
+            let mut manager = config_manager_for_picker.lock().unwrap();
+            // Read fresh, so a hand-edit made since the last reload isn't reverted.
+            manager.check_and_reload();
+            let mut new_config = manager.config().clone();
+            new_config.translate_provider = provider.to_string();
+            if let Err(err) = manager.update(new_config) {
+                eprintln!("Warning: failed to save tagent-gui.json: {err}");
+            }
+        }
+        if let Some(window) = window_weak.upgrade() {
+            refresh_provider_views(&window, &config_manager_for_picker);
+        }
+        if let Some(dialog) = open_settings_for_picker.borrow().upgrade() {
+            let index = combo_index(&dialog.get_providers(), &provider);
+            dialog.set_provider_index(index);
+            dialog.invoke_provider_selection_changed();
+        }
+    });
+
     let window_weak_for_settings = window.as_weak();
     let popup_weak_for_settings = popup.as_weak();
     let recording_started_at_for_settings = recording_started_at.clone();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
+        *open_settings.borrow_mut() = dialog.as_weak();
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
 
         let recording_started_at_for_recording = recording_started_at_for_settings.clone();
@@ -2753,7 +2806,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if let Some(window) = window_weak_for_save.upgrade() {
                 apply_style(&window, &new_config);
                 window.set_tts_enabled(new_config.enable_text_to_speech);
-                refresh_providers_header(&window, &config_manager_for_save);
+                refresh_provider_views(&window, &config_manager_for_save);
             }
             if let Some(popup) = popup_weak_for_save.upgrade() {
                 apply_popup_style(&popup, &new_config);
@@ -2975,7 +3028,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.config().enable_text_to_speech
                     };
                     window.set_tts_enabled(enable_text_to_speech);
-                    refresh_providers_header(&window, &config_manager);
+                    refresh_provider_views(&window, &config_manager);
                     if !enable_text_to_speech {
                         is_speech_processing.store(false, Ordering::SeqCst);
                         return;
@@ -3167,7 +3220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         )
                     };
                     window.set_tts_enabled(enable_text_to_speech);
-                    refresh_providers_header(&window, &config_manager);
+                    refresh_provider_views(&window, &config_manager);
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
                     let to_code = languages::name_to_code(&to_lang).to_string();
@@ -3646,5 +3699,47 @@ mod tests {
             "{header}"
         );
         assert_eq!(lines[2], "  Speech: Google TTS (gui-test-header)");
+    }
+
+    /// The main window's picker offers the built-in names plus translation profiles,
+    /// selects the configured one and warns while its required key is missing.
+    #[test]
+    fn translate_provider_picker_follows_the_config() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+
+        let mut profiles = tagent::providers::ProviderProfiles::new();
+        profiles.insert("gui-test-picker", "type", "deepl");
+        let mut config = config::GuiConfig {
+            translate_provider: "gui-test-picker".to_string(),
+            provider_options: profiles,
+            ..config::GuiConfig::default()
+        };
+        refresh_translate_provider_picker(&window, &config);
+        let names: Vec<String> = window
+            .get_translate_providers()
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        assert!(names.starts_with(&["google".to_string(), "deepl".to_string()]));
+        assert!(names.contains(&"gui-test-picker".to_string()));
+        let selected = combo_selection(
+            &window.get_translate_providers(),
+            window.get_translate_provider_index(),
+            "",
+        );
+        assert_eq!(selected, "gui-test-picker");
+        assert_eq!(
+            window.get_translate_provider_warning(),
+            "gui-test-picker: api_key required"
+        );
+
+        config.provider_options.insert("gui-test-picker", "api_key", "k:fx");
+        refresh_translate_provider_picker(&window, &config);
+        assert_eq!(window.get_translate_provider_warning(), "");
+
+        config.translate_provider = "google".to_string();
+        refresh_translate_provider_picker(&window, &config);
+        assert_eq!(window.get_translate_provider_index(), 0);
     }
 }

@@ -217,7 +217,7 @@ export component AppWindow inherits Window {
     // startup, to the hotkeys the keyboard hook actually registered (empty = not
     // registered, so no line); the speech line additionally follows tts-enabled,
     // which is live. active-providers is the block's indented lines, built in Rust
-    // (main.rs's `refresh_providers_header`) and kept live with the config.
+    // (main.rs's `refresh_provider_views`) and kept live with the config.
     in-out property <string> app-version: "";
     in-out property <string> active-translate-hotkey: "";
     in-out property <string> active-speech-hotkey: "";
@@ -240,6 +240,15 @@ export component AppWindow inherits Window {
     in-out property <[string]> target-languages: [];
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 0;
+
+    // The translation provider picker next to ⚙: the choices and the selection
+    // (set by main.rs's `refresh_provider_views` from the config, so a Settings
+    // save or a hand-edit shows up here), and what the selected profile still
+    // lacks ("deepl: api_key required"), or "".
+    in-out property <[string]> translate-providers: [];
+    in-out property <int> translate-provider-index: 0;
+    in-out property <string> translate-provider-warning: "";
+    callback translate-provider-selected(string);
 
     // Independent display style for the phrase (original text) and
     // translation lines in the transcript — set from Rust based on
@@ -343,6 +352,26 @@ export component AppWindow inherits Window {
             }
 
             Rectangle { horizontal-stretch: 1; }
+
+            // Quick switch for `translate_provider` (same list as Settings >
+            // General's); main.rs saves a pick to tagent-gui.json at once.
+            ComboBox {
+                model: translate-providers;
+                current-index <=> translate-provider-index;
+                selected(value) => { translate-provider-selected(value); }
+            }
+
+            if translate-provider-warning != "": Text {
+                text: "⚠";
+                vertical-alignment: center;
+                accessible-label: translate-provider-warning;
+                // No tooltips in Slint's std widgets, so a click opens
+                // Settings, where the warning is spelled out.
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { settings-requested(); }
+                }
+            }
 
             Button {
                 text: "⚙";
