@@ -12,6 +12,12 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+032] - 2026-09-28
+
+### Changed
+- **Settings > General shows the default language pair in one row**, `Default languages:
+  [Auto] → [Russian]`, below the provider pickers, instead of two rows above them.
+
 ## [0.14.0+031] - 2026-09-28
 
 ### Added

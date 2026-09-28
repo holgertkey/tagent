@@ -1501,20 +1501,6 @@ export component SettingsDialog inherits Dialog {
                     GridLayout {
                         spacing: 8px;
                         Row {
-                            Text { text: "Default source language:"; vertical-alignment: center; }
-                            ComboBox {
-                                model: default-source-languages;
-                                current-index <=> default-source-index;
-                            }
-                        }
-                        Row {
-                            Text { text: "Default target language:"; vertical-alignment: center; }
-                            ComboBox {
-                                model: default-target-languages;
-                                current-index <=> default-target-index;
-                            }
-                        }
-                        Row {
                             Text { text: "Translate provider:"; vertical-alignment: center; }
                             ComboBox {
                                 model: providers;
@@ -1563,6 +1549,28 @@ export component SettingsDialog inherits Dialog {
                                 text: provider-warnings[2] != "" ? "⚠" : "";
                                 vertical-alignment: center;
                                 min-width: 12px;
+                            }
+                        }
+                        // One row, like the main window's pair: the two
+                        // dropdowns share the provider dropdown's and the
+                        // Options… button's columns, so neither is squeezed
+                        // to the button's width.
+                        Row {
+                            Text { text: "Default languages:"; vertical-alignment: center; }
+                            HorizontalLayout {
+                                colspan: 2;
+                                spacing: 8px;
+                                ComboBox {
+                                    horizontal-stretch: 1;
+                                    model: default-source-languages;
+                                    current-index <=> default-source-index;
+                                }
+                                Text { text: "→"; vertical-alignment: center; }
+                                ComboBox {
+                                    horizontal-stretch: 1;
+                                    model: default-target-languages;
+                                    current-index <=> default-target-index;
+                                }
                             }
                         }
                     }
