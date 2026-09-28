@@ -12,6 +12,19 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+030] - 2026-09-28
+
+### Changed
+- **The main window's translation provider picker now switches for this run only**
+  instead of saving to `tagent-gui.json`, like the language pickers next to it. The pick
+  applies to everything in the running app (the Translate button, the hotkey, and language
+  detection for speaking `Auto`-source text), and the transcript header marks it, e.g.
+  `Translation: Google Translate (this session)`. Settings > General keeps showing and
+  saving the default. The pick ends when the app exits, when the default changes (a
+  Settings save or a hand-edit of the file; the picker then follows the new default), when
+  its profile is removed from `provider_options`, or when the default itself is picked
+  again.
+
 ## [0.14.0+029] - 2026-09-28
 
 ### Added

@@ -19,6 +19,7 @@ mod dictionary;
 mod platform;
 mod popup_position;
 mod provider_form;
+mod session_provider;
 mod speech;
 mod styled;
 
@@ -1291,15 +1292,24 @@ fn provider_header_lines(
 
 /// [`provider_header_lines`] for `config`'s selected providers, named by building each
 /// one through `tagent`'s factories (no network involved) and asking for its `name()`,
-/// so a profile shows the way `tagent` labels it, e.g. `"DeepL (work)"`.
+/// so a profile shows the way `tagent` labels it, e.g. `"DeepL (work)"`. The translation
+/// provider is the one in effect; a main-window pick for this run is marked
+/// `(this session)`.
 fn providers_header(config: &config::GuiConfig) -> String {
-    let translation = config.provider_choice(&config.translate_provider);
+    let (translate_name, session) = effective_translate_provider(config);
+    let translation = config.provider_choice(&translate_name);
     let dictionary = config.provider_choice(&config.dictionary_provider);
     let speech = config.provider_choice(&config.speech_provider);
     provider_header_lines(
         config,
         providers::create_provider_with(&translation.name, &translation.options)
-            .map(|p| p.name().to_string())
+            .map(|p| {
+                if session {
+                    format!("{} (this session)", p.name())
+                } else {
+                    p.name().to_string()
+                }
+            })
             .map_err(|e| e.to_string()),
         providers::create_dictionary_provider_with(&dictionary.name, &dictionary.options)
             .map(|p| p.name().to_string())
@@ -1310,8 +1320,10 @@ fn providers_header(config: &config::GuiConfig) -> String {
     )
 }
 
-/// The config fields the `Providers:` header depends on.
+/// What the `Providers:` header and the translation picker depend on: the translation
+/// provider in effect (see [`effective_translate_provider`]), then config fields.
 type ProvidersHeaderKey = (
+    String,
     String,
     String,
     String,
@@ -1327,21 +1339,63 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
+/// The translation provider picked in the main window for this run, if any (see
+/// `session_provider`). Read by the button, hotkey and speech paths, some on their own
+/// threads, hence a `Mutex` rather than a `thread_local!`.
+static SESSION_TRANSLATE_PROVIDER: Mutex<Option<session_provider::SessionChoice>> =
+    Mutex::new(None);
+
+/// Records a pick in the main window's translation provider picker, over `config`'s
+/// `translate_provider`.
+fn select_session_translate_provider(config: &config::GuiConfig, picked: &str) {
+    session_provider::select(
+        &mut SESSION_TRANSLATE_PROVIDER.lock().unwrap(),
+        picked,
+        &config.translate_provider,
+    );
+}
+
+/// The translation provider in effect: the main window's pick for this run while it
+/// still applies, otherwise `config`'s `translate_provider`. The second value is `true`
+/// for a pick.
+fn effective_translate_provider(config: &config::GuiConfig) -> (String, bool) {
+    let offered = config.profiles_of_kinds(providers::TRANSLATION_PROVIDERS);
+    let name = session_provider::resolve(
+        &mut SESSION_TRANSLATE_PROVIDER.lock().unwrap(),
+        &config.translate_provider,
+        |name| {
+            providers::TRANSLATION_PROVIDERS
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(name))
+                || offered.iter().any(|profile| profile.eq_ignore_ascii_case(name))
+        },
+    );
+    let session = name != config.translate_provider;
+    (name, session)
+}
+
+/// [`config::GuiConfig::provider_choice`] for the translation provider in effect (see
+/// [`effective_translate_provider`]).
+fn translate_provider_choice(config: &config::GuiConfig) -> config::ProviderChoice {
+    config.provider_choice(&effective_translate_provider(config).0)
+}
+
 /// Fills the main window's translation provider picker from `config`: the same choices
-/// as Settings > General's, the configured one selected, and a warning when it lacks a
+/// as Settings > General's, the provider in effect selected, and a warning when it lacks a
 /// required option.
 fn refresh_translate_provider_picker(window: &AppWindow, config: &config::GuiConfig) {
+    let (current, _) = effective_translate_provider(config);
     let (model, index) = provider_choices(
         providers::TRANSLATION_PROVIDERS,
         &config.profiles_of_kinds(providers::TRANSLATION_PROVIDERS),
-        &config.translate_provider,
+        &current,
     );
     window.set_translate_providers(model);
     window.set_translate_provider_index(index);
     window.set_translate_provider_warning(
         provider_form::warning(
             &config.provider_options,
-            &config.translate_provider,
+            &current,
             &provider_form::Edits::new(),
             |var| std::env::var(var).ok(),
         )
@@ -1359,6 +1413,7 @@ fn refresh_provider_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConf
     // Cloned so the providers are built without holding the config lock.
     let config = config_manager.lock().unwrap().config().clone();
     let key: ProvidersHeaderKey = (
+        effective_translate_provider(&config).0,
         config.translate_provider.clone(),
         config.dictionary_provider.clone(),
         config.speech_provider.clone(),
@@ -1530,7 +1585,7 @@ fn start_speaking(
                     manager.check_and_reload();
                     let cfg = manager.config();
                     (
-                        cfg.provider_choice(&cfg.translate_provider),
+                        translate_provider_choice(cfg),
                         cfg.provider_choice(&cfg.speech_provider),
                     )
                 };
@@ -2224,7 +2279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             manager.check_and_reload();
             let cfg = manager.config();
             (
-                cfg.provider_choice(&cfg.translate_provider),
+                translate_provider_choice(cfg),
                 cfg.provider_choice(&cfg.dictionary_provider),
                 cfg.show_prompt,
                 cfg.show_dictionary,
@@ -2291,32 +2346,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     });
 
-    // The Settings dialog opened last (dead once it's closed), so a pick in the main
-    // window's provider picker can update its translation picker too; otherwise its OK
-    // would write back the provider it showed when it opened.
-    let open_settings: Rc<RefCell<slint::Weak<SettingsDialog>>> = Rc::default();
-
+    // A pick in the main window's translation provider picker holds for this run only
+    // (see `session_provider`): nothing is written, and Settings keeps showing the saved
+    // default.
     let window_weak = window.as_weak();
     let config_manager_for_picker = config_manager.clone();
-    let open_settings_for_picker = open_settings.clone();
     window.on_translate_provider_selected(move |provider| {
-        {
+        let config = {
             let mut manager = config_manager_for_picker.lock().unwrap();
-            // Read fresh, so a hand-edit made since the last reload isn't reverted.
+            // Compared with the current default, so read it fresh.
             manager.check_and_reload();
-            let mut new_config = manager.config().clone();
-            new_config.translate_provider = provider.to_string();
-            if let Err(err) = manager.update(new_config) {
-                eprintln!("Warning: failed to save tagent-gui.json: {err}");
-            }
-        }
+            manager.config().clone()
+        };
+        select_session_translate_provider(&config, &provider);
         if let Some(window) = window_weak.upgrade() {
             refresh_provider_views(&window, &config_manager_for_picker);
-        }
-        if let Some(dialog) = open_settings_for_picker.borrow().upgrade() {
-            let index = combo_index(&dialog.get_providers(), &provider);
-            dialog.set_provider_index(index);
-            dialog.invoke_provider_selection_changed();
         }
     });
 
@@ -2325,7 +2369,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let recording_started_at_for_settings = recording_started_at.clone();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
-        *open_settings.borrow_mut() = dialog.as_weak();
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
 
         let recording_started_at_for_recording = recording_started_at_for_settings.clone();
@@ -3204,7 +3247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.check_and_reload();
                         let cfg = manager.config();
                         (
-                            cfg.provider_choice(&cfg.translate_provider),
+                            translate_provider_choice(cfg),
                             cfg.provider_choice(&cfg.dictionary_provider),
                             cfg.show_prompt,
                             cfg.show_dictionary,
