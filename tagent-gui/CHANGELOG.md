@@ -12,6 +12,26 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+031] - 2026-09-28
+
+### Added
+- **Default language pair in Settings > General** ("Default source language" / "Default
+  target language"), saved as language codes in `tagent-gui.json`'s new
+  `source_language`/`target_language` (e.g. `"auto"`, `"ru"`). The main window starts with
+  this pair; picking another language there, or ⇄, still holds for the run only. A new
+  default (Settings OK or a hand-edit of the file) switches the main window to it, already
+  for the translation that picks up the edit. Settings warns when the two are the same
+  language.
+- An unknown code in the file is replaced (with a warning in the log) by `"auto"` for the
+  source and the system default for the target; the file keeps it until the next save.
+
+### Changed
+- **The default target language comes from the system's preferred languages**
+  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on
+  Windows and macOS): the first one Tagent knows, else English. It was always Russian
+  before, so an existing `tagent-gui.json` without `target_language` may start with a
+  different target now; set it once in Settings > General.
+
 ## [0.14.0+030] - 2026-09-28
 
 ### Changed

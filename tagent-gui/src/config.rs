@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use tagent::languages;
 use tagent::providers::{ProviderOptions, ProviderProfiles};
 
 fn default_translate_provider() -> String {
@@ -20,6 +21,37 @@ fn default_speech_provider() -> String {
 /// `DictionaryProvider` default.
 fn default_dictionary_provider() -> String {
     "google".to_string()
+}
+
+/// Default for [`GuiConfig::source_language`]: auto-detect.
+fn default_source_language() -> String {
+    "auto".to_string()
+}
+
+/// Default for [`GuiConfig::target_language`]: the system's preferred language (see
+/// [`target_language_for_locales`]).
+fn default_target_language() -> String {
+    target_language_for_locales(sys_locale::get_locales())
+}
+
+/// The first of `locales` (BCP 47 tags such as `"ru-UA"`, most preferred first) whose
+/// language `tagent` knows, as its code; `"en"` when none is known.
+pub fn target_language_for_locales(locales: impl IntoIterator<Item = String>) -> String {
+    locales
+        .into_iter()
+        .find_map(|locale| {
+            let primary = locale.split(['-', '_']).next().unwrap_or_default();
+            known_language_code(primary)
+        })
+        .unwrap_or_else(|| "en".to_string())
+}
+
+/// `code` as it appears in `tagent`'s language table (lowercase), if it's listed there.
+fn known_language_code(code: &str) -> Option<String> {
+    languages::LANGUAGES
+        .iter()
+        .find(|language| language.code.eq_ignore_ascii_case(code))
+        .map(|language| language.code.to_string())
 }
 
 fn default_theme() -> String {
@@ -159,6 +191,16 @@ fn default_show_context_menu() -> bool {
 pub struct GuiConfig {
     #[serde(default = "default_translate_provider")]
     pub translate_provider: String,
+    /// The source language the main window starts with: `"auto"` (detect) or a code from
+    /// `tagent`'s language table, e.g. `"en"`. Settings > General; the main window's own
+    /// pick holds for the run only. An unknown code falls back to `"auto"` on load.
+    #[serde(default = "default_source_language")]
+    pub source_language: String,
+    /// The target language the main window starts with, a code from `tagent`'s language
+    /// table (never `"auto"`). Defaults to the system's preferred language, else `"en"`;
+    /// an unknown code falls back to that on load.
+    #[serde(default = "default_target_language")]
+    pub target_language: String,
     /// One of `"auto"`, `"light"`, `"dark"`. `"auto"` follows the system setting.
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -404,6 +446,8 @@ impl Default for GuiConfig {
     fn default() -> Self {
         Self {
             translate_provider: default_translate_provider(),
+            source_language: default_source_language(),
+            target_language: default_target_language(),
             theme: default_theme(),
             background_color: default_style_color(),
             phrase_font: default_style_font(),
@@ -476,6 +520,41 @@ impl GuiConfig {
         self.provider_options.profiles_of_kinds(kinds)
     }
 
+    /// Replaces a [`Self::source_language`]/[`Self::target_language`] that isn't a known
+    /// code (or is `"auto"` as the target) with its default, lowercases the rest, and
+    /// returns a warning per replaced value. Run on every load, so the rest of the app
+    /// only ever sees valid codes; the file itself is fixed by the next save.
+    pub fn normalize_languages(&mut self) -> Vec<String> {
+        self.normalize_languages_with(default_target_language)
+    }
+
+    /// [`Self::normalize_languages`] with the target default produced by `target_default`.
+    fn normalize_languages_with(&mut self, target_default: impl FnOnce() -> String) -> Vec<String> {
+        let mut warnings = Vec::new();
+        if self.source_language.eq_ignore_ascii_case("auto") {
+            self.source_language = default_source_language();
+        } else if let Some(code) = known_language_code(&self.source_language) {
+            self.source_language = code;
+        } else {
+            warnings.push(format!(
+                "unknown source_language {:?}, using \"auto\"",
+                self.source_language
+            ));
+            self.source_language = default_source_language();
+        }
+        if let Some(code) = known_language_code(&self.target_language) {
+            self.target_language = code;
+        } else {
+            let fallback = target_default();
+            warnings.push(format!(
+                "unknown target_language {:?}, using {fallback:?}",
+                self.target_language
+            ));
+            self.target_language = fallback;
+        }
+        warnings
+    }
+
     /// [`Self::popup_auto_hide_seconds`], with `0` clamped to the default (`3`).
     pub fn popup_auto_hide_seconds_or_default(&self) -> u64 {
         if self.popup_auto_hide_seconds == 0 {
@@ -508,7 +587,10 @@ pub fn config_path() -> PathBuf {
 pub fn load_from_path(path: &Path) -> GuiConfig {
     match fs::read_to_string(path) {
         Ok(content) => match serde_json::from_str(&content) {
-            Ok(config) => config,
+            Ok(mut config) => {
+                normalize_and_warn(path, &mut config);
+                config
+            }
             Err(err) => {
                 eprintln!(
                     "Warning: failed to parse {}: {err} — using defaults for this run",
@@ -527,6 +609,13 @@ pub fn load_from_path(path: &Path) -> GuiConfig {
             }
             config
         }
+    }
+}
+
+/// [`GuiConfig::normalize_languages`], logging each fix to stderr.
+fn normalize_and_warn(path: &Path, config: &mut GuiConfig) {
+    for warning in config.normalize_languages() {
+        eprintln!("Warning: {}: {warning}", path.display());
     }
 }
 
@@ -628,7 +717,8 @@ impl GuiConfigManager {
 
         match fs::read_to_string(&self.path) {
             Ok(content) => match serde_json::from_str::<GuiConfig>(&content) {
-                Ok(config) => {
+                Ok(mut config) => {
+                    normalize_and_warn(&self.path, &mut config);
                     self.config = config;
                     true
                 }
@@ -978,6 +1068,78 @@ mod tests {
     /// in tests reliable.
     fn wait_for_mtime_tick() {
         sleep(Duration::from_millis(20));
+    }
+
+    fn locales(tags: &[&str]) -> Vec<String> {
+        tags.iter().map(|tag| tag.to_string()).collect()
+    }
+
+    #[test]
+    fn target_language_is_the_first_known_system_language() {
+        assert_eq!(target_language_for_locales(locales(&["ru-UA"])), "ru");
+        // An unknown language is skipped in favor of the next preference.
+        assert_eq!(target_language_for_locales(locales(&["eo", "de-AT"])), "de");
+        assert_eq!(target_language_for_locales(locales(&["en-US", "ru"])), "en");
+        assert_eq!(target_language_for_locales(locales(&["zh-Hans-CN"])), "zh");
+        assert_eq!(target_language_for_locales(locales(&["pt_BR"])), "pt");
+        assert_eq!(target_language_for_locales(locales(&["eo"])), "en");
+        assert_eq!(target_language_for_locales(locales(&[])), "en");
+    }
+
+    #[test]
+    fn normalize_languages_keeps_known_codes_lowercased() {
+        let mut config = GuiConfig {
+            source_language: "EN".to_string(),
+            target_language: "Ru".to_string(),
+            ..GuiConfig::default()
+        };
+        assert!(config.normalize_languages_with(|| unreachable!()).is_empty());
+        assert_eq!(config.source_language, "en");
+        assert_eq!(config.target_language, "ru");
+
+        config.source_language = "Auto".to_string();
+        assert!(config.normalize_languages_with(|| unreachable!()).is_empty());
+        assert_eq!(config.source_language, "auto");
+    }
+
+    #[test]
+    fn normalize_languages_replaces_unknown_codes_and_auto_target() {
+        let mut config = GuiConfig {
+            source_language: "Russian".to_string(),
+            target_language: "auto".to_string(),
+            ..GuiConfig::default()
+        };
+        let warnings = config.normalize_languages_with(|| "de".to_string());
+        assert_eq!(config.source_language, "auto");
+        assert_eq!(config.target_language, "de");
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings[0].contains("source_language") && warnings[0].contains("Russian"));
+        assert!(warnings[1].contains("target_language") && warnings[1].contains("\"de\""));
+    }
+
+    #[test]
+    fn languages_load_from_the_file_and_are_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"source_language": "EN", "target_language": "de"}"#,
+        )
+        .unwrap();
+        let config = load_from_path(&path);
+        assert_eq!(config.source_language, "en");
+        assert_eq!(config.target_language, "de");
+
+        // Missing keys get the defaults.
+        fs::write(&path, br#"{"translate_provider": "google"}"#).unwrap();
+        let config = load_from_path(&path);
+        assert_eq!(config.source_language, "auto");
+        assert_eq!(config.target_language, default_target_language());
+
+        // A bad value is replaced in memory; the file keeps it until the next save.
+        fs::write(&path, br#"{"source_language": "xx"}"#).unwrap();
+        assert_eq!(load_from_path(&path).source_language, "auto");
+        assert!(fs::read_to_string(&path).unwrap().contains("\"xx\""));
     }
 
     #[test]

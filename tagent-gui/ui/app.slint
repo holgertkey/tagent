@@ -217,7 +217,7 @@ export component AppWindow inherits Window {
     // startup, to the hotkeys the keyboard hook actually registered (empty = not
     // registered, so no line); the speech line additionally follows tts-enabled,
     // which is live. active-providers is the block's indented lines, built in Rust
-    // (main.rs's `refresh_provider_views`) and kept live with the config.
+    // (main.rs's `refresh_config_views`) and kept live with the config.
     in-out property <string> app-version: "";
     in-out property <string> active-translate-hotkey: "";
     in-out property <string> active-speech-hotkey: "";
@@ -242,7 +242,7 @@ export component AppWindow inherits Window {
     in-out property <int> target-language-index: 0;
 
     // The translation provider picker next to ⚙: the choices and the provider
-    // in effect (set by main.rs's `refresh_provider_views`: this run's pick, or
+    // in effect (set by main.rs's `refresh_config_views`: this run's pick, or
     // the config's default, so a new default from Settings or a hand-edit shows
     // up here), and what the selected profile still lacks
     // ("deepl: api_key required"), or "".
@@ -1233,6 +1233,15 @@ export component SettingsDialog inherits Dialog {
             : ColorScheme.unknown;
     }
 
+    // The language pair the main window starts with (`source_language`/
+    // `target_language`); filled by main.rs's `seed_dialog_fields` with the
+    // same lists as the main window's dropdowns (the source list starts with
+    // "Auto"). Saved on OK; the main window then switches to the new pair.
+    in-out property <[string]> default-source-languages: [];
+    in-out property <int> default-source-index: 0;
+    in-out property <[string]> default-target-languages: [];
+    in-out property <int> default-target-index: 0;
+
     // Translation, dictionary and speech backends are three independent
     // choices (`tagent`'s three provider axes), each with its own list. All
     // three apply immediately (live-reloaded, no restart), like the
@@ -1492,6 +1501,20 @@ export component SettingsDialog inherits Dialog {
                     GridLayout {
                         spacing: 8px;
                         Row {
+                            Text { text: "Default source language:"; vertical-alignment: center; }
+                            ComboBox {
+                                model: default-source-languages;
+                                current-index <=> default-source-index;
+                            }
+                        }
+                        Row {
+                            Text { text: "Default target language:"; vertical-alignment: center; }
+                            ComboBox {
+                                model: default-target-languages;
+                                current-index <=> default-target-index;
+                            }
+                        }
+                        Row {
                             Text { text: "Translate provider:"; vertical-alignment: center; }
                             ComboBox {
                                 model: providers;
@@ -1544,6 +1567,11 @@ export component SettingsDialog inherits Dialog {
                         }
                     }
 
+                    if default-source-languages[default-source-index]
+                            == default-target-languages[default-target-index]: Text {
+                        text: "⚠ The default source and target languages are the same.";
+                        wrap: word-wrap;
+                    }
                     if provider-warning-text != "": Text {
                         text: provider-warning-text;
                         wrap: word-wrap;

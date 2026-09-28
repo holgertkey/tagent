@@ -5791,7 +5791,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+030"
+version = "0.14.0+031"
 dependencies = [
  "arboard",
  "clipboard-win",
@@ -5804,6 +5804,7 @@ dependencies = [
  "serde_json",
  "slint",
  "slint-build",
+ "sys-locale",
  "tagent",
  "tempfile",
  "tokio",

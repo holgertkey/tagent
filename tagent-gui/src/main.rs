@@ -44,29 +44,64 @@ fn target_languages() -> Vec<&'static str> {
         .collect()
 }
 
-/// Target language selected at startup.
-const DEFAULT_TARGET_LANGUAGE: &str = "Russian";
-
-/// Fills the two language dropdowns and selects their startup defaults.
-fn init_language_models(window: &AppWindow) {
-    let to_model = |names: &[&str]| -> ModelRc<SharedString> {
-        ModelRc::new(VecModel::from(
-            names
-                .iter()
-                .map(|&name| SharedString::from(name))
-                .collect::<Vec<_>>(),
-        ))
-    };
-    let targets = target_languages();
-    window.set_source_languages(to_model(&source_languages()));
-    window.set_target_languages(to_model(&targets));
-    window.set_source_language_index(0);
-    window.set_target_language_index(
-        targets
+/// A language dropdown's model.
+fn language_model(names: &[&str]) -> ModelRc<SharedString> {
+    ModelRc::new(VecModel::from(
+        names
             .iter()
-            .position(|&name| name == DEFAULT_TARGET_LANGUAGE)
-            .unwrap_or(0) as i32,
-    );
+            .map(|&name| SharedString::from(name))
+            .collect::<Vec<_>>(),
+    ))
+}
+
+/// Index of language `code` (e.g. `"ru"`, or `"auto"`) in a dropdown listing `names`, or
+/// `0` when it isn't listed.
+fn language_index(names: &[&str], code: &str) -> i32 {
+    let name = languages::code_to_name(code);
+    names.iter().position(|&listed| listed == name).unwrap_or(0) as i32
+}
+
+/// Fills the main window's two language dropdowns; [`refresh_default_languages`] selects
+/// the configured pair.
+fn init_language_models(window: &AppWindow) {
+    window.set_source_languages(language_model(&source_languages()));
+    window.set_target_languages(language_model(&target_languages()));
+}
+
+/// The language names the main window's two dropdowns select.
+fn selected_languages(window: &AppWindow) -> (SharedString, SharedString) {
+    (
+        window
+            .get_source_languages()
+            .row_data(window.get_source_language_index() as usize)
+            .unwrap_or_default(),
+        window
+            .get_target_languages()
+            .row_data(window.get_target_language_index() as usize)
+            .unwrap_or_default(),
+    )
+}
+
+thread_local! {
+    /// The configured `(source_language, target_language)` the main window's dropdowns
+    /// were last set to -- `None` until the first [`refresh_default_languages`].
+    /// UI-thread-only, like this file's other `thread_local!`s.
+    static LAST_DEFAULT_LANGUAGES: RefCell<Option<(String, String)>> =
+        const { RefCell::new(None) };
+}
+
+/// Selects `config`'s language pair in the main window's dropdowns at startup and whenever
+/// that pair changes (a Settings save or a hand-edit). In between, a pick in the window
+/// holds for the run, like its translation provider picker.
+fn refresh_default_languages(window: &AppWindow, config: &config::GuiConfig) {
+    let pair = (config.source_language.clone(), config.target_language.clone());
+    let changed = LAST_DEFAULT_LANGUAGES.with(|cell| cell.borrow().as_ref() != Some(&pair));
+    if !changed {
+        return;
+    }
+    window.set_source_language_index(language_index(&source_languages(), &pair.0));
+    window.set_target_language_index(language_index(&target_languages(), &pair.1));
+    LAST_DEFAULT_LANGUAGES.with(|cell| *cell.borrow_mut() = Some(pair));
 }
 
 /// Returns the `(source, target)` dropdown indices after swapping the selected
@@ -1097,6 +1132,12 @@ fn show_provider_options(
 /// instance in
 /// `on_settings_requested` and isn't repeated here.
 fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
+    let (sources, targets) = (source_languages(), target_languages());
+    dialog.set_default_source_languages(language_model(&sources));
+    dialog.set_default_source_index(language_index(&sources, &config.source_language));
+    dialog.set_default_target_languages(language_model(&targets));
+    dialog.set_default_target_index(language_index(&targets, &config.target_language));
+
     // The dropdown lists come from `tagent` itself (one per provider axis), so a backend
     // added there is offered here without touching `app.slint`.
     // Hand-edited `provider_options` profiles are offered next to the built-in names, on
@@ -1334,7 +1375,7 @@ type ProvidersHeaderKey = (
 
 thread_local! {
     /// The [`ProvidersHeaderKey`] the header was last built from -- `None` until the first
-    /// [`refresh_provider_views`]. UI-thread-only, like this file's other `thread_local!`s.
+    /// [`refresh_config_views`]. UI-thread-only, like this file's other `thread_local!`s.
     static LAST_PROVIDERS_HEADER_KEY: RefCell<Option<ProvidersHeaderKey>> =
         const { RefCell::new(None) };
 }
@@ -1403,15 +1444,17 @@ fn refresh_translate_provider_picker(window: &AppWindow, config: &config::GuiCon
     );
 }
 
-/// Updates the transcript header's `Providers:` block and the main window's translation
-/// provider picker from the current config. Called wherever the UI thread reloads the
-/// config (and at startup, and on a Settings save); rebuilds them only when a field they
-/// depend on changed since the last call, so the translate and hotkey paths don't pay for
-/// it every time. Tracking the fields rather than `check_and_reload`'s result keeps it
-/// right when another path (e.g. speech, on its own thread) consumed the reload.
-fn refresh_provider_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+/// Updates what the main window shows from the config -- its default language pair
+/// ([`refresh_default_languages`]), the transcript header's `Providers:` block and the
+/// translation provider picker. Called wherever the UI thread reloads the config (and at
+/// startup, and on a Settings save); each part changes only when a field it depends on
+/// changed since the last call, so the translate and hotkey paths don't pay for it every
+/// time. Tracking the fields rather than `check_and_reload`'s result keeps it right when
+/// another path (e.g. speech, on its own thread) consumed the reload.
+fn refresh_config_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
     // Cloned so the providers are built without holding the config lock.
     let config = config_manager.lock().unwrap().config().clone();
+    refresh_default_languages(window, &config);
     let key: ProvidersHeaderKey = (
         effective_translate_provider(&config).0,
         config.translate_provider.clone(),
@@ -2118,7 +2161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .config()
             .enable_text_to_speech,
     );
-    refresh_provider_views(&window, &config_manager);
+    refresh_config_views(&window, &config_manager);
 
     // Stage 6: one persistent popup instance, reused (repositioned/re-texted/
     // re-shown) on every hotkey trigger rather than constructed per trigger --
@@ -2264,9 +2307,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             return;
         }
 
-        let from_code = languages::name_to_code(&from_lang).to_string();
-        let to_code = languages::name_to_code(&to_lang).to_string();
-
         let (
             translate_provider,
             dictionary_provider,
@@ -2288,10 +2328,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
         };
 
-        if let Some(window) = weak.upgrade() {
-            window.set_tts_enabled(enable_text_to_speech);
-            refresh_provider_views(&window, config_manager);
-        }
+        // The pair the window shows once the refresh has run: a new default from a
+        // hand-edit applies to this translation already, not only the next one.
+        let (from_lang, to_lang) = match weak.upgrade() {
+            Some(window) => {
+                window.set_tts_enabled(enable_text_to_speech);
+                refresh_config_views(&window, config_manager);
+                selected_languages(&window)
+            }
+            None => (from_lang, to_lang),
+        };
+        let from_code = languages::name_to_code(&from_lang).to_string();
+        let to_code = languages::name_to_code(&to_lang).to_string();
 
         spawn_translation(
             weak.clone(),
@@ -2360,7 +2408,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         };
         select_session_translate_provider(&config, &provider);
         if let Some(window) = window_weak.upgrade() {
-            refresh_provider_views(&window, &config_manager_for_picker);
+            refresh_config_views(&window, &config_manager_for_picker);
         }
     });
 
@@ -2832,6 +2880,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_dictionary_provider_index(),
                     &current_config.dictionary_provider,
                 ),
+                source_language: languages::name_to_code(&combo_selection(
+                    &dialog.get_default_source_languages(),
+                    dialog.get_default_source_index(),
+                    languages::code_to_name(&current_config.source_language),
+                ))
+                .to_string(),
+                target_language: languages::name_to_code(&combo_selection(
+                    &dialog.get_default_target_languages(),
+                    dialog.get_default_target_index(),
+                    languages::code_to_name(&current_config.target_language),
+                ))
+                .to_string(),
                 speech_provider: combo_selection(
                     &dialog.get_speech_providers(),
                     dialog.get_speech_provider_index(),
@@ -2849,7 +2909,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if let Some(window) = window_weak_for_save.upgrade() {
                 apply_style(&window, &new_config);
                 window.set_tts_enabled(new_config.enable_text_to_speech);
-                refresh_provider_views(&window, &config_manager_for_save);
+                refresh_config_views(&window, &config_manager_for_save);
             }
             if let Some(popup) = popup_weak_for_save.upgrade() {
                 apply_popup_style(&popup, &new_config);
@@ -3071,7 +3131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.config().enable_text_to_speech
                     };
                     window.set_tts_enabled(enable_text_to_speech);
-                    refresh_provider_views(&window, &config_manager);
+                    refresh_config_views(&window, &config_manager);
                     if !enable_text_to_speech {
                         is_speech_processing.store(false, Ordering::SeqCst);
                         return;
@@ -3221,15 +3281,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return;
                     };
 
-                    let from_lang = window
-                        .get_source_languages()
-                        .row_data(window.get_source_language_index() as usize)
-                        .unwrap_or_default();
-                    let to_lang = window
-                        .get_target_languages()
-                        .row_data(window.get_target_language_index() as usize)
-                        .unwrap_or_default();
-
                     let (
                         translate_provider,
                         dictionary_provider,
@@ -3263,7 +3314,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         )
                     };
                     window.set_tts_enabled(enable_text_to_speech);
-                    refresh_provider_views(&window, &config_manager);
+                    refresh_config_views(&window, &config_manager);
+                    // Read after the refresh, which may have just selected a new
+                    // default pair.
+                    let (from_lang, to_lang) = selected_languages(&window);
 
                     let from_code = languages::name_to_code(&from_lang).to_string();
                     let to_code = languages::name_to_code(&to_lang).to_string();
@@ -3366,7 +3420,6 @@ mod tests {
         assert_eq!(sources[0], "Auto");
         assert!(!targets.contains(&"Auto"));
         assert_eq!(&sources[1..], &targets[..]);
-        assert!(targets.contains(&DEFAULT_TARGET_LANGUAGE));
         assert_eq!(targets.len(), languages::LANGUAGES.len());
     }
 
@@ -3395,7 +3448,7 @@ mod tests {
     }
 
     #[test]
-    fn language_models_start_with_auto_source_and_default_target() {
+    fn language_models_follow_the_configured_pair() {
         i_slint_backend_testing::init_no_event_loop();
         let window = AppWindow::new().unwrap();
         init_language_models(&window);
@@ -3405,18 +3458,41 @@ mod tests {
         assert_eq!(source.row_count(), source_languages().len());
         assert_eq!(target.row_count(), target_languages().len());
         assert!(target.iter().all(|name| name != "Auto"));
-        assert_eq!(
-            source
-                .row_data(window.get_source_language_index() as usize)
-                .unwrap(),
-            "Auto"
-        );
-        assert_eq!(
-            target
-                .row_data(window.get_target_language_index() as usize)
-                .unwrap(),
-            DEFAULT_TARGET_LANGUAGE
-        );
+        let selected = |window: &AppWindow| {
+            (
+                source
+                    .row_data(window.get_source_language_index() as usize)
+                    .unwrap(),
+                target
+                    .row_data(window.get_target_language_index() as usize)
+                    .unwrap(),
+            )
+        };
+
+        let mut config = config::GuiConfig {
+            source_language: "auto".to_string(),
+            target_language: "de".to_string(),
+            ..config::GuiConfig::default()
+        };
+        refresh_default_languages(&window, &config);
+        assert_eq!(selected(&window), ("Auto".into(), "German".into()));
+
+        // A pick in the window holds while the configured pair is unchanged...
+        window.set_target_language_index(language_index(&target_languages(), "fr"));
+        refresh_default_languages(&window, &config);
+        assert_eq!(selected(&window).1, "French");
+
+        // ...and gives way to a new one.
+        config.source_language = "en".to_string();
+        refresh_default_languages(&window, &config);
+        assert_eq!(selected(&window), ("English".into(), "German".into()));
+    }
+
+    #[test]
+    fn language_index_finds_codes_and_defaults_to_the_first_entry() {
+        assert_eq!(language_index(&source_languages(), "auto"), 0);
+        assert_eq!(language_index(&["English", "Russian"], "ru"), 1);
+        assert_eq!(language_index(&["English", "Russian"], "xx"), 0);
     }
 
     fn dictionary_outcome() -> TranslationOutcome {
