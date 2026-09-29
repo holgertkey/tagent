@@ -378,7 +378,32 @@ documentation only, no bump).
   if wanted; S1's rebuild-on-change makes it trivial.
 - Showing in `/config` that the active provider differs from the file.
 
-## Stage L — Language codes in the config, target language from the locale (planned, 2026-09-29)
+## Stage L — Language codes in the config, target language from the locale (done, 2026-09-29: `0.17.0+010`–`+011`)
+
+Landed as planned: L1 in `tagent` (`0.19.0`, unreleased) and `tagent-gui` `0.14.0+033`, L2
+as `tagent-cli` `0.17.0+010`, L3 as `+011`, L4 with them. Where the implementation settled
+a question the plan left open, or differs from it:
+
+- **L1 in `tagent-gui`**: `known_language_code` accepts codes only, as before, so it is
+  `language_code` filtered to a result that equals the input and isn't `"auto"`. Taking
+  `language_code` as it is would have made the GUI accept names (`"Russian"` → `"ru"`),
+  a behavior change the plan ruled out.
+- **L1 locales**: `sys-locale` 0.3 already converts POSIX locales to BCP 47 on Unix
+  (`ru_RU.UTF-8` → `ru-RU`); `language_for_locales` still splits on `-`, `_`, `.` and
+  `@`, so either form works.
+- **L2 input**: `ConfigManager::normalize_language` is gone; `config::language_code` (name
+  or code → code, anything else kept as written) replaces it for `/l` and `-l`. `-l` still
+  counts only listed languages (and `auto`) as a source, as before.
+- **L2 warnings**: `parse_config_with_warnings` returns them and `load_config` prints them
+  with the file name (`Warning: tagent-cli.toml: ...`), so `/config update`'s re-read
+  doesn't repeat them; the `Auto`-target warning moved there too. `parse_config` (tests,
+  the upgrade check) drops them.
+- **L2 display**: `/config` shows the name after a listed code only
+  (`target_language = "ru"  # Russian`); an unlisted code gets no note instead of
+  repeating itself. `language_pair_description` does the same (`English (en) -> uk`).
+- **L3 template**: `target_language`'s value is `Config::default()`'s, interpolated like
+  the provider lists, so the "template equals the defaults" test holds on any locale. The
+  test suite was run under `ru`, `de`, `C` and `eo` locales.
 
 ### Problem
 

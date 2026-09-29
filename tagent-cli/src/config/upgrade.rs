@@ -715,8 +715,8 @@ enable_text_to_speech = false
         assert_eq!(
             parse_config(text).unwrap(),
             Config {
-                source_language: "English".into(),
-                target_language: "German".into(),
+                source_language: "en".into(),
+                target_language: "de".into(),
                 copy_to_clipboard: true,
                 translate_hotkey: "F9".into(),
                 enable_text_to_speech: false,
@@ -778,7 +778,7 @@ enable_text_to_speech = false
             !text.contains("# Text Translator Configuration File"),
             "{text}"
         );
-        assert_eq!(parse_config(&text).unwrap().target_language, "German");
+        assert_eq!(parse_config(&text).unwrap().target_language, "de");
     }
 
     #[test]

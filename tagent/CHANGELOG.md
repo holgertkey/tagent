@@ -36,6 +36,14 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- **`languages::language_code` and `languages::language_for_locales`**, shared by both
+  applications. `language_code` gives the table's code for a listed code or name in any
+  case (`"Russian"`, `"RU"` → `"ru"`; `"Auto"` → `"auto"`) and `None` for anything
+  unlisted, so a caller can tell a known language from a code it passes through.
+  `language_for_locales` gives the code of the first locale in a preference list
+  (`"ru-UA"`, `"de_DE.UTF-8"`, as `sys-locale` returns them) whose language is listed;
+  the fallback is the caller's. Pure functions: the crate reads no environment and gains
+  no dependency.
 - **Cargo features per provider**: `google` and `deepl`, both in `default` (neither
   brings dependencies of its own). A library user can leave one out with
   `default-features = false`; a kind that is compiled out is

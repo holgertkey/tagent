@@ -237,7 +237,7 @@ impl Translator {
         if source_code == "auto" {
             "Auto".to_string()
         } else {
-            config.source_language.clone()
+            config.source_language_name().to_string()
         }
     }
 
@@ -249,7 +249,7 @@ impl Translator {
         if self.has_external_printer() {
             return;
         }
-        let source_prompt = format!("[{}]: ", config.source_language);
+        let source_prompt = format!("[{}]: ", config.source_language_name());
         config::print_colored(&source_prompt, &config.source_prompt_color);
         io::stdout().flush().ok();
     }
@@ -428,7 +428,7 @@ impl Translator {
         if source_code != "auto" && !self.is_expected_language(text, source_code) {
             self.emit_line(format!(
                 "Text does not appear to be in {} language",
-                config.source_language
+                config.source_language_name()
             ));
             self.maybe_print_source_prompt(config);
             return Ok(());
@@ -447,7 +447,7 @@ impl Translator {
                 );
 
                 // Print colored translation label
-                let trans_label = format!("[{}]: ", config.target_language);
+                let trans_label = format!("[{}]: ", config.target_language_name());
                 self.emit_line(format!(
                     "{}{}\n",
                     config::colorize(&trans_label, &config.target_prompt_color),
@@ -834,10 +834,12 @@ mod tests {
 
         let target_line = messages
             .iter()
-            .find(|m| m.contains(&config.target_language) && m.contains("дедуплицированная"))
+            .find(|m| m.contains("дедуплицированная"))
             .unwrap_or_else(|| panic!("no message contained the translated text: {:?}", *messages));
+        // The config holds the code (`ru`); the label shows the name.
+        assert_eq!(config.target_language, "ru");
         assert!(
-            target_line.starts_with(&format!("[{}]: ", config.target_language)),
+            target_line.starts_with("[Russian]: "),
             "label and translated text must be emitted together, got: {:?}",
             target_line
         );

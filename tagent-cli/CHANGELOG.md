@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+011] - 2026-09-29
+
+### Changed
+- **The default target language comes from the system's preferred languages**
+  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on Windows
+  and macOS): the first one Tagent knows, else English, as in `tagent-gui`. It was always
+  Russian before. It applies to a new `tagent-cli.toml` and to a file without
+  `target_language`; a value in the file is never replaced. `--print-default-config` shows
+  the default for the system it runs on.
+
+## [0.17.0+010] - 2026-09-29
+
+### Changed
+- **`tagent-cli.toml` stores language codes**: `source_language = "auto"`,
+  `target_language = "ru"`, as `tagent-gui.json` already does. Names still work: `"Russian"`,
+  `"ru"` and `"RU"` all mean Russian, in the file as with `/l` and `-l`. Prompts, the banner
+  and `/l`'s messages keep showing names (`[Russian]: `, `Auto (auto) -> Russian (ru)`), and
+  `/config` shows the name after the code (`target_language = "ru"  # Russian`). The file is
+  not rewritten on its own: **the first `/save` writes the languages as codes** (both of
+  them, comments kept), whether or not you changed them. `--update-config` doesn't convert
+  names.
+- A language value Tagent doesn't list (e.g. `"uk"`, `"zh-TW"`) is kept as it is and passed
+  to the provider, as before, and now gets one warning when the file is read
+  (`source_language = "uk" is not a known language, used as a language code`). The warning
+  about an `Auto` target also names the file now.
+- The template lists the language codes with their names, generated from Tagent's language
+  table, so a new language appears in it by itself.
+- The `Auto`-target replacement (`/l auto`, a swap with an `Auto` source, `target_language =
+  "auto"` in the file) is still English, now stored as `en`.
+
 ## [0.17.0+009] - 2026-09-29
 
 ### Added

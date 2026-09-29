@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+009
+# Tagent Text Translator v0.17.0+011
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -205,10 +205,11 @@ The generated file documents every setting in its comments. Its sections, with t
 translate_provider = "google"
 
 [translation]
-# Source language (Auto, English, Russian, Spanish, etc.)
-source_language = "Auto"
-# Target language (never Auto)
-target_language = "Russian"
+# Language codes (en, ru, de, ...; names such as "German" work too)
+# Source language: "auto" detects it
+source_language = "auto"
+# Target language (never auto); default: your system language, else en
+target_language = "ru"
 
 [dictionary]
 # Show a dictionary entry for single words
@@ -276,7 +277,16 @@ with its line and column: at startup Tagent exits with the message; while runnin
 a warning once and keeps the previous settings until the file is fixed.
 
 `/save` updates only `source_language`, `target_language` and `translate_provider` in the
-file, in place: your comments, the key order and everything else stay as they are.
+file, in place: your comments, the key order and everything else stay as they are. It
+writes the languages as codes, so a file from an older version that has names
+(`target_language = "Russian"`) gets codes on its first `/save`.
+
+The languages are language codes. The generated file lists the ones Tagent knows by
+name (`en (English), ru (Russian), ...`); names work too, in any case, and any other code
+(e.g. `"uk"`) is passed to the translation service as it is, with a warning. On first run,
+the target language is your system language (from the locale: `LANGUAGE`/`LC_ALL`/
+`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on Windows and macOS) when Tagent
+knows it, else English.
 
 ### After Upgrading Tagent
 
@@ -500,8 +510,8 @@ tagent-cli --config
 # translate_provider = "google"
 #
 # [translation]
-# source_language = "Auto"  # auto
-# target_language = "Russian"  # ru
+# source_language = "auto"  # Auto
+# target_language = "ru"  # Russian
 #
 # [dictionary]
 # show_dictionary = true
@@ -526,8 +536,8 @@ tagent-cli --config
 Edit `tagent-cli.toml` (or use `/l` in the interactive terminal, then `/save`):
 ```toml
 [translation]
-source_language = "English"
-target_language = "Spanish"
+source_language = "en"
+target_language = "es"
 ```
 
 ### Enable History Logging
@@ -668,7 +678,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+009
+**Current Version**: v0.17.0+011
 
 ## Contributing
 
@@ -691,4 +701,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+009** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+011** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

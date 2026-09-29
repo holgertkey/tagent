@@ -27,9 +27,12 @@ mod upgrade;
 /// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    /// BCP-47 language code for the source language, or `"Auto"` for auto-detection.
+    /// Language code of the source language (e.g. `"en"`), or `"auto"` for
+    /// auto-detection. A language `tagent`'s table lists is always its code (see
+    /// [`language_code`]); any other value is kept as written and passed to the provider.
     pub source_language: String,
-    /// BCP-47 language code for the translation target (e.g. `"Russian"`, `"English"`).
+    /// Language code of the translation target (e.g. `"ru"`), never `"auto"`. Same rules
+    /// as [`Self::source_language`].
     pub target_language: String,
     /// Bring the terminal window to the foreground when a translation fires.
     pub show_terminal_on_translate: bool,
@@ -82,6 +85,18 @@ pub struct Config {
 }
 
 impl Config {
+    /// The source language's display name (`"Auto"`, `"English"`), or its code if
+    /// `tagent`'s table doesn't list it.
+    pub fn source_language_name(&self) -> &str {
+        tagent::languages::code_to_name(&self.source_language)
+    }
+
+    /// The target language's display name (`"Russian"`), or its code if `tagent`'s table
+    /// doesn't list it.
+    pub fn target_language_name(&self) -> &str {
+        tagent::languages::code_to_name(&self.target_language)
+    }
+
     /// The options for provider profile `name`: its `[provider_options.<name>]` table, with
     /// `TAGENT_<NAME>_<KEY>` environment variables taking precedence.
     pub fn provider_options(&self, name: &str) -> ProviderOptions {
@@ -254,7 +269,7 @@ impl Config {
 
     /// The `/config` lines for every setting, as `[section]` headers and `key = value`
     /// lines named and formatted as in `tagent-cli.toml` (the language settings followed by
-    /// their code as a comment), then the provider profiles
+    /// their name as a comment, when the table has one), then the provider profiles
     /// ([`Self::provider_profile_lines`]).
     fn display_lines(&self, lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
         let values = toml_edit::ser::to_document(&ConfigFile::from(self))
@@ -277,15 +292,15 @@ impl Config {
                 };
                 let mut value = value.clone();
                 value.decor_mut().clear();
-                let note = match (section, key) {
-                    ("translation", "source_language") => format!(
-                        "  # {}",
-                        tagent::languages::name_to_code(&self.source_language)
-                    ),
-                    ("translation", "target_language") => format!(
-                        "  # {}",
-                        tagent::languages::name_to_code(&self.target_language)
-                    ),
+                let code = match (section, key) {
+                    ("translation", "source_language") => Some(&self.source_language),
+                    ("translation", "target_language") => Some(&self.target_language),
+                    _ => None,
+                };
+                let note = match code {
+                    Some(code) if tagent::languages::code_to_name(code) != code => {
+                        format!("  # {}", tagent::languages::code_to_name(code))
+                    }
                     _ => String::new(),
                 };
                 lines.push(format!("{key} = {value}{note}"));
@@ -526,21 +541,60 @@ impl From<ConfigFile> for Config {
     }
 }
 
-/// Parses the contents of `tagent-cli.toml`. A hand-edited `target_language = "Auto"` is
-/// replaced in memory only (with a warning); the file itself is left untouched.
+/// Parses the contents of `tagent-cli.toml`, see [`parse_config_with_warnings`]; the
+/// warnings are dropped.
+fn parse_config(content: &str) -> Result<Config, toml_edit::de::Error> {
+    parse_config_with_warnings(content).map(|(config, _)| config)
+}
+
+/// Parses the contents of `tagent-cli.toml`, with the warnings about its language
+/// settings ([`normalize_languages`]). Those are changed in memory only; the file itself
+/// is left untouched.
 ///
 /// The error (a syntax error, or a value of the wrong type) names the line and column
 /// and shows the offending line.
-fn parse_config(content: &str) -> Result<Config, toml_edit::de::Error> {
+fn parse_config_with_warnings(
+    content: &str,
+) -> Result<(Config, Vec<String>), toml_edit::de::Error> {
     let file: ConfigFile = toml_edit::de::from_str(content)?;
     let mut config = Config::from(file);
-    let resolved = LanguagePair::new(&config.source_language, &config.target_language);
-    for notice in &resolved.notices {
-        eprintln!("Warning: {} (target_language in config)", notice);
+    let warnings = normalize_languages(&mut config);
+    Ok((config, warnings))
+}
+
+/// Turns `source_language`/`target_language` as read from the file (a code or a name, in
+/// any case) into codes ([`language_code`]), and replaces an `Auto` target with
+/// [`AUTO_TARGET_FALLBACK`]. A value `tagent`'s table doesn't list is kept as written and
+/// used as a language code. Returns the warnings to show, without the file name.
+fn normalize_languages(config: &mut Config) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (key, value) in [
+        ("source_language", &mut config.source_language),
+        ("target_language", &mut config.target_language),
+    ] {
+        match tagent::languages::language_code(value) {
+            Some(code) => *value = code.to_string(),
+            None => warnings.push(format!(
+                "{key} = {value:?} is not a known language, used as a language code"
+            )),
+        }
     }
+    let resolved = LanguagePair::new(&config.source_language, &config.target_language);
+    warnings.extend(
+        resolved
+            .notices
+            .iter()
+            .map(|notice| format!("{notice} (target_language)")),
+    );
     config.source_language = resolved.source;
     config.target_language = resolved.target;
-    Ok(config)
+    warnings
+}
+
+/// The code `tagent`'s table lists for `input` (a language code or name, in any case;
+/// `"auto"` for auto-detection), or `input` itself when the table doesn't list it.
+pub fn language_code(input: &str) -> String {
+    tagent::languages::language_code(input).map_or_else(|| input.to_string(), str::to_string)
 }
 
 /// The message for a config file that can't be loaded: the file, then the error with its
@@ -700,15 +754,18 @@ fn config_template() -> String {
 translate_provider = "google"
 
 [translation]
-# Source language for translation
-# Supported values: Auto, English, Russian, Spanish, French, German, Chinese,
-# Japanese, Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic, Hindi
-# Use "Auto" for automatic language detection
-source_language = "Auto"
+# Languages are language codes:
+{language_codes}
+# Other codes are passed to the provider as they are (e.g. "uk", "zh-TW").
+# Names work too (e.g. "German"); /save writes them as codes.
 
-# Target language for translation
-# Supported values: Russian, English, Spanish, French, German, etc.
-target_language = "Russian"
+# Source language for translation; "auto" detects it
+# Default: auto
+source_language = "auto"
+
+# Target language for translation (not "auto")
+# Default: the system language (from the locale), else en
+target_language = "{default_target}"
 
 [dictionary]
 # Show dictionary entry for single words instead of simple translation
@@ -845,11 +902,39 @@ speech_provider = "google"
 # #key = "" line is an optional key: uncomment it too if you need it.
 #
 {profile_examples}"#,
+        language_codes = language_code_lines(),
+        default_target = Config::default().target_language,
         translate_providers = tagent::providers::TRANSLATION_PROVIDERS.join(", "),
         dictionary_providers = tagent::providers::DICTIONARY_PROVIDERS.join(", "),
         speech_providers = tagent::providers::SPEECH_PROVIDERS.join(", "),
         profile_examples = profile_examples(),
     )
+}
+
+/// The template's list of the language codes `tagent` knows, with their names
+/// (`# en (English), ru (Russian), ...`), wrapped like the rest of the template.
+fn language_code_lines() -> String {
+    let mut lines = Vec::new();
+    let mut line = String::from("#");
+    let entries: Vec<String> = tagent::languages::LANGUAGES
+        .iter()
+        .map(|language| format!("{} ({})", language.code, language.name))
+        .collect();
+    for (i, entry) in entries.iter().enumerate() {
+        let entry = if i + 1 < entries.len() {
+            format!("{entry},")
+        } else {
+            entry.clone()
+        };
+        if line.len() + 1 + entry.len() > 80 {
+            lines.push(line);
+            line = String::from("#");
+        }
+        line.push(' ');
+        line.push_str(&entry);
+    }
+    lines.push(line);
+    lines.join("\n")
 }
 
 /// The built-in provider kinds, each with its descriptors on every axis it serves, in
@@ -1085,8 +1170,8 @@ impl Default for Config {
         };
 
         Self {
-            source_language: "Auto".to_string(),
-            target_language: "Russian".to_string(),
+            source_language: "auto".to_string(),
+            target_language: default_target_language(),
             show_terminal_on_translate: true,
             auto_hide_terminal_seconds: 3,
             show_dictionary: true,
@@ -1113,6 +1198,14 @@ impl Default for Config {
     }
 }
 
+/// Default `[translation]` `target_language`: the first of the system's preferred
+/// languages that `tagent` lists, else English.
+fn default_target_language() -> String {
+    tagent::languages::language_for_locales(sys_locale::get_locales())
+        .unwrap_or("en")
+        .to_string()
+}
+
 /// Default `[colors]` `part_of_speech_color`.
 const DEFAULT_PART_OF_SPEECH_COLOR: &str = "Cyan";
 /// Default `[colors]` `synonym_color`.
@@ -1122,22 +1215,23 @@ const DEFAULT_NOTICE_COLOR: &str = "Magenta";
 /// Default `[colors]` `error_color`.
 const DEFAULT_ERROR_COLOR: &str = "Red";
 
-/// Target language substituted wherever `"Auto"` would otherwise become the
+/// Target language code substituted wherever `"auto"` would otherwise become the
 /// target: auto-detection only makes sense for the source language.
-pub const AUTO_TARGET_FALLBACK: &str = "English";
+pub const AUTO_TARGET_FALLBACK: &str = "en";
 
-/// A source/target language pair resolved from user input (`/l`, `-l`, or the
-/// config file), with `"Auto"` never left as the target.
+/// A source/target language pair of codes resolved from user input (`/l`, `-l`, or the
+/// config file), with `"auto"` never left as the target. Callers turn names into codes
+/// first ([`language_code`]).
 ///
 /// `notices` holds the messages to show the user about what was adjusted or is
-/// worth knowing (an `"Auto"` target replaced with [`AUTO_TARGET_FALLBACK`], or a
+/// worth knowing (an `"auto"` target replaced with [`AUTO_TARGET_FALLBACK`], or a
 /// same-language pair). A same-language pair is allowed on purpose: it's the
 /// natural way to express a future monolingual (explanatory) dictionary lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanguagePair {
-    /// Source language name (may be `"Auto"`).
+    /// Source language code (may be `"auto"`).
     pub source: String,
-    /// Target language name (never `"Auto"`).
+    /// Target language code (never `"auto"`).
     pub target: String,
     /// Messages to show the user, in order.
     pub notices: Vec<String>,
@@ -1150,7 +1244,7 @@ impl LanguagePair {
         let target = if is_auto(target) {
             notices.push(format!(
                 "Target can't be Auto; using {} instead",
-                AUTO_TARGET_FALLBACK
+                tagent::languages::code_to_name(AUTO_TARGET_FALLBACK)
             ));
             AUTO_TARGET_FALLBACK.to_string()
         } else {
@@ -1159,7 +1253,7 @@ impl LanguagePair {
         Self::finish(source.to_string(), target, notices)
     }
 
-    /// Resolves the pair produced by swapping `source` and `target`. An `"Auto"`
+    /// Resolves the pair produced by swapping `source` and `target`. An `"auto"`
     /// source has no concrete language to become the new target, so
     /// [`AUTO_TARGET_FALLBACK`] takes its place.
     pub fn swapped(source: &str, target: &str) -> Self {
@@ -1167,7 +1261,7 @@ impl LanguagePair {
         let new_target = if is_auto(source) {
             notices.push(format!(
                 "Source was Auto; using {} as the new target",
-                AUTO_TARGET_FALLBACK
+                tagent::languages::code_to_name(AUTO_TARGET_FALLBACK)
             ));
             AUTO_TARGET_FALLBACK.to_string()
         } else {
@@ -1177,10 +1271,7 @@ impl LanguagePair {
     }
 
     fn finish(source: String, target: String, mut notices: Vec<String>) -> Self {
-        if !is_auto(&source)
-            && tagent::languages::name_to_code(&source)
-                .eq_ignore_ascii_case(tagent::languages::name_to_code(&target))
-        {
+        if !is_auto(&source) && source.eq_ignore_ascii_case(&target) {
             notices.push("Note: source and target are the same language".to_string());
         }
         Self {
@@ -1191,13 +1282,27 @@ impl LanguagePair {
     }
 }
 
+/// `Russian (ru) -> English (en)` for a pair of language codes (`/l`, `-l`, the banner).
+/// A code `tagent`'s table doesn't list is shown once: `Auto (auto) -> uk`.
+pub fn language_pair_description(source: &str, target: &str) -> String {
+    let describe = |code: &str| {
+        let name = tagent::languages::code_to_name(code);
+        if name == code {
+            code.to_string()
+        } else {
+            format!("{name} ({code})")
+        }
+    };
+    format!("{} -> {}", describe(source), describe(target))
+}
+
 /// Compact `source → target` label from language codes (e.g. `auto → ru`), used in
 /// the interactive prompt and the terminal window title.
 pub fn language_pair_label(source_code: &str, target_code: &str) -> String {
     format!("{} → {}", source_code, target_code)
 }
 
-/// Whether a language name/code means auto-detection.
+/// Whether a language code means auto-detection.
 fn is_auto(language: &str) -> bool {
     language.trim().eq_ignore_ascii_case("auto")
 }
@@ -1388,14 +1493,17 @@ impl ConfigManager {
     /// in effect; the message names the file, and the line and column of the problem.
     fn load_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let content = fs::read_to_string(&self.config_path)?;
-        let new_config =
-            parse_config(&content).map_err(|e| invalid_file_message(&self.config_path, &e))?;
+        let (new_config, language_warnings) = parse_config_with_warnings(&content)
+            .map_err(|e| invalid_file_message(&self.config_path, &e))?;
 
         if let Ok(mut config) = self.config.lock() {
             *config = new_config;
         }
         for unknown in unknown_keys_in(&content) {
             eprintln!("{}", unknown.warning(&self.file_name()));
+        }
+        for warning in language_warnings {
+            eprintln!("Warning: {}: {warning}", self.file_name());
         }
 
         self.update_last_modified_time()?;
@@ -1472,8 +1580,8 @@ impl ConfigManager {
 
     /// Set source and target languages in memory (without saving to file).
     ///
-    /// Callers resolve user input through [`LanguagePair`] first, so `target` is
-    /// never `"Auto"`.
+    /// Both are codes: callers resolve user input through [`language_code`] and
+    /// [`LanguagePair`] first, so `target` is never `"auto"`.
     pub fn set_languages(&self, source: &str, target: &str) {
         if let Ok(mut config) = self.config.lock() {
             config.source_language = source.to_string();
@@ -1499,11 +1607,8 @@ impl ConfigManager {
         println!();
 
         println!(
-            "Languages: {} ({}) -> {} ({})",
-            config.source_language,
-            tagent::languages::name_to_code(&config.source_language),
-            config.target_language,
-            tagent::languages::name_to_code(&config.target_language)
+            "Languages: {}",
+            language_pair_description(&config.source_language, &config.target_language)
         );
         println!();
 
@@ -1632,8 +1737,8 @@ impl ConfigManager {
         }
         println!();
         println!("  Edit 'tagent-cli.toml' to change translation settings:");
-        println!("  - source_language: Source language (Auto, English, Russian, etc.)");
-        println!("  - target_language: Target language (Russian, English, etc.)");
+        println!("  - source_language: Source language code (auto, en, ru, etc.)");
+        println!("  - target_language: Target language code (ru, en, etc.)");
         println!(
             "  - translate_provider: Translation backend ({})",
             tagent::providers::TRANSLATION_PROVIDERS.join(", ")
@@ -1742,40 +1847,10 @@ impl ConfigManager {
         Ok(())
     }
 
-    /// Normalize language input: accept both names ("English") and codes ("en"),
-    /// always return the full language name
-    pub fn normalize_language(input: &str) -> String {
-        // First check if it's already a known language name
-        let code = tagent::languages::name_to_code(input);
-        if code != input || input.to_lowercase() == "auto" {
-            // It was a known name, return as-is (capitalized)
-            return Self::capitalize_first(input);
-        }
-        // Otherwise try as a code
-        let name = tagent::languages::code_to_name(input);
-        if name != input {
-            return name.to_string();
-        }
-        // Unknown — return as-is
-        input.to_string()
-    }
-
-    /// Capitalize the first letter of a string
-    fn capitalize_first(s: &str) -> String {
-        let mut chars = s.chars();
-        match chars.next() {
-            None => String::new(),
-            Some(c) => c.to_uppercase().to_string() + &chars.as_str().to_lowercase(),
-        }
-    }
-
-    /// Get language codes for translation
+    /// The source and target language codes in effect.
     pub fn get_language_codes(&self) -> (String, String) {
         let config = self.get_config();
-        let source_code = tagent::languages::name_to_code(&config.source_language);
-        let target_code = tagent::languages::name_to_code(&config.target_language);
-
-        (source_code.to_string(), target_code.to_string())
+        (config.source_language, config.target_language)
     }
 
     /// Parse color name to colored::Color enum
@@ -2068,12 +2143,13 @@ mod tests {
         assert_eq!(language_pair_label("auto", "ru"), "auto → ru");
     }
 
-    /// `/l auto` and `-l auto`: an "Auto" target is replaced, never kept.
+    /// `/l auto` and `-l auto`: an "auto" target is replaced, never kept.
     #[test]
     fn language_pair_replaces_auto_target_with_fallback() {
-        let pair = LanguagePair::new("Auto", "Auto");
-        assert_eq!(pair.source, "Auto");
+        let pair = LanguagePair::new("auto", "auto");
+        assert_eq!(pair.source, "auto");
         assert_eq!(pair.target, AUTO_TARGET_FALLBACK);
+        assert_eq!(AUTO_TARGET_FALLBACK, "en");
         assert_eq!(
             pair.notices,
             vec!["Target can't be Auto; using English instead".to_string()]
@@ -2081,18 +2157,15 @@ mod tests {
 
         // Any spelling of "auto" counts.
         assert_eq!(
-            LanguagePair::new("Russian", " AUTO ").target,
+            LanguagePair::new("ru", " AUTO ").target,
             AUTO_TARGET_FALLBACK
         );
     }
 
     #[test]
     fn language_pair_keeps_a_normal_pair_without_notices() {
-        let pair = LanguagePair::new("Auto", "Russian");
-        assert_eq!(
-            (pair.source.as_str(), pair.target.as_str()),
-            ("Auto", "Russian")
-        );
+        let pair = LanguagePair::new("auto", "ru");
+        assert_eq!((pair.source.as_str(), pair.target.as_str()), ("auto", "ru"));
         assert!(pair.notices.is_empty());
     }
 
@@ -2100,11 +2173,8 @@ mod tests {
     /// noted -- including one produced by the Auto-target fallback.
     #[test]
     fn language_pair_allows_same_language_with_a_note() {
-        let pair = LanguagePair::new("English", "Auto");
-        assert_eq!(
-            (pair.source.as_str(), pair.target.as_str()),
-            ("English", "English")
-        );
+        let pair = LanguagePair::new("en", "auto");
+        assert_eq!((pair.source.as_str(), pair.target.as_str()), ("en", "en"));
         assert_eq!(
             pair.notices,
             vec![
@@ -2113,7 +2183,8 @@ mod tests {
             ]
         );
 
-        let pair = LanguagePair::new("Russian", "russian");
+        // Codes the table doesn't list compare case-insensitively too.
+        let pair = LanguagePair::new("zh-TW", "zh-tw");
         assert_eq!(
             pair.notices,
             vec!["Note: source and target are the same language".to_string()]
@@ -2122,11 +2193,8 @@ mod tests {
 
     #[test]
     fn swapped_pair_uses_fallback_for_auto_source() {
-        let pair = LanguagePair::swapped("Auto", "Russian");
-        assert_eq!(
-            (pair.source.as_str(), pair.target.as_str()),
-            ("Russian", "English")
-        );
+        let pair = LanguagePair::swapped("auto", "ru");
+        assert_eq!((pair.source.as_str(), pair.target.as_str()), ("ru", "en"));
         assert_eq!(
             pair.notices,
             vec!["Source was Auto; using English as the new target".to_string()]
@@ -2135,12 +2203,111 @@ mod tests {
 
     #[test]
     fn swapped_pair_swaps_two_concrete_languages() {
-        let pair = LanguagePair::swapped("English", "Russian");
-        assert_eq!(
-            (pair.source.as_str(), pair.target.as_str()),
-            ("Russian", "English")
-        );
+        let pair = LanguagePair::swapped("en", "ru");
+        assert_eq!((pair.source.as_str(), pair.target.as_str()), ("ru", "en"));
         assert!(pair.notices.is_empty());
+    }
+
+    #[test]
+    fn language_code_turns_known_names_into_codes_and_keeps_the_rest() {
+        assert_eq!(language_code("German"), "de");
+        assert_eq!(language_code("DE"), "de");
+        assert_eq!(language_code("Auto"), "auto");
+        assert_eq!(language_code("zh-TW"), "zh-TW");
+        assert_eq!(language_code("uk"), "uk");
+    }
+
+    #[test]
+    fn language_pair_description_shows_names_and_codes() {
+        assert_eq!(
+            language_pair_description("auto", "ru"),
+            "Auto (auto) -> Russian (ru)"
+        );
+        assert_eq!(language_pair_description("en", "uk"), "English (en) -> uk");
+    }
+
+    /// Names and codes in any case load as codes; the file keeps what it has.
+    #[test]
+    fn languages_load_as_codes_from_names_or_codes() {
+        for (source, target) in [
+            ("Auto", "Russian"),
+            ("auto", "ru"),
+            ("AUTO", "RU"),
+            ("auto", "rUsSiAn"),
+        ] {
+            let (config, warnings) = parse_config_with_warnings(&format!(
+                "[translation]\nsource_language = \"{source}\"\ntarget_language = \"{target}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(
+                (
+                    config.source_language.as_str(),
+                    config.target_language.as_str()
+                ),
+                ("auto", "ru"),
+                "{source} -> {target}"
+            );
+            assert!(warnings.is_empty(), "{warnings:?}");
+        }
+
+        let (config, _) = parse_config_with_warnings(
+            "[translation]\nsource_language = \"English\"\ntarget_language = \"de\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                config.source_language.as_str(),
+                config.target_language.as_str()
+            ),
+            ("en", "de")
+        );
+    }
+
+    /// A value the table doesn't list is kept as written (not lowercased) and warned about.
+    #[test]
+    fn an_unknown_language_is_kept_with_a_warning() {
+        let (config, warnings) = parse_config_with_warnings(
+            "[translation]\nsource_language = \"Klingon\"\ntarget_language = \"zh-TW\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.source_language, "Klingon");
+        assert_eq!(config.target_language, "zh-TW");
+        assert_eq!(
+            warnings,
+            vec![
+                "source_language = \"Klingon\" is not a known language, used as a language code"
+                    .to_string(),
+                "target_language = \"zh-TW\" is not a known language, used as a language code"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_auto_target_in_the_file_is_replaced_with_a_warning() {
+        let (config, warnings) =
+            parse_config_with_warnings("[translation]\ntarget_language = \"Auto\"\n").unwrap();
+        assert_eq!(config.target_language, "en");
+        assert_eq!(
+            warnings,
+            vec!["Target can't be Auto; using English instead (target_language)".to_string()]
+        );
+    }
+
+    #[test]
+    fn prompt_names_come_from_the_codes() {
+        let config = Config {
+            source_language: "auto".to_string(),
+            target_language: "ru".to_string(),
+            ..Config::default()
+        };
+        assert_eq!(config.source_language_name(), "Auto");
+        assert_eq!(config.target_language_name(), "Russian");
+        let config = Config {
+            target_language: "uk".to_string(),
+            ..config
+        };
+        assert_eq!(config.target_language_name(), "uk");
     }
 
     /// A hand-edited `target_language = "Auto"` is replaced in memory on load.
@@ -2163,7 +2330,7 @@ mod tests {
         };
         manager.load_config().unwrap();
 
-        assert_eq!(manager.get_config().source_language, "Auto");
+        assert_eq!(manager.get_config().source_language, "auto");
         assert_eq!(manager.get_config().target_language, AUTO_TARGET_FALLBACK);
         // The file itself is not rewritten.
         assert!(fs::read_to_string(&path)
@@ -2835,6 +3002,7 @@ api_key = "deepl-key"
     #[test]
     fn display_lines_use_the_file_keys() {
         let config = Config {
+            target_language: "ru".to_string(),
             history_file: "history.txt".to_string(),
             ..Config::default()
         };
@@ -2845,7 +3013,7 @@ api_key = "deepl-key"
             "{text}"
         );
         assert!(
-            text.contains("[translation]\nsource_language = \"Auto\"  # auto\ntarget_language = \"Russian\"  # ru\n"),
+            text.contains("[translation]\nsource_language = \"auto\"  # Auto\ntarget_language = \"ru\"  # Russian\n"),
             "{text}"
         );
         assert!(
@@ -3220,19 +3388,16 @@ api_key = "secret-0123456789"  # from the account page
         let (manager, path) = manager_at("save_in_place");
         fs::write(&path, HAND_EDITED_TOML).unwrap();
         manager.load_config().unwrap();
-        manager.set_languages("English", "German");
+        manager.set_languages("en", "de");
         manager.save_config().unwrap();
 
         let written = fs::read_to_string(&path).unwrap();
         let expected = HAND_EDITED_TOML
             .replace(
                 "source_language = \"Auto\"  # auto-detect",
-                "source_language = \"English\"  # auto-detect",
+                "source_language = \"en\"  # auto-detect",
             )
-            .replace(
-                "target_language = \"Russian\"",
-                "target_language = \"German\"",
-            );
+            .replace("target_language = \"Russian\"", "target_language = \"de\"");
         assert_eq!(written, expected);
 
         manager.load_config().unwrap();
@@ -3242,9 +3407,29 @@ api_key = "secret-0123456789"  # from the account page
                 reloaded.source_language.as_str(),
                 reloaded.target_language.as_str()
             ),
-            ("English", "German")
+            ("en", "de")
         );
         assert!(reloaded.copy_to_clipboard);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A file with language names gets codes on the first `/save`, even without `/l`;
+    /// the comments stay.
+    #[test]
+    fn save_writes_language_names_as_codes() {
+        let (manager, path) = manager_at("save_names_as_codes");
+        fs::write(&path, HAND_EDITED_TOML).unwrap();
+        manager.load_config().unwrap();
+        manager.save_config().unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        let expected = HAND_EDITED_TOML
+            .replace(
+                "source_language = \"Auto\"  # auto-detect",
+                "source_language = \"auto\"  # auto-detect",
+            )
+            .replace("target_language = \"Russian\"", "target_language = \"ru\"");
+        assert_eq!(written, expected);
         let _ = fs::remove_file(&path);
     }
 
@@ -3254,7 +3439,7 @@ api_key = "secret-0123456789"  # from the account page
     fn save_writes_the_translation_provider_in_place() {
         let (manager, path) = manager_at("save_provider");
         let original = "[provider]\n# my backend\ntranslate_provider = \"google\"  # for now\n\n\
-                        [translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n";
+                        [translation]\nsource_language = \"auto\"\ntarget_language = \"ru\"\n";
         fs::write(&path, original).unwrap();
         manager.load_config().unwrap();
         manager.set_translate_provider("deepl-work");
@@ -3279,7 +3464,7 @@ api_key = "secret-0123456789"  # from the account page
     #[test]
     fn save_adds_a_missing_provider_table_only_when_needed() {
         let (manager, path) = manager_at("save_provider_missing");
-        let original = "[translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n";
+        let original = "[translation]\nsource_language = \"auto\"\ntarget_language = \"ru\"\n";
         fs::write(&path, original).unwrap();
         manager.load_config().unwrap();
 
@@ -3305,7 +3490,7 @@ api_key = "secret-0123456789"  # from the account page
         let (manager, path) = manager_at("save_missing_section");
         fs::write(&path, "[interface]\ncopy_to_clipboard = true\n").unwrap();
         manager.load_config().unwrap();
-        manager.set_languages("English", "German");
+        manager.set_languages("en", "de");
         manager.save_config().unwrap();
 
         let written = fs::read_to_string(&path).unwrap();
@@ -3314,9 +3499,7 @@ api_key = "secret-0123456789"  # from the account page
             "{written}"
         );
         assert!(
-            written.contains(
-                "[translation]\nsource_language = \"English\"\ntarget_language = \"German\"\n"
-            ),
+            written.contains("[translation]\nsource_language = \"en\"\ntarget_language = \"de\"\n"),
             "{written}"
         );
         let _ = fs::remove_file(&path);
@@ -3326,7 +3509,7 @@ api_key = "secret-0123456789"  # from the account page
     #[test]
     fn save_without_a_file_writes_the_template() {
         let (manager, path) = manager_at("save_no_file");
-        manager.set_languages("English", "German");
+        manager.set_languages("en", "de");
         manager.save_config().unwrap();
         let written = fs::read_to_string(&path).unwrap();
         let _ = fs::remove_file(&path);
@@ -3351,7 +3534,7 @@ api_key = "secret-0123456789"  # from the account page
         fs::write(&path, "[translation]\ntarget_language = \"German\"\n").unwrap();
         set_mtime(1_000_000);
         assert!(manager.check_and_reload().unwrap());
-        assert_eq!(manager.get_config().target_language, "German");
+        assert_eq!(manager.get_config().target_language, "de");
 
         fs::write(&path, "[translation]\ntarget_language = German\n").unwrap();
         set_mtime(2_000_000);
@@ -3359,14 +3542,14 @@ api_key = "secret-0123456789"  # from the account page
         assert!(error.contains(&manager.config_path), "{error}");
         assert!(error.contains("line 2"), "{error}");
         assert!(error.contains("keeping the previous settings"), "{error}");
-        assert_eq!(manager.get_config().target_language, "German");
+        assert_eq!(manager.get_config().target_language, "de");
         // Reported once per edit, not on every call.
         assert!(!manager.check_and_reload().unwrap());
 
         fs::write(&path, "[translation]\ntarget_language = \"French\"\n").unwrap();
         set_mtime(3_000_000);
         assert!(manager.check_and_reload().unwrap());
-        assert_eq!(manager.get_config().target_language, "French");
+        assert_eq!(manager.get_config().target_language, "fr");
         let _ = fs::remove_file(&path);
     }
 

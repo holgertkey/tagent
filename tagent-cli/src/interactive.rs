@@ -313,55 +313,25 @@ impl InteractiveMode {
                 self.config_manager
                     .set_languages(&pair.source, &pair.target);
                 println!(
-                    "Languages swapped: {} ({}) -> {} ({})",
-                    pair.source,
-                    tagent::languages::name_to_code(&pair.source),
-                    pair.target,
-                    tagent::languages::name_to_code(&pair.target)
+                    "Languages swapped: {}",
+                    config::language_pair_description(&pair.source, &pair.target)
                 );
                 println!();
                 return Ok(true);
             }
 
-            let (raw_source, raw_target) = if parts.len() == 1 {
-                ("Auto", parts[0])
-            } else {
-                (parts[0], parts[1])
-            };
-
-            // Normalize: accept both names ("English") and codes ("en")
-            let source = ConfigManager::normalize_language(raw_source);
-            let target = ConfigManager::normalize_language(raw_target);
-
-            let source_code = tagent::languages::name_to_code(&source);
-            let target_code = tagent::languages::name_to_code(&target);
-
-            // Warn if language is completely unknown
-            if source.to_lowercase() != "auto" && source_code == source.as_str() {
-                println!(
-                    "Warning: Unknown language '{}', using as language code",
-                    source
-                );
+            let (warnings, pair) = resolve_language_args(&parts);
+            for warning in &warnings {
+                println!("{}", warning);
             }
-            if target_code == target.as_str() {
-                println!(
-                    "Warning: Unknown language '{}', using as language code",
-                    target
-                );
-            }
-
-            let pair = LanguagePair::new(&source, &target);
             for notice in &pair.notices {
                 println!("{}", notice);
             }
             self.config_manager
                 .set_languages(&pair.source, &pair.target);
             println!(
-                "Languages set: {} ({}) -> {} ({})",
-                pair.source,
-                source_code,
-                pair.target,
-                tagent::languages::name_to_code(&pair.target)
+                "Languages set: {}",
+                config::language_pair_description(&pair.source, &pair.target)
             );
             println!();
             return Ok(true);
@@ -616,7 +586,7 @@ impl InteractiveMode {
                 );
 
                 // Print colored translation label
-                let trans_label = format!("[{}]: ", config.target_language);
+                let trans_label = format!("[{}]: ", config.target_language_name());
                 config::print_colored(&trans_label, &config.target_prompt_color);
                 println!("{}", translated_text);
 
@@ -668,10 +638,63 @@ impl InteractiveMode {
     }
 }
 
+/// The language pair `/l <target>` or `/l <source> <target>` asks for (`parts` has one or
+/// two items; one means an `auto` source), with a warning per value that isn't a known
+/// language name or code. Names and codes in any case become codes; an unknown value is
+/// kept as a language code.
+fn resolve_language_args(parts: &[&str]) -> (Vec<String>, LanguagePair) {
+    let (raw_source, raw_target) = match parts {
+        [target] => ("auto", *target),
+        [source, target, ..] => (*source, *target),
+        [] => ("auto", ""),
+    };
+    let warnings = [raw_source, raw_target]
+        .into_iter()
+        .filter(|raw| tagent::languages::language_code(raw).is_none())
+        .map(|raw| {
+            format!(
+                "Warning: Unknown language '{}', using as language code",
+                raw
+            )
+        })
+        .collect();
+    let pair = LanguagePair::new(
+        &config::language_code(raw_source),
+        &config::language_code(raw_target),
+    );
+    (warnings, pair)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rustyline::history::DefaultHistory;
+
+    /// `/l German`, `/l de` and `/l DE` all store the code.
+    #[test]
+    fn language_args_store_codes_for_names_and_codes() {
+        for parts in [["German"], ["de"], ["DE"]] {
+            let (warnings, pair) = resolve_language_args(&parts);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert_eq!((pair.source.as_str(), pair.target.as_str()), ("auto", "de"));
+        }
+        let (_, pair) = resolve_language_args(&["English", "ru"]);
+        assert_eq!((pair.source.as_str(), pair.target.as_str()), ("en", "ru"));
+    }
+
+    #[test]
+    fn language_args_keep_an_unknown_value_with_a_warning() {
+        let (warnings, pair) = resolve_language_args(&["en", "zh-TW"]);
+        assert_eq!(
+            warnings,
+            vec!["Warning: Unknown language 'zh-TW', using as language code".to_string()]
+        );
+        assert_eq!(pair.target, "zh-TW");
+
+        let (warnings, pair) = resolve_language_args(&["auto"]);
+        assert!(warnings.is_empty());
+        assert_eq!(pair.target, config::AUTO_TARGET_FALLBACK);
+    }
 
     #[test]
     fn parses_provider_commands() {

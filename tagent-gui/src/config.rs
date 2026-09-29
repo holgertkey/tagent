@@ -37,21 +37,17 @@ fn default_target_language() -> String {
 /// The first of `locales` (BCP 47 tags such as `"ru-UA"`, most preferred first) whose
 /// language `tagent` knows, as its code; `"en"` when none is known.
 pub fn target_language_for_locales(locales: impl IntoIterator<Item = String>) -> String {
-    locales
-        .into_iter()
-        .find_map(|locale| {
-            let primary = locale.split(['-', '_']).next().unwrap_or_default();
-            known_language_code(primary)
-        })
-        .unwrap_or_else(|| "en".to_string())
+    languages::language_for_locales(locales)
+        .unwrap_or("en")
+        .to_string()
 }
 
 /// `code` as it appears in `tagent`'s language table (lowercase), if it's listed there.
+/// Only codes count: a language name or `"auto"` gives `None`.
 fn known_language_code(code: &str) -> Option<String> {
-    languages::LANGUAGES
-        .iter()
-        .find(|language| language.code.eq_ignore_ascii_case(code))
-        .map(|language| language.code.to_string())
+    languages::language_code(code)
+        .filter(|known| *known != "auto" && known.eq_ignore_ascii_case(code))
+        .map(str::to_string)
 }
 
 fn default_theme() -> String {
@@ -1076,12 +1072,8 @@ mod tests {
 
     #[test]
     fn target_language_is_the_first_known_system_language() {
-        assert_eq!(target_language_for_locales(locales(&["ru-UA"])), "ru");
-        // An unknown language is skipped in favor of the next preference.
+        // The locale matching itself is tested in `tagent::languages`.
         assert_eq!(target_language_for_locales(locales(&["eo", "de-AT"])), "de");
-        assert_eq!(target_language_for_locales(locales(&["en-US", "ru"])), "en");
-        assert_eq!(target_language_for_locales(locales(&["zh-Hans-CN"])), "zh");
-        assert_eq!(target_language_for_locales(locales(&["pt_BR"])), "pt");
         assert_eq!(target_language_for_locales(locales(&["eo"])), "en");
         assert_eq!(target_language_for_locales(locales(&[])), "en");
     }

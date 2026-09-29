@@ -206,6 +206,10 @@ the old single-crate `tagent`).
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
   translation-domain data (a name ↔ BCP-47 code table), not app config, which is what
   makes it safe for `tagent-gui` to depend on without pulling in `ConfigManager`.
+  `language_code()` (a listed name or code → its code, `None` otherwise) and
+  `language_for_locales()` (the first listed language in a locale preference list) were
+  added in `tagent` 0.19.0 (Stage L) for both apps' config handling; the library stays
+  free of `sys-locale` and of environment access, the apps pass the locales in.
 - **`error`** — `tagent::error::Error`, a `thiserror`-based enum (`Network`, `Api`,
   `NotFound`, `EmptyText`, `TextTooLong { len, max }`, `Decode`, `UnknownProvider`;
   since `tagent` 0.19.0 also `Auth`, `RateLimited { retry_after }`, `QuotaExceeded`,
@@ -253,6 +257,24 @@ library's option keys need no mapping.
   would drop the comment lines above the key (they are the key's decor), and copies the
   old value's decor onto the new one to keep an inline `# comment`. A missing section is
   inserted as a real table, since indexing a missing key would create an inline one.
+- **Languages are codes** (Stage L, `tagent-cli` 0.17.0+010/+011): `Config::source_language`/
+  `target_language` hold codes (`"auto"`, `"ru"`); only display sites turn them into names
+  (`Config::source_language_name`/`target_language_name`, `language_pair_description`, all
+  through `code_to_name`, which returns an unlisted code as it is). On load,
+  `normalize_languages` (inside `parse_config_with_warnings`) maps a listed name or code in
+  any case to the table's code (`tagent::languages::language_code`), keeps an unlisted
+  value as written with a warning, and replaces an `auto` target with
+  `AUTO_TARGET_FALLBACK` (`"en"`). Accepting names on load is a deliberate exception to the
+  "no migration shims" rule: without it every pre-Stage-L file would turn into broken codes.
+  The file is not rewritten; `/save` writes the codes. The warnings are returned, not
+  printed, so `load_config` shows them once and `ConfigManager::update_config_file`'s
+  re-read stays quiet. `/l` and `-l` go through `config::language_code` (name or code →
+  code, unknown kept). The template's list of codes is generated from `LANGUAGES`
+  (`language_code_lines`), and its `target_language` value is `Config::default()`'s, whose
+  target comes from the system locale (`default_target_language`: `sys-locale` in the app,
+  the matching in `tagent::languages::language_for_locales`, else `"en"`) — so
+  `--print-default-config` depends on the machine, and tests that need a fixed target set
+  it explicitly.
 - **Switching the translation provider at runtime** (Stage S, `tagent-cli` 0.17.0+009):
   `Translator` keeps the provider in a slot shared by all its clones
   (`Arc<Mutex<ActiveTranslation>>`: the `translate_provider` value it was built from, the

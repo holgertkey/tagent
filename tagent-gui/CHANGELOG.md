@@ -12,6 +12,13 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+033] - 2026-09-29
+
+### Changed
+- The system-locale lookup behind the default target language, and the check for a
+  known language code, now use `tagent`'s `languages::language_for_locales` and
+  `languages::language_code` (shared with `tagent-cli`). No visible change.
+
 ## [0.14.0+032] - 2026-09-28
 
 ### Changed

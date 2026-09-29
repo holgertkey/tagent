@@ -861,7 +861,7 @@ async fn speak_clipboard(
 fn print_source_prompt(cfg: &crate::config::Config) {
     use std::io::{self, Write};
 
-    let source_prompt = format!("[{}]: ", cfg.source_language);
+    let source_prompt = format!("[{}]: ", cfg.source_language_name());
     config::print_colored(&source_prompt, &cfg.source_prompt_color);
     io::stdout().flush().ok();
 }

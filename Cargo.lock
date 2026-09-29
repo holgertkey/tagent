@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.17.0+009"
+version = "0.17.0+011"
 dependencies = [
  "arboard",
  "async-trait",
@@ -5781,6 +5781,7 @@ dependencies = [
  "rodio",
  "rustyline",
  "serde",
+ "sys-locale",
  "tagent",
  "tokio",
  "toml_edit 0.25.4+spec-1.1.0",
@@ -5791,7 +5792,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.14.0+032"
+version = "0.14.0+033"
 dependencies = [
  "arboard",
  "clipboard-win",
