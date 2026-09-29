@@ -59,14 +59,21 @@ fi
 
 cd "$root"
 # Verification builds each dependent against the packaged dependency, served from a
-# temporary registry. Cargo treats a registry crate as immutable, so a build of the same
-# name and version left in `target` by an earlier run (a local one, or CI's cached
-# `target`) is reused even though the sources have changed since, and the dependent then
-# fails against the stale API. Unpublished versions change until they are released, so
-# drop the artifacts of the library about to be packaged. Only `tagent` is a dependency;
-# the applications are verified from their own packaged sources, which Cargo does check,
-# and cleaning them would throw away their whole incremental cache.
+# temporary registry (`target/package/tmp-registry`). Cargo treats a registry crate as
+# immutable, so whatever an earlier run (a local one, or CI's cached `~/.cargo/registry`
+# and `target`) left for the same name and version is reused although an unpublished
+# version keeps changing until it is released, and the dependent then fails against the
+# stale API. Two things are reused:
+# - the sources extracted to `$CARGO_HOME/registry/src/<registry hash>/tagent-<version>`
+#   (never re-extracted while the directory exists; the hash comes from the temporary
+#   registry's path, the same on every run). The version isn't on crates.io (otherwise
+#   `tagent` would be skipped above), so no crates.io sources match the glob;
+# - the build in `target`, whose fingerprint doesn't cover a registry crate's sources.
+# Only `tagent` is a dependency; the applications are verified from their own packaged
+# sources, which Cargo does check, and cleaning them would throw away their whole
+# incremental cache.
 if [[ " ${pending[*]} " == *" tagent "* ]]; then
+  rm -rf "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/"tagent-$(crate_version tagent)"
   cargo clean -p tagent
 fi
 # --workspace publishes in dependency order and verifies dependents against the local
