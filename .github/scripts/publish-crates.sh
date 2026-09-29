@@ -36,7 +36,7 @@ is_published() {
 }
 
 exclude=()
-pending=0
+pending=()
 for crate in "${crates[@]}"; do
   version="$(crate_version "$crate")"
   if [ ${#dry_run[@]} -eq 0 ] && [[ "$version" == *+* ]]; then
@@ -48,16 +48,27 @@ for crate in "${crates[@]}"; do
     exclude+=(--exclude "$crate")
   else
     echo "$crate $version will be published"
-    pending=$((pending + 1))
+    pending+=("$crate")
   fi
 done
 
-if [ "$pending" -eq 0 ]; then
+if [ ${#pending[@]} -eq 0 ]; then
   echo "nothing to publish"
   exit 0
 fi
 
 cd "$root"
+# Verification builds each dependent against the packaged dependency, served from a
+# temporary registry. Cargo treats a registry crate as immutable, so a build of the same
+# name and version left in `target` by an earlier run (a local one, or CI's cached
+# `target`) is reused even though the sources have changed since, and the dependent then
+# fails against the stale API. Unpublished versions change until they are released, so
+# drop the artifacts of the library about to be packaged. Only `tagent` is a dependency;
+# the applications are verified from their own packaged sources, which Cargo does check,
+# and cleaning them would throw away their whole incremental cache.
+if [[ " ${pending[*]} " == *" tagent "* ]]; then
+  cargo clean -p tagent
+fi
 # --workspace publishes in dependency order and verifies dependents against the local
 # packages, so tagent-cli/tagent-gui can go out in the same run as the tagent they need.
 cargo publish --workspace --locked "${exclude[@]}" "${dry_run[@]}" "$@"
