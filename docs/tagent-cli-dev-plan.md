@@ -377,3 +377,142 @@ documentation only, no bump).
 - A one-shot CLI flag (`tagent-cli --provider deepl "text"`): a separate small feature
   if wanted; S1's rebuild-on-change makes it trivial.
 - Showing in `/config` that the active provider differs from the file.
+
+## Stage L — Language codes in the config, target language from the locale (planned, 2026-09-29)
+
+### Problem
+
+- **`tagent-cli.toml` stores language names** (`source_language = "Auto"`,
+  `target_language = "Russian"`), while everything behind the config works with codes:
+  about thirty places convert with `tagent::languages::name_to_code` (`get_language_codes`,
+  `LanguagePair`, the banner, `/config`, `/l`, `-l`). A language missing from `tagent`'s
+  table can only be stored as a code anyway (`/l uk` → "Unknown language 'uk', using as
+  language code"), so files already mix both forms. `tagent-gui.json` stores codes.
+- **The default target language is hard-coded** as `"Russian"` (`Config::default()`), so a
+  user with an English or German system gets Russian translations on first run.
+  `tagent-gui` has taken its default from the system locale since `0.14.0+031`
+  (`target_language_for_locales`, `sys-locale`).
+
+### Decisions
+
+- **Codes in the file, names only on screen.** `source_language`/`target_language` hold
+  codes as `tagent`'s table spells them (`"auto"`, `"ru"`, `"en"`); prompts
+  (`[Russian]: `), the banner (`Auto (auto) -> Russian (ru)`) and `/l`'s messages keep
+  showing names, through `code_to_name`, which returns the code itself for a language the
+  table doesn't list.
+- **Both forms are read** (decided 2026-09-29, an exception to the "no migration shims"
+  preference, since otherwise every existing file would silently become a broken code):
+  on load, a listed name or code (any case) becomes the listed code, `Auto` becomes
+  `"auto"`. The same leniency `/l` and `-l` already have. **The file is not rewritten**
+  (Stage C's rule); the codes reach it with the next `/save`, which writes the values in
+  effect.
+- **An unknown value is kept, with a warning**, unlike `tagent-gui` (which replaces it
+  with the default): `tagent-cli` passes any code to the provider, including languages
+  `tagent`'s table doesn't list, and that stays possible. The warning (once per load, like
+  C1's unknown keys) names the key and says the value is used as a language code.
+- **Default target language = the system locale**, like `tagent-gui`: the first locale
+  (most preferred first) whose primary subtag is in `tagent`'s table; `"en"` when none is.
+  It applies wherever `Config::default()` does: a new file, and a file without
+  `target_language`. An existing value is never replaced.
+- **The locale lookup moves into `tagent`** so both apps share it (see the memory
+  "prefer calling into tagent's library modules"): a pure function over the locale list,
+  with `sys-locale` staying in the applications, so the library gains no dependency and
+  no environment access.
+- **`AUTO_TARGET_FALLBACK` stays English** (as the code `"en"`): it replaces an `Auto`
+  target and the new target of `/l` swapping an `Auto` source. Taking the locale there too
+  is possible but a separate behavior change, not part of this stage.
+
+### Steps
+
+Order: L1 first (both apps build on it), then L2, then L3. `tagent` has no bump: its
+`0.19.0` is unreleased (the last release, `v0.16.0`, published `0.18.1`), so the addition
+joins the open `0.19.0` section of `tagent/CHANGELOG.md`. `tagent-cli` and `tagent-gui`
+get a `+BUILD` bump and a changelog entry per step that touches them.
+
+#### L1 — Language lookup helpers in `tagent::languages`
+
+- `pub fn language_code(input: &str) -> Option<&'static str>`: the table's code for a
+  listed code or name, compared case-insensitively (`"Russian"`, `"ru"`, `"RU"` → `"ru"`);
+  `"auto"` (any case) → `"auto"`, matching `name_to_code`/`code_to_name`; `None`
+  otherwise. Callers that need a concrete language check for `"auto"` themselves.
+- `pub fn language_for_locales(locales: impl IntoIterator<Item = impl AsRef<str>>) ->
+  Option<&'static str>`: the code of the first locale (BCP 47 or POSIX, `"ru-UA"`,
+  `"de_DE.UTF-8"`) whose primary subtag is listed; `None` when none is. The fallback
+  (`"en"`) is the caller's choice. Check what `sys_locale::get_locales()` returns on
+  Linux/Windows (docs.rs) for the `_`/`.` forms, and cover them in the tests.
+- Doc comments with `# Examples` (RFC 1574), `cargo doc -p tagent` clean.
+- `tagent-gui`: `target_language_for_locales` becomes
+  `languages::language_for_locales(locales).unwrap_or("en")` and `known_language_code`
+  becomes `languages::language_code` (keeping the `"auto"` check where a target is meant).
+  Behavior unchanged; its existing tests keep passing, the moved cases go to `tagent`.
+- Tests in `tagent`: names and codes in any case, `auto`, an unlisted value; locales in
+  order of preference, an unknown first locale skipped, region and encoding suffixes, an
+  empty list.
+
+#### L2 — Codes in `tagent-cli.toml`
+
+- **Load** (`parse_config`, which already resolves an `Auto` target through
+  `LanguagePair`): each language value goes through `language_code`; an unlisted value is
+  kept as written (not lowercased: a region subtag like `zh-TW` is conventionally
+  uppercase) with the warning from Decisions.
+- **In memory**: `Config::source_language`/`target_language` are codes. Remove the
+  `name_to_code` round trips (`get_language_codes` returns the fields,
+  `LanguagePair::finish` compares codes directly, the banner, `/config`'s note);
+  display sites use `code_to_name` (prompts in `translator.rs`/`interactive.rs`, the
+  banner, `/l`'s "Languages set: Russian (ru) -> ..." lines, `/config`'s note becomes the
+  name: `target_language = "ru"  # Russian`).
+- **Input**: `ConfigManager::normalize_language` (name or code → name) becomes a
+  name-or-code → code function built on `language_code` (unknown input kept, as now,
+  with `/l`'s existing warning); used by `/l` and `-l`. `LanguagePair`,
+  `AUTO_TARGET_FALLBACK` (`"en"`) and `is_auto` work on codes; their doc comments say so.
+- **Template**: `source_language = "auto"`, `target_language = "<default>"`; the
+  "Supported values" comments list codes with names (`en (English), ru (Russian), ...`),
+  generated from `tagent::languages::LANGUAGES` like the `{translate_providers}`
+  placeholder, so a new language reaches the template by itself. A line saying names are
+  accepted too.
+- **Write**: `/save` (`with_session_settings`) and `render_config` write the codes. A
+  file with names therefore switches to codes on its first `/save` (both keys, since
+  `/save` always writes the languages); mention it in the changelog.
+- **Stage C interplay**: `missing_settings`/`upgrade` compare keys only, so nothing
+  changes there; `--update-config` doesn't convert names (it never changes values).
+- **History, CLI output**: check `save_translation_history` and the CLI mode's output for
+  places that print `config.*_language` expecting a name.
+- Tests: loading names, codes and mixed case gives codes; `Auto`/`auto` → `"auto"`; an
+  unlisted value is kept and warned about; an `Auto` target is still replaced (`"en"`);
+  `/save` of a file with names writes codes and keeps comments; prompts still show names
+  (the existing `hotkey_translation_emits_label_and_text_in_one_printer_call` asserts
+  `[Russian]: `); `/l` with a name and with a code store the same code; the template
+  parses back into `Config::default()` (existing test).
+
+#### L3 — Default target language from the locale
+
+- Add `sys-locale = "0.3"` to `tagent-cli/Cargo.toml` (the version `tagent-gui` uses).
+- `Config::default()` takes `target_language` from `default_target_language()` =
+  `language_for_locales(sys_locale::get_locales()).unwrap_or("en")`. `ConfigFile`'s section
+  defaults come from `Config::default()` (the macro), so a missing key gets it too.
+- The template's comment says `Default: the system language (from the locale), else en`
+  instead of naming one. `--print-default-config` then prints the local default, which is
+  fine: it is "what a new file would be here".
+- Tests must not depend on the machine's locale: keep the pure part in `tagent` (L1) and
+  have tests that need a fixed default build their `Config` explicitly. Audit the tests
+  that assume `"Russian"`/`"ru"` from `Config::default()` (e.g. `test_config_manager` in
+  `translator.rs` writes its languages, others compare with `Config::default()` and are
+  fine either way).
+- README: the configuration example and the first-run description.
+
+#### L4 — Documentation
+
+- `CLAUDE.md` ("Configuration System": codes, both forms read; "Adding a New Language":
+  the template list is generated), `docs/ARCHITECTURE.md` (the config file section),
+  `tagent-cli/README.md` (config example with codes, `/l` accepts both, default target),
+  `tagent-gui/CHANGELOG.md` for L1's refactor (no user-visible change: a `Changed` line or
+  none, the maintainer's call).
+- This plan: mark the stage done, with what the implementation settled differently.
+
+### Out of scope
+
+- Rewriting existing files to codes on load or with `--update-config` (see Decisions:
+  the next `/save` does it).
+- A locale-based `AUTO_TARGET_FALLBACK`.
+- Language names in other languages (`Русский`) as input: the table has English names
+  only.
