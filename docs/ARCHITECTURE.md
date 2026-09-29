@@ -237,8 +237,8 @@ library's option keys need no mapping.
   second part.
 - **Reading**: `ConfigFile` mirrors the file (one `#[serde(default)]` struct per section,
   each defaulting from `Config::default()` through a small macro, so defaults are spelled
-  once) and converts into the flat `Config` the rest of the app uses. Unknown keys are
-  ignored.
+  once) and converts into the flat `Config` the rest of the app uses. Unknown keys don't
+  stop the load, but each is reported (below).
 - **Errors**: fatal at startup (`main.rs` prints the `Display` form and exits 1, because a
   `Result` returned from `main` would print the multi-line message through `Debug`). On hot
   reload, `check_and_reload` stores the new mtime *before* loading: a broken edit is
@@ -251,6 +251,39 @@ library's option keys need no mapping.
   would drop the comment lines above the key (they are the key's decor), and copies the
   old value's decor onto the new one to keep an inline `# comment`. A missing section is
   inserted as a real table, since indexing a missing key would create an inline one.
+- **Following template changes** (Stage C, `tagent-cli/src/config/upgrade.rs`, a child
+  module so it can use `config.rs`'s private template functions). The template is the only
+  list of known sections and keys; there is no `config_version`.
+  - *Unknown keys* (`unknown_keys`): parsed with `toml_edit::Document<String>`, not
+    `DocumentMut`, because only the former keeps spans (`Key::span()` → line number;
+    `DocumentMut` despans on parse). Suggestions use a Levenshtein distance up to a quarter
+    of the longer name, or "every `_`-word of the name appears in the candidate" (≥ 6
+    letters), which is what catches `auto_hide_seconds` → `auto_hide_terminal_seconds`
+    (distance 9); the same name in another section says where it belongs. Profile options
+    are checked against the registry's `OptionSpec`s of the profile's kind, plus `type`.
+  - *Missing settings* (`missing_settings`, shared by `--update-config` and the startup
+    notice so they never disagree): the reference is `render_config(&Config::default())`,
+    i.e. the template with default values. A key counts as present when the file has it
+    or a comment line `# key = ...` under its section header; that is a line scan of the
+    raw text (a commented-out header `# [section]` also starts a section), since comments
+    only survive as decor strings in the document.
+  - *Upgrade* (`upgrade`): a missing key goes at the end of its table via
+    `entry_format(&template_key)`, which carries the comments above it (the key's decor);
+    a missing table is the template's table with `set_position` set to the position of the
+    last template section the file has, because `DocumentMut`'s `Display` orders tables by
+    position (a table without one inherits the previous table's), so a plain `insert`
+    would land after the user's profiles. Its header comment is cut to the paragraph right
+    above it, so the template's file introduction isn't copied. The profiles explanation
+    and examples are the reference's `trailing()`: all of it when the file lacks the
+    `# Provider profiles` line, only the part from `# Ready-made profiles` when it has the
+    explanation but not the examples (files from before `0.17.0+004`). `update_config_file` validates with the same `ConfigFile`
+    deserialization as startup (a valid-TOML file can still fail it), writes the backup
+    through `write_config_file` (`fs::copy` would keep a `0644` mode), and
+    `ConfigManager::update_config_file` then reads the new file back and records its mtime,
+    without repeating the unknown-key warnings.
+  - `--print-default-config`/`--update-config` are dispatched in `main.rs` before
+    `CliHandler::new()` (`cli::ConfigFileCommand`), since constructing it creates a missing
+    file and would print the unknown-key warnings a second time.
 
 ## Platform abstraction layer
 

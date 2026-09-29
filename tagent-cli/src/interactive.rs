@@ -17,8 +17,26 @@ use std::sync::Arc;
 
 /// Slash-commands offered for Tab-completion at the interactive prompt.
 const SLASH_COMMANDS: &[&str] = &[
-    "/help", "/h", "/?", "/config", "/c", "/lang", "/l", "/save", "/speech", "/s", "/ss", "/clear",
-    "/cls", "/quit", "/q", "/exit", "/e", "/version", "/v",
+    "/help",
+    "/h",
+    "/?",
+    "/config",
+    "/config update",
+    "/c",
+    "/lang",
+    "/l",
+    "/save",
+    "/speech",
+    "/s",
+    "/ss",
+    "/clear",
+    "/cls",
+    "/quit",
+    "/q",
+    "/exit",
+    "/e",
+    "/version",
+    "/v",
 ];
 
 /// A parsed `/s`, `/speech` or `/ss` command.
@@ -362,6 +380,20 @@ impl InteractiveMode {
                     if let Err(e) = self.config_manager.display_config() {
                         println!("Config error: {}", e);
                     }
+                    Ok(true)
+                }
+
+                // Add the settings the config file lacks
+                "/c update" | "/config update" => {
+                    match self.config_manager.update_config_file() {
+                        Ok(update) => {
+                            for line in update.lines() {
+                                println!("{line}");
+                            }
+                        }
+                        Err(e) => println!("Error updating configuration: {}", e),
+                    }
+                    println!();
                     Ok(true)
                 }
 

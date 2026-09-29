@@ -21,6 +21,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get command-line arguments
     let args: Vec<String> = env::args().collect();
 
+    // Commands about the config file itself run before the file is loaded
+    if let Some(command) = cli::ConfigFileCommand::from_args(&args) {
+        std::process::exit(command.run());
+    }
+
     // If arguments are provided, run in CLI mode
     if args.len() > 1 {
         let cli_handler = match CliHandler::new() {
@@ -60,6 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // so it names the providers actually in use.
     let config = config_manager.get_config();
     ConfigManager::display_banner(&config, &translator.active_providers(&config));
+    if let Some(notice) = config_manager.new_settings_notice() {
+        println!("{notice}");
+        println!();
+    }
 
     // Create interactive mode with shared translator
     let interactive_mode =

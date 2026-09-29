@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+004
+# Tagent Text Translator v0.17.0+008
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -125,6 +125,13 @@ tagent-cli --help
 
 # Show current configuration
 tagent-cli --config
+
+# Print a new config file with every setting, its explanation and its default
+# (touches no file; e.g. to compare with yours)
+tagent-cli --print-default-config > tagent-cli.new.toml
+
+# Add the settings a newer version introduced to your config file (backup: .bak)
+tagent-cli --update-config
 ```
 
 `-l` only affects that one run; it doesn't change the config file.
@@ -176,6 +183,7 @@ The words in brackets are synonyms in the source language, i.e. other words with
 - `/l <target>`, `/lang <target>` - Set target language (source=Auto)
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
 - `/save` - Save current configuration to file
+- `/config update` - Add the settings your config file lacks (see "After Upgrading Tagent")
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q`, `/e` - Exit program
 
@@ -257,7 +265,9 @@ speech_provider = "google"
 Strings are quoted; `true`/`false` and numbers are not. A comment can follow a value on the
 same line (`copy_to_clipboard = true  # handy`). On Windows, a path with backslashes goes in
 single quotes (`history_file = 'C:\Users\me\history.txt'`) or has them doubled. A missing
-key or section takes its default, and unknown keys are ignored.
+key or section takes its default. A key or section Tagent doesn't know is reported as a
+warning with its line and, when it looks like a typo or a key in the wrong section, the
+likely intended name; the rest of the file still applies.
 
 A mistake in the file (a syntax error, or e.g. `copy_to_clipboard = "yes"`) is reported
 with its line and column: at startup Tagent exits with the message; while running it prints
@@ -265,6 +275,24 @@ a warning once and keeps the previous settings until the file is fixed.
 
 `/save` updates only `source_language` and `target_language` in the file, in place: your
 comments, the key order and everything else stay as they are.
+
+### After Upgrading Tagent
+
+Tagent never rewrites your config file on its own, so settings added by a newer version
+don't appear in it by themselves. At startup, Tagent tells you when there are some
+(`Config: 3 new settings are available ...`). To add them:
+
+```bash
+tagent-cli --update-config      # or /config update at the interactive prompt
+```
+
+This adds each missing setting with its explanation and default value (and the example
+provider profiles, if your file doesn't have them) and keeps everything else: your values,
+comments and key order. The previous file is kept as `tagent-cli.toml.bak`. Nothing is
+removed or renamed; keys this version doesn't know are listed for you to handle. To keep a
+setting out of your file for good, leave it commented out (`# speech_hotkey = "Alt+S"`):
+a commented-out setting isn't added back and doesn't count as new.
+`tagent-cli --print-default-config` shows a complete new file for comparison.
 
 ### Provider Profiles and API Keys
 
@@ -638,7 +666,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+004
+**Current Version**: v0.17.0+008
 
 ## Contributing
 
@@ -661,4 +689,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+004** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+008** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

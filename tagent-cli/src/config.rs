@@ -14,6 +14,8 @@ use tagent::providers::{
 };
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
+mod upgrade;
+
 /// Runtime configuration loaded from `tagent-cli.toml`.
 ///
 /// All fields correspond directly to TOML keys documented inside the generated
@@ -489,6 +491,139 @@ fn parse_config(content: &str) -> Result<Config, toml_edit::de::Error> {
     Ok(config)
 }
 
+/// The message for a config file that can't be loaded: the file, then the error with its
+/// line and column.
+fn invalid_file_message(path: &str, error: &toml_edit::de::Error) -> String {
+    format!(
+        "invalid configuration file {}:\n{}",
+        path,
+        error.to_string().trim_end()
+    )
+}
+
+/// What [`update_config_file`] did, with the lines to report it.
+#[derive(Debug)]
+pub struct ConfigUpdate {
+    path: String,
+    outcome: UpdateOutcome,
+    /// [`upgrade::UnknownKey::summary`] of every unknown key, left as it is.
+    unknown: Vec<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum UpdateOutcome {
+    /// There was no file; a new one was written.
+    Created,
+    /// Nothing was missing; the file wasn't touched.
+    UpToDate,
+    /// Settings were added; the previous file is in `backup`.
+    Updated { added: Vec<String>, backup: String },
+}
+
+impl ConfigUpdate {
+    /// The report, one line per entry.
+    pub fn lines(&self) -> Vec<String> {
+        let name = Path::new(&self.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.path.clone());
+        let mut lines = Vec::new();
+        match &self.outcome {
+            UpdateOutcome::Created => {
+                lines.push(format!("Created default configuration file: {}", self.path))
+            }
+            UpdateOutcome::UpToDate => lines.push(format!("{name} is up to date.")),
+            UpdateOutcome::Updated { added, backup } => {
+                lines.push(format!("Updated {}, added:", self.path));
+                lines.extend(added.iter().map(|item| format!("  {item}")));
+                lines.push(format!("The previous version is saved as {backup}"));
+            }
+        }
+        if !self.unknown.is_empty() {
+            lines.push(format!(
+                "Not changed (unknown to this version; fix or remove them in {name}):"
+            ));
+            lines.extend(self.unknown.iter().map(|item| format!("  {item}")));
+        }
+        lines
+    }
+}
+
+/// Brings the config file at `path` up to date with this version's template (`tagent-cli
+/// --update-config`, `/config update`): adds missing keys and sections with their
+/// comments and defaults, and the example provider profiles, see [`upgrade::upgrade`].
+/// Before writing, the file is copied to `<path>.bak`. Nothing is removed or renamed;
+/// unknown keys are only listed. An up-to-date file isn't touched (no backup, no write),
+/// a missing one is created, and a file the application wouldn't load is left alone with
+/// the same error the application shows at startup.
+pub fn update_config_file(path: &Path) -> Result<ConfigUpdate, String> {
+    let shown = path.display().to_string();
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            write_config_file(&shown, &render_config(&Config::default()))
+                .map_err(|e| format!("can't write {shown}: {e}"))?;
+            return Ok(ConfigUpdate {
+                path: shown,
+                outcome: UpdateOutcome::Created,
+                unknown: Vec::new(),
+            });
+        }
+        Err(e) => return Err(format!("can't read {shown}: {e}")),
+    };
+    // The same check as at startup, which a file can fail while being valid TOML.
+    toml_edit::de::from_str::<ConfigFile>(&content).map_err(|e| {
+        format!(
+            "{}\n(the file was not changed)",
+            invalid_file_message(&shown, &e)
+        )
+    })?;
+    let unknown = unknown_keys_in(&content)
+        .iter()
+        .map(upgrade::UnknownKey::summary)
+        .collect();
+    let upgrade = upgrade::upgrade(&content).map_err(|e| format!("{shown}: {e}"))?;
+    let outcome = match upgrade {
+        None => UpdateOutcome::UpToDate,
+        Some(upgrade) => {
+            let backup = format!("{shown}.bak");
+            write_config_file(&backup, &content)
+                .map_err(|e| format!("can't write the backup {backup}: {e}"))?;
+            write_config_file(&shown, &upgrade.content)
+                .map_err(|e| format!("can't write {shown}: {e}"))?;
+            UpdateOutcome::Updated {
+                added: upgrade.added,
+                backup,
+            }
+        }
+    };
+    Ok(ConfigUpdate {
+        path: shown,
+        outcome,
+        unknown,
+    })
+}
+
+/// The startup notice for `count` settings missing from the config file, if any.
+fn new_settings_notice(count: usize) -> Option<String> {
+    let settings = match count {
+        0 => return None,
+        1 => "1 new setting is".to_string(),
+        n => format!("{n} new settings are"),
+    };
+    Some(format!(
+        "Config: {settings} available (run /config update or tagent-cli --update-config)"
+    ))
+}
+
+/// The keys and sections of `content` (a config file that [`parse_config`] accepted)
+/// that this version doesn't know, see [`upgrade::unknown_keys`].
+fn unknown_keys_in(content: &str) -> Vec<upgrade::UnknownKey> {
+    toml_edit::Document::parse(content.to_string())
+        .map(|doc| upgrade::unknown_keys(&doc))
+        .unwrap_or_default()
+}
+
 /// The commented template a new `tagent-cli.toml` starts from. [`render_config`] fills in
 /// the actual values, so the literal ones here only have to be valid.
 fn config_template() -> String {
@@ -844,6 +979,12 @@ fn set_value(
     Ok(())
 }
 
+/// A complete `tagent-cli.toml` with the default settings, every explanation and the
+/// example provider profiles: what a new file starts as (`--print-default-config`).
+pub fn default_config_text() -> String {
+    render_config(&Config::default())
+}
+
 /// `content` (an existing `tagent-cli.toml`) with the languages set to `config`'s, the
 /// only values the app itself changes. Everything else — comments, order, unknown keys,
 /// provider profiles — stays as it is.
@@ -1151,21 +1292,51 @@ impl ConfigManager {
     /// in effect; the message names the file, and the line and column of the problem.
     fn load_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let content = fs::read_to_string(&self.config_path)?;
-        let new_config = parse_config(&content).map_err(|e| {
-            format!(
-                "invalid configuration file {}:\n{}",
-                self.config_path,
-                e.to_string().trim_end()
-            )
-        })?;
+        let new_config =
+            parse_config(&content).map_err(|e| invalid_file_message(&self.config_path, &e))?;
 
         if let Ok(mut config) = self.config.lock() {
             *config = new_config;
+        }
+        for unknown in unknown_keys_in(&content) {
+            eprintln!("{}", unknown.warning(&self.file_name()));
         }
 
         self.update_last_modified_time()?;
 
         Ok(())
+    }
+
+    /// Adds the settings the config file lacks (`/config update`), see
+    /// [`update_config_file`]. The configuration in effect is then read from the updated
+    /// file, so an edit not yet picked up by the hot reload isn't skipped, without
+    /// repeating the unknown-key warnings the report already lists.
+    pub fn update_config_file(&self) -> Result<ConfigUpdate, String> {
+        let update = update_config_file(Path::new(&self.config_path))?;
+        let content = fs::read_to_string(&self.config_path).map_err(|e| e.to_string())?;
+        let config =
+            parse_config(&content).map_err(|e| invalid_file_message(&self.config_path, &e))?;
+        if let Ok(mut current) = self.config.lock() {
+            *current = config;
+        }
+        self.update_last_modified_time()
+            .map_err(|e| e.to_string())?;
+        Ok(update)
+    }
+
+    /// The startup notice about settings the config file lacks, if it lacks any (see
+    /// [`update_config_file`]).
+    pub fn new_settings_notice(&self) -> Option<String> {
+        let content = fs::read_to_string(&self.config_path).ok()?;
+        new_settings_notice(upgrade::new_settings_count(&content))
+    }
+
+    /// The config file's name, for messages (`tagent-cli.toml`).
+    fn file_name(&self) -> String {
+        Path::new(&self.config_path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.config_path.clone())
     }
 
     /// Save the current languages to the config file, editing it in place so comments,
@@ -1278,6 +1449,10 @@ impl ConfigManager {
         println!("  -v, --version  Show version information");
         println!("  -s, --speech   Speak the following text using text-to-speech");
         println!("  -l, --lang     Set languages: -l <target> or -l <source> <target>");
+        println!("  --print-default-config");
+        println!("                 Print a new config file with every setting and its default");
+        println!("  --update-config");
+        println!("                 Add the settings your config file lacks (backup: .bak)");
         println!();
 
         println!("SUPPORTED LANGUAGES (name or code, e.g. -l German or -l de):");
@@ -1336,6 +1511,7 @@ impl ConfigManager {
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
         println!("  /save                   - Save current configuration to file");
+        println!("  /config update          - Add the settings the config file lacks");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /e, /exit    - Exit program");
         println!();
@@ -2700,7 +2876,7 @@ api_key = "deepl-key"
 
     /// `toml` with the commented-out example block `[provider_options.<name>]` enabled the
     /// way the file tells the user to: `"# "` removed from each line of the block.
-    fn uncomment_example(toml: &str, name: &str) -> String {
+    pub(super) fn uncomment_example(toml: &str, name: &str) -> String {
         let header = format!("# [provider_options.{name}]");
         let mut in_block = false;
         toml.lines()
@@ -3113,5 +3289,90 @@ api_key = "secret-0123456789"  # from the account page
         assert_eq!(speech.name(), "Google TTS (cli-test-banner)");
         let translate = config.create_translate_provider().unwrap();
         assert_eq!(translate.name(), "Google Translate");
+    }
+
+    #[test]
+    fn new_settings_notice_counts_settings() {
+        assert_eq!(new_settings_notice(0), None);
+        assert_eq!(
+            new_settings_notice(1).unwrap(),
+            "Config: 1 new setting is available (run /config update or tagent-cli --update-config)"
+        );
+        assert!(new_settings_notice(3)
+            .unwrap()
+            .starts_with("Config: 3 new settings are available"));
+    }
+
+    #[test]
+    fn update_config_file_backs_up_and_adds_what_is_missing() {
+        let (manager, path) = manager_at("update");
+        let original = "[interface]\ncopy_to_clipboard = true\nfuture_key = 1\n";
+        write_config_file(path.to_str().unwrap(), original).unwrap();
+        manager.load_config().unwrap();
+        assert!(manager.new_settings_notice().is_some());
+
+        let update = manager.update_config_file().unwrap();
+        let backup = PathBuf::from(format!("{}.bak", path.display()));
+        assert_eq!(fs::read_to_string(&backup).unwrap(), original);
+        let updated = fs::read_to_string(&path).unwrap();
+        assert!(updated.starts_with("[provider]\n"), "{updated}");
+        assert!(manager.get_config().copy_to_clipboard);
+        assert_eq!(manager.new_settings_notice(), None);
+        // The write was recorded, so the hot reload has nothing to re-read.
+        assert!(!manager.check_and_reload().unwrap());
+        let lines = update.lines();
+        assert!(lines[0].starts_with("Updated "), "{lines:?}");
+        assert!(
+            lines.contains(&"  [speech] (section, 4 settings)".to_string()),
+            "{lines:?}"
+        );
+        assert!(lines
+            .iter()
+            .any(|l| l.contains(&backup.display().to_string())));
+        assert!(
+            lines.contains(&"  line 3: unknown key `future_key` in [interface]".to_string()),
+            "{lines:?}"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&backup).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        // A second run finds nothing to do and leaves the file (and the backup) alone.
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::remove_file(&backup).unwrap();
+        let update = update_config_file(&path).unwrap();
+        assert_eq!(update.outcome, UpdateOutcome::UpToDate);
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        assert!(!backup.exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn update_config_file_leaves_a_broken_file_alone() {
+        let (_, path) = manager_at("update_broken");
+        // Valid TOML, but a value of the wrong type: the application wouldn't start.
+        let broken = "[interface]\nauto_hide_terminal_seconds = \"3\"\n";
+        write_config_file(path.to_str().unwrap(), broken).unwrap();
+        let error = update_config_file(&path).unwrap_err();
+        assert!(error.contains("invalid configuration file"), "{error}");
+        assert!(error.contains("line 2"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), broken);
+        assert!(!PathBuf::from(format!("{}.bak", path.display())).exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn update_config_file_creates_a_missing_file() {
+        let (_, path) = manager_at("update_missing");
+        let update = update_config_file(&path).unwrap();
+        assert_eq!(update.outcome, UpdateOutcome::Created);
+        assert_eq!(
+            parse_config(&fs::read_to_string(&path).unwrap()).unwrap(),
+            Config::default()
+        );
+        let _ = fs::remove_file(&path);
     }
 }

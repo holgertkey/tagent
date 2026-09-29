@@ -5,6 +5,55 @@ use crate::translator::{DictionaryLookup, Translator};
 use std::error::Error;
 use std::sync::Arc;
 
+/// A command about the config file itself. It runs before the file is loaded (and
+/// instead of loading it), so it creates no file and works on a file the application
+/// would refuse to start with.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConfigFileCommand {
+    /// `--print-default-config`: print a new config file to stdout.
+    PrintDefault,
+    /// `--update-config`: add the settings the config file lacks.
+    Update,
+}
+
+impl ConfigFileCommand {
+    /// The command `args` (the full command line) asks for, if it is one of these.
+    pub fn from_args(args: &[String]) -> Option<Self> {
+        match args.get(1)?.as_str() {
+            "--print-default-config" => Some(Self::PrintDefault),
+            "--update-config" => Some(Self::Update),
+            _ => None,
+        }
+    }
+
+    /// Runs the command and returns the process exit code.
+    pub fn run(&self) -> i32 {
+        match self {
+            Self::PrintDefault => {
+                print!("{}", config::default_config_text());
+                0
+            }
+            Self::Update => {
+                let result = ConfigManager::get_default_config_path()
+                    .map_err(|e| e.to_string())
+                    .and_then(|path| config::update_config_file(&path));
+                match result {
+                    Ok(update) => {
+                        for line in update.lines() {
+                            println!("{line}");
+                        }
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        1
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub struct CliHandler {
     translator: Translator,
     config_manager: Arc<ConfigManager>,
@@ -292,5 +341,36 @@ impl CliHandler {
             .await
             .map(|_| ())
             .map_err(|e| e.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn config_file_commands_are_recognized_as_the_first_argument_only() {
+        assert_eq!(
+            ConfigFileCommand::from_args(&args(&["tagent-cli", "--print-default-config"])),
+            Some(ConfigFileCommand::PrintDefault)
+        );
+        assert_eq!(
+            ConfigFileCommand::from_args(&args(&["tagent-cli", "--update-config"])),
+            Some(ConfigFileCommand::Update)
+        );
+        assert_eq!(ConfigFileCommand::from_args(&args(&["tagent-cli"])), None);
+        assert_eq!(
+            ConfigFileCommand::from_args(&args(&["tagent-cli", "--config"])),
+            None
+        );
+        // Text to translate that happens to contain the flag is still text.
+        assert_eq!(
+            ConfigFileCommand::from_args(&args(&["tagent-cli", "say", "--print-default-config"])),
+            None
+        );
     }
 }

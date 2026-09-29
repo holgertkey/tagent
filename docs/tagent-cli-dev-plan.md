@@ -11,7 +11,38 @@ Where the rest lives:
 - **`tagent-gui`** (an independent application with its own plan):
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
-## Stage C — Config file upgrades (planned, 2026-09-28)
+## Stage C — Config file upgrades (done, 2026-09-29: `0.17.0+005`–`+008`)
+
+Landed as planned, C1 → C4, one changelog section each (`+007` was never built on its
+own: C3 and C4 were finished together); code in `tagent-cli/src/config/upgrade.rs`.
+Where the implementation settled a question the plan left open, or differs from it:
+
+- **C1 line numbers**: `toml_edit::Document<String>` keeps spans (`Key::span()`), so
+  `unknown_keys` takes a `Document` rather than a `DocumentMut` and every warning has a line.
+  It is called from `load_config` (which knows the file name), not from `parse_config`.
+- **C1 suggestions**: an edit distance of at most a quarter of the longer name (at least
+  1) catches typos, but the plan's own example (`auto_hide_seconds` →
+  `auto_hide_terminal_seconds`) is distance 9, so a second rule also suggests a candidate
+  that contains every `_`-word of the unknown name (at least 6 letters in all). Keys at
+  the top level, outside any section, are reported too, with the section they belong in.
+- **C3 ordering**: a missing section is placed after the last template section the file
+  has (`Table::set_position`), not appended at the end of the file, which would put it
+  after the user's profiles. A missing file is created (the same file a first start
+  writes). The validity check is the same `ConfigFile` deserialization as at startup, so
+  a file that is valid TOML but has e.g. a string where a number belongs is refused too.
+  In interactive mode the new file is read back into the configuration in effect (not just
+  its mtime recorded), so an edit the hot reload hadn't picked up yet isn't lost.
+- **C3 profile examples**: the plan's marker, the `# Provider profiles` line, is older
+  than the examples: files written by `0.17.0+000` to `+003` have the explanation (with a
+  small `# Example:`) but none of the ready-made blocks. So the examples have a marker of
+  their own (`# Ready-made profiles`): a file with neither gets both, a file with the
+  explanation only gets the examples. C4 counts keys only, so such a file gets no startup
+  notice for the examples.
+- **C3/C4 commented-out keys**: a commented-out section header (`# [colors]`) also starts
+  a section for this check, so a whole section can be commented out on purpose.
+- **Dispatch**: both flags run in `main.rs` before `CliHandler::new()`
+  (`cli::ConfigFileCommand`), which would otherwise create a missing file and print the C1
+  warnings a second time. `/c update` works as well as `/config update`.
 
 ### Problem
 

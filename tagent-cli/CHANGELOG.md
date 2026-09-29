@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+008] - 2026-09-29
+
+### Added
+- **A startup notice about new settings.** In unified mode, when `tagent-cli.toml` lacks
+  settings this version has, one line after the banner says so:
+  `Config: 3 new settings are available (run /config update or tagent-cli --update-config)`.
+  It is not shown in one-shot CLI mode, whose output may go to a script. A setting you
+  commented out in its section (`# speech_hotkey = "Alt+S"`) counts as present, so that is
+  how to keep one out of your file without seeing the notice again.
+
+## [0.17.0+007] - 2026-09-29
+
+### Added
+- **`tagent-cli --update-config` and `/config update`** add what your `tagent-cli.toml`
+  lacks compared to this version: missing settings go at the end of their section with
+  their explanation and default value, missing sections are added whole in their usual
+  place, and the example provider profiles (from `0.17.0+004`) are appended if the file
+  doesn't have them, with the explanation above them if that is missing too. Nothing else
+  changes: your values, comments, key order, unknown
+  keys and profiles stay as they are, and nothing is removed or renamed. A setting you
+  commented out is not added back. The previous file is kept as `tagent-cli.toml.bak`
+  (overwriting an older backup). The report lists what was added and, separately, the keys
+  this version doesn't know, for you to fix or remove. A file that is already complete is
+  not touched; a file Tagent can't load is left as it is, with the same error as at
+  startup.
+
+## [0.17.0+006] - 2026-09-29
+
+### Added
+- **`tagent-cli --print-default-config`** prints a complete new `tagent-cli.toml` to
+  stdout: every setting with its explanation and default value, and the example provider
+  profiles. It reads and writes no file, so it also works while your own file has an error.
+  Useful to see what a newer version offers:
+  `tagent-cli --print-default-config > tagent-cli.new.toml`, then compare the two files.
+
+## [0.17.0+005] - 2026-09-29
+
+### Added
+- **Warnings about unknown keys in `tagent-cli.toml`.** A key or section this version
+  doesn't know is no longer ignored silently: each one is reported on stderr at startup
+  and on every hot reload that re-reads the file, with its line number and, when a known
+  name is close, a suggestion:
+  ```
+  Warning: tagent-cli.toml line 12: unknown key `auto_hide_seconds` in [interface]
+           (did you mean `auto_hide_terminal_seconds`?)
+  ```
+  A key in the wrong section is pointed to the right one (`copy_to_clipboard` under
+  `[translation]` → "belongs in [interface]"), and an unknown section gets the same treatment (`[Provider]` → "did you
+  mean [provider]?"). In a `[provider_options.<name>]` profile of a built-in provider,
+  options that provider doesn't take are reported too (`apikey` → "did you mean
+  `api_key`?"). The warnings never stop the program; the setting keeps its default, as
+  before. The known keys come from the configuration template itself, so the check follows
+  every later change to it.
+
 ## [0.17.0+004] - 2026-09-28
 
 ### Added
