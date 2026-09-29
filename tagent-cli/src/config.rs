@@ -136,6 +136,58 @@ impl Config {
         })
     }
 
+    /// The translation providers `/p` offers: every translation kind compiled in, then the
+    /// profiles of those kinds, with the active one marked. Nothing is built, so this makes
+    /// no network calls and needs no valid options.
+    pub fn translation_provider_list(&self) -> Vec<ProviderListEntry> {
+        self.translation_provider_list_using(|var| std::env::var(var).ok())
+    }
+
+    /// [`Self::translation_provider_list`] with the environment replaced by `lookup`.
+    fn translation_provider_list_using(
+        &self,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Vec<ProviderListEntry> {
+        let kinds = providers::TRANSLATION_PROVIDERS;
+        let names = kinds
+            .iter()
+            .map(|kind| kind.to_string())
+            .chain(self.provider_options.profiles_of_kinds(kinds));
+        names
+            .map(|name| {
+                let kind = self.provider_options.kind_of(&name);
+                let descriptor = providers::translation_providers()
+                    .iter()
+                    .find(|descriptor| descriptor.name == kind);
+                let display_name = match descriptor {
+                    Some(descriptor) if name == kind => descriptor.display_name.to_string(),
+                    Some(descriptor) => format!("{} ({name})", descriptor.display_name),
+                    None => name.clone(),
+                };
+                let options = self.provider_options_using(&name, &lookup);
+                let missing = descriptor
+                    .map(|descriptor| {
+                        descriptor
+                            .options
+                            .iter()
+                            .filter(|option| option.required)
+                            .filter(|option| {
+                                options.get(option.key).is_none_or(|v| v.trim().is_empty())
+                            })
+                            .map(|option| option.key.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ProviderListEntry {
+                    active: name.eq_ignore_ascii_case(&self.translate_provider),
+                    name,
+                    display_name,
+                    missing,
+                }
+            })
+            .collect()
+    }
+
     /// The profiles `/config` describes: every `[provider_options.<name>]` table plus the three
     /// selected providers, sorted, without duplicates.
     fn profile_names(&self) -> Vec<String> {
@@ -985,10 +1037,13 @@ pub fn default_config_text() -> String {
     render_config(&Config::default())
 }
 
-/// `content` (an existing `tagent-cli.toml`) with the languages set to `config`'s, the
-/// only values the app itself changes. Everything else — comments, order, unknown keys,
-/// provider profiles — stays as it is.
-fn with_languages(content: &str, config: &Config) -> Result<String, String> {
+/// `content` (an existing `tagent-cli.toml`) with the session settings set to `config`'s:
+/// the languages (`/l`) and the translation provider (`/p`), the only values the app itself
+/// changes. Everything else — comments, order, unknown keys, provider profiles — stays as
+/// it is. `translate_provider` is written only when the file has the key or when the value
+/// differs from the default a missing key stands for, so saving an untouched session adds
+/// nothing to a file without a `[provider]` section.
+fn with_session_settings(content: &str, config: &Config) -> Result<String, String> {
     let mut doc: DocumentMut = content.parse().map_err(|e| format!("{e}"))?;
     set_value(
         &mut doc,
@@ -1002,6 +1057,18 @@ fn with_languages(content: &str, config: &Config) -> Result<String, String> {
         "target_language",
         Value::from(config.target_language.as_str()),
     )?;
+    let has_provider_key = doc
+        .get("provider")
+        .and_then(Item::as_table_like)
+        .is_some_and(|table| table.contains_key("translate_provider"));
+    if has_provider_key || config.translate_provider != Config::default().translate_provider {
+        set_value(
+            &mut doc,
+            "provider",
+            "translate_provider",
+            Value::from(config.translate_provider.as_str()),
+        )?;
+    }
     Ok(doc.to_string())
 }
 
@@ -1172,6 +1239,35 @@ pub struct ActiveProviders {
     pub speech: Result<String, String>,
 }
 
+/// One line of `/p`'s list, see [`Config::translation_provider_list`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderListEntry {
+    /// The name `/p <name>` and `translate_provider` take: a kind or a profile name.
+    pub name: String,
+    /// What the provider calls itself, e.g. `"DeepL (deepl-work)"` for a profile.
+    pub display_name: String,
+    /// Whether this is the `translate_provider` in effect.
+    pub active: bool,
+    /// Required options that are unset (or empty), e.g. `api_key`.
+    pub missing: Vec<String>,
+}
+
+/// `/p`'s output lines for `entries`.
+pub fn provider_list_lines(entries: &[ProviderListEntry]) -> Vec<String> {
+    let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
+    let mut lines = vec!["Translation providers:".to_string()];
+    for entry in entries {
+        let marker = if entry.active { '*' } else { ' ' };
+        let mut line = format!("{marker} {:width$}  {}", entry.name, entry.display_name);
+        if !entry.missing.is_empty() {
+            line.push_str(&format!(" (missing: {})", entry.missing.join(", ")));
+        }
+        lines.push(line);
+    }
+    lines.push("Switch with /p <name>; /save keeps the choice.".to_string());
+    lines
+}
+
 /// The banner's `Providers:` block. The dictionary line is shown only with
 /// `show_dictionary`, the speech line only with `enable_text_to_speech`, like the
 /// speech hotkey line.
@@ -1339,13 +1435,14 @@ impl ConfigManager {
             .unwrap_or_else(|| self.config_path.clone())
     }
 
-    /// Save the current languages to the config file, editing it in place so comments,
+    /// Save the current languages and translation provider to the config file (see
+    /// [`with_session_settings`]), editing it in place so comments,
     /// key order, unknown keys and provider profiles are kept. A missing file is written
     /// in full from the current configuration.
     pub fn save_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.get_config();
         let content = match fs::read_to_string(&self.config_path) {
-            Ok(existing) => with_languages(&existing, &config).map_err(|e| {
+            Ok(existing) => with_session_settings(&existing, &config).map_err(|e| {
                 format!(
                     "can't update configuration file {}:\n{}",
                     self.config_path,
@@ -1384,6 +1481,15 @@ impl ConfigManager {
         }
     }
 
+    /// Set the translation provider (a profile name) in memory, without saving to file.
+    /// The [`Translator`](crate::translator::Translator) switches to it on its next use;
+    /// callers validate the name first (`/p` builds the provider before calling this).
+    pub fn set_translate_provider(&self, name: &str) {
+        if let Ok(mut config) = self.config.lock() {
+            config.translate_provider = name.to_string();
+        }
+    }
+
     /// Print the interactive-mode banner: version, the current language pair, the
     /// providers in use, active hotkeys and a command summary.
     ///
@@ -1416,7 +1522,7 @@ impl ConfigManager {
         println!(
             r#"Commands:
   /h (help), /c (config), /s (speech), /ss (speak translation)
-  /l (lang), /save, /clear, /q (quit)"#
+  /l (lang), /p (provider), /save, /clear, /q (quit)"#
         );
         println!();
     }
@@ -1510,7 +1616,9 @@ impl ConfigManager {
         println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
-        println!("  /save                   - Save current configuration to file");
+        println!("  /p, /provider           - List the translation providers");
+        println!("  /p, /provider <name>    - Switch the translation provider for this session");
+        println!("  /save                   - Save the languages and translation provider to file");
         println!("  /config update          - Add the settings the config file lacks");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /e, /exit    - Exit program");
@@ -3140,6 +3248,57 @@ api_key = "secret-0123456789"  # from the account page
         let _ = fs::remove_file(&path);
     }
 
+    /// `/save` after `/p` writes the provider in place: the comment above the key and the
+    /// one after its value survive, and a second save changes nothing.
+    #[test]
+    fn save_writes_the_translation_provider_in_place() {
+        let (manager, path) = manager_at("save_provider");
+        let original = "[provider]\n# my backend\ntranslate_provider = \"google\"  # for now\n\n\
+                        [translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n";
+        fs::write(&path, original).unwrap();
+        manager.load_config().unwrap();
+        manager.set_translate_provider("deepl-work");
+        manager.save_config().unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            written,
+            original.replace(
+                "translate_provider = \"google\"",
+                "translate_provider = \"deepl-work\""
+            )
+        );
+
+        manager.save_config().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), written);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A file without a `[provider]` table gets one when the provider was switched away
+    /// from the default, and none when it wasn't (a missing key already means the default).
+    #[test]
+    fn save_adds_a_missing_provider_table_only_when_needed() {
+        let (manager, path) = manager_at("save_provider_missing");
+        let original = "[translation]\nsource_language = \"Auto\"\ntarget_language = \"Russian\"\n";
+        fs::write(&path, original).unwrap();
+        manager.load_config().unwrap();
+
+        manager.save_config().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+
+        manager.set_translate_provider("deepl-work");
+        manager.save_config().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with(original), "{written}");
+        assert!(
+            written.contains("[provider]\ntranslate_provider = \"deepl-work\"\n"),
+            "{written}"
+        );
+        manager.load_config().unwrap();
+        assert_eq!(manager.get_config().translate_provider, "deepl-work");
+        let _ = fs::remove_file(&path);
+    }
+
     /// A file without a `[translation]` table gets a proper one (not an inline table).
     #[test]
     fn save_adds_a_missing_translation_table() {
@@ -3374,5 +3533,86 @@ api_key = "secret-0123456789"  # from the account page
             Config::default()
         );
         let _ = fs::remove_file(&path);
+    }
+
+    fn provider_list_config() -> Config {
+        let mut config = Config::default();
+        config.provider_options.insert("work", "type", "deepl");
+        config.provider_options.insert("work", "api_key", "key:fx");
+        config
+            .provider_options
+            .insert("llm", "type", "no-such-kind");
+        config.provider_options.insert("google", "max_retries", "0");
+        config
+    }
+
+    #[test]
+    fn provider_list_has_kinds_then_profiles_of_translation_kinds() {
+        let config = provider_list_config();
+
+        let entries = config.translation_provider_list_using(|_| None);
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["google", "deepl", "work"]);
+        assert_eq!(entries[0].display_name, "Google Translate");
+        assert_eq!(entries[2].display_name, "DeepL (work)");
+        let active: Vec<bool> = entries.iter().map(|e| e.active).collect();
+        assert_eq!(active, [true, false, false]);
+    }
+
+    #[test]
+    fn provider_list_reports_missing_required_options() {
+        let config = provider_list_config();
+
+        let entries = config.translation_provider_list_using(|_| None);
+
+        assert_eq!(entries[0].missing, Vec::<String>::new());
+        assert_eq!(entries[1].missing, ["api_key"]);
+        assert_eq!(entries[2].missing, Vec::<String>::new());
+    }
+
+    /// A required option supplied through `TAGENT_<NAME>_<KEY>` counts as set.
+    #[test]
+    fn provider_list_counts_env_overrides() {
+        let config = provider_list_config();
+
+        let entries = config.translation_provider_list_using(|var| {
+            (var == "TAGENT_DEEPL_API_KEY").then(|| "key:fx".to_string())
+        });
+
+        assert_eq!(entries[1].missing, Vec::<String>::new());
+    }
+
+    #[test]
+    fn provider_list_marks_the_active_profile() {
+        let mut config = provider_list_config();
+        config.translate_provider = "Work".to_string();
+
+        let entries = config.translation_provider_list_using(|_| None);
+
+        let active: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.active)
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(active, ["work"]);
+    }
+
+    #[test]
+    fn provider_list_lines_align_names_and_mark_the_active_one() {
+        let config = provider_list_config();
+
+        let lines = provider_list_lines(&config.translation_provider_list_using(|_| None));
+
+        assert_eq!(
+            lines,
+            [
+                "Translation providers:",
+                "* google  Google Translate",
+                "  deepl   DeepL (missing: api_key)",
+                "  work    DeepL (work)",
+                "Switch with /p <name>; /save keeps the choice.",
+            ]
+        );
     }
 }

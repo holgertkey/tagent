@@ -246,11 +246,23 @@ library's option keys need no mapping.
 - **Writing**: a new file is `render_config` — the commented `config_template()` parsed
   as a document, each value set with `set_value`, the profiles appended below the
   template's closing "Provider profiles" comment under an *implicit* `provider_options`
-  table (no empty header). `/save` changes only the two languages in the existing
-  document. `set_value` replaces a value through `get_mut` rather than `insert`, which
+  table (no empty header). `/save` changes only the session settings in the existing
+  document (`with_session_settings`): the two languages, and `translate_provider` when the
+  file has the key or the value differs from the default (so an untouched session adds no
+  `[provider]` section). `set_value` replaces a value through `get_mut` rather than `insert`, which
   would drop the comment lines above the key (they are the key's decor), and copies the
   old value's decor onto the new one to keep an inline `# comment`. A missing section is
   inserted as a real table, since indexing a missing key would create an inline one.
+- **Switching the translation provider at runtime** (Stage S, `tagent-cli` 0.17.0+009):
+  `Translator` keeps the provider in a slot shared by all its clones
+  (`Arc<Mutex<ActiveTranslation>>`: the `translate_provider` value it was built from, the
+  provider, and a value that failed to build). `translation_provider(&config)` rebuilds it
+  when `config.translate_provider` differs (case-insensitively), before each translation
+  and for the banner, so `/p` only has to change the in-memory `Config`
+  (`ConfigManager::set_translate_provider`, after building the provider once to validate
+  it) and the hotkey path follows; a hot reload of the file works the same way. A value
+  that fails to build keeps the previous provider and is reported once (`failed`). The lock
+  is never held across an `.await`. The dictionary provider is still built once per run.
 - **Following template changes** (Stage C, `tagent-cli/src/config/upgrade.rs`, a child
   module so it can use `config.rs`'s private template functions). The template is the only
   list of known sections and keys; there is no `config_version`.

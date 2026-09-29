@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+008
+# Tagent Text Translator v0.17.0+009
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -45,7 +45,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 
 ### ⚡ **Performance & Usability**
 - Instant translations using Google Translate API
-- Configuration reloads automatically before each translation (hotkeys and providers need a restart)
+- Configuration reloads automatically before each translation (hotkeys and the dictionary provider need a restart)
 - Interactive prompt with line editing, persistent input history and Tab-completion of commands
 - Optional automatic clipboard copying
 - Smart terminal window management
@@ -182,7 +182,9 @@ The words in brackets are synonyms in the source language, i.e. other words with
 - `/l`, `/lang` - Swap source and target languages
 - `/l <target>`, `/lang <target>` - Set target language (source=Auto)
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
-- `/save` - Save current configuration to file
+- `/p`, `/provider` - List the translation providers (the active one is marked `*`)
+- `/p <name>`, `/provider <name>` - Switch the translation provider for this session (a provider or profile name, e.g. `/p deepl`); `/save` keeps it
+- `/save` - Save the languages and the translation provider to the config file
 - `/config update` - Add the settings your config file lacks (see "After Upgrading Tagent")
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q`, `/e` - Exit program
@@ -273,8 +275,8 @@ A mistake in the file (a syntax error, or e.g. `copy_to_clipboard = "yes"`) is r
 with its line and column: at startup Tagent exits with the message; while running it prints
 a warning once and keeps the previous settings until the file is fixed.
 
-`/save` updates only `source_language` and `target_language` in the file, in place: your
-comments, the key order and everything else stay as they are.
+`/save` updates only `source_language`, `target_language` and `translate_provider` in the
+file, in place: your comments, the key order and everything else stay as they are.
 
 ### After Upgrading Tagent
 
@@ -666,7 +668,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+008
+**Current Version**: v0.17.0+009
 
 ## Contributing
 
@@ -689,4 +691,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+008** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+009** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

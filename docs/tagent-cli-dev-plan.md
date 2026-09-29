@@ -184,7 +184,26 @@ bump with a `tagent-cli/CHANGELOG.md` entry.
 - Converting the pre-0.17.0 INI file `tagent-cli.conf`: it is no longer read, with no
   migration (decided with Stage F3).
 
-## Stage S — Switching the translation provider in a session (planned, 2026-09-29)
+## Stage S — Switching the translation provider in a session (done, 2026-09-29: `0.17.0+009`)
+
+Landed S1–S3 in one `+BUILD` (`+009`, one changelog section) rather than one each, plus
+S4. Where the implementation settled a question the plan left open, or differs from it:
+
+- **S3, a file without `translate_provider`**: `set_value` would add a `[provider]` section
+  on every `/save`, even when the provider was never switched. `with_session_settings`
+  writes the key only when the file already has it or the value differs from the default
+  a missing key stands for; the languages are written as before.
+- **S2, `/p` without arguments** re-reads the file first (`reload_or_warn`), like `/config`,
+  so the list shows the profiles as they are on disk. `/p <name>` does the same before
+  validating.
+- **S2, the switch** is a free function `switch_translate_provider(&ConfigManager, name)`
+  in `interactive.rs`, so it is tested without an `InteractiveMode`. Errors are shown in
+  `error_color`, with "(translation provider unchanged)".
+- **S2, the list** (`Config::translation_provider_list`, `provider_list_lines`) lives in
+  `config.rs`; names are aligned in a column. A profile shows as
+  `DeepL (<profile>)`, the same form `profile::Profiled` reports.
+- **S1, the failed value** is forgotten once `translate_provider` is back at the working
+  one, so switching to the bad value again reports it again.
 
 ### Problem
 

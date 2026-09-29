@@ -42,6 +42,27 @@ pub struct DictionaryLookup {
     pub primary_translation: Option<String>,
 }
 
+/// The translation provider in use, shared by every clone of a [`Translator`] so a
+/// switch (`/p`, or a hot reload of `translate_provider`) reaches the hotkey path too.
+struct ActiveTranslation {
+    /// The `translate_provider` value `provider` was built from.
+    name: String,
+    provider: Arc<dyn TranslationProvider>,
+    /// A `translate_provider` value that failed to build, so the error is reported once
+    /// rather than on every translation until the value changes.
+    failed: Option<String>,
+}
+
+impl ActiveTranslation {
+    fn new(name: &str, provider: Arc<dyn TranslationProvider>) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
+            name: name.to_string(),
+            provider,
+            failed: None,
+        }))
+    }
+}
+
 /// High-level translation orchestrator.
 ///
 /// `Translator` ties together a [`TranslationProvider`] and a [`DictionaryProvider`] (from
@@ -50,7 +71,7 @@ pub struct DictionaryLookup {
 /// is not needed (e.g. one-off CLI translations).
 #[derive(Clone)]
 pub struct Translator {
-    provider: Arc<dyn TranslationProvider>,
+    translation: Arc<Mutex<ActiveTranslation>>,
     /// The error message when the configured `dictionary_provider` could not be created;
     /// dictionary lookups then fail immediately and callers fall back to plain translation.
     dictionary_provider: Result<Arc<dyn DictionaryProvider>, String>,
@@ -115,7 +136,7 @@ impl Translator {
             });
 
         Ok(Self {
-            provider: Arc::from(provider),
+            translation: ActiveTranslation::new(&config.translate_provider, Arc::from(provider)),
             dictionary_provider,
             clipboard: ClipboardManager::new(),
             config_manager,
@@ -126,12 +147,12 @@ impl Translator {
         })
     }
 
-    /// The providers for the banner: translation and dictionary as built at startup (they
-    /// are kept for the whole run), speech from `config`, since it is built again for
-    /// every playback.
+    /// The providers for the banner: translation for `config`'s `translate_provider` (see
+    /// [`Self::translation_provider`]), dictionary as built at startup (kept for the whole
+    /// run), speech from `config`, since it is built again for every playback.
     pub fn active_providers(&self, config: &config::Config) -> config::ActiveProviders {
         config::ActiveProviders {
-            translation: Ok(self.provider.name().to_string()),
+            translation: Ok(self.translation_provider(config).name().to_string()),
             dictionary: self
                 .dictionary_provider
                 .as_ref()
@@ -605,6 +626,45 @@ impl Translator {
         russian_ratio > 0.3
     }
 
+    /// The translation provider for `config`'s `translate_provider`, rebuilt when that
+    /// value has changed since the provider in use was built (`/p`, or a hot reload of the
+    /// file). A value that fails to build keeps the previous provider; the error is shown
+    /// once per value.
+    fn translation_provider(&self, config: &config::Config) -> Arc<dyn TranslationProvider> {
+        let wanted = &config.translate_provider;
+        let (provider, error) = {
+            let mut active = self.translation.lock().unwrap();
+            let mut error = None;
+            if active.name.eq_ignore_ascii_case(wanted) {
+                active.failed = None;
+            } else if !active
+                .failed
+                .as_ref()
+                .is_some_and(|failed| failed.eq_ignore_ascii_case(wanted))
+            {
+                match config.create_translate_provider() {
+                    Ok(provider) => {
+                        active.name = wanted.clone();
+                        active.provider = Arc::from(provider);
+                        active.failed = None;
+                    }
+                    Err(message) => {
+                        active.failed = Some(wanted.clone());
+                        error = Some(format!(
+                            "Translation provider unavailable: {message}\n(keeping {})",
+                            active.provider.name()
+                        ));
+                    }
+                }
+            }
+            (active.provider.clone(), error)
+        };
+        if let Some(error) = error {
+            self.emit_line(error);
+        }
+        provider
+    }
+
     /// Translate text using translation provider
     async fn translate_text_internal(
         &self,
@@ -612,7 +672,8 @@ impl Translator {
         from: &str,
         to: &str,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
-        Ok(self.provider.translate_text(text, from, to).await?)
+        let provider = self.translation_provider(&self.config_manager.get_config());
+        Ok(provider.translate_text(text, from, to).await?)
     }
 }
 
@@ -738,7 +799,7 @@ mod tests {
             "Добавлена постоянная дедуплицированная история ввода",
         ));
         let translator = Translator {
-            provider,
+            translation: ActiveTranslation::new("google", provider),
             dictionary_provider: Err("no dictionary provider".to_string()),
             clipboard: ClipboardManager::new(),
             config_manager: config_manager.clone(),
@@ -798,7 +859,7 @@ mod tests {
         unique: &str,
     ) -> Translator {
         Translator {
-            provider: Arc::new(provider),
+            translation: ActiveTranslation::new("google", Arc::new(provider)),
             dictionary_provider: dictionary
                 .map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>)
                 .ok_or_else(|| "no dictionary provider".to_string()),
@@ -951,5 +1012,100 @@ mod tests {
         let last = interactive_copy.last_translation().unwrap();
         assert_eq!(last.phrase, "word");
         assert_eq!(last.translation, None);
+    }
+
+    /// A config whose `translate_provider` is `name`, with a `deepl` profile that builds
+    /// offline (a dummy key; nothing is translated, so no request goes out).
+    fn config_with_provider(translator: &Translator, name: &str) -> config::Config {
+        let mut config = translator.config_manager.get_config();
+        config.translate_provider = name.to_string();
+        config
+            .provider_options
+            .insert("deepl", "api_key", "dummy-key:fx");
+        config
+    }
+
+    #[test]
+    fn translation_provider_is_kept_while_translate_provider_is_unchanged() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_same");
+        let config = config_with_provider(&translator, "google");
+
+        let first = translator.translation_provider(&config);
+        let second = translator.translation_provider(&config);
+
+        assert_eq!(first.name(), "mock");
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    /// Profile names are case-insensitive in the factories, so a different spelling of the
+    /// same name is not a switch.
+    #[test]
+    fn translation_provider_ignores_case_of_the_name() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_case");
+        let config = config_with_provider(&translator, "Google");
+
+        assert_eq!(translator.translation_provider(&config).name(), "mock");
+    }
+
+    #[test]
+    fn changed_translate_provider_rebuilds_the_provider() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_switch");
+        let config = config_with_provider(&translator, "deepl");
+
+        let first = translator.translation_provider(&config);
+        let second = translator.translation_provider(&config);
+
+        assert_eq!(first.name(), "DeepL");
+        assert!(Arc::ptr_eq(&first, &second), "built once, then kept");
+    }
+
+    /// The hotkey path and interactive mode hold clones of one `Translator`; a switch made
+    /// through either must reach both.
+    #[test]
+    fn provider_switch_is_shared_between_clones() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_clones");
+        let hotkey_copy = translator.clone();
+        let config = config_with_provider(&translator, "deepl");
+
+        let switched = translator.translation_provider(&config);
+
+        let active = hotkey_copy.translation.lock().unwrap();
+        assert_eq!(active.name, "deepl");
+        assert!(Arc::ptr_eq(&active.provider, &switched));
+    }
+
+    /// A hot reload that brings an unusable `translate_provider` keeps the previous provider
+    /// and reports the error once, not on every translation.
+    #[test]
+    fn failed_rebuild_keeps_previous_provider_and_reports_once() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_failed");
+        let printer = MockPrinter::default();
+        let captured = printer.messages.clone();
+        translator.set_external_printer(printer);
+        let bad = config_with_provider(&translator, "no-such-provider");
+
+        assert_eq!(translator.translation_provider(&bad).name(), "mock");
+        assert_eq!(translator.translation_provider(&bad).name(), "mock");
+
+        let messages = captured.lock().unwrap().clone();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(messages[0].contains("no-such-provider"), "{messages:?}");
+        assert!(messages[0].contains("keeping mock"), "{messages:?}");
+
+        // Back to the working value and then to the bad one again: reported again.
+        let good = config_with_provider(&translator, "google");
+        translator.translation_provider(&good);
+        translator.translation_provider(&bad);
+        assert_eq!(captured.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn active_providers_names_the_switched_provider() {
+        let translator = translator_with(MockProvider::new(""), None, "provider_banner");
+        let config = config_with_provider(&translator, "deepl");
+
+        let providers = translator.active_providers(&config);
+
+        assert_eq!(providers.translation, Ok("DeepL".to_string()));
     }
 }

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+009] - 2026-09-29
+
+### Added
+- **`/p` and `/provider`: switch the translation provider without restarting.** `/p` lists
+  the translation providers, the built-in ones and your `[provider_options.<name>]` profiles
+  of those kinds, marks the active one with `*` and names any required option that is still
+  unset (`deepl  DeepL (missing: api_key)`). `/p deepl` (or a profile name) switches to it
+  for the rest of the session, for the hotkey as well as the prompt. The provider is checked
+  first: if it can't be used (unknown name, missing `api_key`), you get the reason and the
+  current provider stays.
+
+### Changed
+- **`/save` also saves the translation provider** chosen with `/p` (`translate_provider` in
+  `[provider]`), in place like the languages. A file without a `[provider]` section gets one
+  only when the provider differs from the default.
+- **`translate_provider` is now reloaded from the file** like most other settings: an edit
+  takes effect with the next translation, no restart needed. A value that can't be used is
+  reported once and the current provider stays. Translation and the language detection
+  before speaking an `Auto` phrase now always use the same provider (before, speech already
+  followed the edited file while translation didn't until a restart). As with `/l`, editing
+  the file while running replaces a provider chosen with `/p` but not yet saved.
+
 ## [0.17.0+008] - 2026-09-29
 
 ### Added

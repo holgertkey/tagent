@@ -26,6 +26,8 @@ const SLASH_COMMANDS: &[&str] = &[
     "/lang",
     "/l",
     "/save",
+    "/provider",
+    "/p",
     "/speech",
     "/s",
     "/ss",
@@ -65,6 +67,59 @@ fn parse_speech_command(text: &str) -> Option<SpeechCommand<'_>> {
     text.strip_prefix("/s ")
         .or_else(|| text.strip_prefix("/speech "))
         .map(|rest| SpeechCommand::Text(rest.trim()))
+}
+
+/// A parsed `/p` or `/provider` command.
+#[derive(Debug, PartialEq, Eq)]
+enum ProviderCommand<'a> {
+    /// Bare `/p`: list the translation providers.
+    List,
+    /// `/p <name>`: switch the translation provider for this session.
+    Switch(&'a str),
+    /// `/p` with more than one argument.
+    Usage,
+}
+
+/// Parses `text` (already trimmed) as a provider command; `None` if it isn't one.
+fn parse_provider_command(text: &str) -> Option<ProviderCommand<'_>> {
+    if text == "/p" || text == "/provider" {
+        return Some(ProviderCommand::List);
+    }
+    let rest = text
+        .strip_prefix("/p ")
+        .or_else(|| text.strip_prefix("/provider "))?;
+    let mut args = rest.split_whitespace();
+    match (args.next(), args.next()) {
+        (Some(name), None) => Some(ProviderCommand::Switch(name)),
+        _ => Some(ProviderCommand::Usage),
+    }
+}
+
+/// Switches `config_manager`'s translation provider to `name` (in memory) if it can be
+/// built, otherwise leaves it unchanged. Returns the message to show.
+fn switch_translate_provider(config_manager: &ConfigManager, name: &str) -> String {
+    let name = name.to_lowercase();
+    let mut config = config_manager.get_config();
+    if config.translate_provider.eq_ignore_ascii_case(&name) {
+        return match config.create_translate_provider() {
+            Ok(provider) => format!("Translation provider: {} (already active)", provider.name()),
+            Err(message) => message,
+        };
+    }
+    config.translate_provider = name.clone();
+    match config.create_translate_provider() {
+        Ok(provider) => {
+            config_manager.set_translate_provider(&name);
+            format!(
+                "Translation provider: {} (this session; /save to keep)",
+                provider.name()
+            )
+        }
+        Err(message) => config::colorize(
+            &format!("{message}\n(translation provider unchanged)"),
+            &config.error_color,
+        ),
+    }
 }
 
 /// Rustyline [`Helper`] that Tab-completes slash-commands. Hints, highlighting, and
@@ -312,6 +367,25 @@ impl InteractiveMode {
             return Ok(true);
         }
 
+        if let Some(command) = parse_provider_command(text) {
+            match command {
+                ProviderCommand::List => {
+                    self.config_manager.reload_or_warn();
+                    let config = self.config_manager.get_config();
+                    for line in config::provider_list_lines(&config.translation_provider_list()) {
+                        println!("{line}");
+                    }
+                }
+                ProviderCommand::Switch(name) => {
+                    let message = self.switch_translate_provider(name);
+                    println!("{message}");
+                }
+                ProviderCommand::Usage => println!("Usage: /p [provider]"),
+            }
+            println!();
+            return Ok(true);
+        }
+
         if let Some(command) = parse_speech_command(text) {
             let result = match command {
                 SpeechCommand::Text(speech_text) => self.speak_interactive_text(speech_text).await,
@@ -430,6 +504,13 @@ impl InteractiveMode {
                 _ => Ok(false), // Not a command, should be translated
             }
         }
+    }
+
+    /// `/p <name>`: switches the translation provider for this session if it can be built;
+    /// otherwise keeps the current one. Returns the message to show.
+    fn switch_translate_provider(&self, name: &str) -> String {
+        self.config_manager.reload_or_warn();
+        switch_translate_provider(&self.config_manager, name)
     }
 
     /// Translate text in interactive mode
@@ -591,6 +672,83 @@ impl InteractiveMode {
 mod tests {
     use super::*;
     use rustyline::history::DefaultHistory;
+
+    #[test]
+    fn parses_provider_commands() {
+        assert_eq!(parse_provider_command("/p"), Some(ProviderCommand::List));
+        assert_eq!(
+            parse_provider_command("/provider"),
+            Some(ProviderCommand::List)
+        );
+        assert_eq!(
+            parse_provider_command("/p deepl"),
+            Some(ProviderCommand::Switch("deepl"))
+        );
+        assert_eq!(
+            parse_provider_command("/provider   deepl-work"),
+            Some(ProviderCommand::Switch("deepl-work"))
+        );
+        assert_eq!(
+            parse_provider_command("/p deepl google"),
+            Some(ProviderCommand::Usage)
+        );
+        assert_eq!(parse_provider_command("/pp"), None);
+        assert_eq!(parse_provider_command("/print"), None);
+        assert_eq!(parse_provider_command("/providers"), None);
+        assert_eq!(parse_provider_command("p deepl"), None);
+    }
+
+    /// A config manager over a file with a `work` profile (Google) and a `nokey` profile
+    /// (DeepL without its required `api_key`).
+    fn provider_test_manager(unique: &str) -> ConfigManager {
+        let path = std::env::temp_dir().join(format!(
+            "tagent_test_interactive_{}_{}.toml",
+            unique,
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            "[provider_options.work]\ntype = \"google\"\n\
+             [provider_options.nokey]\ntype = \"deepl\"\n",
+        )
+        .unwrap();
+        let manager = ConfigManager::new(path.to_str().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        manager
+    }
+
+    #[test]
+    fn switching_provider_changes_the_config_in_memory() {
+        let manager = provider_test_manager("switch_ok");
+
+        let message = switch_translate_provider(&manager, "WORK");
+
+        assert_eq!(manager.get_config().translate_provider, "work");
+        assert!(message.contains("Google Translate (work)"), "{message}");
+        assert!(message.contains("/save"), "{message}");
+    }
+
+    #[test]
+    fn switching_to_an_unusable_provider_keeps_the_current_one() {
+        let manager = provider_test_manager("switch_bad");
+
+        for name in ["no-such-provider", "nokey"] {
+            let message = switch_translate_provider(&manager, name);
+
+            assert_eq!(manager.get_config().translate_provider, "google");
+            assert!(message.contains("unchanged"), "{name}: {message}");
+        }
+    }
+
+    #[test]
+    fn switching_to_the_active_provider_is_a_no_op() {
+        let manager = provider_test_manager("switch_same");
+
+        let message = switch_translate_provider(&manager, "google");
+
+        assert_eq!(manager.get_config().translate_provider, "google");
+        assert!(message.contains("already active"), "{message}");
+    }
 
     #[test]
     fn parses_speech_commands() {
