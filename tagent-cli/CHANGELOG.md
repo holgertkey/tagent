@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+012] - 2026-09-29
+
+### Changed
+- **A translation is labeled with the provider that made it** instead of the target
+  language, which the prompt already shows:
+  ```
+  [auto → ru]: Hello my friend
+  [deepl]: Привет, друг мой
+  ```
+  The label is the `translate_provider` value (a provider or profile name, lowercase), and
+  it names the provider actually used: after a `/p` or a config edit whose provider fails
+  to build, that is the one kept. A dictionary article keeps `[Word]: `; CLI mode, the
+  clipboard and the history have no labels and are unchanged.
+- **Hotkey translations show the language pair** (`[auto → ru]: `) in the line with the
+  selected text, as the interactive prompt does, instead of the source language alone
+  (`[Auto]: `). The prompt reprinted after a hotkey translation (without an interactive
+  line editor) shows the pair too.
+- The template's comments for `source_prompt_color`/`target_prompt_color` describe the new
+  labels.
+
 ## [0.17.0+011] - 2026-09-29
 
 ### Changed

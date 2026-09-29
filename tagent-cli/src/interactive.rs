@@ -2,7 +2,7 @@ use crate::cli::CliHandler;
 use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::{ClipboardManager, TerminalTitle};
 use crate::speech::SpeechManager;
-use crate::translator::{DictionaryLookup, LastTranslation, Translator};
+use crate::translator::{DictionaryLookup, LastTranslation, Translation, Translator};
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -577,7 +577,10 @@ impl InteractiveMode {
             .translate_text_public(text, source_code, target_code)
             .await
         {
-            Ok(translated_text) => {
+            Ok(Translation {
+                text: translated_text,
+                provider,
+            }) => {
                 self.translator.record_last_translation(
                     text,
                     Some(&translated_text),
@@ -585,8 +588,8 @@ impl InteractiveMode {
                     target_code,
                 );
 
-                // Print colored translation label
-                let trans_label = format!("[{}]: ", config.target_language_name());
+                // Print colored translation label: the provider that translated
+                let trans_label = format!("[{}]: ", provider);
                 config::print_colored(&trans_label, &config.target_prompt_color);
                 println!("{}", translated_text);
 

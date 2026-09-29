@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+011
+# Tagent Text Translator v0.17.0+012
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -152,10 +152,10 @@ tagent-cli --update-config
 4. Press Esc to cancel playback
 
 ### Interactive Terminal
-The prompt shows the current language pair. Phrases are translated; single words get a dictionary entry:
+The prompt shows the current language pair, and a translation is labeled with the provider that made it (`/p` switches it). Phrases are translated; single words get a dictionary entry:
 ```
 [auto → ru]: How are you?
-[Russian]: Как вы?
+[google]: Как вы?
 
 [auto → ru]: translate
 [Word]: переводить
@@ -431,7 +431,7 @@ tagent-cli "How are you?"
 
 # Interactive
 [auto → ru]: How are you?
-[Russian]: Как вы?
+[google]: Как вы?
 ```
 
 ### Dictionary Lookup
@@ -485,7 +485,7 @@ tagent-cli --speech "Привет, как дела?"
 # Speaks "Bonjour le monde" in French
 
 [auto → ru]: Good morning
-[Russian]: Доброе утро
+[google]: Доброе утро
 [auto → ru]: /s
 # Speaks "Good morning" again
 [auto → ru]: /ss
@@ -573,7 +573,7 @@ enable_speech_hotkey = false        # Or disable it if not needed
 [colors]
 # Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, their Bright* variants, or None
 source_prompt_color = "None"             # "[auto → ru]: " prompt
-target_prompt_color = "BrightYellow"     # "[Russian]: " label
+target_prompt_color = "BrightYellow"     # "[google]: " label (the provider)
 dictionary_prompt_color = "BrightYellow" # "[Word]: " label
 part_of_speech_color = "Cyan"            # "Noun", "Прилагательное", ... in a dictionary entry
 synonym_color = "Green"                  # "[fierce, brutal]" in a dictionary entry
@@ -678,7 +678,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+011
+**Current Version**: v0.17.0+012
 
 ## Contributing
 
@@ -701,4 +701,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+011** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+012** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

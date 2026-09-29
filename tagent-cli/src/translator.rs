@@ -28,6 +28,16 @@ pub struct LastTranslation {
     pub target_code: String,
 }
 
+/// A successful translation and the provider that made it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Translation {
+    /// The translated text.
+    pub text: String,
+    /// The `translate_provider` value (a kind or profile name, lowercased) of the provider
+    /// that translated, which is what the answer's label shows.
+    pub provider: String,
+}
+
 /// Result of [`Translator::get_dictionary_entry`].
 #[derive(Debug)]
 pub struct DictionaryLookup {
@@ -232,15 +242,6 @@ impl Translator {
         }
     }
 
-    /// Get the source display name (used for prompt labels)
-    fn source_display(source_code: &str, config: &crate::config::Config) -> String {
-        if source_code == "auto" {
-            "Auto".to_string()
-        } else {
-            config.source_language_name().to_string()
-        }
-    }
-
     /// Reprint the source language prompt after hotkey-triggered output, but only on the
     /// no-printer fallback path — once an external printer is installed, rustyline redraws
     /// the real (possibly non-empty) prompt itself, and a plain `print!` here would bypass
@@ -249,7 +250,11 @@ impl Translator {
         if self.has_external_printer() {
             return;
         }
-        let source_prompt = format!("[{}]: ", config.source_language_name());
+        let (source_code, target_code) = self.config_manager.get_language_codes();
+        let source_prompt = format!(
+            "[{}]: ",
+            config::language_pair_label(&source_code, &target_code)
+        );
         config::print_colored(&source_prompt, &config.source_prompt_color);
         io::stdout().flush().ok();
     }
@@ -326,8 +331,10 @@ impl Translator {
                     }
 
                     // Show the original text (source word)
-                    let source_display = Self::source_display(&source_code, &config);
-                    let source_label = format!("[{}]: ", source_display);
+                    let source_label = format!(
+                        "[{}]: ",
+                        config::language_pair_label(&source_code, &target_code)
+                    );
                     self.emit_line(format!(
                         "{}{}",
                         config::colorize(&source_label, &config.source_prompt_color),
@@ -415,9 +422,11 @@ impl Translator {
             io::stdout().flush().ok();
         }
 
-        // Show source language info with colored prompt
-        let source_display = Self::source_display(source_code, config);
-        let source_label = format!("[{}]: ", source_display);
+        // Show the language pair with colored prompt, like the interactive prompt
+        let source_label = format!(
+            "[{}]: ",
+            config::language_pair_label(source_code, target_code)
+        );
         self.emit_line(format!(
             "{}{}",
             config::colorize(&source_label, &config.source_prompt_color),
@@ -438,7 +447,10 @@ impl Translator {
             .translate_text_internal(text, source_code, target_code)
             .await
         {
-            Ok(translated_text) => {
+            Ok(Translation {
+                text: translated_text,
+                provider,
+            }) => {
                 self.record_last_translation(
                     text,
                     Some(&translated_text),
@@ -446,8 +458,8 @@ impl Translator {
                     target_code,
                 );
 
-                // Print colored translation label
-                let trans_label = format!("[{}]: ", config.target_language_name());
+                // Print colored translation label: the provider that translated
+                let trans_label = format!("[{}]: ", provider);
                 self.emit_line(format!(
                     "{}{}\n",
                     config::colorize(&trans_label, &config.target_prompt_color),
@@ -512,7 +524,7 @@ impl Translator {
             dictionary_provider.lookup(word, from, to)
         );
 
-        let primary_translation = translation_result.ok();
+        let primary_translation = translation_result.ok().map(|translation| translation.text);
 
         match dict_result? {
             Some(entry) => {
@@ -550,7 +562,7 @@ impl Translator {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Translation, Box<dyn Error + Send + Sync>> {
         self.translate_text_internal(text, from, to).await
     }
 
@@ -631,8 +643,17 @@ impl Translator {
     /// file). A value that fails to build keeps the previous provider; the error is shown
     /// once per value.
     fn translation_provider(&self, config: &config::Config) -> Arc<dyn TranslationProvider> {
+        self.active_translation_provider(config).1
+    }
+
+    /// [`Self::translation_provider`] together with the `translate_provider` value it was
+    /// built from, which differs from `config`'s when that value failed to build.
+    fn active_translation_provider(
+        &self,
+        config: &config::Config,
+    ) -> (String, Arc<dyn TranslationProvider>) {
         let wanted = &config.translate_provider;
-        let (provider, error) = {
+        let (name, provider, error) = {
             let mut active = self.translation.lock().unwrap();
             let mut error = None;
             if active.name.eq_ignore_ascii_case(wanted) {
@@ -657,12 +678,12 @@ impl Translator {
                     }
                 }
             }
-            (active.provider.clone(), error)
+            (active.name.clone(), active.provider.clone(), error)
         };
         if let Some(error) = error {
             self.emit_line(error);
         }
-        provider
+        (name, provider)
     }
 
     /// Translate text using translation provider
@@ -671,9 +692,12 @@ impl Translator {
         text: &str,
         from: &str,
         to: &str,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let provider = self.translation_provider(&self.config_manager.get_config());
-        Ok(provider.translate_text(text, from, to).await?)
+    ) -> Result<Translation, Box<dyn Error + Send + Sync>> {
+        let (name, provider) = self.active_translation_provider(&self.config_manager.get_config());
+        Ok(Translation {
+            text: provider.translate_text(text, from, to).await?,
+            provider: name.to_ascii_lowercase(),
+        })
     }
 }
 
@@ -783,7 +807,7 @@ mod tests {
     }
 
     /// Regression test for a bug where hotkey-triggered translations showed the
-    /// `[Auto]: ` prompt label and the translated text on separate lines.
+    /// `[Auto]: ` (now `[auto → ru]: `) prompt label and the translated text on separate lines.
     ///
     /// Root cause: `perform_translation` used to call `self.emit(&label)` and
     /// `self.emit_line(&text)` as two separate calls, which became two separate
@@ -827,7 +851,7 @@ mod tests {
             .find(|m| m.contains(source_text))
             .unwrap_or_else(|| panic!("no message contained the source text: {:?}", *messages));
         assert!(
-            source_line.starts_with("[Auto]: "),
+            source_line.starts_with("[auto → ru]: "),
             "label and source text must be emitted together, got: {:?}",
             source_line
         );
@@ -836,10 +860,9 @@ mod tests {
             .iter()
             .find(|m| m.contains("дедуплицированная"))
             .unwrap_or_else(|| panic!("no message contained the translated text: {:?}", *messages));
-        // The config holds the code (`ru`); the label shows the name.
-        assert_eq!(config.target_language, "ru");
+        // The answer is labeled with the provider that translated, not the target language.
         assert!(
-            target_line.starts_with("[Russian]: "),
+            target_line.starts_with("[google]: "),
             "label and translated text must be emitted together, got: {:?}",
             target_line
         );
@@ -848,7 +871,7 @@ mod tests {
         assert!(
             !messages.iter().any(|m| {
                 let trimmed = m.trim_end_matches('\n');
-                trimmed.ends_with(": ") && trimmed.len() <= "[Russian]: ".len()
+                trimmed.ends_with(": ") && trimmed.len() <= "[auto → ru]: ".len()
             }),
             "a label was emitted as its own print() call, split from its content: {:?}",
             *messages
@@ -1099,6 +1122,55 @@ mod tests {
         translator.translation_provider(&good);
         translator.translation_provider(&bad);
         assert_eq!(captured.lock().unwrap().len(), 2);
+    }
+
+    /// The answer's label names the provider that translated: after a switch that failed to
+    /// build, the kept provider, not the value in the config.
+    #[tokio::test]
+    async fn translation_label_names_the_provider_actually_used() {
+        let translator = translator_with(MockProvider::new("Привет"), None, "label_failed");
+        let printer = MockPrinter::default();
+        let captured = printer.messages.clone();
+        translator.set_external_printer(printer);
+        translator
+            .config_manager
+            .set_translate_provider("no-such-provider");
+        let config = translator.config_manager.get_config();
+
+        translator
+            .perform_translation("Hello", "auto", "ru", &config)
+            .await
+            .unwrap();
+
+        let messages = captured.lock().unwrap();
+        assert!(
+            messages.iter().any(|m| m.starts_with("[google]: Привет")),
+            "{messages:?}"
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|m| m.starts_with("[no-such-provider]: ")),
+            "{messages:?}"
+        );
+    }
+
+    /// A profile name is the label, lowercased (profile names are case-insensitive).
+    #[tokio::test]
+    async fn translation_label_is_the_lowercased_profile_name() {
+        let translator = translator_with(MockProvider::new(""), None, "label_profile");
+        // The mock stands in for a profile built from `translate_provider = "DeepL-Work"`.
+        translator.translation.lock().unwrap().name = "DeepL-Work".to_string();
+        translator
+            .config_manager
+            .set_translate_provider("DeepL-Work");
+
+        let translation = translator
+            .translate_text_internal("Hello", "en", "ru")
+            .await
+            .unwrap();
+
+        assert_eq!(translation.provider, "deepl-work");
     }
 
     #[test]

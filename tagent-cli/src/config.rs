@@ -91,12 +91,6 @@ impl Config {
         tagent::languages::code_to_name(&self.source_language)
     }
 
-    /// The target language's display name (`"Russian"`), or its code if `tagent`'s table
-    /// doesn't list it.
-    pub fn target_language_name(&self) -> &str {
-        tagent::languages::code_to_name(&self.target_language)
-    }
-
     /// The options for provider profile `name`: its `[provider_options.<name>]` table, with
     /// `TAGENT_<NAME>_<KEY>` environment variables taking precedence.
     pub fn provider_options(&self, name: &str) -> ProviderOptions {
@@ -808,10 +802,10 @@ copy_to_clipboard = false
 # BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta,
 # BrightCyan, BrightWhite. Use "None" to disable a color.
 
-# Source language prompt (e.g., "[Auto]: ", "[English]: "). Default: None (no color)
+# Language pair prompt (e.g., "[auto → ru]: "). Default: None (no color)
 source_prompt_color = "None"
 
-# Target language prompt (e.g., "[Russian]: "). Default: BrightYellow
+# Translation label, the provider that translated (e.g., "[google]: "). Default: BrightYellow
 target_prompt_color = "BrightYellow"
 
 # Dictionary prompt (e.g., "[Word]: "). Default: BrightYellow
@@ -2295,19 +2289,17 @@ mod tests {
     }
 
     #[test]
-    fn prompt_names_come_from_the_codes() {
+    fn language_names_come_from_the_codes() {
         let config = Config {
-            source_language: "auto".to_string(),
-            target_language: "ru".to_string(),
+            source_language: "en".to_string(),
             ..Config::default()
         };
-        assert_eq!(config.source_language_name(), "Auto");
-        assert_eq!(config.target_language_name(), "Russian");
+        assert_eq!(config.source_language_name(), "English");
         let config = Config {
-            target_language: "uk".to_string(),
+            source_language: "uk".to_string(),
             ..config
         };
-        assert_eq!(config.target_language_name(), "uk");
+        assert_eq!(config.source_language_name(), "uk");
     }
 
     /// A hand-edited `target_language = "Auto"` is replaced in memory on load.

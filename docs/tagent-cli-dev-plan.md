@@ -542,7 +542,20 @@ get a `+BUILD` bump and a changelog entry per step that touches them.
 - Language names in other languages (`Русский`) as input: the table has English names
   only.
 
-## Stage O — The provider in the translation label (planned)
+## Stage O — The provider in the translation label (done, 2026-09-29: `0.17.0+012`)
+
+Landed O1 as `0.17.0+012`, O2 with it. Where the implementation settled a question the
+plan left open, or differs from it:
+
+- **O1, the name** is lowercased for the label (`Translation::provider`):
+  `translate_provider` keeps the case it was written in, while profile names are
+  case-insensitive and stored lowercase, so `"DeepL-Work"` shows as `[deepl-work]: `. The
+  plan's test "shows as written in the config" became this one.
+- **O1, the API**: `translate_text_internal`/`translate_text_public` return a
+  `Translation { text, provider }`; `translation_provider` is now a wrapper over
+  `active_translation_provider`, which also returns the name the provider was built from.
+- **O1, cleanup**: `Translator::source_display` and `Config::target_language_name` had no
+  callers left and are gone (`CLAUDE.md`, `ARCHITECTURE.md` updated).
 
 ### Problem
 

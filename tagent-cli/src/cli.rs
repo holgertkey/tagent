@@ -1,7 +1,7 @@
 use crate::config::{self, ConfigManager, LanguagePair};
 use crate::platform::ClipboardManager;
 use crate::speech::SpeechManager;
-use crate::translator::{DictionaryLookup, Translator};
+use crate::translator::{DictionaryLookup, Translation, Translator};
 use std::error::Error;
 use std::sync::Arc;
 
@@ -289,7 +289,10 @@ impl CliHandler {
             .translate_text_public(text, source_code, target_code)
             .await
         {
-            Ok(translated_text) => {
+            Ok(Translation {
+                text: translated_text,
+                ..
+            }) => {
                 println!("{}", translated_text);
 
                 if config.copy_to_clipboard {

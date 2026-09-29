@@ -259,7 +259,7 @@ library's option keys need no mapping.
   inserted as a real table, since indexing a missing key would create an inline one.
 - **Languages are codes** (Stage L, `tagent-cli` 0.17.0+010/+011): `Config::source_language`/
   `target_language` hold codes (`"auto"`, `"ru"`); only display sites turn them into names
-  (`Config::source_language_name`/`target_language_name`, `language_pair_description`, all
+  (`Config::source_language_name`, `language_pair_description`, all
   through `code_to_name`, which returns an unlisted code as it is). On load,
   `normalize_languages` (inside `parse_config_with_warnings`) maps a listed name or code in
   any case to the table's code (`tagent::languages::language_code`), keeps an unlisted
