@@ -541,3 +541,83 @@ get a `+BUILD` bump and a changelog entry per step that touches them.
 - A locale-based `AUTO_TARGET_FALLBACK`.
 - Language names in other languages (`Русский`) as input: the table has English names
   only.
+
+## Stage O — The provider in the translation label (planned)
+
+### Problem
+
+A translation is printed as
+```
+[auto → ru]: Hello my friend      (interactive prompt, the typed line)
+[Russian]: Привет, друг мой
+```
+The label of the answer repeats the target language the prompt already shows, while the
+one thing the screen doesn't show is who translated: since Stage S the provider can be
+switched in a session (`/p`), and comparing two providers on the same text means
+remembering which one is active. The hotkey path prints yet another form, the source
+language alone (`[Auto]: ` / `[English]: `, `Translator::source_display`), so the
+interactive and hotkey outputs of the same translation look different.
+
+### Decisions
+
+- **The answer's label names the translation provider**, the source line carries the
+  language pair:
+  ```
+  [auto → ru]: Hello my friend
+  [deepl]: Привет, друг мой
+  ```
+  Same in interactive mode and after a hotkey.
+- **The label is the profile name**, as in `translate_provider` and `/p` (`deepl`,
+  `deepl-work`, `google`), not the provider's `name()` (`DeepL`, `DeepL (work)`): short,
+  lowercase like the codes in the pair, and what the user types to switch.
+- **It is the provider that actually translated**, not `config.translate_provider`: a
+  value that fails to build keeps the previous provider (Stage S1), so the label comes
+  from `ActiveTranslation::name`, returned together with the translation.
+- **The hotkey source line uses the pair** (`config::language_pair_label`) instead of the
+  source language alone; otherwise the target language would vanish from hotkey output.
+  `maybe_print_source_prompt` (the no-printer fallback's reprinted prompt) prints the
+  pair too, so it matches the real interactive prompt, which it doesn't today.
+- **The dictionary article keeps `[Word]: `**: it comes from the dictionary provider,
+  which may differ from the translation provider, and the label is what tells an article
+  from a plain translation at a glance.
+- **No setting** to choose between language and provider: the language is on the source
+  line already.
+- **Unchanged**: CLI mode (prints the bare translation, no labels), clipboard and history
+  (never contain labels), `[Speech]: `, the color keys (`source_prompt_color` colors the
+  pair line, `target_prompt_color` the answer's label).
+
+### Steps
+
+#### O1 — Labels (one `+BUILD`, `tagent-cli/CHANGELOG.md` `Changed` entry)
+
+- `Translator::translate_text_internal` returns the translation together with the name of
+  the provider that produced it (`translation_provider` hands out `active.name` along with
+  the provider). Callers: `perform_translation` (hotkey) and interactive mode's plain
+  translation; the dictionary path uses it only for `primary_translation` and ignores the
+  name.
+- Answer label `format!("[{}]: ", provider_name)` in `translator.rs` (`perform_translation`)
+  and `interactive.rs` (the plain-translation branch), replacing
+  `config.target_language_name()`.
+- Hotkey source line in `perform_translation` and the dictionary branch:
+  `language_pair_label(source_code, target_code)` instead of `source_display`; remove
+  `source_display` if nothing else uses it. `maybe_print_source_prompt` the same.
+- Template comments in `config.rs` (`source_prompt_color`: e.g. `"[auto → ru]: "`,
+  `target_prompt_color`: e.g. `"[deepl]: "`).
+- Tests: `hotkey_translation_emits_label_and_text_in_one_printer_call` asserts
+  `[auto → ru]: ` and `[<mock profile>]: ` instead of `[Auto]: `/`[Russian]: `; a test
+  that a failed switch labels the answer with the kept provider's name; a profile name
+  (`deepl-work`) shows as written in the config.
+
+#### O2 — Documentation
+
+- `tagent-cli/README.md`: the output examples showing `[Russian]: ` and the
+  `target_prompt_color` comment in the configuration example.
+- `CLAUDE.md` / `docs/ARCHITECTURE.md`: only if they describe the labels.
+- This plan: mark the stage done, with what the implementation settled differently.
+
+### Out of scope
+
+- The dictionary provider's name on the article (`[google]: ` instead of `[Word]: `).
+- `tagent-gui`: its transcript has its own `[Language]:` prompt and a provider picker in
+  the header; an independent decision there.
+- Labels in CLI mode.
