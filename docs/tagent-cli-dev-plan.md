@@ -11,6 +11,181 @@ Where the rest lives:
 - **`tagent-gui`** (an independent application with its own plan):
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
+## Stage S — Switching the translation provider in a session (planned, 2026-09-29)
+
+### Problem
+
+The translation provider is picked only in `tagent-cli.toml` (`[provider]
+translate_provider`), and even there a change needs a restart: `Translator::build` creates
+the provider once (`translator.rs`, `provider: Arc<dyn TranslationProvider>`) and every
+clone of the `Translator` (the hotkey path and interactive mode) keeps it for the whole
+run. Trying another provider for a moment (e.g. DeepL for one text) means editing the
+file and restarting. The one place that already follows the file is speech: TTS resolves
+an `"auto"` source through `config.create_translate_provider()` on every playback
+(`speech.rs`), so after a hot reload translation and speech can use different providers.
+
+### Decisions
+
+- **New interactive command `/p`, long form `/provider`**, following `/l`/`/lang`:
+  - `/p` without arguments lists the available translation providers and marks the
+    active one.
+  - `/p <name>` switches to that provider (a kind like `deepl` or a profile name from
+    `[provider_options.<name>]`) for the current session. The file is not touched.
+  - `/save` then writes the provider to `tagent-cli.toml`, along with the languages.
+- **Only the translation provider**, not the dictionary or speech provider. Those can
+  follow later (e.g. `/p dict <name>`, `/p speech <name>`) if needed; the command syntax
+  leaves room for that, since no provider kind is called `dict` or `speech`.
+- **Session state lives in the in-memory `Config`**, exactly like `/l`: `/p` sets
+  `translate_provider` via `ConfigManager` (no separate "session override" state as in
+  `tagent-gui`'s `session_provider.rs`). Everything that reads `translate_provider` from
+  the config (translation, TTS `"auto"` resolution, `/config`, the banner) follows
+  automatically.
+- **A hot reload of an edited file resets the session choice**, same as for `/l` today:
+  `check_and_reload` replaces the whole in-memory `Config`. Accepted for consistency;
+  `/save` before editing the file keeps the choice.
+- **`Translator` rebuilds the provider when `translate_provider` changes** (by comparing
+  the name it was built from with the config's), instead of `/p` pushing a new provider
+  into it. This is what makes the hotkey path see the switch, and as a side effect
+  `translate_provider` becomes live-reloaded from the file too, which also removes the
+  translation/speech mismatch above.
+- **`/p <name>` validates immediately**: it builds the provider before switching. On
+  failure (unknown name, missing `api_key`, ...) it prints the error and keeps the current
+  provider, so a bad choice never surfaces later on a hotkey translation.
+
+### Steps
+
+Each step is its own `+BUILD` bump with a `tagent-cli/CHANGELOG.md` entry (S4 is
+documentation only, no bump).
+
+#### S1 — Switchable translation provider in `Translator`
+
+- Replace `provider: Arc<dyn TranslationProvider>` with a slot shared by all clones, like
+  `last_translation`:
+  ```rust
+  struct ActiveTranslation {
+      /// The `translate_provider` value this provider was built from.
+      name: String,
+      provider: Arc<dyn TranslationProvider>,
+  }
+  translation: Arc<Mutex<ActiveTranslation>>,
+  ```
+  (`std::sync::Mutex`: the lock is held only to compare/replace, never across an `.await`.)
+- New private `fn translation_provider(&self, config: &Config) -> Arc<dyn
+  TranslationProvider>`: if `config.translate_provider` differs from `name`
+  (case-insensitively, since the factories are), build the new one with
+  `config.create_translate_provider()` and replace the slot; return a clone of the `Arc`
+  and drop the lock before the caller awaits.
+- **Rebuild failure** (a hot reload brought a bad `translate_provider`): keep the old
+  provider and print the error once, not on every translation. Remember the failed name
+  in the slot (`failed: Option<String>`) and warn again only when the name changes. Startup
+  stays as it is: an unusable `translate_provider` at start is fatal.
+- Call sites: `Translator::translate_text_internal` (the only place that calls
+  `provider.translate_text`) gets the provider through `translation_provider`, using
+  `config_manager.get_config()` read at that moment (its callers have already run
+  `check_and_reload`), and `active_providers` (banner) goes through
+  `translation_provider(config)` too, so a banner shown after `/p` and before any
+  translation (`/clear`) already names the new provider.
+- `ConfigManager::set_translate_provider(&self, name: &str)`, in memory only, next to
+  `set_languages`.
+- Changelog (`Changed`): `translate_provider` is now live-reloaded from the file, no
+  restart needed; translation and speech's language detection always use the same provider.
+- Tests (with the existing `MockProvider` seam):
+  - a changed `translate_provider` rebuilds the provider, an unchanged one doesn't
+    (same `Arc`, `Arc::ptr_eq`);
+  - two clones of a `Translator` see the same switch (the hotkey path case);
+  - a failing rebuild keeps the previous provider and reports the error only once;
+  - a name differing only in case doesn't rebuild.
+  Building a real provider in a test needs a name the factory accepts without network
+  access (`google`; `deepl` with a dummy `api_key` in `provider_options`); nothing is
+  translated in these tests, so no request goes out.
+
+#### S2 — The `/p` and `/provider` command
+
+- Parsing: a pure `parse_provider_command(text) -> Option<ProviderCommand>` (`List` /
+  `Switch(name)`), like `parse_speech_command`: the bare `/p`/`/provider` and the
+  `"/p "`/`"/provider "` prefixes; `text` is already trimmed. More than one argument is an
+  error with a usage line (`Usage: /p [provider]`).
+- `/p` (list): the translation kinds compiled in (`TRANSLATION_PROVIDERS`) and the
+  profiles whose kind is one of them (`ProviderProfiles::profiles_of_kinds`), sorted as
+  those two lists already are, with the active one marked and each line showing the
+  display name:
+  ```
+  Translation providers:
+  * google       Google Translate
+    deepl        DeepL (missing: api_key)
+    deepl-work   DeepL (deepl-work)
+  Switch with /p <name>; /save keeps the choice.
+  ```
+  - The display name and required options come from `tagent`'s registry
+    (`translation_providers()`, matched by the profile's `kind_of`); a required option is
+    "missing" when it is absent or empty in `config.provider_options(name)` (which
+    includes `TAGENT_<NAME>_<KEY>` env overrides). No provider is built for the list, so it
+    makes no network calls and shows no secrets.
+  - A pure helper `provider_list(config) -> Vec<ProviderListEntry>` does the work, and
+    printing is a thin layer on top (tested without stdout).
+- `/p <name>` (switch):
+  1. Name normalized to lowercase (profile names are lowercase in `ProviderProfiles`).
+  2. Same as the active one → `Translation provider: DeepL (already active)`.
+  3. Otherwise build it: a copy of the current `Config` with the new `translate_provider`,
+     then `create_translate_provider()`. On error print the ready-made message
+     (`provider_error_message` already names `[provider_options.<name>]` for an
+     `InvalidOptions` and lists the supported kinds for an unknown one) and change nothing.
+  4. On success: `config_manager.set_translate_provider(name)`, and print
+     `Translation provider: DeepL (this session; /save to keep)`. The provider built for
+     validation is discarded; S1's rebuild on the next translation is cheap (no network
+     in the constructors), and keeping one path for "use the configured provider" is
+     simpler than handing it over.
+- Registration (see "Adding New Interactive Commands" in `CLAUDE.md`): `SLASH_COMMANDS`
+  (`/p`, `/provider`), `ConfigManager::display_help()`, the `Commands:` block of
+  `display_banner()` (`/p (provider)`), and the "Interactive Commands" list in
+  `tagent-cli/README.md`. Tab-completion of provider names after `/p ` is a nice-to-have,
+  left out of this stage.
+- Tests: the parser (bare forms, with an argument, extra whitespace, too many arguments,
+  `/pp` and `/print` not matching); the list (built-in kinds, a profile of a translation
+  kind, a profile of an unknown kind left out, the active marker, a missing required
+  option, a required option supplied through the env override via `options_using`); the
+  switch (success changes the config, failure leaves it unchanged, the same name is a
+  no-op).
+
+#### S3 — `/save` also saves the translation provider
+
+- `with_languages` becomes `with_session_settings`: besides `source_language`/
+  `target_language` it sets `[provider] translate_provider` through the same `set_value`
+  (comments, order, unknown keys and profiles are kept; a missing `[provider]` section or
+  key is created, which `set_value` already does). Writing an unchanged value is a no-op
+  on the text.
+- A missing file is still written in full by `render_config`, which already includes
+  `translate_provider`.
+- Update the doc comments of `save_config` and `with_*` ("the only values the app itself
+  changes" now lists three keys) and the `/save` line in `display_help()`/README
+  ("saves the languages and the translation provider").
+- The saved provider name is the one `/p` validated, so `/save` needs no extra check.
+- Tests: `/p`-style change + save → the file has the new `translate_provider` and the
+  user's comment above the key and its inline comment survive; a file without a
+  `[provider]` section gets one; languages are still saved as before; a second save with
+  no changes leaves the text byte-identical.
+
+#### S4 — Documentation
+
+- `CLAUDE.md`: the `Translator Orchestrator` and `Configuration System` sections
+  (`translate_provider` is live-reloaded; `/save` writes the provider too), the
+  "Adding New Interactive Commands" example list if it names the commands.
+- `docs/ARCHITECTURE.md`: wherever it says the translate provider is built once for the
+  whole run.
+- `tagent-cli/README.md`: the command list (done in S2/S3), and the configuration
+  section's note on which settings need a restart.
+- This plan: mark the stage done, with what the implementation settled differently.
+
+### Out of scope
+
+- Switching the dictionary and speech providers (`/p dict ...`, `/p speech ...`); see
+  Decisions. The dictionary provider is also built once per run today, so it would need
+  the same slot as S1.
+- `tagent-gui`: it already has its own session-only provider picker (`tagent-gui` 0.14.0+030).
+- A one-shot CLI flag (`tagent-cli --provider deepl "text"`): a separate small feature
+  if wanted; S1's rebuild-on-change makes it trivial.
+- Showing in `/config` that the active provider differs from the file.
+
 ## Stage C — Config file upgrades (done, 2026-09-29: `0.17.0+005`–`+008`)
 
 Landed as planned, C1 → C4, one changelog section each (`+007` was never built on its
