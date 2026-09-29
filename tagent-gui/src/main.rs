@@ -2089,10 +2089,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     detach::detach_from_terminal();
     #[cfg(target_os = "windows")]
     platform::windows::console::attach_parent();
-    // Before the first window: the OpenGL renderer can deadlock on a keyboard-layout
-    // change (see the module doc comment).
-    #[cfg(target_os = "windows")]
-    platform::windows::renderer::select_default_renderer();
 
     let window = AppWindow::new()?;
     // Linux: a stable window class (`WM_CLASS` on X11, app id on Wayland) that the

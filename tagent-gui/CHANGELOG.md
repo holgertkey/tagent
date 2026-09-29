@@ -12,6 +12,26 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+034] - 2026-09-29
+
+### Changed
+- **Windows renders on the GPU again**: `tagent-gui` no longer forces Slint's software
+  renderer (added in `0.14.0+011`) and uses Slint's default GPU renderer, as on the other
+  platforms. `SLINT_BACKEND=winit-software` still selects the software renderer.
+
+### Fixed
+- **Windows redraw glitches caused by the software renderer**. It redraws only what changed
+  since its last frame and isn't told when Windows discards a window's contents, so:
+  translating the same phrase with the hotkey again left the popup invisible; the main
+  window shown again from the tray came back with its language row blank; and the main
+  window restored from the taskbar was drawn slowly and only partly.
+
+### Known issues
+- The `0.14.0+011` layout-switch hang can come back on machines with an NVIDIA OpenGL
+  driver, with keyboard-layout switchers that broadcast `WM_INPUTLANGCHANGEREQUEST` to
+  all windows (ccaps 0.10.1 and later post it to the foreground window only). If it
+  happens, start `tagent-gui` with `SLINT_BACKEND=winit-software`.
+
 ## [0.14.0+033] - 2026-09-29
 
 ### Changed
