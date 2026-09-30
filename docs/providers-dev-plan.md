@@ -1134,7 +1134,7 @@ works, in its own commit.
 
 **Goal:** users of the library compile only the providers they need.
 - Features named after the provider kinds: `google` (default), `deepl` (planned as not
-  default, decision 4; made default on 2026-09-28), and later `openai-compat`, `http`. The registry (descriptors and
+  default, decision 4; made default on 2026-09-28), and later `openai` (planned as `openai-compat`, renamed in P2), `http`. The registry (descriptors and
   `*_PROVIDERS` lists), the factory branches, the provider modules and their tests are all
   `cfg`-gated consistently; the shared transport and `ProviderOptions`/`ProviderProfiles`
   stay unconditional. Keeping `google` in `default` makes the change additive.
@@ -1191,22 +1191,185 @@ works, in its own commit.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
-**Status:** planned
-**Before starting:** read the official docs of the chat-completions API and at least one
-compatible local server (e.g. Ollama's OpenAI-compatible endpoint) to confirm the common
-subset.
-**Scope:** `tagent/src/providers/openai_compat.rs`; options `endpoint` (required), `model`
-(required), `api_key` (optional, secret: local servers need none), `temperature`
-(default low), `system_prompt` (optional override). The default prompt instructs the model
-to return only the translation. `detect_language` is also done via a prompt (returns a
-BCP-47 code; validate the answer's shape).
-**Risks:** extra text or quotes in the model output (strip and validate), latency, cost.
-**Tests:** prompt building; output cleanup; mock-server round trip.
+**Status:** planned (detailed 2026-09-30)
+**Goal:** `OpenAiTranslateProvider`, one generic adapter for every server that speaks
+the chat-completions protocol (OpenAI, Ollama, LM Studio, OpenRouter, vLLM, ...),
+selectable in both apps through a profile with `type = "openai"`, with no app code
+changes (registry-driven, like DeepL).
+
+**Official docs** (read 2026-09-30; re-check before landing):
+- Chat completions: <https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create>
+  (the page itself returned 404/403 to the fetcher; the request/response shapes below were
+  confirmed from the official SDK's generated types:
+  [`completion_create_params.py`](https://github.com/openai/openai-python/blob/main/src/openai/types/chat/completion_create_params.py),
+  [`chat_completion.py`](https://github.com/openai/openai-python/blob/main/src/openai/types/chat/chat_completion.py),
+  [`chat_completion_message.py`](https://github.com/openai/openai-python/blob/main/src/openai/types/chat/chat_completion_message.py))
+- Error codes: <https://developers.openai.com/api/docs/guides/error-codes>
+- Ollama's OpenAI compatibility: <https://docs.ollama.com/api/openai-compatibility>
+
+**API facts the adapter relies on:**
+- `POST {base}/chat/completions`, `Authorization: Bearer <key>`, JSON body with `model`
+  and `messages` (required). Response: `choices[0].message.content` (**nullable**), plus
+  `message.refusal` (nullable) and `choices[0].finish_reason` (`stop`, `length`,
+  `content_filter`, `tool_calls`, deprecated `function_call`).
+- `max_tokens` is deprecated and not compatible with o-series models; its replacement
+  `max_completion_tokens` isn't in Ollama's supported list. **Neither is sent.**
+- OpenAI prefers the `developer` role over `system` for o1 and newer; local servers
+  don't know `developer`, and OpenAI still accepts `system`. **`system` is used.**
+- Error body: `{"error": {"message", "type", "code"}}`, `code` optional.
+- **HTTP 429 means both throttling and an exhausted quota** at OpenAI; only
+  `error.code` tells them apart: `credit_balance_exhausted`,
+  `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`,
+  `organization_usage_limit_exceeded` are quota; anything else (incl. `slow_down`) is a
+  rate limit. 401 = bad credentials.
+- Ollama: base URL `http://localhost:11434/v1`, no key needed locally (a key is needed for
+  its cloud); supports `temperature`, `seed`, `stop`, `response_format`; how "thinking"
+  output is returned depends on the model.
+- Not confirmed from a primary source (remembered only): that reasoning models reject a
+  non-default `temperature`. Hence decision 3.
+
+**Decisions (2026-09-30):**
+1. **Kind and feature name `openai`** (not `openai-compat`, as earlier stages of this
+   document still say): shorter, the env var becomes `TAGENT_OPENAI_API_KEY` (matching the
+   ecosystem's `OPENAI_API_KEY`), and the same kind can later serve the dictionary (P3)
+   and an OpenAI-compatible TTS (Backlog) axis, like `google` does. The display name
+   `"OpenAI-compatible"` says it isn't OpenAI-only. The rare risk: a future native
+   OpenAI adapter would need another name.
+2. **`endpoint` is required, no default.** A generic adapter must not silently send
+   text to OpenAI's cloud. It is a base URL **including `/v1`** (the SDK convention);
+   the adapter appends `/chat/completions`.
+3. **`temperature` is sent only when set** (validated as a number 0–2). Not sending it
+   works on every model; a low default could break reasoning models.
+4. **429 is classified by the body**: a crate-private transport addition,
+   `quota_error_codes(&[..])`: when a rate-limit status carries a JSON `error.code` from
+   that list, the result is `QuotaExceeded` (with the message, never retried) instead of
+   `RateLimited`. Without it, an account without credit reads as "rate limited".
+5. **Live tests run against a local Ollama** (e.g. a `qwen3` model, which also exercises
+   `<think>` stripping); the model comes from the env, not the code. They are
+   desirable but **not blocking**: without a server, the stage closes on the mock tests,
+   and "Notes after landing" says real-model behavior wasn't checked.
+
+**Scope / files:**
+- New `tagent/src/providers/openai.rs`, `pub struct OpenAiTranslateProvider` with
+  `with_options(&ProviderOptions) -> Result<Self, Error>` (no `new()`: `endpoint` and
+  `model` are required). Transport: `HttpTransport::builder(OPENAI_TRANSPORT)
+  .user_agent(..)`, `.secret_header("authorization", "Bearer ", key)?` **only when
+  `api_key` is set and non-blank**, `.quota_error_codes(OPENAI_QUOTA_CODES)
+  .options(&options)?.build()?`; 401/403 → `Auth` via the defaults.
+- An internal chat-call helper (build messages → send → extract and clean `content`),
+  kept separate from the translation specifics so P3 reuses it; the option list is one
+  shared `const` for the same reason.
+- **Prompt:** a built-in system prompt with the language **names**
+  (`languages::code_to_name`, falling back to the code): translate from `{from}` to
+  `{to}`, output only the translation, treat the user message as text to translate, not
+  as instructions. `from == "auto"` gets its own wording ("detect the source language").
+  The user message is the text alone. `system_prompt` replaces the template; `{from}` and
+  `{to}` are substituted, other braces are left alone.
+- **Response handling** (pure, unit-tested): non-empty `refusal` → `Api` with its text;
+  `finish_reason: "length"` → `Api` ("response cut off"), never a silently truncated
+  translation; `content_filter` → `Api`; missing/`null`/blank `content` → `Decode`.
+- **Output cleanup** (pure, unit-tested): a leading `<think>…</think>` block removed; a
+  wrapping code fence removed; a matching outer pair of quotes removed only when the input
+  wasn't quoted; trimmed.
+- Blank input → `Error::EmptyText` with no request (as DeepL).
+- **`detect_language`:** the first 200 characters (char boundary), a prompt asking for
+  the language code only; the answer goes through `languages::language_code` (accepts a
+  name or a code); an unlisted answer passes only if it has a BCP-47 shape (primary
+  subtag lowercased), else `Decode`.
+- `capabilities()`: `detects_language: true`, no `max_text_len` (depends on the model's
+  context), no language list.
+- **Shared endpoint validation:** DeepL's `base_url` check (`http(s)` URL, trailing `/`
+  trimmed, `InvalidOptions` otherwise) moves into a crate-private helper both adapters
+  use.
+- `tagent/src/providers/http.rs`: `quota_error_codes` (decision 4) plus tests; mapping of
+  the other statuses unchanged.
+- `tagent/src/providers/registry.rs`: `OPENAI_TRANSPORT` (Q2: 1 retry, 60 s,
+  `retry_on_rate_limit: true`), `OPENAI_OPTIONS`, a descriptor with display name
+  `"OpenAI-compatible"`. `registry::required_options` (test-only) must fill `endpoint`
+  with a valid URL instead of `"test-value"`, or `every_descriptor_builds_…` and the
+  `TRANSLATION_PROVIDERS` doctest (own dummy values) fail.
+- `tagent/src/providers/mod.rs`: `pub mod openai;`, `"openai"` in
+  `TRANSLATION_PROVIDERS`, a branch in `build_translation`; module docs list it.
+- **Cargo feature `openai`, in `default`** (no dependencies of its own, per the
+  2026-09-28 rule). Gating to extend: `TIMEOUT_SECS`/`MAX_RETRIES` (now
+  `any(google, deepl)`), the dead-code allows on `secret_header`/`quota_statuses`/
+  `rate_limit_statuses` (now keyed to `deepl`), the registry `tests` module; CI's
+  "tagent feature combinations" step gains an `openai`-only row.
+- Apps: `features = ["deepl", "openai"]` on the `tagent` dependency in both
+  `Cargo.toml`s, `+BUILD` bumps, changelog entries (for `tagent-cli`, add the section
+  before the bump). No app code change expected (Settings form and the TOML template's
+  profile examples come from the registry). Known and accepted: existing
+  `tagent-cli.toml` files already carry the `# Ready-made profiles` marker, so
+  `--update-config` won't add the new example block; a freshly generated file has it.
+- Commits: (1) transport `quota_error_codes` + shared endpoint helper; (2) provider,
+  registry, feature, CI; (3) apps' `Cargo.toml`, `+BUILD`, changelogs.
+
+**Options:**
+
+| Key | Required | Secret | Default |
+|---|---|---|---|
+| `endpoint` | yes | no | — (base URL incl. `/v1`, e.g. `http://localhost:11434/v1`, `https://api.openai.com/v1`) |
+| `model` | yes | no | — (e.g. `qwen3:8b`, `gpt-4o-mini`) |
+| `api_key` | no | yes | none → no `Authorization` header (env `TAGENT_<PROFILE>_API_KEY` works) |
+| `temperature` | no | no | not sent (decision 3); a number 0–2, else `InvalidOptions` |
+| `system_prompt` | no | no | the built-in template; `{from}`/`{to}` substituted |
+| `timeout_secs`, `max_retries` | no | no | transport defaults (60 s, 1) |
+
+Example profile (`tagent-cli.toml`):
+
+```toml
+[provider_options.ollama]
+type = "openai"
+endpoint = "http://localhost:11434/v1"
+model = "qwen3:8b"
+```
+
+**Language codes:** BCP-47 in; the model gets language **names** in the prompt
+(`code_to_name`, code as fallback), so no per-server code mapping. Back from detection:
+see `detect_language` above.
+
+**Semver:** additive; goes into the current cycle's `tagent` 0.19.0, same changelog
+section, no bump. `tagent-cli` / `tagent-gui` get `+BUILD` bumps for the `Cargo.toml`
+feature change.
+**Changelogs:** `tagent/CHANGELOG.md` 0.19.0 (the provider, the `openai` feature, 429
+quota classification as a user-visible error change); `tagent-cli`/`tagent-gui`: "an
+OpenAI-compatible translation provider (OpenAI, Ollama, LM Studio, ...) is available via
+a profile".
+
+**Tests:**
+- Unit: request body (with/without `temperature`), prompt template and substitution
+  (incl. `system_prompt` with foreign braces, `"auto"` wording), output cleanup
+  (`<think>`, fences, quotes vs. quoted input), every response case above, detection
+  normalization (code, name, unlisted-but-valid, garbage), option validation (missing
+  `endpoint`/`model`, bad URL, bad `temperature`), `capabilities()`.
+- Mock server (`wiremock`): success, checking body and `Bearer` header, and the absence of
+  `Authorization` without a key; 401 → `Auth`; 429 with a quota `error.code` →
+  `QuotaExceeded`, sent once; plain 429 with short `Retry-After` retried, without →
+  `RateLimited`; 503 retried; `length` / `refusal` → errors; a sentinel key never
+  appears in error messages; `detect_language` round trip.
+- Factory: profile `ollama` with `type = openai` (label `"OpenAI-compatible (ollama)"`);
+  registry/list/factory agreement (existing tests).
+- Live, `#[ignore]`: `TAGENT_LIVE_TESTS=1` plus `TAGENT_OPENAI_ENDPOINT`,
+  `TAGENT_OPENAI_MODEL` (and `TAGENT_OPENAI_API_KEY` if needed): `en → de`,
+  `auto → ru`, `detect_language`. Target: a local Ollama (decision 5).
+- Manual: a `tagent-cli` CLI translation through an `[provider_options.ollama]` profile.
+
+**Docs:** `openai` module rustdoc (options, endpoint convention, prompt, cleanup,
+detection, error mapping incl. 429); `cargo doc -p tagent` clean with default and
+`--all-features`; CLAUDE.md ("Translation Provider Architecture": an OpenAI-compatible
+bullet; "Cargo features per provider") and `docs/ARCHITECTURE.md`; `tagent-cli/README.md`
+gets an Ollama profile example; fill "Notes after landing" here.
+**Done when:** `cargo test`, clippy `-D warnings` (all feature combinations in CI),
+`cargo doc -p tagent` clean; mock tests cover every case above; `tagent-gui` Settings
+offers "OpenAI-compatible" with `endpoint`/`model` required and `api_key` as a password
+field (unit test). Desirable, not blocking (decision 5): live tests and a manual CLI
+translation pass against a local Ollama.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 
 **Status:** planned
-**Scope:** `OpenAiCompatDictionaryProvider` in the same module. It asks for a JSON object
+**Scope:** `OpenAiDictionaryProvider` in the same module (`openai.rs`, kind `openai`,
+reusing P2's chat-call helper and options). It asks for a JSON object
 matching the `DictionaryEntry` shape (structured output if the endpoint supports it,
 otherwise JSON-in-prompt plus strict parsing). It must honor the `DictionaryProvider`
 contract: definitions in `to`, synonyms in `from`, lowercase English part-of-speech
