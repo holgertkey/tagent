@@ -1191,7 +1191,7 @@ works, in its own commit.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
-**Status:** done (2026-09-30, tagent 0.19.0; tagent-cli 0.17.0+013, tagent-gui 0.14.0+035) — live tests against a real model not run yet (decision 5)
+**Status:** done (2026-09-30, tagent 0.19.0; tagent-cli 0.17.0+013, tagent-gui 0.14.0+035) — live tests and a real `tagent-gui` translation pass against Groq (`openai/gpt-oss-20b`)
 **Goal:** `OpenAiTranslateProvider`, one generic adapter for every server that speaks
 the chat-completions protocol (OpenAI, Ollama, LM Studio, OpenRouter, vLLM, ...),
 selectable in both apps through a profile with `type = "openai"`, with no app code
@@ -1234,7 +1234,10 @@ changes (registry-driven, like DeepL).
    ecosystem's `OPENAI_API_KEY`), and the same kind can later serve the dictionary (P3)
    and an OpenAI-compatible TTS (Backlog) axis, like `google` does. The display name
    `"OpenAI-compatible"` says it isn't OpenAI-only. The rare risk: a future native
-   OpenAI adapter would need another name.
+   OpenAI adapter would need another name. Re-confirmed after landing (2026-09-30): the
+   kind names the protocol, not the model vendor (like "S3-compatible"); users mostly see
+   their profile names (`ollama`, `github`), and `openai` fits the later dictionary and
+   TTS axes of the same protocol, which `chat` or `llm` wouldn't.
 2. **`endpoint` is required, no default.** A generic adapter must not silently send
    text to OpenAI's cloud. It is a base URL **including `/v1`** (the SDK convention);
    the adapter appends `/chat/completions`.
@@ -1459,17 +1462,26 @@ translation pass against a local Ollama.
 - `--update-config` was run on a copy of a real `tagent-cli.toml` (from 0.17.0+004 on): it
   added exactly the `openai` block at the end, and a second run reported "up to date".
   A CLI translation through an `[provider_options.ollama]` profile reached the configured
-  endpoint (connection refused: **no Ollama was running**, so the live tests and a real
-  translation are still open — decision 5; run them with
-  `TAGENT_LIVE_TESTS=1 TAGENT_OPENAI_ENDPOINT=http://localhost:11434/v1
-  TAGENT_OPENAI_MODEL=qwen3:8b cargo test -p tagent openai::tests::live -- --ignored
-  --nocapture`).
+  endpoint (connection refused: no Ollama was running; the real-model checks were done
+  against Groq instead, see below). Live tests: `TAGENT_LIVE_TESTS=1
+  TAGENT_OPENAI_ENDPOINT=<base URL> TAGENT_OPENAI_MODEL=<model> [TAGENT_OPENAI_API_KEY=...]
+  cargo test -p tagent openai::tests::live -- --ignored --nocapture`.
 - **One commit instead of the planned three**: the transport part already references the
   `openai` feature (`cfg_attr`), which needs the `Cargo.toml` line, and with the provider
   in `default` the apps' tests (provider lists, `endpoint` dummies) change in the same
   step, so neither intermediate commit would have passed on its own.
-- `tagent-gui`: only a unit test (`openai_needs_endpoint_and_model_and_hides_its_key`);
-  the dialog itself wasn't opened. `translate_prompt` is a single-line field until the
+- **First real-model check (2026-09-30, by hand in `tagent-gui`)**: Groq
+  (`https://api.groq.com/openai/v1`, free key) with `openai/gpt-oss-20b`, a reasoning
+  model, translates. On the way: GitHub Models, once a free way to reach OpenAI's models,
+  was retired on 2026-07-30 and its endpoint now answers every request with `200 OK` and
+  the plain text `OK`, which surfaced as the cryptic `failed to decode provider response:
+  expected value at line 1 column 1`; Groq's `llama-3.3-70b-versatile` gave a clean
+  `HTTP 404 ... model_not_found` on the free tier (the error path works as intended, the
+  key never appeared). The live tests then passed against the same server and model
+  (`en → de`: "Guten Morgen", `auto → ru`: "Доброе утро", detection of en/de/ru; 3 of 3,
+  under a second), so decision 5 is met with a cloud server instead of a local Ollama.
+- `tagent-gui`: a unit test (`openai_needs_endpoint_and_model_and_hides_its_key`), plus
+  the manual translation above. `translate_prompt` is a single-line field until the
   "Multi-line provider options" stage of `tagent-gui-dev-plan.md`.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
