@@ -1297,12 +1297,38 @@ changes (registry-driven, like DeepL).
   "tagent feature combinations" step gains an `openai`-only row.
 - Apps: `features = ["deepl", "openai"]` on the `tagent` dependency in both
   `Cargo.toml`s, `+BUILD` bumps, changelog entries (for `tagent-cli`, add the section
-  before the bump). No app code change expected (Settings form and the TOML template's
-  profile examples come from the registry). Known and accepted: existing
-  `tagent-cli.toml` files already carry the `# Ready-made profiles` marker, so
-  `--update-config` won't add the new example block; a freshly generated file has it.
+  before the bump). No `tagent-gui` code change expected (its Settings form comes from the
+  registry).
+- **`tagent-cli`: per-kind example blocks in `--update-config`** (decided 2026-09-30).
+  Today `upgrade::upgrade` (`tagent-cli/src/config/upgrade.rs`) adds the example
+  profiles only as a whole, keyed to the single `# Ready-made profiles` line
+  (`EXAMPLES_MARKER`); every file from 0.17.0+004 on has it, so a new provider's example
+  block would never reach an existing `tagent-cli.toml` (this stage's `openai` nor any
+  later one). The provider itself works regardless (hand-written profile, registry-based
+  unknown-key check, no false startup notice), but the user gets no ready-made block.
+  Change:
+  - A kind's example counts as present when the file has its block header line
+    (`## <kind>: <display names>`, as `profile_examples()` writes it, whether still
+    commented out as `# ## <kind>:` or uncommented), or a `[provider_options.<kind>]`
+    table, real or commented out.
+  - With the examples marker present, `--update-config` appends the blocks of the missing
+    kinds only, at the end of the file (after a `#` separator line), in registry order,
+    and reports them as `the example profile for <kind> (at the end)`. The second-instance
+    block (`deepl-work`) isn't re-added on its own.
+  - The existing cases stay: no profiles marker → explanation + all examples; profiles
+    marker without examples marker → all examples.
+  - `profile_examples()` gets split so one kind's block can be rendered alone (the same
+    text as in the full template, so a generated file stays "up to date").
+  - Semantics as today: a block the user deleted comes back on `--update-config` (never
+    on its own). The startup notice (`new_settings_count`) stays about settings only and
+    doesn't count missing example blocks (a deleted block would otherwise nag forever).
+  - Tests: a file with the current examples minus the `openai` block gets exactly that
+    block; a file where the `openai` block is uncommented, or has a real
+    `[provider_options.openai]`, gets nothing; a generated file is up to date; the older
+    marker cases keep passing; the result still loads without unknown-key warnings.
 - Commits: (1) transport `quota_error_codes` + shared endpoint helper; (2) provider,
-  registry, feature, CI; (3) apps' `Cargo.toml`, `+BUILD`, changelogs.
+  registry, feature, CI; (3) apps' `Cargo.toml`, `tagent-cli`'s per-kind example blocks,
+  `+BUILD`, changelogs.
 
 **Options:**
 
@@ -1334,7 +1360,8 @@ feature change.
 **Changelogs:** `tagent/CHANGELOG.md` 0.19.0 (the provider, the `openai` feature, 429
 quota classification as a user-visible error change); `tagent-cli`/`tagent-gui`: "an
 OpenAI-compatible translation provider (OpenAI, Ollama, LM Studio, ...) is available via
-a profile".
+a profile"; `tagent-cli` also: "`--update-config` adds the example profile of a newly
+available provider to an existing config file".
 
 **Tests:**
 - Unit: request body (with/without `temperature`), prompt template and substitution
@@ -1362,7 +1389,9 @@ gets an Ollama profile example; fill "Notes after landing" here.
 **Done when:** `cargo test`, clippy `-D warnings` (all feature combinations in CI),
 `cargo doc -p tagent` clean; mock tests cover every case above; `tagent-gui` Settings
 offers "OpenAI-compatible" with `endpoint`/`model` required and `api_key` as a password
-field (unit test). Desirable, not blocking (decision 5): live tests and a manual CLI
+field (unit test); `tagent-cli --update-config` adds the `openai` example block to a
+config file generated before this stage (unit tests plus one manual run on a copy of a
+real file). Desirable, not blocking (decision 5): live tests and a manual CLI
 translation pass against a local Ollama.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
