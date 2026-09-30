@@ -189,7 +189,30 @@ the old single-crate `tagent`).
   knows DeepL: both apps pick it up from `TRANSLATION_PROVIDERS` and the registry's
   `OptionSpec`s (`tagent-gui`'s Settings form shows `api_key` as a password field); their
   only DeepL-specific line is `features = ["deepl"]` on the `tagent` dependency.
-- **Cargo features per provider** (Stage P1 part 2): `google` and `deepl`, both in
+- **OpenAI-compatible chat** (`providers/openai.rs`, `tagent` 0.19.0, Stage P2) — one
+  translation adapter (`OpenAiTranslateProvider`, kind `openai`, display name
+  `"OpenAI-compatible"`) for every chat-completions server: OpenAI, Ollama, LM Studio,
+  OpenRouter, vLLM. `endpoint` (base URL including `/v1`, validated by the crate-private
+  `http::endpoint_base_url` that DeepL's override uses too) and `model` are required and
+  have no defaults, so a generic adapter never sends text to a cloud nobody chose;
+  `api_key` is optional (no `Authorization` header without it). The request is one
+  `system` message (not `developer`, which local servers don't know) plus the text as the
+  `user` message; `temperature` only when set, `max_tokens`/`max_completion_tokens`
+  never. The system prompt is `DEFAULT_TRANSLATE_PROMPT` or the `translate_prompt`
+  option, with `{from}`/`{to}` replaced by language *names* (so no per-server code
+  mapping) and `"auto"` by `AUTO_SOURCE_WORDING`; it lives in the profile, so several
+  profiles of one server can differ by prompt. A small private `ChatClient` (build →
+  send → parse → strip `<think>` and a wrapping fence) is kept apart from the
+  translation specifics (quote stripping needs the input) for the dictionary stage to
+  reuse. A `refusal`, `finish_reason` `length`/`content_filter` are `Api` errors, never
+  a partial translation. OpenAI answers 429 for throttling *and* for a used-up credit;
+  the transport's crate-private `quota_error_codes` turns a rate-limit status whose JSON
+  `error.code` is listed into `QuotaExceeded`, which also suppresses the retry even with
+  a short `Retry-After`. `detect_language` asks for a code and accepts a listed name/code
+  or any BCP-47-shaped answer. `OptionSpec` gained `default` (the prompt) and `multiline`
+  (a UI hint) for it; `tagent-gui` shows the prompt as a single-line field for now.
+- **Cargo features per provider** (Stage P1 part 2): `google`, `deepl` and (since Stage
+  P2) `openai`, all in
   `default` (decided 2026-09-28: a provider without dependencies of its own is default,
   one with heavy dependencies would be opt-in; taking a feature out of `default` later
   would be a breaking change, so this was settled before the first release with it). Everything a kind adds is `cfg`-gated together (module,
@@ -199,8 +222,9 @@ the old single-crate `tagent`).
   not, so `default-features = false` still builds for an application with its own
   providers. A compiled-out kind is simply unknown (`UnknownProvider`, also as a profile
   `type`), and built-in profile names are reserved only for compiled-in kinds. Transport
-  helpers used by one provider (`secret_header`, `quota_statuses`, `rate_limit_statuses`
-  by DeepL, `auth_statuses` by Google) carry `cfg_attr(not(feature), allow(dead_code))`.
+  helpers used by some providers (`secret_header` and `endpoint_base_url` by DeepL and
+  OpenAI-compatible, `quota_statuses`/`rate_limit_statuses` by DeepL, `quota_error_codes`
+  by OpenAI-compatible, `auth_statuses` by Google) carry `cfg_attr(not(feature), allow(dead_code))`.
   CI lints and unit-tests each feature alone and none; doc examples assume the defaults.
 - **`languages`** — `name_to_code() / `code_to_name()`, a straight move of what used
   to be `ConfigManager::language_to_code()` / `code_to_language()`. This is
@@ -213,8 +237,8 @@ the old single-crate `tagent`).
 - **`error`** — `tagent::error::Error`, a `thiserror`-based enum (`Network`, `Api`,
   `NotFound`, `EmptyText`, `TextTooLong { len, max }`, `Decode`, `UnknownProvider`;
   since `tagent` 0.19.0 also `Auth`, `RateLimited { retry_after }`, `QuotaExceeded`,
-  `Unsupported`, `InvalidOptions` for keyed services (DeepL returns all but
-  `Unsupported`), and `#[non_exhaustive]`, so apps
+  `Unsupported`, `InvalidOptions` for keyed services (DeepL and OpenAI-compatible return
+  all but `Unsupported`), and `#[non_exhaustive]`, so apps
   match it with a wildcard arm) used across the provider boundary. `tagent-cli` still uses `Box<dyn Error + Send +
   Sync>` internally as before; `Error`'s `?` conversion into that boxed type is
   automatic since it implements `std::error::Error + Send + Sync`, so no `From` impls
@@ -310,7 +334,19 @@ library's option keys need no mapping.
     above it, so the template's file introduction isn't copied. The profiles explanation
     and examples are the reference's `trailing()`: all of it when the file lacks the
     `# Provider profiles` line, only the part from `# Ready-made profiles` when it has the
-    explanation but not the examples (files from before `0.17.0+004`). `update_config_file` validates with the same `ConfigFile`
+    explanation but not the examples (files from before `0.17.0+004`). A file that has
+    both markers gets the block of each provider kind it lacks (`has_example`: its
+    `## <kind>:` header line, commented out or not, a `[provider_options.<kind>]` header
+    line, commented out or not, or a real profile of that name), appended to `trailing()`
+    after a lone `#` in registry order, as `profile_example(kind)` renders it — the same
+    text `profile_examples()` puts into a new file, so a generated file stays up to date
+    (`0.17.0+013`, Stage P2; before, a new provider's example never reached an existing
+    file). The `<kind>-work` second-instance block isn't re-added on its own, and the
+    startup notice counts settings only, so a deleted block doesn't nag. An option with a
+    `default` (the OpenAI-compatible `translate_prompt`) is rendered as a commented-out
+    multi-line string, one `#` per line (`# #translate_prompt = """` … `# #"""`), so
+    uncommenting the block keeps it optional and a blank line in it can't end the block;
+    the loaded value keeps a final newline, which the provider trims. `update_config_file` validates with the same `ConfigFile`
     deserialization as startup (a valid-TOML file can still fail it), writes the backup
     through `write_config_file` (`fs::copy` would keep a `0644` mode), and
     `ConfigManager::update_config_file` then reads the new file back and records its mtime,

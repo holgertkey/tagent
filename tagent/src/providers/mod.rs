@@ -1,6 +1,7 @@
 //! Translation, dictionary and speech provider traits, their factories, and the built-in
-//! implementations: Google (all three axes, [`google`]) and DeepL (translation, keyed,
-//! [`deepl`]), each behind a Cargo feature of the same name, both on by default. A kind
+//! implementations: Google (all three axes, [`google`]), DeepL (translation, keyed,
+//! [`deepl`]) and any OpenAI-compatible chat server (translation, [`openai`]), each behind
+//! a Cargo feature of the same name, all on by default. A kind
 //! whose feature is off is unknown to the factories and missing from the registry.
 //!
 //! There are three independent provider axes, and a backend implements only the ones it
@@ -64,7 +65,8 @@
 //!
 //!   [`Error::NotFound`] exists but no built-in provider returns it: a dictionary miss is
 //!   `Ok(None)` from [`DictionaryProvider::lookup`], not an error. The last five rows are
-//!   for keyed and paid services: DeepL returns all of them but [`Error::Unsupported`],
+//!   for keyed and paid services: DeepL and the OpenAI-compatible provider return all of
+//!   them but [`Error::Unsupported`],
 //!   Google (no credentials) only [`Error::RateLimited`] and [`Error::InvalidOptions`] for
 //!   a bad transport option. [`Error`] is
 //!   `#[non_exhaustive]`, so a `match` on it outside this crate needs a wildcard arm.
@@ -203,8 +205,13 @@ use async_trait::async_trait;
 pub mod deepl;
 #[cfg(feature = "google")]
 pub mod google;
+#[cfg(feature = "openai")]
+pub mod openai;
 // Without any provider feature, nothing uses the transport.
-#[cfg_attr(not(any(feature = "google", feature = "deepl")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "google", feature = "deepl", feature = "openai")),
+    allow(dead_code)
+)]
 mod http;
 mod options;
 mod profile;
@@ -633,8 +640,12 @@ pub trait SpeechProvider: Send + Sync {
 /// ```
 /// use tagent::providers::{create_provider_with, ProviderOptions, TRANSLATION_PROVIDERS};
 ///
-/// // Keyed providers (DeepL) need their key; a dummy one is enough to build them.
-/// let options = ProviderOptions::new().with("api_key", "dummy-key");
+/// // Keyed providers (DeepL) need their key, the OpenAI-compatible one a server and a
+/// // model; dummy values are enough to build them.
+/// let options = ProviderOptions::new()
+///     .with("api_key", "dummy-key")
+///     .with("endpoint", "http://localhost:11434/v1")
+///     .with("model", "dummy-model");
 /// for name in TRANSLATION_PROVIDERS {
 ///     assert!(create_provider_with(name, &options).is_ok());
 /// }
@@ -644,6 +655,8 @@ pub const TRANSLATION_PROVIDERS: &[&str] = &[
     "google",
     #[cfg(feature = "deepl")]
     "deepl",
+    #[cfg(feature = "openai")]
+    "openai",
 ];
 
 /// Names [`create_dictionary_provider`] accepts, in the canonical (lowercase) spelling.
@@ -670,13 +683,14 @@ pub const SPEECH_PROVIDERS: &[&str] = &[
 /// |------------|-----------------------|
 /// | `"google"` | Google Translate API  |
 /// | `"deepl"`  | DeepL API (needs an `api_key`, so use [`create_provider_with`]) |
+/// | `"openai"` | Any OpenAI-compatible chat server (needs `endpoint` and `model`, so use [`create_provider_with`]) |
 ///
 /// The same names are listed in [`TRANSLATION_PROVIDERS`].
 ///
 /// # Errors
 ///
 /// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider,
-/// and [`Error::InvalidOptions`] for a provider that needs options (`"deepl"`).
+/// and [`Error::InvalidOptions`] for a provider that needs options (`"deepl"`, `"openai"`).
 ///
 /// # Examples
 ///
@@ -752,7 +766,7 @@ pub fn create_provider_with(
 
 /// Builds a translation provider of a resolved `kind` (one of [`TRANSLATION_PROVIDERS`]).
 #[cfg_attr(
-    not(any(feature = "google", feature = "deepl")),
+    not(any(feature = "google", feature = "deepl", feature = "openai")),
     allow(unused_variables)
 )]
 fn build_translation(
@@ -766,6 +780,10 @@ fn build_translation(
         )?)),
         #[cfg(feature = "deepl")]
         "deepl" => Ok(Box::new(deepl::DeepLTranslateProvider::with_options(
+            options,
+        )?)),
+        #[cfg(feature = "openai")]
+        "openai" => Ok(Box::new(openai::OpenAiTranslateProvider::with_options(
             options,
         )?)),
         // Unreachable for a listed kind; `profile::resolve` rejects unlisted ones.

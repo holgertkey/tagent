@@ -270,6 +270,39 @@ mod tests {
         assert!(rows[2..].iter().all(|row| !row.secret && !row.required));
     }
 
+    /// The OpenAI-compatible provider comes from `tagent`'s `openai` feature, which this
+    /// crate enables: offered in the translation picker, with `endpoint` and `model`
+    /// required and `api_key` a password field, with no GUI code of its own.
+    #[test]
+    fn openai_needs_endpoint_and_model_and_hides_its_key() {
+        assert!(tagent::providers::TRANSLATION_PROVIDERS.contains(&"openai"));
+        let mut profiles = ProviderProfiles::new();
+        profiles.insert("ollama", "type", "openai");
+        let rows = fields(&profiles, &["ollama"], &Edits::new(), no_env);
+        assert_eq!(
+            labels(&rows),
+            [
+                "ollama (openai)",
+                "endpoint",
+                "model",
+                "api_key",
+                "temperature",
+                "translate_prompt",
+                "timeout_secs",
+                "max_retries"
+            ]
+        );
+        let row = |key: &str| rows.iter().find(|row| row.label == key).unwrap();
+        assert!(row("endpoint").required && !row("endpoint").secret);
+        assert!(row("model").required && !row("model").secret);
+        assert!(row("api_key").secret && !row("api_key").required);
+        assert!(!row("translate_prompt").secret && !row("translate_prompt").required);
+        assert_eq!(
+            missing_required(&profiles, "ollama", &Edits::new(), no_env),
+            ["endpoint", "model"]
+        );
+    }
+
     #[test]
     fn unknown_kinds_get_no_rows() {
         let mut profiles = profiles();

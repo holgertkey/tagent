@@ -12,6 +12,17 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+035] - 2026-09-30
+
+### Added
+- **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
+  vLLM, ...) is available via a profile, from `tagent`'s new `openai` provider: a
+  `provider_options` entry with `"type": "openai"`, an `endpoint` (the base URL including
+  `/v1`, e.g. `http://localhost:11434/v1`) and a `model`. Settings > General offers
+  `openai` in the translation picker (and every profile of that kind); its "Options…" panel has `endpoint` and
+  `model` as required fields and `api_key` as a password field. The `translate_prompt`
+  option is a single-line field for now.
+
 ## [0.14.0+034] - 2026-09-29
 
 ### Changed

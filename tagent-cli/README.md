@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+012
+# Tagent Text Translator v0.17.0+013
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -201,7 +201,7 @@ The generated file documents every setting in its comments. Its sections, with t
 
 ```toml
 [provider]
-# Translation backend: a provider profile name (google, deepl)
+# Translation backend: a provider profile name (google, deepl, openai)
 translate_provider = "google"
 
 [translation]
@@ -299,7 +299,8 @@ tagent-cli --update-config      # or /config update at the interactive prompt
 ```
 
 This adds each missing setting with its explanation and default value (and the example
-provider profiles, if your file doesn't have them) and keeps everything else: your values,
+provider profiles, if your file doesn't have them, or the example of a provider that
+became available since) and keeps everything else: your values,
 comments and key order. The previous file is kept as `tagent-cli.toml.bak`. Nothing is
 removed or renamed; keys this version doesn't know are listed for you to handle. To keep a
 setting out of your file for good, leave it commented out (`# speech_hotkey = "Alt+S"`):
@@ -350,6 +351,43 @@ api_key = "your-key:fx"   # or leave it out and set TAGENT_DEEPL_API_KEY
 
 Keep `dictionary_provider` and `speech_provider` on `google`. Speaking text whose source
 language is `Auto` asks DeepL to detect the language, which bills up to 100 characters.
+
+#### OpenAI-compatible servers (Ollama, LM Studio, OpenAI, ...)
+
+The `openai` provider kind (translation only) talks to any server with an OpenAI-style
+chat-completions API, local or in the cloud. `endpoint` is the base URL **including
+`/v1`** and has no default, so text only goes where you point it. A local
+[Ollama](https://ollama.com), for example:
+
+```toml
+[provider]
+translate_provider = "ollama"
+
+[provider_options.ollama]
+type = "openai"
+endpoint = "http://localhost:11434/v1"
+model = "qwen3:8b"
+# api_key = "..."        # not needed locally; or set TAGENT_OLLAMA_API_KEY
+# temperature = "0.2"    # 0 to 2; not sent unless set
+```
+
+For OpenAI itself use `endpoint = "https://api.openai.com/v1"`, a model such as
+`gpt-4o-mini`, and an `api_key` (or `TAGENT_<PROFILE>_API_KEY`). The model gets a built-in
+system prompt naming both languages; `translate_prompt` replaces it (`{from}` and `{to}`
+become language names). The generated config file shows the built-in prompt in its
+commented-out `[provider_options.openai]` example, as a multi-line string to copy:
+
+```toml
+translate_prompt = """
+Translate the text in the user message from {from} into {to} in a formal register.
+Output only the translation.
+"""
+```
+
+Several profiles of one server with different prompts or models can coexist (`/p` switches
+between them). Reasoning output (`<think>…</think>`) and quotes the model adds are removed;
+an answer the model cut off is an error, never a partial translation. Speaking `Auto`-source
+text asks the model to detect the language (one extra request).
 
 ### Customizing Hotkeys
 
@@ -678,7 +716,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+012
+**Current Version**: v0.17.0+013
 
 ## Contributing
 
@@ -701,4 +739,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+012** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+013** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

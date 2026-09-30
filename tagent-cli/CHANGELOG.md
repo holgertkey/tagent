@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0+013] - 2026-09-30
+
+### Added
+- **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
+  vLLM, ...) is available via a profile, from `tagent`'s new `openai` provider. A local
+  Ollama, for example:
+  ```toml
+  [provider_options.ollama]
+  type = "openai"
+  endpoint = "http://localhost:11434/v1"
+  model = "qwen3:8b"
+  ```
+  then `translate_provider = "ollama"` or `/p ollama`. `endpoint` (the base URL including
+  `/v1`) and `model` are required; `api_key` (or `TAGENT_<PROFILE>_API_KEY`),
+  `temperature` and `translate_prompt` are optional. A new config file has a commented-out
+  `[provider_options.openai]` example, including the built-in prompt as a multi-line string
+  to copy and edit.
+- **`--update-config` adds the example profile of a newly available provider to an
+  existing config file**, at the end, reported as `the example profile for <kind> (at the
+  end)`. A provider counts as present when the file has its example block (commented out
+  or not) or a profile named after it; a deleted block comes back on the next
+  `--update-config`, never on its own, and the startup notice doesn't count example
+  blocks.
+
 ## [0.17.0+012] - 2026-09-29
 
 ### Changed

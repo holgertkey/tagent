@@ -1,7 +1,8 @@
 # tagent
 
 Translation, dictionary lookup, and text-to-speech library, powered by the Google
-Translate API, with DeepL as a keyed alternative for translation. This is the reusable core behind
+Translate API, with DeepL and any OpenAI-compatible chat server (OpenAI, Ollama, LM Studio, ...)
+as alternatives for translation. This is the reusable core behind
 [Tagent](https://github.com/holgertkey/tagent/tree/main/tagent-cli)'s CLI/hotkey
 application and the
 [`tagent-gui`](https://github.com/holgertkey/tagent/tree/main/tagent-gui) desktop app —
@@ -16,7 +17,7 @@ concern.
 
   | Axis | Trait | Factory | Built in |
   |---|---|---|---|
-  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (needs an `api_key`) |
+  | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (needs an `api_key`), OpenAI-compatible (needs an `endpoint` and a `model`) |
   | Dictionary | `DictionaryProvider` | `create_dictionary_provider()` | Google |
   | Speech (TTS) | `SpeechProvider` | `create_speech_provider()` | Google |
 
@@ -70,16 +71,17 @@ documentation lists the caveats of the built-in providers, which use unofficial 
 
 ## Cargo features
 
-Each built-in provider kind is a feature; both are on by default, since neither brings
+Each built-in provider kind is a feature; all are on by default, since none brings
 dependencies of its own. Turn off the default features to leave one out:
 
 | Feature | Default | Provides |
 |---|---|---|
 | `google` | yes | Google translation, dictionary and TTS (unofficial endpoints, no key) |
 | `deepl` | yes | DeepL translation (official API, needs an `api_key`) |
+| `openai` | yes | Translation through any OpenAI-compatible chat server (needs an `endpoint` and a `model`) |
 
 ```toml
-tagent = "0.19"                                                                 # Google + DeepL
+tagent = "0.19"                                                                 # Google + DeepL + OpenAI-compatible
 tagent = { version = "0.19", default-features = false, features = ["google"] }  # Google only
 ```
 

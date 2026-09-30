@@ -64,25 +64,39 @@ pub struct OptionSpec {
     pub secret: bool,
     /// A one-line description for a settings form or help text.
     pub description: &'static str,
+    /// The value the provider uses when the option is unset, for a UI to show or start
+    /// editing from (e.g. the built-in prompt of
+    /// [`openai::DEFAULT_TRANSLATE_PROMPT`](super::openai::DEFAULT_TRANSLATE_PROMPT)).
+    /// `None` when there is nothing useful to show; the transport options
+    /// (`timeout_secs`, `max_retries`) take theirs from the descriptor's
+    /// [`TransportDefaults`] instead.
+    pub default: Option<&'static str>,
+    /// Whether the value is usually several lines long (a prompt), a hint for a UI to offer
+    /// a multi-line editor.
+    pub multiline: bool,
 }
 
 /// The generic time-budget option (handled by the shared transport, not by the
 /// provider's own code).
-#[cfg(any(feature = "google", feature = "deepl"))]
+#[cfg(any(feature = "google", feature = "deepl", feature = "openai"))]
 const TIMEOUT_SECS: OptionSpec = OptionSpec {
     key: "timeout_secs",
     required: false,
     secret: false,
     description: "Time budget for one call in whole seconds, retries included",
+    default: None,
+    multiline: false,
 };
 
 /// The generic retry-count option (handled by the shared transport).
-#[cfg(any(feature = "google", feature = "deepl"))]
+#[cfg(any(feature = "google", feature = "deepl", feature = "openai"))]
 const MAX_RETRIES: OptionSpec = OptionSpec {
     key: "max_retries",
     required: false,
     secret: false,
     description: "How often a failed request is retried; 0 disables retries",
+    default: None,
+    multiline: false,
 };
 
 /// The generic transport options every HTTP provider accepts.
@@ -97,6 +111,8 @@ const DEEPL_OPTIONS: &[OptionSpec] = &[
         required: true,
         secret: true,
         description: "DeepL authentication key (a Free key ends in `:fx`)",
+        default: None,
+        multiline: false,
     },
     OptionSpec {
         key: "endpoint",
@@ -104,6 +120,56 @@ const DEEPL_OPTIONS: &[OptionSpec] = &[
         secret: false,
         description:
             "API base URL; default by key: https://api-free.deepl.com or https://api.deepl.com",
+        default: None,
+        multiline: false,
+    },
+    TIMEOUT_SECS,
+    MAX_RETRIES,
+];
+
+/// The OpenAI-compatible chat options: the server, the model, an optional key, sampling,
+/// the prompt and the transport options.
+#[cfg(feature = "openai")]
+const OPENAI_OPTIONS: &[OptionSpec] = &[
+    OptionSpec {
+        key: "endpoint",
+        required: true,
+        secret: false,
+        description: "API base URL including /v1, e.g. http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1",
+        default: None,
+        multiline: false,
+    },
+    OptionSpec {
+        key: "model",
+        required: true,
+        secret: false,
+        description: "Model name, e.g. qwen3:8b or gpt-4o-mini",
+        default: None,
+        multiline: false,
+    },
+    OptionSpec {
+        key: "api_key",
+        required: false,
+        secret: true,
+        description: "API key, sent as a Bearer token; not needed for a local server",
+        default: None,
+        multiline: false,
+    },
+    OptionSpec {
+        key: "temperature",
+        required: false,
+        secret: false,
+        description: "Sampling temperature from 0 to 2; unset: the model's default",
+        default: None,
+        multiline: false,
+    },
+    OptionSpec {
+        key: "translate_prompt",
+        required: false,
+        secret: false,
+        description: "System prompt for translations; {from} and {to} become language names",
+        default: Some(super::openai::DEFAULT_TRANSLATE_PROMPT),
+        multiline: true,
     },
     TIMEOUT_SECS,
     MAX_RETRIES,
@@ -126,6 +192,15 @@ pub(crate) const DEEPL_TRANSPORT: TransportDefaults = TransportDefaults {
     retry_on_rate_limit: true,
 };
 
+/// OpenAI-compatible chat servers: a model can take a while, so a long budget; one retry,
+/// including a 429 with a short `Retry-After`.
+#[cfg(feature = "openai")]
+pub(crate) const OPENAI_TRANSPORT: TransportDefaults = TransportDefaults {
+    max_retries: 1,
+    timeout: Duration::from_secs(60),
+    retry_on_rate_limit: true,
+};
+
 static TRANSLATION: &[ProviderDescriptor] = &[
     #[cfg(feature = "google")]
     ProviderDescriptor {
@@ -140,6 +215,13 @@ static TRANSLATION: &[ProviderDescriptor] = &[
         display_name: "DeepL",
         options: DEEPL_OPTIONS,
         transport: DEEPL_TRANSPORT,
+    },
+    #[cfg(feature = "openai")]
+    ProviderDescriptor {
+        name: "openai",
+        display_name: "OpenAI-compatible",
+        options: OPENAI_OPTIONS,
+        transport: OPENAI_TRANSPORT,
     },
 ];
 
@@ -229,20 +311,24 @@ pub(crate) fn declared_option_keys(kind: &str) -> Vec<&'static str> {
 }
 
 /// Options that satisfy every [`required`](OptionSpec::required) option of `descriptor`
-/// with a dummy value, so tests can build any listed provider without a network call.
+/// with a dummy value (a URL for `endpoint`), so tests can build any listed provider
+/// without a network call.
 #[cfg(test)]
 pub(crate) fn required_options(descriptor: &ProviderDescriptor) -> super::ProviderOptions {
     descriptor
         .options
         .iter()
         .filter(|option| option.required)
-        .map(|option| (option.key, "test-value"))
+        .map(|option| match option.key {
+            "endpoint" => (option.key, "http://localhost:1/v1"),
+            _ => (option.key, "test-value"),
+        })
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(any(feature = "google", feature = "deepl"))]
+    #[cfg(any(feature = "google", feature = "deepl", feature = "openai"))]
     use super::super::http::{MAX_RETRIES_KEY, TIMEOUT_SECS_KEY};
     use super::super::options::{is_secret_key, TYPE_KEY};
     use super::super::*;
@@ -330,6 +416,11 @@ mod tests {
                         "{at}: duplicate"
                     );
                     assert!(!option.description.is_empty(), "{at}");
+                    assert!(
+                        option.default.is_none_or(|d| !d.trim().is_empty()),
+                        "{at}: an empty default"
+                    );
+                    assert!(!option.secret || option.default.is_none(), "{at}");
                 }
             }
         }
@@ -382,6 +473,46 @@ mod tests {
             declared_option_keys("deepl"),
             ["api_key", "endpoint", MAX_RETRIES_KEY, TIMEOUT_SECS_KEY]
         );
+    }
+
+    #[cfg(feature = "openai")]
+    #[test]
+    fn openai_needs_endpoint_and_model_and_offers_the_prompt() {
+        let openai = translation_providers()
+            .iter()
+            .find(|d| d.name == "openai")
+            .unwrap();
+        assert_eq!(openai.display_name, "OpenAI-compatible");
+        let option = |key: &str| openai.options.iter().find(|o| o.key == key).unwrap();
+        assert!(option("endpoint").required && option("model").required);
+        assert!(!option("api_key").required && option("api_key").secret);
+        let prompt = option("translate_prompt");
+        assert!(prompt.multiline && !prompt.required);
+        assert_eq!(
+            prompt.default,
+            Some(super::super::openai::DEFAULT_TRANSLATE_PROMPT)
+        );
+        assert!(openai
+            .options
+            .iter()
+            .all(|o| o.key == "translate_prompt" || (!o.multiline && o.default.is_none())));
+        assert_eq!(openai.transport.timeout, Duration::from_secs(60));
+        assert_eq!(openai.transport.max_retries, 1);
+        assert!(openai.transport.retry_on_rate_limit);
+        assert_eq!(
+            declared_option_keys("openai"),
+            [
+                "api_key",
+                "endpoint",
+                MAX_RETRIES_KEY,
+                "model",
+                "temperature",
+                TIMEOUT_SECS_KEY,
+                "translate_prompt"
+            ]
+        );
+        assert!(is_secret_option("openai", "api_key"));
+        assert!(!is_secret_option("openai", "translate_prompt"));
     }
 
     #[cfg(feature = "deepl")]

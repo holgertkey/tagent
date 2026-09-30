@@ -1191,7 +1191,7 @@ works, in its own commit.
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
-**Status:** planned (detailed 2026-09-30)
+**Status:** done (2026-09-30, tagent 0.19.0; tagent-cli 0.17.0+013, tagent-gui 0.14.0+035) — live tests against a real model not run yet (decision 5)
 **Goal:** `OpenAiTranslateProvider`, one generic adapter for every server that speaks
 the chat-completions protocol (OpenAI, Ollama, LM Studio, OpenRouter, vLLM, ...),
 selectable in both apps through a profile with `type = "openai"`, with no app code
@@ -1422,6 +1422,55 @@ field (unit test); `tagent-cli --update-config` adds the `openai` example block 
 config file generated before this stage (unit tests plus one manual run on a copy of a
 real file). Desirable, not blocking (decision 5): live tests and a manual CLI
 translation pass against a local Ollama.
+
+**Notes after landing:**
+- Shipped as planned: `providers/openai.rs` (`OpenAiTranslateProvider::with_options`,
+  `DEFAULT_TRANSLATE_PROMPT`, a private `ChatClient` for P3, pure `parse_temperature`/
+  `build_request_body`/`render_prompt`/`parse_response`/`clean_answer`/`strip_quotes`/
+  `normalize_detected`/`detection_prefix`), `OPENAI_TRANSPORT`/`OPENAI_OPTIONS` and the
+  `"OpenAI-compatible"` descriptor, `quota_error_codes` and `endpoint_base_url` in
+  `http.rs` (DeepL's `base_url` uses the latter), `OptionSpec::default`/`multiline`, the
+  `openai` feature in `default`, a CI row for it, both apps' `features = ["deepl",
+  "openai"]`, and `tagent-cli`'s per-kind example blocks (`config::profile_example`,
+  `upgrade::has_example`).
+- The OpenAI error-codes page was re-read on 2026-09-30: its 429 quota codes are exactly
+  the four listed above (no `insufficient_quota`), so `OPENAI_QUOTA_CODES` is those four.
+  A quota-coded 429 also suppresses the retry when `Retry-After` is short (the retry
+  delay is now decided after the status is classified).
+- **`"auto"` wording** is done by substitution, not a second template: `{from}` becomes
+  `openai::AUTO_SOURCE_WORDING` ("its original language (detect it)"), so a custom
+  `translate_prompt` gets it too. The constant is public next to the default prompt.
+- **The prompt example in `tagent-cli.toml`** is one `#` per line inside the block
+  (`# #translate_prompt = """`, `# #<line>`, `# #"""`), not the plan's bare `# """`: the
+  option stays optional after uncommenting the block like every `#key`, and a blank prompt
+  line can't turn into the lone `#` that separates blocks. The closing `"""` on its own
+  line leaves a final newline in the loaded value; the provider trims the prompt, so it
+  equals the built-in one (tested). A `tagent` test keeps `DEFAULT_TRANSLATE_PROMPT` free of
+  `\`, `"""`, `[`-lines and `=` (the upgrade's comment scan would read those as headers
+  or keys).
+- Small additions: a blank `api_key` sends no header; a blank `translate_prompt` falls back
+  to the default; an unclosed `<think>` leaves nothing (→ `Decode`); detection trims
+  stray `.`, backticks and quotes and rejects `auto`; `User-Agent: tagent/<version>`.
+  Quote stripping knows `""`, `''`, `“”`, `„“`, `«»`, `「」` and keeps a pair that also
+  occurs inside (`"a" and "b"`).
+- Tests filling every required option with a dummy (`registry::required_options`, the
+  `TRANSLATION_PROVIDERS` doctest, `tagent-cli`'s `uncommented_example_profiles_build`)
+  now use a URL for `endpoint`; `tagent-cli`'s provider-list tests list `openai`.
+- `--update-config` was run on a copy of a real `tagent-cli.toml` (from 0.17.0+004 on): it
+  added exactly the `openai` block at the end, and a second run reported "up to date".
+  A CLI translation through an `[provider_options.ollama]` profile reached the configured
+  endpoint (connection refused: **no Ollama was running**, so the live tests and a real
+  translation are still open — decision 5; run them with
+  `TAGENT_LIVE_TESTS=1 TAGENT_OPENAI_ENDPOINT=http://localhost:11434/v1
+  TAGENT_OPENAI_MODEL=qwen3:8b cargo test -p tagent openai::tests::live -- --ignored
+  --nocapture`).
+- **One commit instead of the planned three**: the transport part already references the
+  `openai` feature (`cfg_attr`), which needs the `Cargo.toml` line, and with the provider
+  in `default` the apps' tests (provider lists, `endpoint` dummies) change in the same
+  step, so neither intermediate commit would have passed on its own.
+- `tagent-gui`: only a unit test (`openai_needs_endpoint_and_model_and_hides_its_key`);
+  the dialog itself wasn't opened. `translate_prompt` is a single-line field until the
+  "Multi-line provider options" stage of `tagent-gui-dev-plan.md`.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 

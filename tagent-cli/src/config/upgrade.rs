@@ -7,7 +7,7 @@
 //! The file is never rewritten on its own: [`upgrade`] runs only on an explicit command,
 //! and only adds (keys, sections, comments), never removes or renames.
 
-use super::{config_template, provider_kinds, render_config, Config};
+use super::{config_template, profile_example, provider_kinds, render_config, Config};
 use std::collections::HashSet;
 use toml_edit::{DocumentMut, Item, TableLike};
 
@@ -348,7 +348,8 @@ pub(super) struct Upgrade {
 /// comments above them and their default values; missing sections whole, after the
 /// section that precedes them in the template; and at the end, the provider profile
 /// explanation (unless the file has its [`PROFILES_MARKER`] line) and the example
-/// profiles (unless it has their [`EXAMPLES_MARKER`] line). Nothing is
+/// profiles (unless it has their [`EXAMPLES_MARKER`] line; if it has, the example block of
+/// each provider kind it lacks, see [`has_example`]). Nothing is
 /// removed, renamed or reordered, and a commented-out key is not added back. `None` when
 /// nothing is missing.
 pub(super) fn upgrade(content: &str) -> Result<Option<Upgrade>, toml_edit::TomlError> {
@@ -490,6 +491,26 @@ pub(super) fn upgrade(content: &str) -> Result<Option<Upgrade>, toml_edit::TomlE
         trailing.push_str(text.trim_start_matches('\n'));
         doc.set_trailing(trailing);
         added.push(description.to_string());
+    } else {
+        // The file has the examples: add the block of each provider kind that became
+        // available since (the second-instance example isn't re-added on its own).
+        let missing: Vec<(&str, String)> = provider_kinds()
+            .into_iter()
+            .filter(|(kind, _)| !has_example(content, &doc, kind))
+            .filter_map(|(kind, _)| Some((kind, profile_example(kind)?)))
+            .collect();
+        if !missing.is_empty() {
+            let mut trailing = doc.trailing().as_str().unwrap_or("").to_string();
+            if !trailing.is_empty() && !trailing.ends_with('\n') {
+                trailing.push('\n');
+            }
+            for (kind, block) in missing {
+                trailing.push_str("#\n");
+                trailing.push_str(&block);
+                added.push(format!("the example profile for {kind} (at the end)"));
+            }
+            doc.set_trailing(trailing);
+        }
     }
     if added.is_empty() {
         return Ok(None);
@@ -498,6 +519,25 @@ pub(super) fn upgrade(content: &str) -> Result<Option<Upgrade>, toml_edit::TomlE
         content: doc.to_string(),
         added,
     }))
+}
+
+/// Whether `content` (parsed as `doc`) has an example profile for provider kind `kind`: its
+/// block header line (`## <kind>: ...`, commented out as `# ## <kind>: ...` or not), a
+/// commented-out `[provider_options.<kind>]` header, or a real profile of that name.
+fn has_example(content: &str, doc: &DocumentMut, kind: &str) -> bool {
+    let block_header = format!("## {kind}:");
+    let table_header = format!("[provider_options.{kind}]");
+    let real = doc
+        .get(PROFILES)
+        .and_then(Item::as_table_like)
+        .is_some_and(|profiles| profiles.contains_key(kind));
+    real || content.lines().map(str::trim).any(|line| {
+        let uncommented = line.strip_prefix("# ").unwrap_or(line);
+        uncommented.starts_with(&block_header)
+            || line
+                .trim_start_matches(|c: char| c == '#' || c.is_whitespace())
+                .starts_with(&table_header)
+    })
 }
 
 #[cfg(test)]
@@ -667,6 +707,17 @@ mod tests {
         assert_eq!(unknown(&toml), vec![]);
     }
 
+    /// The `openai` block with its prompt enabled too: `#` removed from the lines of the
+    /// commented-out `translate_prompt`, the way the file tells the user to.
+    #[test]
+    fn the_enabled_openai_prompt_has_no_unknown_options() {
+        let toml =
+            super::super::tests::uncomment_example(&render_config(&Config::default()), "openai");
+        let toml = super::super::tests::uncomment_prompt(&toml);
+        assert!(toml.contains("\ntranslate_prompt = \"\"\"\n"), "{toml}");
+        assert_eq!(unknown(&toml), vec![]);
+    }
+
     /// An old-style file: sections and keys missing, custom comments, an unknown key and a
     /// commented-out one.
     const OLD_FILE: &str = r#"# My settings
@@ -817,6 +868,106 @@ enable_text_to_speech = false
             text.find("[provider_options.work]").unwrap()
                 < text.find("# Provider profiles").unwrap()
         );
+    }
+
+    /// A current file without the `openai` example block, as files generated before the
+    /// provider existed are.
+    fn file_before_openai() -> String {
+        let complete = render_config(&Config::default());
+        let block = format!("#\n{}", profile_example("openai").unwrap());
+        assert_eq!(complete.matches(&block).count(), 1, "{complete}");
+        complete.replace(&block, "")
+    }
+
+    #[test]
+    fn a_file_without_a_providers_example_gets_exactly_that_block() {
+        let old = file_before_openai();
+        assert_eq!(new_settings_count(&old), 0);
+        let result = upgraded(&old);
+        assert_eq!(
+            result.added,
+            vec!["the example profile for openai (at the end)"]
+        );
+        let text = &result.content;
+        assert!(text.starts_with(&old), "{text}");
+        let block = profile_example("openai").unwrap();
+        assert!(text.ends_with(&format!("\n#\n{block}")), "{text}");
+        assert_eq!(text.matches("# [provider_options.deepl]\n").count(), 1);
+        assert!(upgrade(text).unwrap().is_none(), "{text}");
+        assert_eq!(unknown(text), vec![]);
+        assert_eq!(parse_config(text).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn several_missing_examples_come_in_registry_order() {
+        let complete = render_config(&Config::default());
+        let mut old = complete.clone();
+        for kind in ["deepl", "openai"] {
+            old = old.replace(&format!("#\n{}", profile_example(kind).unwrap()), "");
+        }
+        let result = upgraded(&old);
+        assert_eq!(
+            result.added,
+            vec![
+                "the example profile for deepl (at the end)",
+                "the example profile for openai (at the end)",
+            ]
+        );
+        // The second-instance block stayed and isn't added again.
+        assert_eq!(
+            result
+                .content
+                .matches("[provider_options.deepl-work]")
+                .count(),
+            1
+        );
+        assert!(upgrade(&result.content).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_enabled_or_real_profile_counts_as_the_example() {
+        let old = file_before_openai();
+        for extra in [
+            // The block uncommented (only its first lines matter).
+            "## openai: OpenAI-compatible\n[provider_options.openai]\nendpoint = \"http://localhost:11434/v1\"\nmodel = \"m\"\n",
+            // The block header, still commented out.
+            "# ## openai: OpenAI-compatible\n",
+            // A commented-out table of the kind.
+            "#[provider_options.openai]\n",
+            // A real profile named after the kind, in inline form.
+            "[provider_options]\nopenai = { endpoint = \"http://localhost:11434/v1\", model = \"m\" }\n",
+        ] {
+            let content = format!("{old}\n{extra}");
+            assert!(upgrade(&content).unwrap().is_none(), "{extra}");
+        }
+        // Profiles of other names don't count, even of the same kind.
+        for extra in [
+            "[provider_options.openai-work]\ntype = \"openai\"\nendpoint = \"http://x/v1\"\nmodel = \"m\"\n",
+            "[provider_options.ollama]\ntype = \"openai\"\nendpoint = \"http://x/v1\"\nmodel = \"m\"\n",
+            "# ## openaix: something\n",
+        ] {
+            let content = format!("{old}\n{extra}");
+            let result = upgraded(&content);
+            assert_eq!(
+                result.added,
+                vec!["the example profile for openai (at the end)"],
+                "{extra}"
+            );
+            assert!(result.content.starts_with(&content));
+            assert!(parse_config(&result.content).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_missing_example_after_a_final_table_without_newline_stays_valid() {
+        let content = format!(
+            "{}\n[provider_options.work]\ntype = \"deepl\"\napi_key = \"k\"",
+            file_before_openai()
+        );
+        let text = upgraded(&content).content;
+        let config = parse_config(&text).unwrap();
+        assert_eq!(config.provider_options.get("work").unwrap().len(), 2);
+        assert!(text.contains("api_key = \"k\"\n#\n# ## openai:"), "{text}");
     }
 
     /// A file as 0.17.0+000 to +003 wrote it: the profiles explanation with a small

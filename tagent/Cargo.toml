@@ -16,7 +16,7 @@ name = "tagent"
 path = "src/lib.rs"
 
 [features]
-default = ["google", "deepl"]
+default = ["google", "deepl", "openai"]
 # One feature per built-in provider kind; the shared transport, options and profiles are
 # always compiled. A provider without dependencies of its own is in `default`; one that
 # brings heavy dependencies is opt-in.
@@ -24,6 +24,8 @@ default = ["google", "deepl"]
 google = []
 # DeepL translation over its official, keyed API.
 deepl = []
+# Translation through any OpenAI-compatible chat-completions server (OpenAI, Ollama, ...).
+openai = []
 
 [package.metadata.docs.rs]
 all-features = true

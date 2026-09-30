@@ -44,7 +44,31 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   (`"ru-UA"`, `"de_DE.UTF-8"`, as `sys-locale` returns them) whose language is listed;
   the fallback is the caller's. Pure functions: the crate reads no environment and gains
   no dependency.
-- **Cargo features per provider**: `google` and `deepl`, both in `default` (neither
+- **OpenAI-compatible translation provider** (default feature `openai`;
+  `providers::openai::OpenAiTranslateProvider`, kind `"openai"`, display name
+  `"OpenAI-compatible"`): one adapter for every server that speaks the chat-completions
+  protocol (OpenAI, Ollama, LM Studio, OpenRouter, vLLM, ...). Required options:
+  `endpoint` (the base URL including `/v1`, e.g. `http://localhost:11434/v1`; no default,
+  so text never goes to a cloud service by accident) and `model`; optional: `api_key`
+  (sent as a Bearer token, no header without it), `temperature` (0–2, not sent unless set),
+  `translate_prompt` (replaces the built-in system prompt `openai::DEFAULT_TRANSLATE_PROMPT`;
+  `{from}`/`{to}` become language names) and the transport options (60 s budget, 1 retry).
+  A `<think>` block, a wrapping code fence and quotes the input didn't have are removed
+  from the answer; a refusal, a cut-off answer (`finish_reason: "length"`) and a
+  content-filtered one are errors, never a partial translation. `detect_language` asks the
+  model for a language code. Usually built through a profile, e.g.
+  `[provider_options.ollama]` with `type = "openai"`.
+- **Quota exhaustion behind HTTP 429 is recognized** (OpenAI-compatible provider only;
+  Google and DeepL are unchanged). A rate-limit answer whose JSON
+  `error.code` says the credit or spend limit is used up (OpenAI's
+  `credit_balance_exhausted`, `organization_spend_limit_exceeded`,
+  `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`) is
+  `Error::QuotaExceeded` and never retried, instead of `Error::RateLimited`.
+- **`OptionSpec::default` and `OptionSpec::multiline`**: the value a provider uses when an
+  option is unset (for a UI to show or start editing from; the OpenAI-compatible
+  `translate_prompt` points at the built-in prompt) and a hint that a value is usually
+  several lines long. Every other built-in option has `None` / `false`.
+- **Cargo features per provider**: `google`, `deepl` and `openai`, all in `default` (none
   brings dependencies of its own). A library user can leave one out with
   `default-features = false`; a kind that is compiled out is
   missing from `TRANSLATION_PROVIDERS` etc. and the registry, and the factories return

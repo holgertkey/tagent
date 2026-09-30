@@ -239,7 +239,7 @@ impl HttpTransportBuilder {
     ///
     /// [`Error::InvalidOptions`] if the value isn't a valid header value.
     // For keyed providers; Google sends no credentials.
-    #[cfg_attr(not(feature = "deepl"), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "deepl", feature = "openai")), allow(dead_code))]
     pub fn secret_header(
         mut self,
         name: &'static str,
@@ -280,8 +280,7 @@ impl HttpTransportBuilder {
     /// [`Error::QuotaExceeded`] (never retried): OpenAI answers HTTP 429 both when throttling
     /// and when the account's credit is used up, and only the body's `error.code` (e.g.
     /// `credit_balance_exhausted`) tells them apart. Other statuses are unaffected.
-    // Used by the OpenAI-compatible provider.
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "openai"), allow(dead_code))]
     pub fn quota_error_codes(mut self, codes: &'static [&'static str]) -> Self {
         self.quota_error_codes = codes;
         self
@@ -366,7 +365,7 @@ impl HttpTransportBuilder {
 /// # Errors
 ///
 /// [`Error::InvalidOptions`] if `endpoint` isn't an `http(s)` URL.
-#[cfg_attr(not(feature = "deepl"), allow(dead_code))]
+#[cfg_attr(not(any(feature = "deepl", feature = "openai")), allow(dead_code))]
 pub(crate) fn endpoint_base_url(endpoint: &str) -> Result<String, Error> {
     let endpoint = endpoint.trim();
     let valid = url::Url::parse(endpoint).is_ok_and(|url| matches!(url.scheme(), "http" | "https"));

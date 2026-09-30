@@ -959,48 +959,16 @@ fn profile_examples() -> String {
     let mut lines: Vec<String> = Vec::new();
     let mut second_instance = None;
     for (kind, descriptors) in provider_kinds() {
-        let names: Vec<&str> = descriptors.iter().map(|d| d.display_name).collect();
-        let transport = descriptors[0].transport;
-        let mut options: Vec<&OptionSpec> = Vec::new();
+        let mut required: Vec<&str> = Vec::new();
         for option in descriptors.iter().flat_map(|d| d.options) {
-            if !options.iter().any(|o| o.key == option.key) {
-                options.push(option);
+            if option.required && !required.contains(&option.key) {
+                required.push(option.key);
             }
         }
-        let required: Vec<&str> = options
-            .iter()
-            .filter(|o| o.required)
-            .map(|o| o.key)
-            .collect();
         if second_instance.is_none() && !required.is_empty() {
             second_instance = Some((kind, required));
         }
-
-        lines.push(format!("## {kind}: {}", names.join(", ")));
-        lines.push(format!("[provider_options.{kind}]"));
-        for option in options {
-            let mut note = option.description.to_string();
-            if option.required {
-                note.push_str(". Required");
-            }
-            lines.push(format!("## {note}"));
-            if option.secret {
-                lines.push(format!(
-                    "## (or set {} instead of storing it in this file)",
-                    providers::env_var_name(kind, option.key)
-                ));
-            }
-            let default = match option.key {
-                "timeout_secs" => Some(transport.timeout.as_secs().to_string()),
-                "max_retries" => Some(transport.max_retries.to_string()),
-                _ => None,
-            };
-            match default {
-                Some(value) => lines.push(format!("{} = {}", option.key, Value::from(value))),
-                None if option.required => lines.push(format!("{} = \"\"", option.key)),
-                None => lines.push(format!("#{} = \"\"", option.key)),
-            }
-        }
+        lines.extend(example_block_lines(kind, &descriptors));
         lines.push(String::new());
     }
     if let Some((kind, required)) = second_instance {
@@ -1015,6 +983,71 @@ fn profile_examples() -> String {
         lines.push(String::new());
     }
     lines.pop();
+    commented_out(&lines)
+}
+
+/// The example block of provider kind `kind` alone, exactly as [`profile_examples`] writes
+/// it (without the separating `"#"` lines); `None` for a kind that isn't built in.
+fn profile_example(kind: &str) -> Option<String> {
+    provider_kinds()
+        .into_iter()
+        .find(|(name, _)| *name == kind)
+        .map(|(kind, descriptors)| commented_out(&example_block_lines(kind, &descriptors)))
+}
+
+/// The lines of one kind's example block, before they are commented out: the `## <kind>:`
+/// header line, the table header and one entry per option (with its explanation).
+fn example_block_lines(kind: &str, descriptors: &[&ProviderDescriptor]) -> Vec<String> {
+    let names: Vec<&str> = descriptors.iter().map(|d| d.display_name).collect();
+    let transport = descriptors[0].transport;
+    let mut options: Vec<&OptionSpec> = Vec::new();
+    for option in descriptors.iter().flat_map(|d| d.options) {
+        if !options.iter().any(|o| o.key == option.key) {
+            options.push(option);
+        }
+    }
+    let mut lines = vec![
+        format!("## {kind}: {}", names.join(", ")),
+        format!("[provider_options.{kind}]"),
+    ];
+    for option in options {
+        let mut note = option.description.to_string();
+        if option.required {
+            note.push_str(". Required");
+        }
+        lines.push(format!("## {note}"));
+        if option.secret {
+            lines.push(format!(
+                "## (or set {} instead of storing it in this file)",
+                providers::env_var_name(kind, option.key)
+            ));
+        }
+        let default = match option.key {
+            "timeout_secs" => Some(transport.timeout.as_secs().to_string()),
+            "max_retries" => Some(transport.max_retries.to_string()),
+            _ => None,
+        };
+        match (default, option.default) {
+            (Some(value), _) => lines.push(format!("{} = {}", option.key, Value::from(value))),
+            // A long default (a prompt) as a commented-out multi-line string, one `#` per
+            // line, so it can be copied and edited; a blank line in it can't end the block.
+            (None, Some(value)) if option.multiline || value.contains('\n') => {
+                lines.push(format!("#{} = \"\"\"", option.key));
+                lines.extend(value.lines().map(|line| format!("#{line}")));
+                lines.push("#\"\"\"".to_string());
+            }
+            (None, Some(value)) => {
+                lines.push(format!("#{} = {}", option.key, Value::from(value)));
+            }
+            (None, None) if option.required => lines.push(format!("{} = \"\"", option.key)),
+            (None, None) => lines.push(format!("#{} = \"\"", option.key)),
+        }
+    }
+    lines
+}
+
+/// `lines` as TOML comments: `"# <line>"`, an empty line as a lone `"#"`.
+fn commented_out(lines: &[String]) -> String {
     lines
         .iter()
         .map(|line| {
@@ -3163,6 +3196,52 @@ api_key = "deepl-key"
             .collect()
     }
 
+    /// `toml` with the commented-out `#translate_prompt = """` ... `#"""` lines of an
+    /// enabled example block enabled too (`#` removed).
+    pub(super) fn uncomment_prompt(toml: &str) -> String {
+        let mut in_prompt = false;
+        toml.lines()
+            .map(|line| {
+                if line.starts_with("#translate_prompt = \"\"\"") {
+                    in_prompt = true;
+                }
+                let line = match line.strip_prefix('#') {
+                    Some(rest) if in_prompt => {
+                        if rest == "\"\"\"" {
+                            in_prompt = false;
+                        }
+                        rest
+                    }
+                    _ => line,
+                };
+                format!("{line}\n")
+            })
+            .collect()
+    }
+
+    /// The `openai` example with its prompt enabled loads the built-in prompt, which the
+    /// provider then uses as it is (the value's final newline is trimmed away).
+    #[test]
+    fn the_openai_example_prompt_loads_as_the_default_prompt() {
+        let toml = uncomment_prompt(&uncomment_example(
+            &render_config(&Config::default()),
+            "openai",
+        ));
+        let mut config = parse_config(&toml).unwrap_or_else(|e| panic!("{e}\n{toml}"));
+        let options = config.provider_options.get("openai").unwrap();
+        assert_eq!(
+            options["translate_prompt"].trim(),
+            providers::openai::DEFAULT_TRANSLATE_PROMPT
+        );
+        config
+            .provider_options
+            .insert("openai", "endpoint", "http://localhost:11434/v1");
+        config
+            .provider_options
+            .insert("openai", "model", "qwen3:8b");
+        build_example_profile(&config, "openai", "openai").unwrap();
+    }
+
     /// Builds profile `name` on every axis its kind serves, with the file's options only.
     fn build_example_profile(config: &Config, kind: &str, name: &str) -> Result<(), String> {
         let options = config.provider_options_using(name, no_env);
@@ -3246,7 +3325,11 @@ api_key = "deepl-key"
 
             let mut filled = config.clone();
             for key in &required {
-                filled.provider_options.insert(&name, key, "dummy-value:fx");
+                let value = match *key {
+                    "endpoint" => "http://localhost:11434/v1",
+                    _ => "dummy-value:fx",
+                };
+                filled.provider_options.insert(&name, key, value);
             }
             build_example_profile(&filled, kind, &name)
                 .unwrap_or_else(|e| panic!("{name} filled: {e}"));
@@ -3728,11 +3811,12 @@ api_key = "secret-0123456789"  # from the account page
         let entries = config.translation_provider_list_using(|_| None);
 
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["google", "deepl", "work"]);
+        assert_eq!(names, ["google", "deepl", "openai", "work"]);
         assert_eq!(entries[0].display_name, "Google Translate");
-        assert_eq!(entries[2].display_name, "DeepL (work)");
+        assert_eq!(entries[2].display_name, "OpenAI-compatible");
+        assert_eq!(entries[3].display_name, "DeepL (work)");
         let active: Vec<bool> = entries.iter().map(|e| e.active).collect();
-        assert_eq!(active, [true, false, false]);
+        assert_eq!(active, [true, false, false, false]);
     }
 
     #[test]
@@ -3743,7 +3827,8 @@ api_key = "secret-0123456789"  # from the account page
 
         assert_eq!(entries[0].missing, Vec::<String>::new());
         assert_eq!(entries[1].missing, ["api_key"]);
-        assert_eq!(entries[2].missing, Vec::<String>::new());
+        assert_eq!(entries[2].missing, ["endpoint", "model"]);
+        assert_eq!(entries[3].missing, Vec::<String>::new());
     }
 
     /// A required option supplied through `TAGENT_<NAME>_<KEY>` counts as set.
@@ -3785,6 +3870,7 @@ api_key = "secret-0123456789"  # from the account page
                 "Translation providers:",
                 "* google  Google Translate",
                 "  deepl   DeepL (missing: api_key)",
+                "  openai  OpenAI-compatible (missing: endpoint, model)",
                 "  work    DeepL (work)",
                 "Switch with /p <name>; /save keeps the choice.",
             ]

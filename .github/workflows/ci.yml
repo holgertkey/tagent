@@ -61,7 +61,8 @@ jobs:
         run: |
           for features in "--no-default-features" \
                           "--no-default-features --features google" \
-                          "--no-default-features --features deepl"; do
+                          "--no-default-features --features deepl" \
+                          "--no-default-features --features openai"; do
             echo "::group::tagent $features"
             cargo clippy -p tagent --all-targets --locked $features -- -D warnings
             cargo test -p tagent --lib --locked $features
