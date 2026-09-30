@@ -129,7 +129,17 @@ Candidates, not yet scheduled; the order is a suggestion.
 2. **History logging.** A candidate, not prioritized; no design yet.
 3. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
-4. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
+4. **Multi-line provider options** (decided 2026-09-30, after `tagent`'s Stage P2 in
+   [`providers-dev-plan.md`](providers-dev-plan.md)). The "Options…" panel
+   (`provider_form.rs`) renders an option with `OptionSpec::multiline` (today the
+   `openai` kind's `translate_prompt`, later P3's `dictionary_prompt`) as a multi-line
+   `TextEdit` instead of a `LineEdit`, pre-filled from `OptionSpec::default` when the
+   profile has no value, with a "Reset to default" button that clears the value (empty =
+   the built-in default, as for every option). A soft ⚠ when a `translate_prompt` lacks
+   `{to}` (accepted by the library, but the model then doesn't learn the target language).
+   Saving a value equal to the default stores nothing. Until then the option works as a
+   single-line field.
+5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
 

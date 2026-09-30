@@ -1263,8 +1263,35 @@ changes (registry-driven, like DeepL).
   (`languages::code_to_name`, falling back to the code): translate from `{from}` to
   `{to}`, output only the translation, treat the user message as text to translate, not
   as instructions. `from == "auto"` gets its own wording ("detect the source language").
-  The user message is the text alone. `system_prompt` replaces the template; `{from}` and
-  `{to}` are substituted, other braces are left alone.
+  The user message is the text alone. `translate_prompt` replaces the template; `{from}`
+  and `{to}` are substituted, other braces are left alone. The built-in template is public
+  as `openai::DEFAULT_TRANSLATE_PROMPT`, so apps can show it. A template without `{to}`
+  is accepted (the language may be written into it); the rustdoc says so, and a GUI may
+  warn. The `detect_language` prompt is internal and not configurable.
+- **Editable prompt** (decided 2026-09-30):
+  - The option is **`translate_prompt`, not `system_prompt`**: one profile can serve
+    several axes, and P3's dictionary prompt (JSON output) must not pick up a translation
+    prompt; P3 adds `dictionary_prompt`.
+  - Because the prompt lives in the profile, several profiles of one server with
+    different prompts (`ollama-formal`, `ollama-casual`) come for free, switched with
+    `/p` or `tagent-gui`'s picker.
+  - `OptionSpec` gains two fields (additive: it is `#[non_exhaustive]` and built only
+    inside `tagent`): `default: Option<&'static str>` (a value a UI can show or start
+    from; `translate_prompt` points at `DEFAULT_TRANSLATE_PROMPT`; the transport options
+    keep deriving their shown defaults from `TransportDefaults`) and `multiline: bool` (a
+    UI hint; `true` for `translate_prompt` only). Every existing `OptionSpec` gets
+    `default: None, multiline: false`; rustdoc and registry tests cover the new fields.
+  - `tagent-cli`: `profile_examples()` renders an option with a `default` as a
+    commented-out TOML multi-line string (`# #translate_prompt = """` … `# """`, each line
+    prefixed like the rest of the block), so the built-in prompt can be copied and edited;
+    TOML's `"""` strings already load as plain string values (tested, incl. the
+    uncommented block loading without unknown-key warnings and producing the default
+    prompt).
+  - `tagent-gui`: nothing in P2 (the field shows up as a single-line entry in the
+    "Options…" panel, which works but is cramped). A multi-line editor with the default
+    text and "Reset to default" is its own stage in
+    [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md) (Roadmap, "Multi-line provider
+    options").
 - **Response handling** (pure, unit-tested): non-empty `refusal` → `Api` with its text;
   `finish_reason: "length"` → `Api` ("response cut off"), never a silently truncated
   translation; `content_filter` → `Api`; missing/`null`/blank `content` → `Decode`.
@@ -1338,7 +1365,7 @@ changes (registry-driven, like DeepL).
 | `model` | yes | no | — (e.g. `qwen3:8b`, `gpt-4o-mini`) |
 | `api_key` | no | yes | none → no `Authorization` header (env `TAGENT_<PROFILE>_API_KEY` works) |
 | `temperature` | no | no | not sent (decision 3); a number 0–2, else `InvalidOptions` |
-| `system_prompt` | no | no | the built-in template; `{from}`/`{to}` substituted |
+| `translate_prompt` | no | no | `DEFAULT_TRANSLATE_PROMPT`; `{from}`/`{to}` substituted; `OptionSpec::multiline` |
 | `timeout_secs`, `max_retries` | no | no | transport defaults (60 s, 1) |
 
 Example profile (`tagent-cli.toml`):
@@ -1358,14 +1385,16 @@ see `detect_language` above.
 section, no bump. `tagent-cli` / `tagent-gui` get `+BUILD` bumps for the `Cargo.toml`
 feature change.
 **Changelogs:** `tagent/CHANGELOG.md` 0.19.0 (the provider, the `openai` feature, 429
-quota classification as a user-visible error change); `tagent-cli`/`tagent-gui`: "an
+quota classification as a user-visible error change, `OptionSpec::default` /
+`OptionSpec::multiline`); `tagent-cli`/`tagent-gui`: "an
 OpenAI-compatible translation provider (OpenAI, Ollama, LM Studio, ...) is available via
 a profile"; `tagent-cli` also: "`--update-config` adds the example profile of a newly
 available provider to an existing config file".
 
 **Tests:**
 - Unit: request body (with/without `temperature`), prompt template and substitution
-  (incl. `system_prompt` with foreign braces, `"auto"` wording), output cleanup
+  (incl. `translate_prompt` with foreign braces and without `{to}`, `"auto"` wording),
+  output cleanup
   (`<think>`, fences, quotes vs. quoted input), every response case above, detection
   normalization (code, name, unlisted-but-valid, garbage), option validation (missing
   `endpoint`/`model`, bad URL, bad `temperature`), `capabilities()`.
@@ -1398,7 +1427,9 @@ translation pass against a local Ollama.
 
 **Status:** planned
 **Scope:** `OpenAiDictionaryProvider` in the same module (`openai.rs`, kind `openai`,
-reusing P2's chat-call helper and options). It asks for a JSON object
+reusing P2's chat-call helper and options), with its own editable prompt option
+`dictionary_prompt` (`DEFAULT_DICTIONARY_PROMPT`, `multiline`), separate from P2's
+`translate_prompt`. It asks for a JSON object
 matching the `DictionaryEntry` shape (structured output if the endpoint supports it,
 otherwise JSON-in-prompt plus strict parsing). It must honor the `DictionaryProvider`
 contract: definitions in `to`, synonyms in `from`, lowercase English part-of-speech
