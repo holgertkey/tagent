@@ -50,7 +50,7 @@
 //! # }
 //! ```
 
-use super::http::HttpTransport;
+use super::http::{endpoint_base_url, HttpTransport};
 use super::registry::DEEPL_TRANSPORT;
 use super::{ProviderOptions, TranslationCapabilities, TranslationProvider};
 use crate::error::Error;
@@ -175,16 +175,7 @@ impl TranslationProvider for DeepLTranslateProvider {
 /// The API base URL: `endpoint` if set (trailing `/` removed), otherwise by key type.
 fn base_url(key: &str, endpoint: Option<&str>) -> Result<String, Error> {
     match endpoint.map(str::trim).filter(|e| !e.is_empty()) {
-        Some(endpoint) => {
-            let valid =
-                url::Url::parse(endpoint).is_ok_and(|url| matches!(url.scheme(), "http" | "https"));
-            if !valid {
-                return Err(Error::InvalidOptions(format!(
-                    "`endpoint` must be an http(s) URL (got `{endpoint}`)"
-                )));
-            }
-            Ok(endpoint.trim_end_matches('/').to_string())
-        }
+        Some(endpoint) => endpoint_base_url(endpoint),
         None if key.ends_with(FREE_KEY_SUFFIX) => Ok(FREE_API_URL.to_string()),
         None => Ok(PRO_API_URL.to_string()),
     }

@@ -11,6 +11,7 @@
 //! | HTTP 502 / 503 / 504 | yes, after a short backoff |
 //! | HTTP 429 (or another rate-limit status, e.g. DeepL's 529) with `Retry-After` ≤ 2 s, if the provider allows it | yes, after that delay |
 //! | HTTP 429 / rate-limit status otherwise | no → [`Error::RateLimited`] |
+//! | HTTP 429 / rate-limit status whose JSON `error.code` is a configured quota code (OpenAI's `credit_balance_exhausted`, ...) | no → [`Error::QuotaExceeded`] |
 //! | Timeout | no: the whole budget was spent waiting |
 //! | HTTP 500, 401/403, quota, other 4xx | no |
 //!
@@ -66,6 +67,7 @@ pub(crate) struct HttpTransport {
     retry_on_rate_limit: bool,
     auth_statuses: &'static [u16],
     quota_statuses: &'static [u16],
+    quota_error_codes: &'static [&'static str],
     rate_limit_statuses: &'static [u16],
     /// Secrets sent in default headers, redacted from error messages.
     secrets: Vec<String>,
@@ -81,6 +83,7 @@ impl std::fmt::Debug for HttpTransport {
             .field("retry_on_rate_limit", &self.retry_on_rate_limit)
             .field("auth_statuses", &self.auth_statuses)
             .field("quota_statuses", &self.quota_statuses)
+            .field("quota_error_codes", &self.quota_error_codes)
             .field("rate_limit_statuses", &self.rate_limit_statuses)
             .finish_non_exhaustive()
     }
@@ -94,6 +97,7 @@ pub(crate) struct HttpTransportBuilder {
     secrets: Vec<String>,
     auth_statuses: &'static [u16],
     quota_statuses: &'static [u16],
+    quota_error_codes: &'static [&'static str],
     rate_limit_statuses: &'static [u16],
     timing: Timing,
 }
@@ -112,6 +116,7 @@ impl HttpTransport {
             secrets: Vec::new(),
             auth_statuses: &[401, 403],
             quota_statuses: &[],
+            quota_error_codes: &[],
             rate_limit_statuses: &[429],
             timing: Timing::default(),
         }
@@ -177,13 +182,6 @@ impl HttpTransport {
         let body = response.bytes().await.unwrap_or_default();
 
         let code = status.as_u16();
-        let delay = if self.rate_limit_statuses.contains(&code) {
-            retry_after.filter(|wait| self.retry_on_rate_limit && *wait <= MAX_RATE_LIMIT_WAIT)
-        } else if (502..=504).contains(&code) {
-            Some(self.backoff())
-        } else {
-            None
-        };
         let error = status_error(
             status,
             retry_after,
@@ -192,10 +190,21 @@ impl HttpTransport {
             &StatusMap {
                 auth: self.auth_statuses,
                 quota: self.quota_statuses,
+                quota_codes: self.quota_error_codes,
                 rate_limit: self.rate_limit_statuses,
             },
             &self.secrets,
         );
+        let delay = if matches!(error, Error::QuotaExceeded(_)) {
+            // A used-up quota doesn't come back after a short wait, whatever the status.
+            None
+        } else if self.rate_limit_statuses.contains(&code) {
+            retry_after.filter(|wait| self.retry_on_rate_limit && *wait <= MAX_RATE_LIMIT_WAIT)
+        } else if (502..=504).contains(&code) {
+            Some(self.backoff())
+        } else {
+            None
+        };
         Err((error, delay))
     }
 
@@ -267,6 +276,17 @@ impl HttpTransportBuilder {
         self
     }
 
+    /// Sets the JSON `error.code` values that turn a rate-limit status into
+    /// [`Error::QuotaExceeded`] (never retried): OpenAI answers HTTP 429 both when throttling
+    /// and when the account's credit is used up, and only the body's `error.code` (e.g.
+    /// `credit_balance_exhausted`) tells them apart. Other statuses are unaffected.
+    // Used by the OpenAI-compatible provider.
+    #[allow(dead_code)]
+    pub fn quota_error_codes(mut self, codes: &'static [&'static str]) -> Self {
+        self.quota_error_codes = codes;
+        self
+    }
+
     /// Sets which statuses mean throttling ([`Error::RateLimited`], retried after a short
     /// `Retry-After` if the provider allows it); default 429. DeepL adds its 529.
     /// A status listed here must not also be a gateway error (502-504).
@@ -332,11 +352,30 @@ impl HttpTransportBuilder {
             retry_on_rate_limit: self.defaults.retry_on_rate_limit,
             auth_statuses: self.auth_statuses,
             quota_statuses: self.quota_statuses,
+            quota_error_codes: self.quota_error_codes,
             rate_limit_statuses: self.rate_limit_statuses,
             secrets: self.secrets,
             timing: self.timing,
         })
     }
+}
+
+/// Validates a provider's `endpoint` option: an `http(s)` URL, returned trimmed and without
+/// a trailing `/`, so the adapter can append its path.
+///
+/// # Errors
+///
+/// [`Error::InvalidOptions`] if `endpoint` isn't an `http(s)` URL.
+#[cfg_attr(not(feature = "deepl"), allow(dead_code))]
+pub(crate) fn endpoint_base_url(endpoint: &str) -> Result<String, Error> {
+    let endpoint = endpoint.trim();
+    let valid = url::Url::parse(endpoint).is_ok_and(|url| matches!(url.scheme(), "http" | "https"));
+    if !valid {
+        return Err(Error::InvalidOptions(format!(
+            "`endpoint` must be an http(s) URL (got `{endpoint}`)"
+        )));
+    }
+    Ok(endpoint.trim_end_matches('/').to_string())
 }
 
 fn timed_out() -> Error {
@@ -352,6 +391,8 @@ fn parse_retry_after(value: &str) -> Option<Duration> {
 struct StatusMap<'a> {
     auth: &'a [u16],
     quota: &'a [u16],
+    /// JSON `error.code` values that make a rate-limit status a quota error.
+    quota_codes: &'a [&'a str],
     rate_limit: &'a [u16],
 }
 
@@ -367,7 +408,12 @@ fn status_error(
 ) -> Error {
     let code = status.as_u16();
     if map.rate_limit.contains(&code) {
-        return Error::RateLimited { retry_after };
+        let quota = !map.quota_codes.is_empty()
+            && json_error_code(body).is_some_and(|c| map.quota_codes.contains(&c.as_str()));
+        if !quota {
+            return Error::RateLimited { retry_after };
+        }
+        return Error::QuotaExceeded(describe(status, content_type, body, secrets));
     }
     let message = describe(status, content_type, body, secrets);
     if map.auth.contains(&code) {
@@ -377,6 +423,12 @@ fn status_error(
     } else {
         Error::Api(message)
     }
+}
+
+/// The `error.code` string of an OpenAI-style error body (`{"error": {"code": ...}}`).
+fn json_error_code(body: &[u8]) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_slice(body).ok()?;
+    json.get("error")?.get("code")?.as_str().map(str::to_string)
 }
 
 /// `"HTTP 403 Forbidden"`, plus `": <excerpt>"` of a non-HTML body: whitespace collapsed,
@@ -687,6 +739,7 @@ mod tests {
             &StatusMap {
                 auth: &[401, 403],
                 quota: &[456],
+                quota_codes: &[],
                 rate_limit: &[429],
             },
             &[],
@@ -710,6 +763,7 @@ mod tests {
             &StatusMap {
                 auth: &[],
                 quota: &[],
+                quota_codes: &[],
                 rate_limit: &[429],
             },
             &[],
@@ -753,6 +807,96 @@ mod tests {
             message.chars().filter(|c| *c == 'ж').count(),
             MAX_EXCERPT_CHARS
         );
+    }
+
+    #[test]
+    fn quota_codes_turn_a_rate_limit_status_into_quota_exceeded() {
+        let with_codes = |code: u16, body: &str| {
+            status_error(
+                StatusCode::from_u16(code).unwrap(),
+                Some(Duration::ZERO),
+                Some("application/json"),
+                body.as_bytes(),
+                &StatusMap {
+                    auth: &[401, 403],
+                    quota: &[],
+                    quota_codes: &["credit_balance_exhausted"],
+                    rate_limit: &[429],
+                },
+                &[],
+            )
+        };
+        let quota =
+            r#"{"error": {"message": "No credits left", "code": "credit_balance_exhausted"}}"#;
+        let error = with_codes(429, quota);
+        assert!(
+            matches!(&error, Error::QuotaExceeded(m) if m.contains("No credits left")),
+            "{error:?}"
+        );
+        for body in [
+            r#"{"error": {"message": "Slow down", "code": "slow_down"}}"#,
+            r#"{"error": {"message": "Too many requests", "code": null}}"#,
+            r#"{"error": "credit_balance_exhausted"}"#,
+            "not json",
+            "",
+        ] {
+            assert!(
+                matches!(with_codes(429, body), Error::RateLimited { .. }),
+                "{body}"
+            );
+        }
+        // Only rate-limit statuses are reclassified.
+        assert!(matches!(with_codes(400, quota), Error::Api(_)));
+        // Without configured codes, a quota code stays a rate limit.
+        assert!(matches!(map(429, None, quota), Error::RateLimited { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_quota_coded_rate_limit_is_never_retried() {
+        let server = first_then_ok(
+            ResponseTemplate::new(429)
+                .insert_header("Retry-After", "0")
+                .set_body_json(serde_json::json!({
+                    "error": {"message": "Spend limit", "code": "project_spend_limit_exceeded"}
+                })),
+        )
+        .await;
+        let transport = HttpTransport::builder(defaults(2, true))
+            .quota_error_codes(&["project_spend_limit_exceeded"])
+            .timing(FAST)
+            .build()
+            .unwrap();
+        let error = get(&transport, &server.uri()).await.unwrap_err();
+        assert!(matches!(error, Error::QuotaExceeded(_)), "{error:?}");
+        assert_requests(&server, 1).await;
+
+        // The same answer with another code is throttling and retried after `Retry-After`.
+        let server = first_then_ok(
+            ResponseTemplate::new(429)
+                .insert_header("Retry-After", "0")
+                .set_body_json(serde_json::json!({"error": {"code": "slow_down"}})),
+        )
+        .await;
+        assert_eq!(get(&transport, &server.uri()).await.unwrap(), b"ok");
+        assert_requests(&server, 2).await;
+    }
+
+    #[test]
+    fn endpoints_must_be_http_urls() {
+        assert_eq!(
+            endpoint_base_url(" http://localhost:8080/v1/ ").unwrap(),
+            "http://localhost:8080/v1"
+        );
+        assert_eq!(
+            endpoint_base_url("https://api.deepl.com").unwrap(),
+            "https://api.deepl.com"
+        );
+        for bad in ["api.deepl.com", "ftp://api.deepl.com", "", "dummy-value:fx"] {
+            assert!(
+                matches!(endpoint_base_url(bad), Err(Error::InvalidOptions(_))),
+                "{bad}"
+            );
+        }
     }
 
     #[test]
