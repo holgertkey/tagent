@@ -177,18 +177,16 @@ in the "Options…" panel, starting from the built-in text, with a way back to i
 - Optional, cheap: a single-line option with a `default` shows it as the `LineEdit`'s
   placeholder instead of "default". None exist today.
 
-**Decision to make first: where the `{to}` rule lives.** CLAUDE.md promises that a
-provider's options appear in the panel "with no GUI code", so the GUI must not know the
-key `translate_prompt`. Options:
-- **(a) Derived from `OptionSpec::default` (recommended, no API change):** for each
+**Where the `{to}` rule lives** (decided 2026-09-30: option (a)). CLAUDE.md promises
+that a provider's options appear in the panel "with no GUI code", so the GUI must not
+know the key `translate_prompt`. Options considered:
+- **(a) Derived from `OptionSpec::default` (chosen, no API change):** for each
   placeholder `{from}` / `{to}` that the default contains, the rule is "warn if the
   effective value (empty = the default) lacks it". Only `{to}` gets a ⚠ (a missing
   `{from}` is harmless: the model sees the text). P3's `dictionary_prompt` is covered
   automatically if its default uses `{to}`.
 - (b) An additive `OptionSpec` field in `tagent` (e.g. `placeholders: &[&str]`, required
-  ones flagged). Explicit, but a public API addition for one hint; would go into `tagent`
-  0.19.0 (still unpublished: the last release `v0.16.0` shipped `tagent` 0.18.1), with a
-  `tagent/CHANGELOG.md` entry and no version bump.
+  ones flagged). Rejected: explicit, but a public API addition for one hint.
 
 **Implementation steps.**
 1. **`tagent-gui/src/provider_form.rs`** (pure, no Slint types):
@@ -237,8 +235,7 @@ key `translate_prompt`. Options:
      ~l. 1294, 1392, 1489).
    - This document: Roadmap item 4 struck through, a "Shipped stages" row, "Current
      state" refreshed, this section condensed.
-   - Only with option (b): `tagent/src/providers/registry.rs` + tests,
-     `tagent/CHANGELOG.md` (0.19.0), `cargo doc -p tagent`.
+   - No `tagent` change (option (a)).
 
 **Tests and verification.**
 - Unit tests in `provider_form.rs`: `openai`'s `translate_prompt` field has
