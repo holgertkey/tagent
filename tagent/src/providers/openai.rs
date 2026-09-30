@@ -36,7 +36,9 @@
 //! - **Refusals and cut-off answers are errors**: a `refusal`, `finish_reason: "length"`
 //!   (the answer was cut off; never returned as a partial translation) and
 //!   `finish_reason: "content_filter"` are [`Error::Api`]; a missing or blank answer is
-//!   [`Error::Decode`].
+//!   [`Error::Decode`]. So is an answer that isn't a chat-completions response at all (not
+//!   JSON, or JSON without `choices`, as from a wrong `endpoint`): its message quotes the
+//!   start of the answer and suggests checking `endpoint`.
 //! - **Language detection** asks the model for the language code of the first 200
 //!   characters. A name or code [`languages`] lists is accepted, as is any other answer
 //!   shaped like a BCP-47 tag; anything else is [`Error::Decode`]. Like every request, it
@@ -101,6 +103,12 @@ pub const AUTO_SOURCE_WORDING: &str = "its original language (detect it)";
 /// The system prompt of `detect_language`; not configurable.
 const DETECT_PROMPT: &str = "Identify the language of the text in the user message.
 Answer with its ISO 639-1 language code only (for example: en, de, ru), nothing else.";
+
+/// Appended to a decode error that suggests the endpoint isn't a chat-completions API.
+const ENDPOINT_HINT: &str =
+    "check that `endpoint` is the base URL of an OpenAI-compatible API (usually ending in /v1)";
+/// The longest excerpt of a non-JSON answer put into an error message, in characters.
+const MAX_EXCERPT_CHARS: usize = 80;
 
 /// The chat-completions path, relative to the base URL (which includes `/v1`).
 const CHAT_PATH: &str = "/chat/completions";
@@ -317,12 +325,21 @@ fn render_prompt(template: &str, from: &str, to: &str) -> String {
 
 /// The answer of a chat-completions response, or why there is none.
 fn parse_response(body: &[u8]) -> Result<String, Error> {
-    let json: Value = serde_json::from_slice(body)?;
+    let json: Value = serde_json::from_slice(body).map_err(|_| {
+        Error::Decode(format!(
+            "the server's answer is not JSON ({}); {ENDPOINT_HINT}",
+            describe_body(body)
+        ))
+    })?;
     let choice = json
         .get("choices")
         .and_then(Value::as_array)
         .and_then(|choices| choices.first())
-        .ok_or_else(|| Error::Decode("the response has no choices".to_string()))?;
+        .ok_or_else(|| {
+            Error::Decode(format!(
+                "the server's answer has no `choices`; {ENDPOINT_HINT}"
+            ))
+        })?;
     let message = choice.get("message");
     if let Some(refusal) = message
         .and_then(|m| m.get("refusal"))
@@ -351,6 +368,26 @@ fn parse_response(body: &[u8]) -> Result<String, Error> {
     {
         Some(content) if !content.trim().is_empty() => Ok(content.to_string()),
         _ => Err(Error::Decode("the model's answer is empty".to_string())),
+    }
+}
+
+/// A short description of a response body that isn't JSON: `"an empty answer"`,
+/// `"an HTML page"`, or its start in quotes (whitespace collapsed, at most
+/// [`MAX_EXCERPT_CHARS`] characters), e.g. `"OK"`.
+fn describe_body(body: &[u8]) -> String {
+    let text = String::from_utf8_lossy(body)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if text.is_empty() {
+        return "an empty answer".to_string();
+    }
+    if text.starts_with('<') {
+        return "an HTML page".to_string();
+    }
+    match text.char_indices().nth(MAX_EXCERPT_CHARS) {
+        Some((cut, _)) => format!("\"{}…\"", &text[..cut]),
+        None => format!("\"{text}\""),
     }
 }
 
@@ -605,6 +642,34 @@ mod tests {
         }
     }
 
+    /// A server that isn't a chat-completions API (e.g. GitHub Models since its
+    /// retirement: `200 OK` with the plain text `OK`) gets a readable error with a hint
+    /// instead of serde's `expected value at line 1 column 1`.
+    #[test]
+    fn a_non_api_answer_names_itself_and_the_endpoint() {
+        let decode = |body: &str| match parse_response(body.as_bytes()) {
+            Err(Error::Decode(message)) => message,
+            other => panic!("{body:?}: {other:?}"),
+        };
+        let message = decode("OK");
+        assert_eq!(
+            message,
+            format!("the server's answer is not JSON (\"OK\"); {ENDPOINT_HINT}")
+        );
+        assert!(!message.contains("line 1"), "{message}");
+        assert!(decode("").contains("(an empty answer)"));
+        assert!(decode("  \n<!DOCTYPE html>\n<html>").contains("(an HTML page)"));
+        let long = decode(&format!("Service  is\n{}", "ж".repeat(200)));
+        assert!(long.contains("\"Service is жж"), "{long}");
+        assert!(long.contains("…\")"), "{long}");
+        // JSON of another API: a hint too.
+        let other = decode(r#"{"translations": []}"#);
+        assert!(
+            other.contains("no `choices`") && other.contains(ENDPOINT_HINT),
+            "{other}"
+        );
+    }
+
     #[test]
     fn detected_languages_are_normalized() {
         for (answer, code) in [
@@ -804,6 +869,17 @@ mod tests {
         assert!(body.get("temperature").is_none(), "{body}");
         let system = body["messages"][0]["content"].as_str().unwrap();
         assert!(system.contains(AUTO_SOURCE_WORDING), "{system}");
+    }
+
+    #[tokio::test]
+    async fn a_plain_text_ok_answer_is_a_readable_decode_error() {
+        let (_, error) = failing(ResponseTemplate::new(200).set_body_string("OK")).await;
+        let text = error.to_string();
+        assert!(matches!(error, Error::Decode(_)), "{error:?}");
+        assert!(
+            text.contains("not JSON (\"OK\")") && text.contains("endpoint"),
+            "{text}"
+        );
     }
 
     #[tokio::test]

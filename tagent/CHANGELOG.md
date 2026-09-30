@@ -55,7 +55,9 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   `{from}`/`{to}` become language names) and the transport options (60 s budget, 1 retry).
   A `<think>` block, a wrapping code fence and quotes the input didn't have are removed
   from the answer; a refusal, a cut-off answer (`finish_reason: "length"`) and a
-  content-filtered one are errors, never a partial translation. `detect_language` asks the
+  content-filtered one are errors, never a partial translation. An answer that isn't a
+  chat-completions response (a wrong `endpoint`) is `Error::Decode` with the start of the
+  answer and a hint to check `endpoint`, e.g. `the server's answer is not JSON ("OK")`. `detect_language` asks the
   model for a language code. Usually built through a profile, e.g.
   `[provider_options.ollama]` with `type = "openai"`.
 - **Quota exhaustion behind HTTP 429 is recognized** (OpenAI-compatible provider only;

@@ -1477,7 +1477,11 @@ translation pass against a local Ollama.
   the plain text `OK`, which surfaced as the cryptic `failed to decode provider response:
   expected value at line 1 column 1`; Groq's `llama-3.3-70b-versatile` gave a clean
   `HTTP 404 ... model_not_found` on the free tier (the error path works as intended, the
-  key never appeared). The live tests then passed against the same server and model
+  key never appeared). Fixed after that: `parse_response` turns a non-JSON answer into
+  `Error::Decode` reading "the server's answer is not JSON ("OK"); check that
+  \`endpoint\` is the base URL of an OpenAI-compatible API (usually ending in /v1)" (an empty answer and an HTML
+  page are named as such, other text quoted up to 80 characters), and JSON without
+  `choices` gets the same hint (tested, incl. a mock `200 OK` / `OK`). The live tests then passed against the same server and model
   (`en → de`: "Guten Morgen", `auto → ru`: "Доброе утро", detection of en/de/ru; 3 of 3,
   under a second), so decision 5 is met with a cloud server instead of a local Ollama.
 - `tagent-gui`: a unit test (`openai_needs_endpoint_and_model_and_hides_its_key`), plus
