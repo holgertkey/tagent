@@ -134,7 +134,10 @@ Candidates, not yet scheduled; the order is a suggestion.
    hardcoded 5-language list.
 2. **History logging.** A candidate, not prioritized; no design yet.
 3. **Provider options in Settings.** Keys, endpoints and user profiles, following
-   [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
+   [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog. Options of
+   existing profiles: done ("Options…" panel, 0.14.0+028; multi-line options,
+   0.14.0+036). Creating and deleting profiles, plus a "Test" button: planned (decided
+   2026-10-01), see [below](#planned-stage--provider-profiles-tab).
 4. ~~**Multi-line provider options.**~~ Done in 0.14.0+036 (2026-10-01): a `multiline`
    option (today `openai`'s `translate_prompt`) gets a `TextEdit` pre-filled with its
    `default`, "Reset to default", and a soft ⚠ when `{to}` is missing; driven only by the
@@ -143,6 +146,124 @@ Candidates, not yet scheduled; the order is a suggestion.
 5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
+
+### Planned stage — Provider profiles tab
+
+**Status:** planned (2026-10-01). Once shipped, condense this section to a row of the
+"Shipped stages" table and a changelog entry, like the other stages.
+
+**Goal.** Users create and delete provider profiles in Settings instead of hand-editing
+`provider_options` in `tagent-gui.json`, typically several `openai` instances side by
+side (Ollama, OpenAI, OpenRouter, ...), and can check a profile with a "Test" button.
+Generic: any provider kind, driven by `tagent`'s registry, with **no provider-specific
+GUI code** and **no presets** (decided 2026-10-01: endpoints and models are typed by the
+user; the `OptionSpec` descriptions already give examples).
+
+**Behavior.**
+- A new **"Providers"** tab after "General". It lists, one row each:
+  - every built-in kind compiled into `tagent` (`google`, `deepl`, `openai`, in registry
+    order), marked "built-in", with "Options…" and "Test", but no "Delete";
+  - every user profile (a `provider_options` entry whose name isn't a built-in kind), as
+    `name (kind)`, with "Options…", "Test" and "Delete". A profile with an unknown kind
+    (hand-edited, or its feature compiled out) is listed with "unknown kind" and only
+    "Delete".
+  "Options…" opens the existing options panel (the same one the General pickers use).
+- **Add** (a form under the list): a name field, a kind `ComboBox` (every built-in kind,
+  `openai` preselected when compiled in, else the first) and an "Add" button, disabled
+  while the name is invalid; the reason shows live under the field (same pattern as the
+  hotkey fields). Invalid: empty, characters outside `[a-z0-9_-]` (case-insensitive,
+  stored lowercase), a built-in kind's name (its row already exists), or the name of an
+  existing profile. After "Add", the options panel opens for the new profile right away,
+  since `openai` can't work without `endpoint` and `model` (the ⚠ for missing required
+  options does the rest).
+- **Delete** removes the profile with all its options. Pickers on the General tab that
+  selected it fall back to their axis's first built-in (`google`), and a note under the
+  list says so ("translation now uses google"). Deleting and re-adding the same name in
+  one session gives a fresh profile (old options gone).
+- **Staged like everything else in Settings**: adding, deleting and option edits are kept
+  in the dialog and written only on Settings OK; Cancel drops them all. The General
+  pickers (and their ⚠ warnings) show added profiles and drop deleted ones immediately.
+  On save the config is re-read and only the operations are applied (deletes, then adds,
+  then option edits), so a hand-edit made while the dialog was open survives unless it
+  touches the same profile.
+- **Test** (on each row, and in the options panel, where it uses the panel's unsaved
+  edits too): builds the profile exactly as the app would (saved options + this dialog's
+  edits + `TAGENT_<NAME>_<KEY>` env overrides, through the `*_with` factories) and runs one
+  call per axis the kind implements (from the registry):
+  - translation: `"Hello, world!"` from `en` to the configured target language (`de` if
+    that is `en`);
+  - dictionary: `"hello"`, same pair;
+  - speech: `speak_chunk("Hello", "en")`, reporting the audio size; nothing is played.
+  One result line per axis: `translation: OK (0.9 s): Hallo, Welt!` or
+  `translation: failed: <the error's Display>`. A profile missing a required option
+  fails at construction with the factory's `InvalidOptions` message, before any network
+  call. Runs off the UI thread (own Tokio runtime, as `spawn_translation` does); the
+  button shows "Testing…" and is disabled meanwhile; the time limit is the transport's
+  own budget (`timeout_secs`), no extra timer; a result arriving after the dialog closed
+  is dropped (`Weak` upgrade fails). A test of a paid API costs a few characters/tokens.
+- Not in this stage: renaming a profile or changing its kind (delete + add instead;
+  renaming also changes its `TAGENT_<NAME>_*` variable names, easy to miss), fetching a
+  model list from `/v1/models`, presets.
+
+**Implementation steps.**
+1. **`tagent`** (additive, goes into the unpublished 0.19.0 and its changelog section):
+   `pub fn validate_profile_name(name: &str, kind: &str) -> Result<(), Error>` in
+   `providers` (re-exported next to `env_var_name`): the checks `profile::resolve` does
+   today (valid `[a-z0-9_-]+` name; a built-in kind's name only for that kind), which
+   `resolve` then calls, so the messages stay identical. Doc comment with an example;
+   tests. `tagent-gui`'s `tagent` dependency `version` stays `0.19.0`.
+2. **`tagent-gui/src/provider_form.rs`** (pure, unit-tested):
+   - `Draft { created: BTreeMap<String, String> /* name → kind */, deleted:
+     BTreeSet<String>, edits: Edits }` replacing the dialog's bare `Edits`;
+     `Draft::apply(&self, &mut ProviderProfiles)` (deleted profiles: every key removed;
+     created: `type` inserted; then the edits, skipping deleted profiles) and
+     `Draft::view(&self, saved) -> ProviderProfiles` (a clone with the draft applied),
+     which `fields`/`missing_required`/the pickers then read with no edits of their own.
+   - `name_error(view, name, kind) -> String` (`validate_profile_name` + duplicates +
+     built-in names; `""` when fine).
+   - `profile_rows(view) -> Vec<ProfileRow>` (built-ins first, then profiles, with
+     `deletable`, `known_kind`).
+   - `axes_of(kind) -> Vec<&'static str>` from the registry.
+   - `picker_fallbacks(selected, view) -> ([String; 3], String)`: the new selections and
+     the note.
+   - `format_test_line(axis, result)`.
+3. **`tagent-gui/ui/app.slint`**: the "Providers" `Tab` (a `ScrollView` list of
+   `ProfileRow` structs, add form, note, test output `Text`), `ProfileRow` struct,
+   properties `profile-rows`, `new-profile-kinds`, `new-profile-error`, `profile-note`,
+   `test-output`, `testing`; callbacks `profile-add-requested(string, int)`,
+   `profile-delete-requested(int)`, `profile-options-requested(int)`,
+   `profile-test-requested(int)`, `panel-test-requested()`, `new-profile-name-edited(string)`
+   (grep the component's callback names before adding: they share one namespace). A
+   "Test" button and the output line in the options panel.
+4. **`tagent-gui/src/main.rs`**: the dialog's `Rc<RefCell<Draft>>` instead of
+   `Rc<RefCell<Edits>>`; one `refresh_profiles(dialog, saved, draft)` that refills the
+   tab, the three pickers (`provider_choices` from `draft.view(saved)`, keeping the
+   selection by name, falling back per `picker_fallbacks`) and the ⚠ warnings, called after
+   every add/delete/panel OK; `show_provider_options` takes a profile name (rows and
+   pickers both call it); the save closure applies the whole `Draft` to the freshly
+   re-read profiles; `run_profile_test(choice, axes, target, weak)` on a background
+   thread, result via `invoke_from_event_loop`.
+5. **Version and docs**: `tagent-gui` `+BUILD` bumps (two iterations are fine: the tab
+   with add/delete, then Test); `tagent-gui/CHANGELOG.md` (Added); `tagent/CHANGELOG.md`
+   0.19.0 (Added: `validate_profile_name`); CLAUDE.md ("creating/deleting profiles is
+   still hand-edit only" and the profile bullet), `docs/ARCHITECTURE.md` (tagent-gui
+   Settings), `docs/providers-dev-plan.md` (Backlog item and Q3: done), this document.
+
+**Tests and verification.**
+- `tagent`: `validate_profile_name` (valid names, bad characters, a built-in name with
+  its own kind / a foreign kind), `resolve` messages unchanged.
+- `provider_form`: `Draft::apply`/`view` (add → `type` only; delete removes every key and
+  the profile; delete + re-add = fresh; edits of a deleted profile ignored; untouched
+  profiles and hand-edited keys kept), `name_error` (each rule), `profile_rows` (order,
+  built-ins not deletable, unknown kind), `axes_of` (`google` → all three, `deepl` /
+  `openai` → translation only), `picker_fallbacks`, `format_test_line`.
+- `cargo test -p tagent -p tagent-gui`, `cargo clippy --workspace -- -D warnings`,
+  `cargo doc -p tagent`, `cargo check --target x86_64-pc-windows-gnu -p tagent-gui`.
+- UI by screenshot with an isolated `XDG_CONFIG_HOME` (mouse clicks only; typing the
+  name is left to the user): the tab lists built-ins and profiles; Delete + OK removes
+  the profile from the JSON and resets a picker that used it; Cancel restores it; Test on
+  `google` shows three OK lines. User: Add an `openai` profile, fill `endpoint`/`model`
+  in the panel, Test against a real server, OK, pick it in the main window and translate.
 
 ## Deliberately not done (revisit only with a new reason)
 

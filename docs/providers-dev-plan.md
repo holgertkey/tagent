@@ -1528,7 +1528,10 @@ LibreTranslate reference config against the mock server.
 - Dictionary: a Wiktionary-based provider.
 - `tagent-gui` Settings UI for creating, editing and deleting provider profiles (Q3):
   "Add profile" → pick a type → a form generated from that kind's `OptionSpec` list
-  (Stage C). Deferred until at least one generic provider (P2 or P4) exists.
+  (Stage C). Deferred until at least one generic provider (P2 or P4) exists. Planned
+  2026-10-01, after P2: "Planned stage — Provider profiles tab" in
+  [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md) (a "Providers" tab, any kind, no
+  presets, with a "Test" button).
 - Secrets: OS keyring (`keyring`-style crate) as an additional source, deferred by Q1.
   Reasons for deferring: an extra per-OS dependency; on Linux it needs Secret Service
   over D-Bus plus a running daemon, which minimal X11 setups often lack; and it breaks the
