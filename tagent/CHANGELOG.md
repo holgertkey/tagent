@@ -36,6 +36,13 @@ version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- **`providers::validate_profile_name(name, kind)`**: checks a profile name the way the
+  `*_with` factories do for a profile with a `type` option (only `a-z`, `0-9`, `_` and
+  `-`, in any case; a built-in provider kind's name only for that kind), with the same
+  `Error::InvalidOptions` messages, so an application can check a name before saving it.
+  The factories now call it themselves.
+- **`ProviderProfiles::remove_profile`**: removes a profile with all its options, including
+  one that has no options at all (`"llm": {}`), which removing keys one by one can't.
 - **`languages::language_code` and `languages::language_for_locales`**, shared by both
   applications. `language_code` gives the table's code for a listed code or name in any
   case (`"Russian"`, `"RU"` → `"ru"`; `"Auto"` → `"auto"`) and `None` for anything

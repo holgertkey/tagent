@@ -655,7 +655,8 @@ hand-added sections that only the reader knows about.
     fields are rendered from `ProviderDescriptor::options`, with `secret` fields as password
     inputs.
   - Creating and deleting profiles happens **by hand-editing the file only** in this
-    stage. A Settings UI for that is in the Backlog.
+    stage. A Settings UI for that came later: the "Providers" tab (`tagent-gui`
+    0.14.0+037).
   - Options (and their values) are never written to `tagent-gui.log`.
 - **Environment variables** have the highest priority. Both apps call
   `ProviderOptions::with_env_overrides(provider)` (Stage B), so one variable, e.g.
@@ -1526,12 +1527,10 @@ LibreTranslate reference config against the mock server.
   (check `rodio` decodability, which currently has only `symphonia-mp3` enabled).
 - Translation: Microsoft Translator, Yandex, Lingva (probably via P4 config instead of code).
 - Dictionary: a Wiktionary-based provider.
-- `tagent-gui` Settings UI for creating, editing and deleting provider profiles (Q3):
-  "Add profile" → pick a type → a form generated from that kind's `OptionSpec` list
-  (Stage C). Deferred until at least one generic provider (P2 or P4) exists. Planned
-  2026-10-01, after P2: "Planned stage — Provider profiles tab" in
-  [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md) (a "Providers" tab, any kind, no
-  presets, with a "Test" button).
+- ~~`tagent-gui` Settings UI for creating, editing and deleting provider profiles (Q3).~~
+  Done in `tagent-gui` 0.14.0+037 (2026-10-01): a "Providers" tab (any kind, no presets,
+  with a "Test" button), see [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md); `tagent`
+  gained `validate_profile_name` and `ProviderProfiles::remove_profile` for it.
 - Secrets: OS keyring (`keyring`-style crate) as an additional source, deferred by Q1.
   Reasons for deferring: an extra per-OS dependency; on Linux it needs Secret Service
   over D-Bus plus a running daemon, which minimal X11 setups often lack; and it breaks the
@@ -1573,8 +1572,8 @@ LibreTranslate reference config against the mock server.
     apps need no profile logic.
   - Profile names are `[a-z0-9_-]+` (no colon); built-in kind names are reserved.
   - One profile can serve several axes.
-  - Profiles are created by hand-editing for now; a `tagent-gui` Settings UI for them is
-    in the Backlog.
+  - Profiles are created by hand-editing; `tagent-gui` also has a Settings UI for them
+    (the "Providers" tab, 0.14.0+037).
 
   Details are in Stages B, C, F and P4.
 - **Q4. Ship Stage A and B together or separately?** **Resolved 2026-09-26:**

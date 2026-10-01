@@ -12,6 +12,35 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+037] - 2026-10-01
+
+### Added
+- **A "Providers" tab in Settings** for creating and deleting provider profiles, no
+  hand-editing of `provider_options` in `tagent-gui.json` needed. It lists the built-in
+  providers (`google`, `deepl`, `openai`) and every profile as `name (kind)`, each with
+  "Options…" (the existing options panel) and "Test"; profiles also get "Delete". Under the
+  list, a name field, a kind dropdown and "Add" create a profile, e.g. several
+  OpenAI-compatible servers side by side (`ollama`, `openrouter`, ...). A name the app
+  can't use (empty, characters other than `a-z`, `0-9`, `_`, `-`, a built-in provider's
+  name, an existing profile) is explained under the field and keeps "Add" disabled. After
+  "Add", the options panel opens for the new profile. Deleting a profile that a picker on
+  the General tab selects switches that picker to `google`, and a note says so. As
+  everywhere in Settings, nothing is written before OK and Cancel drops it all; the
+  General pickers show added profiles and lose deleted ones right away. On OK the file is
+  re-read first, so a hand-edit made meanwhile survives unless it touches the same
+  profile. A profile with an unknown kind (hand-edited, or its provider compiled out) is
+  listed with "Delete" only. Nothing on the tab is specific to a provider: it is all
+  driven by `tagent`'s provider registry.
+- **"Test" for a provider profile**, on each row of the Providers tab and in the options
+  panel (there with the panel's unsaved values). It builds the profile exactly as the app
+  would (options of this dialog plus `TAGENT_<NAME>_<KEY>` environment overrides) and
+  makes one call per thing the provider does: a translation of "Hello, world!" into the
+  configured target language (German if that is English), a dictionary lookup of
+  "hello", and a speech request for "Hello" whose audio is only measured, never played.
+  One line per call, e.g. `translation: OK (0.9 s): Hallo, Welt!` or
+  `translation: failed: <error>`; a missing required option fails before any network
+  call. A test of a paid service costs a few characters or tokens.
+
 ## [0.14.0+036] - 2026-10-01
 
 ### Added

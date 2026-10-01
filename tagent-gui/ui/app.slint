@@ -27,6 +27,19 @@ export struct ProviderOptionField {
     default-value: string,
 }
 
+// One row of Settings > Providers: a built-in provider kind or a profile
+// from `provider_options` (main.rs fills them from
+// `provider_form::profile_rows`).
+export struct ProviderProfileRow {
+    name: string,
+    // "google (built-in)", "work (openai)", "llm (nope, unknown kind)".
+    label: string,
+    // No "Delete" for a built-in kind.
+    builtin: bool,
+    // "Options…" and "Test" only for a kind compiled into `tagent`.
+    known-kind: bool,
+}
+
 export struct TranscriptEntry {
     phrase: string,
     translation: string,
@@ -1289,6 +1302,28 @@ export component SettingsDialog inherits Dialog {
     callback provider-option-edited(int /* row */, string /* value */);
     callback provider-options-accepted();
     callback provider-options-cancelled();
+    // Settings > Providers: built-in kinds and profiles, staged like every
+    // other setting (main.rs keeps a `provider_form::Draft` and writes it on
+    // the dialog's OK). `new-profile-error` is "" when `new-profile-name` can
+    // be added as a `new-profile-kinds[new-profile-kind-index]` profile.
+    // `profile-note` says which pickers a delete reset; `test-output` holds
+    // the last Test's result lines, `testing-row` the row being tested (-1:
+    // none, or the options panel's Test).
+    in-out property <[ProviderProfileRow]> profile-rows: [];
+    in-out property <[string]> new-profile-kinds: [];
+    in-out property <int> new-profile-kind-index: 0;
+    in-out property <string> new-profile-name: "";
+    in-out property <string> new-profile-error: "";
+    in-out property <string> profile-note: "";
+    in-out property <string> test-output: "";
+    in-out property <bool> testing: false;
+    in-out property <int> testing-row: -1;
+    callback new-profile-name-edited(string /* name */);
+    callback profile-add-requested(string /* name */, int /* kind index */);
+    callback profile-delete-requested(int /* row */);
+    callback profile-options-requested(int /* row */);
+    callback profile-test-requested(int /* row */);
+    callback panel-test-requested();
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
     in-out property <bool> show-dictionary: true;
@@ -1485,10 +1520,10 @@ export component SettingsDialog inherits Dialog {
     // Cancel discards it like any other in-session edit.
     callback reset-to-defaults-requested();
 
-    // Tabbed layout: "General" holds the provider, "View" holds the theme
-    // plus the phrase/translation display style, "Hotkeys & Tray" holds the
-    // global hotkey, popup auto-hide delay, start-minimized and
-    // remember-window-geometry toggles. Adding a category later means adding
+    // Tabbed layout: "General" holds the provider, "Providers" the profiles,
+    // "View" holds the theme plus the phrase/translation display style,
+    // "Hotkeys & Tray" holds the global hotkey, popup auto-hide delay,
+    // start-minimized and remember-window-geometry toggles. Adding a category later means adding
     // another `Tab { ... }` here, not restructuring the dialog.
     // The dialog's single main element (a Dialog allows only one besides its
     // StandardButtons): the tabs, with the provider options panel on top of
@@ -1616,8 +1651,99 @@ export component SettingsDialog inherits Dialog {
                         clicked => { reset-to-defaults-requested(); }
                     }
                     Text {
-                        text: "Resets every setting on every tab to its default value, except provider options. Nothing is saved until you click OK.";
+                        text: "Resets every setting on every tab to its default value, except provider profiles and their options. Nothing is saved until you click OK.";
                         wrap: word-wrap;
+                    }
+                }
+            }
+
+            Tab {
+                title: "Providers";
+
+                VerticalBox {
+                    Text {
+                        text: "Built-in providers and your profiles. A profile is a named set of options for a provider kind, e.g. several OpenAI-compatible servers side by side; the pickers on the General tab offer it on every axis its kind supports.";
+                        wrap: word-wrap;
+                    }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+                        min-height: 110px;
+
+                        VerticalLayout {
+                            alignment: start;
+                            spacing: 4px;
+                            padding-right: 12px;
+
+                            for row[index] in profile-rows: HorizontalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: row.label;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                if row.known-kind: Button {
+                                    text: "Options…";
+                                    clicked => { profile-options-requested(index); }
+                                }
+                                if row.known-kind: Button {
+                                    text: testing && testing-row == index ? "Testing…" : "Test";
+                                    enabled: !testing;
+                                    clicked => { profile-test-requested(index); }
+                                }
+                                if !row.builtin: Button {
+                                    text: "Delete";
+                                    clicked => { profile-delete-requested(index); }
+                                }
+                            }
+                        }
+                    }
+
+                    if profile-note != "": Text {
+                        text: profile-note;
+                        wrap: word-wrap;
+                    }
+                    if test-output != "": Text {
+                        text: test-output;
+                        wrap: word-wrap;
+                    }
+
+                    Text { text: "New profile:"; font-weight: 700; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit {
+                            horizontal-stretch: 1;
+                            text <=> new-profile-name;
+                            placeholder-text: "name, e.g. ollama";
+                            edited(name) => { new-profile-name-edited(name); }
+                            accepted(name) => {
+                                if new-profile-error == "" {
+                                    profile-add-requested(name, new-profile-kind-index);
+                                }
+                            }
+                        }
+                        ComboBox {
+                            model: new-profile-kinds;
+                            current-index <=> new-profile-kind-index;
+                            selected => { new-profile-name-edited(new-profile-name); }
+                        }
+                        Button {
+                            text: "Add";
+                            enabled: new-profile-error == "";
+                            clicked => { profile-add-requested(new-profile-name, new-profile-kind-index); }
+                        }
+                    }
+                    if new-profile-name != "" && new-profile-error != "": Text {
+                        text: new-profile-error;
+                        wrap: word-wrap;
+                        font-size: 11px;
+                    }
+                    Text {
+                        text: "Names use a-z, 0-9, _ and -. Adding, deleting and options are saved when you click OK. Test uses the options as they are in this dialog, and a test of a paid service costs a few characters or tokens.";
+                        wrap: word-wrap;
+                        font-size: 11px;
+                        opacity: 0.75;
                     }
                 }
             }
@@ -1967,9 +2093,19 @@ export component SettingsDialog inherits Dialog {
                     }
                 }
 
+                if test-output != "": Text {
+                    text: test-output;
+                    wrap: word-wrap;
+                }
+
                 HorizontalLayout {
                     alignment: end;
                     spacing: 8px;
+                    Button {
+                        text: testing ? "Testing…" : "Test";
+                        enabled: !testing;
+                        clicked => { panel-test-requested(); }
+                    }
                     Button {
                         text: "OK";
                         primary: true;

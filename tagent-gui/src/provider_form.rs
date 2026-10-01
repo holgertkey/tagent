@@ -1,14 +1,16 @@
-//! Settings > General provider options: which option fields the "Options…" panel shows
-//! for a selected provider profile, which required options are still missing (the ⚠ next
-//! to a picker), and how the edits made there go back into `provider_options`.
+//! Provider profiles and options in Settings: which option fields the "Options…" panel
+//! shows for a profile, which required options are still missing (the ⚠ next to a
+//! picker), the Providers tab's rows and add/delete rules, and how everything staged in
+//! the dialog ([`Draft`]) goes back into `provider_options`.
 //!
 //! Pure logic (no Slint types), so it's unit-tested here; `main.rs` converts [`Field`]s
 //! into the dialog's `ProviderOptionField` model.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use tagent::providers::{
-    dictionary_providers, env_var_name, speech_providers, translation_providers, OptionSpec,
-    ProviderProfiles,
+    dictionary_providers, env_var_name, speech_providers, translation_providers,
+    validate_profile_name, OptionSpec, ProviderProfiles, DICTIONARY_PROVIDERS, SPEECH_PROVIDERS,
+    TRANSLATION_PROVIDERS,
 };
 
 /// One row of the "Provider options" list: a profile heading, or an option field.
@@ -246,7 +248,7 @@ pub fn sharing_note(selected: &[&str; 3], axis: usize) -> String {
 
 /// Applies `edits` to `profiles`: a non-empty value sets the key, an empty (or
 /// whitespace-only) one removes it. Untouched keys, `type` and other profiles are kept.
-pub fn apply(profiles: &mut ProviderProfiles, edits: &Edits) {
+fn apply(profiles: &mut ProviderProfiles, edits: &Edits) {
     for ((profile, key), value) in edits {
         let value = value.trim();
         if value.is_empty() {
@@ -254,6 +256,242 @@ pub fn apply(profiles: &mut ProviderProfiles, edits: &Edits) {
         } else {
             profiles.insert(profile, key, value);
         }
+    }
+}
+
+/// Everything Settings has staged for `provider_options` until its OK: profiles added
+/// and deleted on the Providers tab, and option values kept by the options panel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Draft {
+    /// Profiles added in this dialog: name → kind (both lowercase).
+    pub created: BTreeMap<String, String>,
+    /// Profiles to remove with all their options (lowercase). A name deleted and then
+    /// added again stays here, so the new profile starts without the old options.
+    pub deleted: BTreeSet<String>,
+    /// Option values kept by the options panel.
+    pub edits: Edits,
+}
+
+impl Draft {
+    /// Stages a new profile `name` of provider kind `kind`.
+    pub fn add(&mut self, name: &str, kind: &str) {
+        self.created
+            .insert(name.trim().to_lowercase(), kind.trim().to_lowercase());
+    }
+
+    /// Stages the deletion of profile `name`, dropping its option edits. A profile that
+    /// was only added in this dialog is simply forgotten.
+    pub fn delete(&mut self, name: &str) {
+        let name = name.trim().to_lowercase();
+        self.edits.retain(|(profile, _), _| *profile != name);
+        if self.created.remove(&name).is_none() {
+            self.deleted.insert(name);
+        }
+    }
+
+    /// Applies the draft to `profiles`: deletions first (every option of the profile),
+    /// then additions (their `type`), then the option edits, except those of a profile
+    /// that ends up deleted. Other profiles and keys are kept as they are.
+    pub fn apply(&self, profiles: &mut ProviderProfiles) {
+        for name in &self.deleted {
+            profiles.remove_profile(name);
+        }
+        for (name, kind) in &self.created {
+            profiles.insert(name, TYPE_KEY, kind.as_str());
+        }
+        let edits: Edits = self
+            .edits
+            .iter()
+            .filter(|((profile, _), _)| {
+                !self.deleted.contains(profile) || self.created.contains_key(profile)
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        apply(profiles, &edits);
+    }
+
+    /// `saved` with the draft applied: what the dialog shows.
+    pub fn view(&self, saved: &ProviderProfiles) -> ProviderProfiles {
+        let mut view = saved.clone();
+        self.apply(&mut view);
+        view
+    }
+}
+
+/// The option that selects a profile's provider kind.
+const TYPE_KEY: &str = "type";
+
+/// Every provider kind compiled into `tagent`, each once, in registry order (translation,
+/// then dictionary, then speech kinds).
+pub fn builtin_kinds() -> Vec<&'static str> {
+    let mut kinds: Vec<&'static str> = Vec::new();
+    for descriptor in [
+        translation_providers(),
+        dictionary_providers(),
+        speech_providers(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !kinds.contains(&descriptor.name) {
+            kinds.push(descriptor.name);
+        }
+    }
+    kinds
+}
+
+/// Why `name` can't be added as a profile of kind `kind` to `view`, or `""` when it can.
+pub fn name_error(view: &ProviderProfiles, name: &str, kind: &str) -> String {
+    let name = name.trim().to_lowercase();
+    if name.is_empty() {
+        return "Enter a name for the profile.".to_string();
+    }
+    if builtin_kinds().contains(&name.as_str()) {
+        return format!("`{name}` is a built-in provider: it is already in the list.");
+    }
+    if let Err(error) = validate_profile_name(&name, kind) {
+        return error.to_string();
+    }
+    if view.get(&name).is_some() {
+        return format!("A profile named `{name}` already exists.");
+    }
+    String::new()
+}
+
+/// One row of the Providers tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileRow {
+    /// The profile (or built-in kind) name, lowercase.
+    pub name: String,
+    /// What the row shows: `"google (built-in)"`, `"work (openai)"`,
+    /// `"llm (nope, unknown kind)"`.
+    pub label: String,
+    /// A built-in kind: no "Delete".
+    pub builtin: bool,
+    /// Its kind is compiled into `tagent`: "Options…" and "Test" work.
+    pub known_kind: bool,
+}
+
+/// The Providers tab's rows: every built-in kind (in registry order), then every profile
+/// of `view` that isn't named after one (sorted).
+pub fn profile_rows(view: &ProviderProfiles) -> Vec<ProfileRow> {
+    let kinds = builtin_kinds();
+    let builtins = kinds.iter().map(|kind| ProfileRow {
+        name: kind.to_string(),
+        label: format!("{kind} (built-in)"),
+        builtin: true,
+        known_kind: true,
+    });
+    let profiles = view
+        .iter()
+        .filter(|(name, _)| !kinds.contains(name))
+        .map(|(name, _)| {
+            let kind = view.kind_of(name);
+            let known_kind = kinds.contains(&kind.as_str());
+            ProfileRow {
+                name: name.to_string(),
+                label: if known_kind {
+                    format!("{name} ({kind})")
+                } else {
+                    format!("{name} ({kind}, unknown kind)")
+                },
+                builtin: false,
+                known_kind,
+            }
+        });
+    builtins.chain(profiles).collect()
+}
+
+/// The built-in kinds of each picker axis, in [`AXES`] order.
+const AXIS_KINDS: [&[&str]; 3] = [
+    TRANSLATION_PROVIDERS,
+    DICTIONARY_PROVIDERS,
+    SPEECH_PROVIDERS,
+];
+
+/// What the translation, dictionary and speech pickers should select once `view` is in
+/// effect: the `selected` profile while it's still offered on that axis, else the axis's
+/// first built-in kind. Also returns a note naming each picker that fell back, or `""`.
+pub fn picker_fallbacks(selected: &[String; 3], view: &ProviderProfiles) -> ([String; 3], String) {
+    let mut notes: Vec<String> = Vec::new();
+    let next: [String; 3] = std::array::from_fn(|axis| {
+        let kinds = AXIS_KINDS[axis];
+        let name = selected[axis].trim().to_lowercase();
+        let offered =
+            kinds.contains(&name.as_str()) || view.profiles_of_kinds(kinds).contains(&name);
+        if offered {
+            return name;
+        }
+        let fallback = kinds.first().copied().unwrap_or_default().to_string();
+        notes.push(format!("{} now uses {fallback}", AXES[axis]));
+        fallback
+    });
+    let note = if notes.is_empty() {
+        String::new()
+    } else {
+        let text = notes.join(", ");
+        let mut chars = text.chars();
+        let first = chars.next().map(|c| c.to_uppercase().to_string());
+        format!("{}{}.", first.unwrap_or_default(), chars.as_str())
+    };
+    (next, note)
+}
+
+/// The axes ([`AXES`]) provider kind `kind` implements, in that order: what a "Test" of
+/// one of its profiles calls.
+pub fn axes_of(kind: &str) -> Vec<&'static str> {
+    let kind = kind.trim().to_lowercase();
+    AXES.iter()
+        .zip(AXIS_KINDS)
+        .filter(|(_, kinds)| kinds.contains(&kind.as_str()))
+        .map(|(axis, _)| *axis)
+        .collect()
+}
+
+/// The longest test result shown, in characters; a longer one is cut with `…`.
+const TEST_DETAIL_CHARS: usize = 120;
+
+/// One line of a "Test" result: `"translation: OK (0.9 s): Hallo, Welt!"` or
+/// `"translation: failed: <error>"`, on one line and at most [`TEST_DETAIL_CHARS`]
+/// characters of detail.
+pub fn format_test_line(
+    axis: &str,
+    elapsed: std::time::Duration,
+    result: &Result<String, impl std::fmt::Display>,
+) -> String {
+    let one_line = |text: &str| -> String {
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.chars().count() > TEST_DETAIL_CHARS {
+            let cut: String = text.chars().take(TEST_DETAIL_CHARS).collect();
+            format!("{}…", cut.trim_end())
+        } else {
+            text
+        }
+    };
+    match result {
+        Ok(detail) => format!(
+            "{axis}: OK ({:.1} s): {}",
+            elapsed.as_secs_f64(),
+            one_line(detail)
+        ),
+        Err(error) => format!("{axis}: failed: {}", one_line(&error.to_string())),
+    }
+}
+
+/// The note shown in the options panel opened from the Providers tab when General's
+/// pickers select `profile`, or empty.
+pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
+    let profile = profile.trim().to_lowercase();
+    let axes: Vec<&str> = selected
+        .iter()
+        .zip(AXES)
+        .filter(|(name, _)| name.trim().to_lowercase() == profile)
+        .map(|(_, axis)| axis)
+        .collect();
+    if axes.is_empty() {
+        String::new()
+    } else {
+        format!("Selected for {} on the General tab.", axes.join(" and "))
     }
 }
 
@@ -525,5 +763,200 @@ mod tests {
         assert_eq!(work["unrelated"], "kept");
         // Removing a key that was never set creates nothing.
         assert!(profiles.get("google").is_none());
+    }
+
+    fn openai_profile(name: &str) -> ProviderProfiles {
+        let mut profiles = ProviderProfiles::new();
+        profiles.insert(name, "type", "openai");
+        profiles.insert(name, "endpoint", "http://localhost:11434/v1");
+        profiles.insert(name, "model", "old");
+        profiles
+    }
+
+    #[test]
+    fn draft_add_inserts_only_the_type() {
+        let mut draft = Draft::default();
+        draft.add(" Local ", "OpenAI");
+        let view = draft.view(&ProviderProfiles::new());
+        assert_eq!(view.get("local").unwrap().len(), 1);
+        assert_eq!(view.kind_of("local"), "openai");
+    }
+
+    #[test]
+    fn draft_delete_removes_the_profile_and_keeps_the_rest() {
+        let mut saved = openai_profile("local");
+        saved.insert("work", "type", "google");
+        saved.insert("work", "hand_edited", "kept");
+        let mut draft = Draft::default();
+        draft
+            .edits
+            .insert(("local".into(), "model".into()), "new".into());
+        draft.delete("LOCAL");
+        assert!(draft.edits.is_empty());
+        let view = draft.view(&saved);
+        assert!(view.get("local").is_none());
+        assert_eq!(view.get("work").unwrap()["hand_edited"], "kept");
+        // The saved profiles themselves are untouched until the dialog's OK.
+        assert!(saved.get("local").is_some());
+    }
+
+    #[test]
+    fn draft_delete_then_add_gives_a_fresh_profile() {
+        let saved = openai_profile("local");
+        let mut draft = Draft::default();
+        draft.delete("local");
+        draft.add("local", "openai");
+        draft
+            .edits
+            .insert(("local".into(), "model".into()), "fresh".into());
+        let view = draft.view(&saved);
+        let local = view.get("local").unwrap();
+        assert_eq!(local.get("endpoint"), None);
+        assert_eq!(local["model"], "fresh");
+        assert_eq!(local["type"], "openai");
+    }
+
+    #[test]
+    fn draft_deleting_an_added_profile_forgets_it() {
+        let mut draft = Draft::default();
+        draft.add("local", "openai");
+        draft
+            .edits
+            .insert(("local".into(), "model".into()), "m".into());
+        draft.delete("local");
+        assert_eq!(draft, Draft::default());
+    }
+
+    #[test]
+    fn draft_ignores_edits_of_a_deleted_profile() {
+        let mut draft = Draft::default();
+        draft.deleted.insert("local".into());
+        draft
+            .edits
+            .insert(("local".into(), "model".into()), "m".into());
+        assert!(draft.view(&openai_profile("local")).is_empty());
+    }
+
+    /// A hand-edited profile with no options at all (`"llm": {}`) can be deleted too.
+    #[test]
+    fn draft_deletes_an_empty_profile() {
+        let saved: ProviderProfiles = serde_json::from_str(r#"{"llm": {}}"#).unwrap();
+        assert!(saved.get("llm").is_some());
+        let mut draft = Draft::default();
+        draft.delete("llm");
+        assert!(draft.view(&saved).is_empty());
+    }
+
+    #[test]
+    fn name_error_rules() {
+        let view = openai_profile("local");
+        assert_eq!(name_error(&view, "ollama", "openai"), "");
+        assert_eq!(name_error(&view, " Ollama-2 ", "openai"), "");
+        assert_eq!(
+            name_error(&view, "  ", "openai"),
+            "Enter a name for the profile."
+        );
+        assert_eq!(
+            name_error(&view, "Google", "openai"),
+            "`google` is a built-in provider: it is already in the list."
+        );
+        assert!(name_error(&view, "my llm", "openai").contains("invalid profile name"));
+        assert_eq!(
+            name_error(&view, "LOCAL", "openai"),
+            "A profile named `local` already exists."
+        );
+    }
+
+    #[test]
+    fn builtin_kinds_follow_the_registry() {
+        assert_eq!(builtin_kinds(), ["google", "deepl", "openai"]);
+    }
+
+    #[test]
+    fn profile_rows_list_builtins_then_profiles() {
+        let mut view = openai_profile("local");
+        view.insert("google", "max_retries", "0");
+        view.insert("llm", "type", "nope");
+        let rows = profile_rows(&view);
+        let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "google (built-in)",
+                "deepl (built-in)",
+                "openai (built-in)",
+                "llm (nope, unknown kind)",
+                "local (openai)"
+            ]
+        );
+        assert!(rows[..3].iter().all(|row| row.builtin && row.known_kind));
+        assert!(!rows[3].builtin && !rows[3].known_kind);
+        assert!(!rows[4].builtin && rows[4].known_kind);
+        assert_eq!(rows[4].name, "local");
+    }
+
+    #[test]
+    fn picker_fallbacks_reset_pickers_whose_profile_is_gone() {
+        let mut view = ProviderProfiles::new();
+        view.insert("work", "type", "google");
+        let selected = [
+            "local".to_string(),
+            "Work".to_string(),
+            "google".to_string(),
+        ];
+        let (next, note) = picker_fallbacks(&selected, &view);
+        assert_eq!(next, ["google", "work", "google"]);
+        assert_eq!(note, "Translation now uses google.");
+
+        let selected = ["gone".to_string(), "gone".to_string(), "deepl".to_string()];
+        let (next, note) = picker_fallbacks(&selected, &view);
+        assert_eq!(next, ["google", "google", "google"]);
+        assert_eq!(
+            note,
+            "Translation now uses google, dictionary now uses google, speech now uses google."
+        );
+
+        let selected = ["deepl".to_string(), "work".to_string(), "work".to_string()];
+        assert_eq!(
+            picker_fallbacks(&selected, &view),
+            (selected.clone(), String::new())
+        );
+    }
+
+    #[test]
+    fn selection_note_names_the_pickers_that_select_the_profile() {
+        let selected = ["local", "google", "LOCAL"];
+        assert_eq!(
+            selection_note(&selected, "local"),
+            "Selected for translation and speech on the General tab."
+        );
+        assert_eq!(selection_note(&selected, "deepl"), "");
+    }
+
+    #[test]
+    fn axes_of_follows_the_compiled_in_kinds() {
+        assert_eq!(axes_of("google"), ["translation", "dictionary", "speech"]);
+        assert_eq!(axes_of("DeepL"), ["translation"]);
+        assert_eq!(axes_of("openai"), ["translation"]);
+        assert!(axes_of("nope").is_empty());
+    }
+
+    #[test]
+    fn format_test_line_shows_time_and_result_on_one_line() {
+        use std::time::Duration;
+        let ok: Result<String, String> = Ok("Hallo,\n  Welt!".into());
+        assert_eq!(
+            format_test_line("translation", Duration::from_millis(940), &ok),
+            "translation: OK (0.9 s): Hallo, Welt!"
+        );
+        let failed: Result<String, String> = Err("HTTP 401 Unauthorized".into());
+        assert_eq!(
+            format_test_line("speech", Duration::from_secs(3), &failed),
+            "speech: failed: HTTP 401 Unauthorized"
+        );
+        let long: Result<String, String> = Ok("x".repeat(300));
+        let line = format_test_line("dictionary", Duration::ZERO, &long);
+        assert!(line.ends_with('…'));
+        assert_eq!(line.chars().count(), "dictionary: OK (0.0 s): ".len() + 121);
     }
 }

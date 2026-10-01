@@ -218,6 +218,7 @@ mod profile;
 mod registry;
 
 pub use options::{env_var_name, ProviderOptions, ProviderProfiles};
+pub use profile::validate_profile_name;
 pub use registry::{
     dictionary_providers, is_secret_option, speech_providers, translation_providers, OptionSpec,
     ProviderDescriptor, TransportDefaults,

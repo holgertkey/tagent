@@ -34,6 +34,52 @@ fn is_builtin_kind(name: &str) -> bool {
     .any(|list| list.contains(&name))
 }
 
+/// Checks that `name` may be used as the name of a profile of provider kind `kind`.
+///
+/// A profile name is non-empty and uses only the letters `a-z` (in any case; names are
+/// stored lowercase), digits, `_` and `-`, so it works as a TOML key and inside a
+/// `TAGENT_<NAME>_<KEY>` environment variable (see [`env_var_name`](super::env_var_name)).
+/// The name of a built-in provider kind (one compiled into this crate, on any axis) is
+/// reserved: a profile may use it only for that same kind, to configure the built-in
+/// provider itself. `kind` is compared case-insensitively and isn't checked further; an
+/// unknown kind surfaces when the provider is built.
+///
+/// These are the same checks the `*_with` factories (e.g.
+/// [`create_provider_with`](super::create_provider_with)) apply to a profile with a `type`
+/// option, with the same messages, so an application can validate a name before saving it.
+///
+/// # Errors
+///
+/// [`Error::InvalidOptions`] with a message naming the problem.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::validate_profile_name;
+///
+/// assert!(validate_profile_name("ollama-local", "openai").is_ok());
+/// assert!(validate_profile_name("Work_2", "google").is_ok());
+/// assert!(validate_profile_name("my profile", "openai").is_err());
+/// // A built-in kind's name is reserved for that kind.
+/// assert!(validate_profile_name("google", "google").is_ok());
+/// assert!(validate_profile_name("google", "openai").is_err());
+/// ```
+pub fn validate_profile_name(name: &str, kind: &str) -> Result<(), Error> {
+    if !is_valid_profile_name(name) {
+        return Err(Error::InvalidOptions(format!(
+            "invalid profile name `{name}`: use only letters a-z, digits, `_` and `-`"
+        )));
+    }
+    let profile = name.to_lowercase();
+    let kind = kind.trim().to_lowercase();
+    if is_builtin_kind(&profile) && profile != kind {
+        return Err(Error::InvalidOptions(format!(
+            "profile `{profile}` is named after a built-in provider, so its `type` can only be `{profile}`, not `{kind}`"
+        )));
+    }
+    Ok(())
+}
+
 /// Resolves profile `name` with `options` to a kind among `axis_kinds` (the kinds that
 /// implement the requested axis).
 ///
@@ -65,17 +111,8 @@ pub(crate) fn resolve(
             "profile `{name}`: option `type` is empty"
         )));
     }
-    if !is_valid_profile_name(name) {
-        return Err(Error::InvalidOptions(format!(
-            "invalid profile name `{name}`: use only letters a-z, digits, `_` and `-`"
-        )));
-    }
+    validate_profile_name(name, &kind)?;
     let profile = name.to_lowercase();
-    if is_builtin_kind(&profile) && profile != kind {
-        return Err(Error::InvalidOptions(format!(
-            "profile `{profile}` is named after a built-in provider, so its `type` can only be `{profile}`, not `{kind}`"
-        )));
-    }
     if !axis_kinds.contains(&kind.as_str()) {
         return Err(Error::UnknownProvider(kind_option.trim().to_string()));
     }
@@ -262,6 +299,52 @@ mod tests {
                 ),
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn validate_profile_name_accepts_valid_names() {
+        for name in ["work", "Work_2", "ollama-local", "a", "x9"] {
+            assert!(validate_profile_name(name, "openai").is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn validate_profile_name_rejects_bad_characters() {
+        for name in ["", "bad name", "a:b", "work.deepl", "ölm"] {
+            match validate_profile_name(name, "google") {
+                Err(Error::InvalidOptions(message)) => {
+                    assert!(message.contains("invalid profile name"), "{message}")
+                }
+                other => panic!("{name}: expected InvalidOptions, got {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(feature = "google")]
+    #[test]
+    fn validate_profile_name_reserves_builtin_names_for_their_kind() {
+        assert!(validate_profile_name("google", "google").is_ok());
+        assert!(validate_profile_name("Google", " GOOGLE ").is_ok());
+        match validate_profile_name("Google", "OpenAI") {
+            Err(Error::InvalidOptions(message)) => assert_eq!(
+                message,
+                "profile `google` is named after a built-in provider, so its `type` can only be `google`, not `openai`"
+            ),
+            other => panic!("expected InvalidOptions, got {other:?}"),
+        }
+    }
+
+    /// `resolve` reports exactly what `validate_profile_name` does.
+    #[cfg(feature = "google")]
+    #[test]
+    fn resolve_uses_validate_profile_name_messages() {
+        for (name, kind) in [("bad name!", "google"), ("google", "deepl")] {
+            let expected = validate_profile_name(name, kind).unwrap_err().to_string();
+            let got = resolve(name, &typed(kind), &["google", "deepl"])
+                .unwrap_err()
+                .to_string();
+            assert_eq!(got, expected);
         }
     }
 

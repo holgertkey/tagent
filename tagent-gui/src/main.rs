@@ -1063,17 +1063,18 @@ fn selected_profiles(dialog: &SettingsDialog) -> [String; 3] {
 }
 
 /// Refreshes the ⚠ next to each provider picker and the list of missing required options
-/// below them: `profiles` are the saved ones, `edits` what the options panel kept in this
-/// dialog so far.
+/// below them, from `profiles` (the saved ones with the dialog's [`provider_form::Draft`]
+/// applied).
 fn refresh_provider_warnings(
     dialog: &SettingsDialog,
     profiles: &tagent::providers::ProviderProfiles,
-    edits: &provider_form::Edits,
 ) {
+    let no_edits = provider_form::Edits::new();
     let warnings: Vec<SharedString> = selected_profiles(dialog)
         .iter()
         .map(|profile| {
-            provider_form::warning(profiles, profile, edits, |var| std::env::var(var).ok()).into()
+            provider_form::warning(profiles, profile, &no_edits, |var| std::env::var(var).ok())
+                .into()
         })
         .collect();
     let mut lines: Vec<String> = Vec::new();
@@ -1087,19 +1088,96 @@ fn refresh_provider_warnings(
     dialog.set_provider_warnings(ModelRc::new(VecModel::from(warnings)));
 }
 
-/// Fills and opens the options panel for the profile of picker `picker` (0 translation,
-/// 1 dictionary, 2 speech). Its fields show `edits` over the saved `profiles`.
+/// Fills the Providers tab's add form once per dialog: the kind dropdown (every built-in
+/// kind, `openai` preselected when compiled in) and the empty name's error, which keeps
+/// "Add" disabled.
+fn seed_profile_form(dialog: &SettingsDialog) {
+    let kinds = provider_form::builtin_kinds();
+    let index = kinds.iter().position(|kind| *kind == "openai").unwrap_or(0);
+    dialog.set_new_profile_kinds(ModelRc::new(VecModel::from(
+        kinds
+            .iter()
+            .map(|kind| SharedString::from(*kind))
+            .collect::<Vec<_>>(),
+    )));
+    dialog.set_new_profile_kind_index(index as i32);
+    dialog.set_new_profile_error(
+        provider_form::name_error(&tagent::providers::ProviderProfiles::new(), "", "").into(),
+    );
+}
+
+/// Updates the error under the Providers tab's name field for `name` and the selected
+/// kind, against `view` (the saved profiles with the draft applied).
+fn refresh_new_profile_error(
+    dialog: &SettingsDialog,
+    view: &tagent::providers::ProviderProfiles,
+    name: &str,
+) {
+    let kind = combo_selection(
+        &dialog.get_new_profile_kinds(),
+        dialog.get_new_profile_kind_index(),
+        "",
+    );
+    dialog.set_new_profile_error(provider_form::name_error(view, name, &kind).into());
+}
+
+/// Shows `draft` over the `saved` profiles everywhere in the dialog: the Providers tab's
+/// rows, General's three pickers (the selection kept by name, or reset to the axis's
+/// first built-in when its profile is gone) and their warnings. Returns the note naming
+/// the pickers that were reset, or `""`.
+fn refresh_profiles(
+    dialog: &SettingsDialog,
+    saved: &tagent::providers::ProviderProfiles,
+    draft: &provider_form::Draft,
+) -> String {
+    let view = draft.view(saved);
+    let rows: Vec<ProviderProfileRow> = provider_form::profile_rows(&view)
+        .into_iter()
+        .map(|row| ProviderProfileRow {
+            name: row.name.into(),
+            label: row.label.into(),
+            builtin: row.builtin,
+            known_kind: row.known_kind,
+        })
+        .collect();
+    dialog.set_profile_rows(ModelRc::new(VecModel::from(rows)));
+
+    let (selected, note) = provider_form::picker_fallbacks(&selected_profiles(dialog), &view);
+    let (model, index) = provider_choices(
+        providers::TRANSLATION_PROVIDERS,
+        &view.profiles_of_kinds(providers::TRANSLATION_PROVIDERS),
+        &selected[0],
+    );
+    dialog.set_providers(model);
+    dialog.set_provider_index(index);
+    let (model, index) = provider_choices(
+        providers::DICTIONARY_PROVIDERS,
+        &view.profiles_of_kinds(providers::DICTIONARY_PROVIDERS),
+        &selected[1],
+    );
+    dialog.set_dictionary_providers(model);
+    dialog.set_dictionary_provider_index(index);
+    let (model, index) = provider_choices(
+        providers::SPEECH_PROVIDERS,
+        &view.profiles_of_kinds(providers::SPEECH_PROVIDERS),
+        &selected[2],
+    );
+    dialog.set_speech_providers(model);
+    dialog.set_speech_provider_index(index);
+
+    refresh_provider_warnings(dialog, &view);
+    note
+}
+
+/// Fills and opens the options panel for `profile`, with its values from `profiles` (the
+/// saved ones with the dialog's draft applied) and `note` under the title.
 fn show_provider_options(
     dialog: &SettingsDialog,
     profiles: &tagent::providers::ProviderProfiles,
-    edits: &provider_form::Edits,
-    picker: usize,
+    profile: &str,
+    note: String,
 ) {
-    let selected = selected_profiles(dialog);
-    let Some(profile) = selected.get(picker) else {
-        return;
-    };
-    let fields = provider_form::fields(profiles, &[profile.as_str()], edits, |var| {
+    let fields = provider_form::fields(profiles, &[profile], &provider_form::Edits::new(), |var| {
         std::env::var(var).ok()
     });
     let title = fields
@@ -1132,13 +1210,83 @@ fn show_provider_options(
             }
         })
         .collect();
-    let selected = selected.each_ref().map(String::as_str);
     dialog.set_options_panel_title(title.into());
-    dialog.set_options_panel_note(provider_form::sharing_note(&selected, picker).into());
+    dialog.set_options_panel_note(note.into());
+    dialog.set_test_output(SharedString::new());
     // Warnings first, so the rows never index past them.
     dialog.set_provider_option_warnings(ModelRc::new(VecModel::from(warnings)));
     dialog.set_provider_option_fields(ModelRc::new(VecModel::from(rows)));
     dialog.set_options_panel_open(true);
+}
+
+/// Starts Settings' "Test" of `profile` as `profiles` define it (plus the
+/// `TAGENT_<NAME>_<KEY>` environment overrides, as the app itself builds providers): one
+/// call per axis its kind implements, on a background thread. The result lines land in
+/// the dialog's `test-output`; a result arriving after the dialog closed is dropped.
+fn start_profile_test(
+    dialog: &SettingsDialog,
+    profiles: &tagent::providers::ProviderProfiles,
+    profile: &str,
+    target: &str,
+) {
+    let profile = profile.trim().to_lowercase();
+    let axes = provider_form::axes_of(&profiles.kind_of(&profile));
+    let options = profiles.options(&profile);
+    let target = target.to_string();
+    dialog.set_testing(true);
+    dialog.set_test_output(format!("Testing {profile}…").into());
+    let dialog_weak = dialog.as_weak();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
+        let mut lines = vec![format!("Test of {profile}:")];
+        for axis in axes {
+            let started = std::time::Instant::now();
+            let result = runtime.block_on(test_profile_axis(axis, &profile, &options, &target));
+            lines.push(provider_form::format_test_line(
+                axis,
+                started.elapsed(),
+                &result,
+            ));
+        }
+        let text = lines.join("\n");
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                dialog.set_test_output(text.into());
+                dialog.set_testing(false);
+                dialog.set_testing_row(-1);
+            }
+        });
+    });
+}
+
+/// One axis of a profile test: builds the provider through the same `*_with` factory the
+/// app uses (a missing required option fails here, before any network call) and makes one
+/// call. Returns what to show after "OK".
+async fn test_profile_axis(
+    axis: &str,
+    profile: &str,
+    options: &providers::ProviderOptions,
+    target: &str,
+) -> Result<String, tagent::error::Error> {
+    match axis {
+        "translation" => {
+            let provider = providers::create_provider_with(profile, options)?;
+            provider.translate_text("Hello, world!", "en", target).await
+        }
+        "dictionary" => {
+            let provider = providers::create_dictionary_provider_with(profile, options)?;
+            Ok(match provider.lookup("hello", "en", target).await? {
+                Some(entry) => tagent::article::primary_line(&entry, None)
+                    .unwrap_or_else(|| "an entry".to_string()),
+                None => "no entry".to_string(),
+            })
+        }
+        _ => {
+            let provider = providers::create_speech_provider_with(profile, options)?;
+            let audio = provider.speak_chunk("Hello", "en").await?;
+            Ok(format!("{} bytes of audio", audio.len()))
+        }
+    }
 }
 
 /// Fills every `SettingsDialog` field from `config` -- used both to seed the
@@ -2444,36 +2592,74 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         seed_dialog_fields(&dialog, &current_config);
 
-        // Provider options: values kept by the options panel's OK live in
-        // `provider_option_edits` until the dialog's OK, keyed by (profile, key), so
-        // switching a picker back and forth keeps them. What is typed while the panel is
-        // open goes to `panel_edits` first, which its Cancel drops.
-        let provider_option_edits = Rc::new(RefCell::new(provider_form::Edits::new()));
+        // Provider profiles and options: everything the Providers tab and the options
+        // panel stage (profiles added/deleted, option values kept by the panel's OK)
+        // lives in `draft` until the dialog's OK; the dialog shows `draft.view(saved)`.
+        // What is typed while the panel is open goes to `panel_edits` first, which its
+        // Cancel drops. `panel_profile` is the profile the panel shows.
+        let draft = Rc::new(RefCell::new(provider_form::Draft::default()));
         let panel_edits = Rc::new(RefCell::new(provider_form::Edits::new()));
+        let panel_profile = Rc::new(RefCell::new(String::new()));
         let saved_profiles = Rc::new(current_config.provider_options.clone());
-        refresh_provider_warnings(&dialog, &saved_profiles, &provider_option_edits.borrow());
+        seed_profile_form(&dialog);
+        refresh_profiles(&dialog, &saved_profiles, &draft.borrow());
 
         let dialog_weak = dialog.as_weak();
-        let edits = provider_option_edits.clone();
+        let draft_for_selection = draft.clone();
         let profiles = saved_profiles.clone();
         dialog.on_provider_selection_changed(move || {
             if let Some(dialog) = dialog_weak.upgrade() {
-                refresh_provider_warnings(&dialog, &profiles, &edits.borrow());
+                let view = draft_for_selection.borrow().view(&profiles);
+                refresh_provider_warnings(&dialog, &view);
             }
         });
 
         let dialog_weak = dialog.as_weak();
-        let edits = provider_option_edits.clone();
+        let draft_for_picker = draft.clone();
         let panel = panel_edits.clone();
+        let shown = panel_profile.clone();
         let profiles = saved_profiles.clone();
         dialog.on_provider_options_requested(move |picker| {
             let Some(dialog) = dialog_weak.upgrade() else {
                 return;
             };
-            if let Ok(picker) = usize::try_from(picker) {
-                panel.borrow_mut().clear();
-                show_provider_options(&dialog, &profiles, &edits.borrow(), picker);
-            }
+            let Ok(picker) = usize::try_from(picker) else {
+                return;
+            };
+            let selected = selected_profiles(&dialog);
+            let Some(profile) = selected.get(picker) else {
+                return;
+            };
+            let note =
+                provider_form::sharing_note(&selected.each_ref().map(String::as_str), picker);
+            panel.borrow_mut().clear();
+            *shown.borrow_mut() = profile.trim().to_lowercase();
+            let view = draft_for_picker.borrow().view(&profiles);
+            show_provider_options(&dialog, &view, profile, note);
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_row = draft.clone();
+        let panel = panel_edits.clone();
+        let shown = panel_profile.clone();
+        let profiles = saved_profiles.clone();
+        dialog.on_profile_options_requested(move |row| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let Some(row) = usize::try_from(row)
+                .ok()
+                .and_then(|row| dialog.get_profile_rows().row_data(row))
+            else {
+                return;
+            };
+            let selected = selected_profiles(&dialog);
+            let note =
+                provider_form::selection_note(&selected.each_ref().map(String::as_str), &row.name);
+            panel.borrow_mut().clear();
+            *shown.borrow_mut() = row.name.to_string();
+            let view = draft_for_row.borrow().view(&profiles);
+            show_provider_options(&dialog, &view, &row.name, note);
         });
 
         let dialog_weak = dialog.as_weak();
@@ -2504,16 +2690,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         let dialog_weak = dialog.as_weak();
-        let edits = provider_option_edits.clone();
+        let draft_for_accept = draft.clone();
         let panel = panel_edits.clone();
         let profiles = saved_profiles.clone();
         dialog.on_provider_options_accepted(move || {
             let Some(dialog) = dialog_weak.upgrade() else {
                 return;
             };
-            edits.borrow_mut().append(&mut panel.borrow_mut());
+            draft_for_accept
+                .borrow_mut()
+                .edits
+                .append(&mut panel.borrow_mut());
             dialog.set_options_panel_open(false);
-            refresh_provider_warnings(&dialog, &profiles, &edits.borrow());
+            refresh_profiles(&dialog, &profiles, &draft_for_accept.borrow());
         });
 
         let dialog_weak = dialog.as_weak();
@@ -2523,6 +2712,116 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.set_options_panel_open(false);
             }
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_name = draft.clone();
+        let profiles = saved_profiles.clone();
+        dialog.on_new_profile_name_edited(move |name| {
+            if let Some(dialog) = dialog_weak.upgrade() {
+                let view = draft_for_name.borrow().view(&profiles);
+                refresh_new_profile_error(&dialog, &view, &name);
+            }
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_add = draft.clone();
+        let panel = panel_edits.clone();
+        let shown = panel_profile.clone();
+        let profiles = saved_profiles.clone();
+        dialog.on_profile_add_requested(move |name, kind_index| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let kind = combo_selection(&dialog.get_new_profile_kinds(), kind_index, "");
+            let view = draft_for_add.borrow().view(&profiles);
+            if !provider_form::name_error(&view, &name, &kind).is_empty() {
+                return;
+            }
+            let name = name.trim().to_lowercase();
+            draft_for_add.borrow_mut().add(&name, &kind);
+            dialog.set_new_profile_name(SharedString::new());
+            let view = draft_for_add.borrow().view(&profiles);
+            refresh_new_profile_error(&dialog, &view, "");
+            refresh_profiles(&dialog, &profiles, &draft_for_add.borrow());
+            // Most kinds need options before they work (`openai`: endpoint and model),
+            // so the panel opens right away.
+            let selected = selected_profiles(&dialog);
+            let note =
+                provider_form::selection_note(&selected.each_ref().map(String::as_str), &name);
+            panel.borrow_mut().clear();
+            *shown.borrow_mut() = name.clone();
+            show_provider_options(&dialog, &view, &name, note);
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_delete = draft.clone();
+        let profiles = saved_profiles.clone();
+        dialog.on_profile_delete_requested(move |row| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let Some(row) = usize::try_from(row)
+                .ok()
+                .and_then(|row| dialog.get_profile_rows().row_data(row))
+            else {
+                return;
+            };
+            if row.builtin {
+                return;
+            }
+            draft_for_delete.borrow_mut().delete(&row.name);
+            let note = refresh_profiles(&dialog, &profiles, &draft_for_delete.borrow());
+            if !note.is_empty() {
+                dialog.set_profile_note(note.into());
+            }
+            let view = draft_for_delete.borrow().view(&profiles);
+            refresh_new_profile_error(&dialog, &view, &dialog.get_new_profile_name());
+        });
+
+        // The target language of a test translation: the configured one, or German when
+        // that is English (the test phrase is English).
+        let test_target = if current_config.target_language == "en" {
+            "de".to_string()
+        } else {
+            current_config.target_language.clone()
+        };
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_test = draft.clone();
+        let profiles = saved_profiles.clone();
+        let target = test_target.clone();
+        dialog.on_profile_test_requested(move |row| {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            let Some(profile) = usize::try_from(row)
+                .ok()
+                .and_then(|index| dialog.get_profile_rows().row_data(index))
+            else {
+                return;
+            };
+            let view = draft_for_test.borrow().view(&profiles);
+            dialog.set_testing_row(row);
+            start_profile_test(&dialog, &view, &profile.name, &target);
+        });
+
+        let dialog_weak = dialog.as_weak();
+        let draft_for_panel_test = draft.clone();
+        let panel = panel_edits.clone();
+        let shown = panel_profile.clone();
+        let profiles = saved_profiles.clone();
+        let target = test_target;
+        dialog.on_panel_test_requested(move || {
+            let Some(dialog) = dialog_weak.upgrade() else {
+                return;
+            };
+            // The panel's unsaved edits count too.
+            let mut draft = draft_for_panel_test.borrow().clone();
+            draft.edits.extend(panel.borrow().clone());
+            let view = draft.view(&profiles);
+            dialog.set_testing_row(-1);
+            start_profile_test(&dialog, &view, &shown.borrow(), &target);
         });
 
         let dialog_weak = dialog.as_weak();
@@ -2773,7 +3072,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         let dialog_weak = dialog.as_weak();
-        let provider_option_edits_for_save = provider_option_edits.clone();
+        let draft_for_save = draft.clone();
         let config_manager_for_save = config_manager_for_settings.clone();
         let window_weak_for_save = window_weak_for_settings.clone();
         let popup_weak_for_save = popup_weak_for_settings.clone();
@@ -2880,14 +3179,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // (see save_window_geometry) -- so carried through unchanged, same
                 // treatment as translate_hotkey/popup_auto_hide_seconds above.
                 window_geometry: current_config.window_geometry,
-                // Not editable in Settings yet (hand-edited only), so carried over rather
-                // than rebuilt: dropping it would wipe every profile. Read fresh (after a
-                // reload), so a hand-edit made while the dialog is open isn't reverted.
+                // Read fresh (after a reload) and only the dialog's staged operations
+                // applied (deletes, adds, option edits), so a hand-edit made while the
+                // dialog is open survives unless it touches the same profile.
                 provider_options: {
                     let mut manager = config_manager_for_save.lock().unwrap();
                     manager.check_and_reload();
                     let mut profiles = manager.config().provider_options.clone();
-                    provider_form::apply(&mut profiles, &provider_option_edits_for_save.borrow());
+                    draft_for_save.borrow().apply(&mut profiles);
                     profiles
                 },
                 remember_popup_position: dialog.get_remember_popup_position(),
@@ -2951,16 +3250,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let dialog_weak = dialog.as_weak();
         let saved_profiles_for_reset = saved_profiles.clone();
-        let provider_option_edits_for_reset = provider_option_edits.clone();
+        let draft_for_reset = draft.clone();
         dialog.on_reset_to_defaults_requested(move || {
             if let Some(dialog) = dialog_weak.upgrade() {
                 seed_dialog_fields(&dialog, &config::GuiConfig::default());
-                // Provider options aren't reset (they can hold API keys); the warnings
-                // just follow the pickers, which now point at the defaults.
-                refresh_provider_warnings(
+                // Profiles and their options aren't reset (they can hold API keys): the
+                // pickers, which now point at the defaults, get them back, and the
+                // warnings follow.
+                refresh_profiles(
                     &dialog,
                     &saved_profiles_for_reset,
-                    &provider_option_edits_for_reset.borrow(),
+                    &draft_for_reset.borrow(),
                 );
             }
         });

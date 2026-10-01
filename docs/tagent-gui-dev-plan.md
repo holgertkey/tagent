@@ -87,13 +87,14 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
   Right-click copies a line; left-drag moves it; the position can be remembered and is
   clamped to the desktop. It can be switched off (`show_popup`).
 - **Tray**: close-to-tray, `start_minimized`, Show / Settings… / Quit.
-- **Settings dialog**: tabs General / View / Popup / Hotkeys & Tray; hotkey "Record" button
+- **Settings dialog**: tabs General / Providers / View / Popup / Hotkeys & Tray; hotkey "Record" button
   with live validation; Reset to Defaults; themes and color schemes; prompt colors.
 - **Providers**: translation, dictionary and speech pickers in Settings > General (plus a
   session-only translation picker in the main window), user profiles from
   `provider_options`, and an "Options…" panel per picker built from `tagent`'s registry
   (password fields for secrets, ⚠ for missing required options, a multi-line editor with
-  the built-in default for prompts). Google, DeepL and OpenAI-compatible translation.
+  the built-in default for prompts). A "Providers" tab creates, deletes and tests profiles
+  (0.14.0+037). Google, DeepL and OpenAI-compatible translation.
 - **Window geometry** is remembered (`remember_window_geometry`).
 - **Terminal detach** on Linux/macOS (`--foreground` / `-f` to stay attached; the log goes
   to `tagent-gui.log` in the data dir).
@@ -136,8 +137,8 @@ Candidates, not yet scheduled; the order is a suggestion.
 3. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog. Options of
    existing profiles: done ("Options…" panel, 0.14.0+028; multi-line options,
-   0.14.0+036). Creating and deleting profiles, plus a "Test" button: planned (decided
-   2026-10-01), see [below](#planned-stage--provider-profiles-tab).
+   0.14.0+036). Creating and deleting profiles, plus a "Test" button: implemented in
+   0.14.0+037, see [below](#planned-stage--provider-profiles-tab).
 4. ~~**Multi-line provider options.**~~ Done in 0.14.0+036 (2026-10-01): a `multiline`
    option (today `openai`'s `translate_prompt`) gets a `TextEdit` pre-filled with its
    `default`, "Reset to default", and a soft ⚠ when `{to}` is missing; driven only by the
@@ -149,8 +150,10 @@ Candidates, not yet scheduled; the order is a suggestion.
 
 ### Planned stage — Provider profiles tab
 
-**Status:** planned (2026-10-01). Once shipped, condense this section to a row of the
-"Shipped stages" table and a changelog entry, like the other stages.
+**Status:** implemented in 0.14.0+037 (2026-10-01), both iterations at once (the tab with
+add/delete, and Test); the manual UI check below is still open. Once it passes, condense
+this section to a row of the "Shipped stages" table and a changelog entry, like the other
+stages.
 
 **Goal.** Users create and delete provider profiles in Settings instead of hand-editing
 `provider_options` in `tagent-gui.json`, typically several `openai` instances side by

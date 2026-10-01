@@ -283,6 +283,24 @@ impl ProviderProfiles {
         removed
     }
 
+    /// Removes `profile` with all its options and returns them, if it existed (even with
+    /// no options).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tagent::providers::ProviderProfiles;
+    ///
+    /// let mut profiles = ProviderProfiles::new();
+    /// profiles.insert("work", "type", "openai");
+    /// profiles.insert("work", "model", "qwen3:8b");
+    /// assert_eq!(profiles.remove_profile("Work").map(|options| options.len()), Some(2));
+    /// assert!(profiles.is_empty());
+    /// ```
+    pub fn remove_profile(&mut self, profile: &str) -> Option<BTreeMap<String, String>> {
+        self.0.remove(&profile.trim().to_lowercase())
+    }
+
     /// The options of `profile` as configured (no environment overrides), if it exists.
     pub fn get(&self, profile: &str) -> Option<&BTreeMap<String, String>> {
         self.0.get(&profile.trim().to_lowercase())
@@ -603,6 +621,17 @@ mod tests {
         assert!(profiles.get("empty").unwrap().is_empty());
         assert_eq!(profiles.kind_of("Work"), "google");
         assert_eq!(profiles.kind_of("other"), "other");
+    }
+
+    #[test]
+    fn remove_profile_removes_every_option_and_an_empty_profile() {
+        let mut profiles: ProviderProfiles =
+            serde_json::from_str(r#"{"Work": {"type": "openai", "model": "m"}, "llm": {}}"#)
+                .unwrap();
+        assert_eq!(profiles.remove_profile("llm"), Some(BTreeMap::new()));
+        assert_eq!(profiles.remove_profile(" WORK ").unwrap().len(), 2);
+        assert!(profiles.is_empty());
+        assert_eq!(profiles.remove_profile("work"), None);
     }
 
     #[test]

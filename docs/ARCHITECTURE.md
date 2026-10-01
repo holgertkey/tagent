@@ -714,6 +714,34 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   option with a `default` would show it as the placeholder (none exists today). A saved
   multi-line value is a `\n`-escaped JSON string in `tagent-gui.json`. That is correct but
   awkward to edit by hand, so the panel is the intended way to edit it.
+- **Providers tab** (0.14.0+037): creates and deletes `provider_options` profiles and tests
+  them. Everything the dialog stages for `provider_options` is one
+  `provider_form::Draft` (`created` name → kind, `deleted`, and the panel's `edits`) in an
+  `Rc<RefCell<_>>`; the dialog only ever shows `draft.view(saved)` (a clone of the profiles
+  read when it opened, with the draft applied), so the pickers, their ⚠ warnings, the
+  options panel and the tab's rows need no edit overlay of their own. Only the panel keeps
+  one (`panel_edits`), which its OK appends to the draft and its Cancel drops.
+  `refresh_profiles` refills the rows and the three pickers, keeping each selection by name
+  or resetting it to the axis's first built-in (`provider_form::picker_fallbacks`, whose
+  note the tab shows after a delete), and is called after every add, delete, panel OK and
+  "Reset to Defaults" (which reseeds the pickers from `GuiConfig::default()`, without
+  profiles). `Draft::delete` drops the profile's edits and, for a saved profile, records
+  the name in `deleted`; `add` leaves it there, so delete + re-add starts fresh.
+  `Draft::apply` runs deletes (`ProviderProfiles::remove_profile`, which also removes a
+  hand-edited empty `{}` profile), then adds (`type`), then the edits of profiles that
+  still exist; the save closure applies it to the freshly re-read file. Name rules are
+  `provider_form::name_error`, built on `tagent::providers::validate_profile_name` (the
+  factories' own check) plus "built-in name" and "already exists"; the Slint side shows
+  the message only for a non-empty name, while the error alone keeps "Add" disabled. Rows
+  come from `provider_form::profile_rows` (built-ins from the registry first, then
+  profiles, an unknown kind with "Delete" only). "Test" (`start_profile_test`) builds the
+  options from the view (plus the panel's unsaved edits when started there) with
+  `ProviderProfiles::options`, so `TAGENT_<NAME>_<KEY>` overrides apply, and runs one call
+  per axis of `provider_form::axes_of(kind)` on a thread with its own Tokio runtime,
+  through the same `*_with` factories as the app. The lines (`format_test_line`) come back
+  via `invoke_from_event_loop` and a `Weak` upgrade, so a dialog closed meanwhile drops
+  them. One `testing` flag disables every Test button, and there's no timer besides the
+  transport's own budget.
 - **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
   `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
   (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling
