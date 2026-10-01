@@ -1118,11 +1118,25 @@ fn show_provider_options(
             secret: field.secret,
             required: field.required,
             env_var: field.env_var.into(),
+            multiline: field.multiline,
+            default_value: field.default.into(),
+        })
+        .collect();
+    let warnings: Vec<SharedString> = rows
+        .iter()
+        .map(|row| {
+            if row.multiline {
+                provider_form::soft_warning(&row.default_value, &row.value).into()
+            } else {
+                SharedString::new()
+            }
         })
         .collect();
     let selected = selected.each_ref().map(String::as_str);
     dialog.set_options_panel_title(title.into());
     dialog.set_options_panel_note(provider_form::sharing_note(&selected, picker).into());
+    // Warnings first, so the rows never index past them.
+    dialog.set_provider_option_warnings(ModelRc::new(VecModel::from(warnings)));
     dialog.set_provider_option_fields(ModelRc::new(VecModel::from(rows)));
     dialog.set_options_panel_open(true);
 }
@@ -2468,15 +2482,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let Some(dialog) = dialog_weak.upgrade() else {
                 return;
             };
-            let field = usize::try_from(row)
-                .ok()
-                .and_then(|row| dialog.get_provider_option_fields().row_data(row));
-            if let Some(field) = field {
-                panel.borrow_mut().insert(
-                    (field.profile.to_string(), field.label.to_string()),
-                    value.to_string(),
+            let Ok(row) = usize::try_from(row) else {
+                return;
+            };
+            let Some(field) = dialog.get_provider_option_fields().row_data(row) else {
+                return;
+            };
+            // An edit equal to the built-in default is recorded as "" (nothing saved).
+            let value = provider_form::normalize_edit(&field.default_value, &value);
+            if field.multiline {
+                // Only this row's warning; the fields model stays untouched, so the
+                // editor keeps its cursor and focus.
+                dialog.get_provider_option_warnings().set_row_data(
+                    row,
+                    provider_form::soft_warning(&field.default_value, &value).into(),
                 );
             }
+            panel
+                .borrow_mut()
+                .insert((field.profile.to_string(), field.label.to_string()), value);
         });
 
         let dialog_weak = dialog.as_weak();

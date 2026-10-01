@@ -30,6 +30,11 @@ pub struct Field {
     pub required: bool,
     /// The environment variable currently overriding this option, or empty.
     pub env_var: String,
+    /// Edit in a multi-line editor (see [`is_multiline`]).
+    pub multiline: bool,
+    /// The built-in value the provider uses when the option is unset, or empty when it
+    /// declares none. Shown in the editor while `value` is empty; never a `value` itself.
+    pub default: String,
 }
 
 /// Edits made in the dialog, by `(profile, key)` (both lowercase). An empty value means
@@ -92,6 +97,8 @@ pub fn fields(
             secret: false,
             required: false,
             env_var: String::new(),
+            multiline: false,
+            default: String::new(),
         });
         for spec in specs {
             let value = edits
@@ -119,10 +126,56 @@ pub fn fields(
                 secret: spec.secret,
                 required: spec.required,
                 env_var,
+                multiline: is_multiline(spec.multiline, spec.secret),
+                default: spec.default.unwrap_or_default().to_string(),
             });
         }
     }
     rows
+}
+
+/// Whether an option gets the multi-line editor: one declared `multiline`, unless it's
+/// `secret` (the multi-line editor has no password mode, so a secret stays masked).
+pub fn is_multiline(multiline: bool, secret: bool) -> bool {
+    multiline && !secret
+}
+
+/// The edit to record for an option with built-in value `default` when the user typed
+/// `value`: `""` (= the default, so saving stores nothing) when it equals the default
+/// after CRLF → LF and trimming both sides, else `value` with LF line breaks.
+pub fn normalize_edit(default: &str, value: &str) -> String {
+    let value = value.replace("\r\n", "\n");
+    let default = default.replace("\r\n", "\n");
+    if !default.trim().is_empty() && value.trim() == default.trim() {
+        String::new()
+    } else {
+        value
+    }
+}
+
+/// The placeholders whose absence gets a warning: a prompt without `{to}` doesn't tell the
+/// model the target language. (A missing `{from}` is harmless, the model sees the text.)
+const WARNED_PLACEHOLDERS: [&str; 1] = ["{to}"];
+
+/// The soft warning under a multi-line editor, or `""`: for each warned placeholder the
+/// built-in `default` contains, whether the effective `value` (blank = the default) lacks
+/// it. Derived from the default only, so the GUI needs no knowledge of particular option
+/// keys.
+pub fn soft_warning(default: &str, value: &str) -> String {
+    let effective = if value.trim().is_empty() {
+        default
+    } else {
+        value
+    };
+    WARNED_PLACEHOLDERS
+        .iter()
+        .find(|placeholder| default.contains(*placeholder) && !effective.contains(*placeholder))
+        .map(|placeholder| {
+            format!(
+                "⚠ The prompt has no {placeholder}: the model won't be told the target language."
+            )
+        })
+        .unwrap_or_default()
 }
 
 /// The required options of `profile` that have no value: neither an edit, nor a saved
@@ -301,6 +354,81 @@ mod tests {
             missing_required(&profiles, "ollama", &Edits::new(), no_env),
             ["endpoint", "model"]
         );
+    }
+
+    /// `translate_prompt` gets the multi-line editor, pre-filled from the library's
+    /// default; the default never becomes the field's value.
+    #[test]
+    fn openai_prompt_is_multiline_with_the_built_in_default() {
+        let rows = fields(&ProviderProfiles::new(), &["openai"], &Edits::new(), no_env);
+        let prompt = rows
+            .iter()
+            .find(|row| row.label == "translate_prompt")
+            .unwrap();
+        assert!(prompt.multiline);
+        assert_eq!(
+            prompt.default,
+            tagent::providers::openai::DEFAULT_TRANSLATE_PROMPT
+        );
+        assert_eq!(prompt.value, "");
+        assert!(rows
+            .iter()
+            .filter(|row| row.label != "translate_prompt")
+            .all(|row| !row.multiline && row.default.is_empty()));
+        // The shipped default has {to}, so it never warns about itself.
+        assert_eq!(soft_warning(&prompt.default, ""), "");
+        assert_eq!(soft_warning(&prompt.default, &prompt.default), "");
+    }
+
+    #[test]
+    fn google_fields_are_single_line_without_defaults() {
+        let rows = fields(&ProviderProfiles::new(), &["google"], &Edits::new(), no_env);
+        assert!(rows
+            .iter()
+            .all(|row| !row.multiline && row.default.is_empty()));
+    }
+
+    #[test]
+    fn secret_wins_over_multiline() {
+        assert!(is_multiline(true, false));
+        assert!(!is_multiline(true, true));
+        assert!(!is_multiline(false, false));
+        assert!(!is_multiline(false, true));
+    }
+
+    #[test]
+    fn edits_equal_to_the_default_are_recorded_as_empty() {
+        let default = "Translate {from} into {to}.\nOnly the translation.";
+        assert_eq!(normalize_edit(default, default), "");
+        assert_eq!(
+            normalize_edit(
+                default,
+                "  Translate {from} into {to}.\r\nOnly the translation.\n"
+            ),
+            ""
+        );
+        assert_eq!(normalize_edit(default, ""), "");
+        assert_eq!(
+            normalize_edit(default, "Translate into {to}.\r\nBe brief."),
+            "Translate into {to}.\nBe brief."
+        );
+        // Without a default nothing collapses (an empty edit stays empty anyway).
+        assert_eq!(normalize_edit("", " "), " ");
+        assert_eq!(normalize_edit("", "x"), "x");
+    }
+
+    #[test]
+    fn soft_warning_flags_a_prompt_without_to() {
+        let default = "Translate {from} into {to}.";
+        assert!(soft_warning(default, "Translate into German.").contains("{to}"));
+        assert_eq!(soft_warning(default, "Translate into {to}."), "");
+        // Blank = the default, which has {to}.
+        assert_eq!(soft_warning(default, "  \n"), "");
+        // A missing {from} is harmless.
+        assert_eq!(soft_warning(default, "Into {to}."), "");
+        // A default without the placeholder never asks for it.
+        assert_eq!(soft_warning("Be brief.", "Anything"), "");
+        assert_eq!(soft_warning("", "Anything"), "");
     }
 
     #[test]

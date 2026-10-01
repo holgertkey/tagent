@@ -210,7 +210,8 @@ the old single-crate `tagent`).
   `error.code` is listed into `QuotaExceeded`, which also suppresses the retry even with
   a short `Retry-After`. `detect_language` asks for a code and accepts a listed name/code
   or any BCP-47-shaped answer. `OptionSpec` gained `default` (the prompt) and `multiline`
-  (a UI hint) for it; `tagent-gui` shows the prompt as a single-line field for now.
+  (a UI hint) for it; `tagent-gui`'s "Options…" panel edits such an option in a multi-line editor
+  pre-filled with its default (`tagent-gui` 0.14.0+036, see the `tagent-gui` section).
 - **Cargo features per provider** (Stage P1 part 2): `google`, `deepl` and (since Stage
   P2) `openai`, all in
   `default` (decided 2026-09-28: a provider without dependencies of its own is default,
@@ -694,6 +695,25 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   are plain name lists next to the factories, not a registration mechanism — the factories
   stay closed `match`es — and a test checks that every listed name is accepted by its
   factory, which is what keeps a list from drifting from the `match` it describes.
+- **Multi-line provider options** (0.14.0+036): in the "Options…" panel, an option whose
+  `OptionSpec::multiline` is set (and that isn't `secret`, since `TextEdit` has no
+  password mode) is a fixed-height `TextEdit` under its label instead of a `LineEdit` row.
+  Everything comes from the `OptionSpec` (`multiline`, `default`), with no GUI code that
+  knows an option key. The pure parts are in `provider_form.rs`: `is_multiline`,
+  `normalize_edit` (an edit equal to the default after CRLF → LF and trimming is recorded
+  as `""`, so saving stores nothing) and `soft_warning` (for each warned placeholder, today
+  only `{to}`, that the *default* contains, warn when the effective value lacks it; blank =
+  the default). Three Slint details matter here. First, the editor's `text` is
+  `value != "" ? value : default-value`, so the default is display only and never becomes
+  `value`. Second, the warnings are a separate `provider-option-warnings` string model that
+  `on_provider_option_edited` updates with `set_row_data` on each keystroke. Writing to the
+  fields model instead would rebuild the repeater row, and the editor would lose its cursor
+  and focus. Third, "Reset to default" sets `prompt-editor.text` in Slint and then reports
+  `""` through the same `provider-option-edited` callback. Typing has already broken the
+  `text:` binding, so resending the model row wouldn't update the editor. A single-line
+  option with a `default` would show it as the placeholder (none exists today). A saved
+  multi-line value is a `\n`-escaped JSON string in `tagent-gui.json`. That is correct but
+  awkward to edit by hand, so the panel is the intended way to edit it.
 - **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
   `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
   (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling

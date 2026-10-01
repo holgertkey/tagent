@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, SpinBox, StandardButton, TabWidget, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, SpinBox, StandardButton, TabWidget, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 // One translation round-trip in the transcript: the original phrase and its
 // translation (or an error message), each rendered with its own independently
@@ -19,6 +19,12 @@ export struct ProviderOptionField {
     required: bool,
     // The environment variable overriding this option right now, or "".
     env-var: string,
+    // Edited in a multi-line TextEdit instead of a LineEdit (never for a
+    // secret option).
+    multiline: bool,
+    // The provider's built-in value, or "": pre-fills an empty multi-line
+    // editor and is the single-line field's placeholder.
+    default-value: string,
 }
 
 export struct TranscriptEntry {
@@ -1263,6 +1269,12 @@ export component SettingsDialog inherits Dialog {
     // panel's OK keeps those edits for the dialog, its Cancel drops them, and
     // nothing is written before the dialog's own OK.
     in-out property <[ProviderOptionField]> provider-option-fields: [];
+    // Per row of `provider-option-fields`, the soft warning under a multi-line
+    // editor (a prompt without `{to}`), or "". Kept apart from the fields
+    // model on purpose: main.rs updates it on every keystroke, and touching
+    // the fields model then would rebuild the rows and drop the editor's
+    // cursor and focus.
+    in-out property <[string]> provider-option-warnings: [];
     in-out property <bool> options-panel-open: false;
     in-out property <string> options-panel-title: "";
     in-out property <string> options-panel-note: "";
@@ -1894,7 +1906,7 @@ export component SettingsDialog inherits Dialog {
 
                         for field[row] in provider-option-fields: VerticalLayout {
                             spacing: 2px;
-                            HorizontalLayout {
+                            if !field.multiline: HorizontalLayout {
                                 spacing: 8px;
                                 Text {
                                     text: field.label + (field.required ? " *" : "") + ":";
@@ -1904,8 +1916,43 @@ export component SettingsDialog inherits Dialog {
                                 LineEdit {
                                     text: field.value;
                                     input-type: field.secret ? InputType.password : InputType.text;
-                                    placeholder-text: field.required ? "required" : "default";
+                                    placeholder-text: field.required ? "required"
+                                        : field.default-value != "" ? field.default-value : "default";
                                     edited(value) => { provider-option-edited(row, value); }
+                                }
+                            }
+                            // A multi-line option (a prompt): the label above the
+                            // editor, which shows the built-in default while the
+                            // option has no value (display only: main.rs records
+                            // an edit equal to the default as "").
+                            if field.multiline: VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: field.label + (field.required ? " *" : "") + ":";
+                                }
+                                prompt-editor := TextEdit {
+                                    height: 150px;
+                                    wrap: word-wrap;
+                                    text: field.value != "" ? field.value : field.default-value;
+                                    edited(value) => { provider-option-edited(row, value); }
+                                }
+                                if provider-option-warnings[row] != "": Text {
+                                    text: provider-option-warnings[row];
+                                    wrap: word-wrap;
+                                    font-size: 11px;
+                                }
+                                // Typing has broken the editor's `text` binding, so
+                                // the default is put back here rather than through
+                                // the model; "" means "remove the key".
+                                if field.default-value != "": HorizontalLayout {
+                                    alignment: start;
+                                    Button {
+                                        text: "Reset to default";
+                                        clicked => {
+                                            prompt-editor.text = field.default-value;
+                                            provider-option-edited(row, "");
+                                        }
+                                    }
                                 }
                             }
                             Text {

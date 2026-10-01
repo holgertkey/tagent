@@ -1294,7 +1294,7 @@ changes (registry-driven, like DeepL).
     "Options…" panel, which works but is cramped). A multi-line editor with the default
     text and "Reset to default" is its own stage in
     [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md) (Roadmap, "Multi-line provider
-    options").
+    options"); shipped in `tagent-gui` 0.14.0+036.
 - **Response handling** (pure, unit-tested): non-empty `refusal` → `Api` with its text;
   `finish_reason: "length"` → `Api` ("response cut off"), never a silently truncated
   translation; `content_filter` → `Api`; missing/`null`/blank `content` → `Decode`.
@@ -1485,8 +1485,9 @@ translation pass against a local Ollama.
   (`en → de`: "Guten Morgen", `auto → ru`: "Доброе утро", detection of en/de/ru; 3 of 3,
   under a second), so decision 5 is met with a cloud server instead of a local Ollama.
 - `tagent-gui`: a unit test (`openai_needs_endpoint_and_model_and_hides_its_key`), plus
-  the manual translation above. `translate_prompt` is a single-line field until the
-  "Multi-line provider options" stage of `tagent-gui-dev-plan.md`.
+  the manual translation above. `translate_prompt` was a single-line field until the
+  "Multi-line provider options" stage of `tagent-gui-dev-plan.md` (`tagent-gui`
+  0.14.0+036).
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 

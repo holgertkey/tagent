@@ -12,6 +12,19 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+036] - 2026-10-01
+
+### Added
+- **A multi-line editor for prompt options** in Settings > General's "Options…" panel. An
+  option `tagent` declares as multi-line (today the `openai` kind's `translate_prompt`)
+  gets a text editor under its label instead of a one-line field. With no value set, the
+  editor shows the provider's built-in prompt, ready to edit in place. "Reset to default"
+  puts the built-in text back. A prompt saved unchanged (or identical to the built-in one)
+  stores nothing in `tagent-gui.json`. A ⚠ under the editor warns, without blocking OK,
+  when the prompt has no `{to}`, since the model then isn't told the target language.
+  Nothing in the panel is specific to a provider: it follows the option's declared
+  `multiline` and `default`.
+
 ## [0.14.0+035] - 2026-09-30
 
 ### Added

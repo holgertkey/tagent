@@ -66,7 +66,7 @@ it. The only thing the two share is the `tagent` library. "Independent" means:
    dictionary and speech work there. Consequence, accepted and documented: with the
    view-only transcript, macOS users can't copy text out of it (Stage 13 open item 1).
 
-## Current state (`0.14.0+019`, 2026-09-25)
+## Current state (`0.14.0+036`, 2026-10-01)
 
 Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 
@@ -89,6 +89,11 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 - **Tray**: close-to-tray, `start_minimized`, Show / Settings… / Quit.
 - **Settings dialog**: tabs General / View / Popup / Hotkeys & Tray; hotkey "Record" button
   with live validation; Reset to Defaults; themes and color schemes; prompt colors.
+- **Providers**: translation, dictionary and speech pickers in Settings > General (plus a
+  session-only translation picker in the main window), user profiles from
+  `provider_options`, and an "Options…" panel per picker built from `tagent`'s registry
+  (password fields for secrets, ⚠ for missing required options, a multi-line editor with
+  the built-in default for prompts). Google, DeepL and OpenAI-compatible translation.
 - **Window geometry** is remembered (`remember_window_geometry`).
 - **Terminal detach** on Linux/macOS (`--foreground` / `-f` to stay attached; the log goes
   to `tagent-gui.log` in the data dir).
@@ -113,6 +118,7 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 | 11 | `SpeechProvider` (`tagent`) | 2026-09-19 | speech split from translation into its own provider axis |
 | 12 | `DictionaryProvider` (`tagent` 0.18.0) | 2026-09-20 | dictionary split into its own axis; `#[non_exhaustive]` entry types |
 | 13 | Styled transcript | 2026-09-22 | view-only `StyledText`, semantic highlighting, right-click copy |
+| — | Multi-line provider options | 2026-10-01 | `TextEdit` for `OptionSpec::multiline`, pre-filled default, Reset, `{to}` ⚠ (0.14.0+036) |
 
 Later iterations `0.14.0+003`–`+019` (2026-09-22…25) built on Stage 13: prompt colors,
 optional right-click menu, popup copy and drag, popup highlighting, terminal detach, a
@@ -129,130 +135,14 @@ Candidates, not yet scheduled; the order is a suggestion.
 2. **History logging.** A candidate, not prioritized; no design yet.
 3. **Provider options in Settings.** Keys, endpoints and user profiles, following
    [`providers-dev-plan.md`](providers-dev-plan.md) Stage F and its Backlog.
-4. **Multi-line provider options** (decided 2026-09-30, after `tagent`'s Stage P2 in
-   [`providers-dev-plan.md`](providers-dev-plan.md)). The "Options…" panel
-   (`provider_form.rs`) renders an option with `OptionSpec::multiline` (today the
-   `openai` kind's `translate_prompt`, later P3's `dictionary_prompt`) as a multi-line
-   `TextEdit` instead of a `LineEdit`, pre-filled from `OptionSpec::default` when the
-   profile has no value, with a "Reset to default" button that clears the value (empty =
-   the built-in default, as for every option). A soft ⚠ when a `translate_prompt` lacks
-   `{to}` (accepted by the library, but the model then doesn't learn the target language).
-   Saving a value equal to the default stores nothing. Until then the option works as a
-   single-line field. Detailed plan: [below](#planned-stage--multi-line-provider-options).
+4. ~~**Multi-line provider options.**~~ Done in 0.14.0+036 (2026-10-01): a `multiline`
+   option (today `openai`'s `translate_prompt`) gets a `TextEdit` pre-filled with its
+   `default`, "Reset to default", and a soft ⚠ when `{to}` is missing; driven only by the
+   `OptionSpec`, so P3's `dictionary_prompt` needs no GUI change. See the changelog and
+   "tagent-gui: Slint desktop GUI" in `docs/ARCHITECTURE.md`.
 5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
-
-### Planned stage — Multi-line provider options
-
-**Status:** planned (2026-09-30). Once shipped, condense this section to a row of the
-"Shipped stages" table and a changelog entry, like the other stages.
-
-**Goal.** An option whose `OptionSpec::multiline` is `true` (today only the `openai`
-kind's `translate_prompt`; P3 adds `dictionary_prompt`) gets a real multi-line editor
-in the "Options…" panel, starting from the built-in text, with a way back to it. Still
-**no provider-specific GUI code**: everything is driven by the `OptionSpec` fields
-`tagent` already has (`default`, `multiline`), so P3's prompt works without a GUI change.
-
-**Behavior.**
-- A multiline option renders as a `TextEdit` (`wrap: word-wrap`, fixed height of about
-  8 lines) under its label, instead of the label + `LineEdit` row. Description and the
-  env-override note stay below it as for every field.
-- With no value (no edit, nothing saved), the editor shows `OptionSpec::default`
-  (pre-filled, not a placeholder, so it can be edited in place). The pre-fill is
-  **display only**: the field's `value` stays empty and nothing is stored unless the user
-  edits.
-- A "Reset to default" button under the editor (only for options with a `default`) puts
-  the default text back and records the edit as empty, which removes the key on save
-  (empty = the built-in default, as for every option).
-- An edit whose text equals the default (after CRLF → LF and trimming both sides) is
-  recorded as empty, so saving it stores nothing. A value that was already saved equal to
-  the default (hand-edited JSON) is left as it is unless edited; deliberate, to keep the
-  panel from rewriting what the user didn't touch.
-- Soft ⚠ under the editor, live while typing and also when the panel opens: "The prompt
-  has no `{to}`: the model won't be told the target language." Never blocks OK; the
-  library accepts such a prompt (the language may be written into it).
-- `secret` wins over `multiline` (`TextEdit` has no password mode): such an option stays a
-  masked `LineEdit`. No such option exists; the rule just fixes the precedence.
-- Optional, cheap: a single-line option with a `default` shows it as the `LineEdit`'s
-  placeholder instead of "default". None exist today.
-
-**Where the `{to}` rule lives** (decided 2026-09-30: option (a)). CLAUDE.md promises
-that a provider's options appear in the panel "with no GUI code", so the GUI must not
-know the key `translate_prompt`. Options considered:
-- **(a) Derived from `OptionSpec::default` (chosen, no API change):** for each
-  placeholder `{from}` / `{to}` that the default contains, the rule is "warn if the
-  effective value (empty = the default) lacks it". Only `{to}` gets a ⚠ (a missing
-  `{from}` is harmless: the model sees the text). P3's `dictionary_prompt` is covered
-  automatically if its default uses `{to}`.
-- (b) An additive `OptionSpec` field in `tagent` (e.g. `placeholders: &[&str]`, required
-  ones flagged). Rejected: explicit, but a public API addition for one hint.
-
-**Implementation steps.**
-1. **`tagent-gui/src/provider_form.rs`** (pure, no Slint types):
-   - `Field` gains `multiline: bool` (`spec.multiline && !spec.secret`) and
-     `default: String` (`spec.default.unwrap_or("")`). `fields()` fills them; `value`
-     keeps meaning "edit, else saved value", never the default, so `missing_required`
-     and `warning` are unaffected.
-   - `pub fn normalize_edit(default: &str, value: &str) -> String`: CRLF → LF; if the
-     trimmed result equals the trimmed default (and the default isn't empty), return
-     `""`, else the value unchanged (`apply` already trims on save, as the library does).
-   - `pub fn soft_warning(default: &str, value: &str) -> String`: rule (a) above, `""`
-     when nothing to say. Empty/blank value → checks the default → never warns.
-2. **`tagent-gui/ui/app.slint`**:
-   - `ProviderOptionField` gains `multiline: bool` and `default-value: string` (not
-     `default`, to stay clear of any keyword).
-   - New `in-out property <[string]> provider-option-warnings` (indexed by row), next to
-     `provider-option-fields`. Warnings **must not** go through the fields model: replacing
-     or changing that model on a keystroke recreates/refreshes the repeater rows and the
-     editor loses its cursor and focus.
-   - Import `TextEdit`. In the field loop: `if !field.multiline:` the current row;
-     `if field.multiline:` label, `prompt-editor := TextEdit { text: field.value != "" ?
-     field.value : field.default-value; ... edited(value) => { provider-option-edited(row,
-     value); } }`, the warning `Text` (bound to `provider-option-warnings[row]`), and
-     "Reset to default" (`visible: field.default-value != ""`). Reset assigns
-     `prompt-editor.text = field.default-value;` **in Slint** and then calls
-     `provider-option-edited(row, "")`: typing has already broken the `text:` binding,
-     so re-sending the model row wouldn't update the editor.
-   - No new callback: Reset reuses `provider-option-edited` (callback names are global
-     to the component; grep before adding any).
-   - Check the editor inside the panel's outer `ScrollView`: fixed height so the layout
-     doesn't collapse or grow unbounded; wheel scrolling over it scrolls the editor, the
-     rest of the panel still scrolls elsewhere.
-3. **`tagent-gui/src/main.rs`**:
-   - `show_provider_options`: copy `multiline` / `default` into `ProviderOptionField`,
-     and fill `provider-option-warnings` with `soft_warning(default, value)` per row
-     (empty for single-line fields).
-   - `on_provider_option_edited`: store `normalize_edit(&field.default_value, value)`
-     in `panel_edits`, then `set_row_data` on the warnings model for that row only.
-     (Row data of `provider-option-fields` stays untouched.)
-4. **Version and docs** (implementation work, so `+BUILD` only):
-   - `tagent-gui/Cargo.toml` `0.14.0+035` → `+036`; `tagent-gui/CHANGELOG.md` entry
-     (Added); no README change (no semver bump).
-   - Replace "single-line field for now" in: CLAUDE.md (OpenAI provider section),
-     `docs/ARCHITECTURE.md` (~l. 212-213; plus the Options panel mechanics in the
-     tagent-gui section), `docs/providers-dev-plan.md` (P2's `tagent-gui` notes,
-     ~l. 1294, 1392, 1489).
-   - This document: Roadmap item 4 struck through, a "Shipped stages" row, "Current
-     state" refreshed, this section condensed.
-   - No `tagent` change (option (a)).
-
-**Tests and verification.**
-- Unit tests in `provider_form.rs`: `openai`'s `translate_prompt` field has
-  `multiline` and the `DEFAULT_TRANSLATE_PROMPT` default, its `value` stays empty;
-  `google`'s fields have neither; `normalize_edit` (equal modulo trim/CRLF → `""`,
-  different → kept, empty → `""`, empty default → never collapses); `soft_warning`
-  (no `{to}` → ⚠, with `{to}` → none, blank → none, default without placeholders →
-  none); secret-over-multiline via a constructed case if the registry has none.
-- `cargo test -p tagent-gui`, `cargo clippy --workspace -- -D warnings`,
-  `cargo check --target x86_64-pc-windows-gnu -p tagent-gui`.
-- UI by screenshot only (testing boundary): panel with an `openai` profile, empty and
-  with a saved prompt; typing a prompt without `{to}` shows the ⚠; Reset brings the
-  default back; OK + Settings OK with an unchanged or reset prompt writes no
-  `translate_prompt` into `tagent-gui.json`; a custom prompt is saved and used by the
-  next translation (live-reloaded); Cancel of the panel drops the edit.
-- Note: a saved multi-line prompt is a `\n`-escaped JSON string in `tagent-gui.json`:
-  correct, but awkward to hand-edit. The panel is the intended way to edit it.
 
 ## Deliberately not done (revisit only with a new reason)
 
