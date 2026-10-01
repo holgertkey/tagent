@@ -559,6 +559,10 @@ thread_local! {
     /// `Copy`, and `Cell::get` needs `Copy`.
     static LAST_TRANSCRIPT_ROLE_COLORS: RefCell<Option<(styled::RoleColors, styled::RoleColors)>> =
         const { RefCell::new(None) };
+    /// The `tts-enabled` value [`restyle_transcript`] last rendered every row with:
+    /// it decides whether a prompt shows the speaker glyph
+    /// ([`styled::SPEAKER_MARKER`]). `None` until its first call.
+    static LAST_TRANSCRIPT_SPEAKER: Cell<Option<bool>> = const { Cell::new(None) };
 }
 
 /// Whether [`restyle_transcript`] needs to actually re-render every row: `true` on
@@ -580,7 +584,9 @@ fn role_colors_changed(
 /// roles) and `prompt-accent` (for `Role::Prompt`, user-configurable since
 /// 2026-09-22 -- see [`apply_style`]) -- called from `apply_style`, which already
 /// runs on settings change, config live-reload, first show, and the auto-theme poll
-/// timer (`main`'s `theme_poll_timer`), so this needs no separate trigger of its own.
+/// timer (`main`'s `theme_poll_timer`), and from `app.slint`'s `changed tts-enabled`
+/// (`on_transcript_restyle_requested`), since `tts-enabled` also decides whether a
+/// prompt shows the speaker glyph.
 ///
 /// A no-op unless [`role_colors_changed`] says the colors actually moved, so the
 /// once-a-second `Auto`-theme poll doesn't re-parse and re-lay-out every row on
@@ -594,12 +600,16 @@ fn restyle_transcript(window: &AppWindow) {
         styled::RoleColors::new(window.get_translation_background(), prompt_hex);
     let current = (phrase_colors, translation_colors);
 
-    let changed =
+    let speaker = window.get_tts_enabled();
+
+    let colors_changed =
         LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| role_colors_changed(&cell.borrow(), &current));
-    if !changed {
+    let speaker_changed = LAST_TRANSCRIPT_SPEAKER.with(|cell| cell.get() != Some(speaker));
+    if !colors_changed && !speaker_changed {
         return;
     }
     LAST_TRANSCRIPT_ROLE_COLORS.with(|cell| *cell.borrow_mut() = Some(current.clone()));
+    LAST_TRANSCRIPT_SPEAKER.with(|cell| cell.set(Some(speaker)));
     let (phrase_colors, translation_colors) = current;
 
     let entries = window.get_transcript_entries();
@@ -607,9 +617,13 @@ fn restyle_transcript(window: &AppWindow) {
         let Some(mut entry) = entries.row_data(i) else {
             continue;
         };
-        entry.phrase_styled = styled::render_template(&entry.phrase_template, &phrase_colors);
-        entry.translation_styled =
-            styled::render_template(&entry.translation_template, &translation_colors);
+        entry.phrase_styled =
+            styled::render_template_with_speaker(&entry.phrase_template, &phrase_colors, speaker);
+        entry.translation_styled = styled::render_template_with_speaker(
+            &entry.translation_template,
+            &translation_colors,
+            speaker,
+        );
         entries.set_row_data(i, entry);
     }
 }
@@ -938,6 +952,7 @@ fn info_transcript_entry(
         translation.to_string(),
         &styled::RoleColors::default(),
         &styled::RoleColors::default(),
+        false,
     );
     TranscriptEntry {
         phrase,
@@ -953,6 +968,8 @@ fn info_transcript_entry(
         translation_styled: fields.translation_styled,
         phrase_copy: fields.phrase_copy.into(),
         translation_copy: fields.translation_copy.into(),
+        phrase_prompt: "".into(),
+        translation_prompt: "".into(),
     }
 }
 
@@ -1713,12 +1730,13 @@ struct TranslationOutcome {
 /// dictionary hit gets the same part-of-speech/synonym/notice highlighting there.
 fn popup_templates(outcome: &TranslationOutcome, show_prompt: bool) -> (String, String) {
     (
-        styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw),
+        styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw, false),
         styled::translation_template_from_body(
             show_prompt,
             &outcome.to_lang,
             &outcome.translation_body_template,
             outcome.is_error,
+            false,
         ),
     )
 }
@@ -2020,13 +2038,17 @@ fn spawn_translation(
                         (message.clone(), message, true, body_template)
                     }
                 };
+            // The prompt is the block's speak button (app.slint), so it carries the
+            // speaker glyph's marker wherever there's something to speak.
             let translation_full_template = styled::translation_template_from_body(
                 show_prompt,
                 &to_lang,
                 &translation_body_template,
                 is_error,
+                !translation_speech.is_empty(),
             );
-            let phrase_full_template = styled::phrase_template(show_prompt, &from_lang, &text);
+            let phrase_full_template =
+                styled::phrase_template(show_prompt, &from_lang, &text, !text.is_empty());
 
             // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived
             // from *that block's own* resolved background (decision 5); `prompt` is
@@ -2061,6 +2083,7 @@ fn spawn_translation(
                 translation_raw.clone(),
                 &phrase_colors,
                 &translation_colors,
+                window.as_ref().is_some_and(|w| w.get_tts_enabled()),
             );
 
             let entry = TranscriptEntry {
@@ -2085,6 +2108,16 @@ fn spawn_translation(
                 translation_styled: fields.translation_styled,
                 phrase_copy: fields.phrase_copy.into(),
                 translation_copy: fields.translation_copy.into(),
+                phrase_prompt: if show_prompt {
+                    from_lang.clone().into()
+                } else {
+                    "".into()
+                },
+                translation_prompt: if show_prompt && !is_error {
+                    to_lang.clone().into()
+                } else {
+                    "".into()
+                },
             };
             let outcome = TranslationOutcome {
                 from_lang: from_lang.clone(),
@@ -3306,6 +3339,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.show().unwrap();
     });
 
+    // Turning text-to-speech on or off adds or removes the speaker glyph in every
+    // transcript prompt (see restyle_transcript).
+    let weak_for_restyle = window.as_weak();
+    window.on_transcript_restyle_requested(move || {
+        if let Some(window) = weak_for_restyle.upgrade() {
+            restyle_transcript(&window);
+        }
+    });
+
     // Stage 10: per-entry text-to-speech speaker buttons. `index`/`is_phrase`
     // identify which row/side was clicked; `speaking-entry-index`/
     // `speaking-is-phrase` (app.slint) are the single shared "who's currently
@@ -3531,12 +3573,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         color_to_hex(window.get_prompt_accent()),
                                     );
                                     let fields = styled::entry_fields(
-                                        styled::phrase_template(true, "Speech", &text),
+                                        styled::phrase_template(true, "Speech", &text, true),
                                         String::new(),
                                         text.clone(),
                                         String::new(),
                                         &phrase_colors,
                                         &styled::RoleColors::default(),
+                                        window.get_tts_enabled(),
                                     );
                                     push_transcript_entry(
                                         &window,
@@ -3556,6 +3599,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             translation_styled: fields.translation_styled,
                                             phrase_copy: fields.phrase_copy.into(),
                                             translation_copy: fields.translation_copy.into(),
+                                            phrase_prompt: "Speech".into(),
+                                            translation_prompt: "".into(),
                                         },
                                     );
                                     let index =
@@ -3907,7 +3952,10 @@ mod tests {
     fn popup_templates_follow_popup_show_prompt() {
         let outcome = dictionary_outcome();
         let (phrase, translation) = popup_templates(&outcome, true);
-        assert_eq!(phrase, styled::phrase_template(true, "English", "violent"));
+        assert_eq!(
+            phrase,
+            styled::phrase_template(true, "English", "violent", false)
+        );
         assert!(translation.starts_with(&styled::span(
             styled::Role::Prompt,
             &styled::escape_markdown("[Russian]:")
@@ -4073,26 +4121,53 @@ mod tests {
         );
     }
 
-    /// Regression: the speaker icons must not make one-line transcript rows taller.
+    /// Regression: the speak buttons must not make one-line transcript rows taller.
     /// They used to be std `Button`s next to each block, and a `Button` can't be
     /// shorter than its style's minimum height, so a one-line block got a button
-    /// taller than itself and the row grew around it.
+    /// taller than itself and the row grew around it. Now the button is the
+    /// `[🔊 Lang]:` prompt itself; toggling text-to-speech (glyph and button on/off)
+    /// must leave the rows' height alone.
     #[test]
-    fn speaker_icons_keep_one_line_rows_at_text_height() {
+    fn speak_buttons_keep_one_line_rows_at_text_height() {
         i_slint_backend_testing::init_no_event_loop();
         let window = AppWindow::new().unwrap();
         window.window().set_size(slint::PhysicalSize::new(480, 480));
         window.show().unwrap();
         for i in 0..3 {
-            let mut entry =
-                info_transcript_entry(format!("word {i}"), format!("translation {i}"));
-            entry.phrase_speech = format!("word {i}").into();
-            entry.translation_speech = format!("translation {i}").into();
+            let phrase = format!("word {i}");
+            let translation = format!("translation {i}");
+            let fields = styled::entry_fields(
+                styled::phrase_template(true, "English", &phrase, true),
+                styled::translation_template_from_body(
+                    true,
+                    "Russian",
+                    &styled::escape_markdown(&translation),
+                    false,
+                    true,
+                ),
+                phrase.clone(),
+                translation.clone(),
+                &styled::RoleColors::default(),
+                &styled::RoleColors::default(),
+                window.get_tts_enabled(),
+            );
+            let mut entry = info_transcript_entry(phrase.clone(), translation.clone());
+            entry.phrase_speech = phrase.into();
+            entry.translation_speech = translation.into();
+            entry.translation_is_error = false;
+            entry.phrase_template = fields.phrase_template.into();
+            entry.translation_template = fields.translation_template.into();
+            entry.phrase_styled = fields.phrase_styled;
+            entry.translation_styled = fields.translation_styled;
+            entry.phrase_prompt = "English".into();
+            entry.translation_prompt = "Russian".into();
             push_transcript_entry(&window, entry);
         }
 
         let transcript_height = |tts_enabled: bool| {
             window.set_tts_enabled(tts_enabled);
+            // What `changed tts-enabled` asks for in the app (wired in main()).
+            restyle_transcript(&window);
             // See push_transcript_entry_scrolls_to_the_end: this lays the rows out.
             window
                 .window()
@@ -4103,9 +4178,9 @@ mod tests {
             window.get_transcript_viewport_height()
         };
 
-        let without_icons = transcript_height(false);
-        assert!(without_icons > 0.0);
-        assert_eq!(transcript_height(true), without_icons);
+        let without_buttons = transcript_height(false);
+        assert!(without_buttons > 0.0);
+        assert_eq!(transcript_height(true), without_buttons);
     }
 
     #[test]

@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+041] - 2026-10-01
+
+### Changed
+- **The `[Language]:` prompt of a transcript block is its speak button now**, shown as
+  `[🔊 English]:` (just `🔊` when the prompt is turned off). Click it to hear the phrase or
+  translation, click again to stop; it is tinted on hover and while it speaks. Replaces the
+  separate 🔊 icon at the start of the block from 0.14.0+040, so the text is no longer
+  indented and uses the full width of the transcript. With text-to-speech off, the glyph
+  disappears from the prompts. Copied text, history and the popup don't get the glyph.
+
 ## [0.14.0+040] - 2026-10-01
 
 ### Changed

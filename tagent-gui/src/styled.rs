@@ -152,6 +152,19 @@ fn escape_line(line: &str) -> String {
     result
 }
 
+/// Placeholder for the transcript's speaker glyph inside a `[Lang]:` prompt (or, with
+/// the prompt off, at the start of the block) -- see [`render_template_with_speaker`],
+/// which turns it into [`SPEAKER_PREFIX`] or removes it. Templates keep the marker
+/// rather than the glyph so the glyph follows the live `enable_text_to_speech` setting
+/// on a re-render. User text can never contain it: [`escape_markdown`] backslash-escapes
+/// both `@`s.
+pub const SPEAKER_MARKER: &str = "@speaker@";
+
+/// What [`SPEAKER_MARKER`] renders to while text-to-speech is on: the glyph and a
+/// non-breaking space, so a narrow window never wraps `[🔊 English]:` apart. `app.slint`
+/// builds the same string to measure the prompt's clickable width -- keep both in step.
+pub const SPEAKER_PREFIX: &str = "🔊\u{a0}";
+
 /// Best-effort plain-text fallback for a template that failed to render (see
 /// [`render_template`]) -- strips `<...>` tags and un-escapes backslash-escaped
 /// characters. Never fails; an ugly row beats a missing one.
@@ -321,11 +334,28 @@ fn substitute_roles(template: &str, colors: &RoleColors) -> String {
 /// Renders `template` against `colors`, exposing a parse failure instead of silently
 /// falling back -- used by tests to assert that a template built from hostile input
 /// never takes [`render_template`]'s fallback path.
+#[cfg(test)]
 pub fn render_template_checked(
     template: &str,
     colors: &RoleColors,
 ) -> Result<StyledText, StyledTextFromMarkdownError> {
-    StyledText::from_markdown(&substitute_roles(template, colors))
+    render_checked(template, colors, false)
+}
+
+fn render_checked(
+    template: &str,
+    colors: &RoleColors,
+    speaker: bool,
+) -> Result<StyledText, StyledTextFromMarkdownError> {
+    StyledText::from_markdown(&substitute_roles(
+        &substitute_speaker(template, speaker),
+        colors,
+    ))
+}
+
+/// Replaces [`SPEAKER_MARKER`] with [`SPEAKER_PREFIX`] (`speaker`) or nothing.
+fn substitute_speaker(template: &str, speaker: bool) -> String {
+    template.replace(SPEAKER_MARKER, if speaker { SPEAKER_PREFIX } else { "" })
 }
 
 /// Renders `template` against `colors` into a `styled-text` value ready to bind to a
@@ -333,33 +363,51 @@ pub fn render_template_checked(
 /// template this module built itself, but a row must never simply vanish) logs once to
 /// stderr and falls back to [`strip_template`]'s plain-text rendering.
 pub fn render_template(template: &str, colors: &RoleColors) -> StyledText {
-    match render_template_checked(template, colors) {
+    render_template_with_speaker(template, colors, false)
+}
+
+/// [`render_template`] for a transcript block, whose prompt shows the speaker glyph
+/// ([`SPEAKER_MARKER`]) while `speaker` (text-to-speech enabled) is on.
+pub fn render_template_with_speaker(
+    template: &str,
+    colors: &RoleColors,
+    speaker: bool,
+) -> StyledText {
+    match render_checked(template, colors, speaker) {
         Ok(styled) => styled,
         Err(err) => {
             eprintln!(
                 "Warning: failed to render styled transcript text ({err}); falling back to plain text"
             );
-            StyledText::from_plain_text(&strip_template(template))
+            StyledText::from_plain_text(&strip_template(&substitute_speaker(template, speaker)))
         }
     }
 }
 
 /// Builds an escaped `[Lang]:` prompt span (role [`Role::Prompt`]) followed by `body`,
 /// or just `body` when `show_prompt` is off -- mirrors `format_line`'s plain-text
-/// shape exactly (`"[{lang}]: {text}"`).
-fn prefixed(show_prompt: bool, lang: &str, body: &str) -> String {
+/// shape exactly (`"[{lang}]: {text}"`). With `speaker` (a transcript block that can
+/// be spoken), the prompt gets a [`SPEAKER_MARKER`] after its `[` (`[🔊 Lang]:`), or,
+/// with the prompt off, the block starts with one (`🔊 text`).
+fn prefixed(show_prompt: bool, lang: &str, body: &str, speaker: bool) -> String {
+    let marker = if speaker { SPEAKER_MARKER } else { "" };
     if show_prompt {
-        let prefix = escape_markdown(&format!("[{lang}]:"));
+        let prefix = format!(
+            "{}{marker}{}",
+            escape_markdown("["),
+            escape_markdown(&format!("{lang}]:"))
+        );
         format!("{} {body}", span(Role::Prompt, &prefix))
     } else {
-        body.to_string()
+        format!("{marker}{body}")
     }
 }
 
 /// Builds a phrase block's template: `text`, escaped, in the block's own default
-/// color, behind an optional [`Role::Prompt`]-highlighted `[Lang]:` prefix.
-pub fn phrase_template(show_prompt: bool, lang: &str, text: &str) -> String {
-    prefixed(show_prompt, lang, &escape_markdown(text))
+/// color, behind an optional [`Role::Prompt`]-highlighted `[Lang]:` prefix (with a
+/// [`SPEAKER_MARKER`] when `speaker`, see [`prefixed`]).
+pub fn phrase_template(show_prompt: bool, lang: &str, text: &str, speaker: bool) -> String {
+    prefixed(show_prompt, lang, &escape_markdown(text), speaker)
 }
 
 /// One transcript row's rendered Stage 13 fields: the two templates (kept so they can
@@ -389,7 +437,8 @@ pub struct EntryFields {
 /// block's role colors from *that block's own* resolved background, which the user
 /// can customize independently for the phrase and translation sides -- and packages
 /// the result with `phrase_copy`/`translation_copy` into the six fields every
-/// `TranscriptEntry { .. }` site needs. See [`EntryFields`].
+/// `TranscriptEntry { .. }` site needs. See [`EntryFields`]. `speaker` is whether
+/// text-to-speech is on (see [`render_template_with_speaker`]).
 pub fn entry_fields(
     phrase_template: String,
     translation_template: String,
@@ -397,9 +446,11 @@ pub fn entry_fields(
     translation_copy: String,
     phrase_colors: &RoleColors,
     translation_colors: &RoleColors,
+    speaker: bool,
 ) -> EntryFields {
-    let phrase_styled = render_template(&phrase_template, phrase_colors);
-    let translation_styled = render_template(&translation_template, translation_colors);
+    let phrase_styled = render_template_with_speaker(&phrase_template, phrase_colors, speaker);
+    let translation_styled =
+        render_template_with_speaker(&translation_template, translation_colors, speaker);
     EntryFields {
         phrase_template,
         translation_template,
@@ -418,17 +469,19 @@ pub fn entry_fields(
 /// (an error message is never itself prompt-formatted). Unlike [`translation_template`],
 /// `body` is used as-is -- the caller is responsible for having already escaped/
 /// templated it, since it may already contain its own role-tagged spans (a dictionary
-/// article's part-of-speech/synonym highlighting).
+/// article's part-of-speech/synonym highlighting). `speaker` as in [`phrase_template`];
+/// an error row never gets a marker.
 pub fn translation_template_from_body(
     show_prompt: bool,
     lang: &str,
     body: &str,
     is_error: bool,
+    speaker: bool,
 ) -> String {
     if is_error {
         span(Role::Error, body)
     } else {
-        prefixed(show_prompt, lang, body)
+        prefixed(show_prompt, lang, body, speaker)
     }
 }
 
@@ -573,7 +626,7 @@ mod tests {
             LIGHT_THEME_DEFAULT_PROMPT,
         );
         for input in hostile_strings() {
-            let template = phrase_template(false, "English", input);
+            let template = phrase_template(false, "English", input, false);
             let rendered = render_template(&template, &colors);
             let expected = StyledText::from_plain_text(&literal_transform(input));
             assert_eq!(
@@ -664,35 +717,93 @@ mod tests {
 
     #[test]
     fn phrase_template_without_prompt_has_no_prefix() {
-        let template = phrase_template(false, "English", "hello");
+        let template = phrase_template(false, "English", "hello", false);
         assert_eq!(template, "hello");
     }
 
     #[test]
     fn phrase_template_with_prompt_has_prompt_role_prefix() {
-        let template = phrase_template(true, "English", "hello");
+        let template = phrase_template(true, "English", "hello", false);
         assert_eq!(
             template,
             format!("{} hello", span(Role::Prompt, "\\[English\\]\\:"))
         );
     }
 
+    // --- speaker marker ------------------------------------------------------
+
+    #[test]
+    fn speaker_marker_goes_inside_the_prompt() {
+        let template = phrase_template(true, "English", "hello", true);
+        let colors = RoleColors::default();
+        assert!(render_checked(&template, &colors, true).is_ok());
+        assert_eq!(
+            strip_template(&substitute_speaker(&template, true)),
+            "[🔊\u{a0}English]: hello"
+        );
+        assert_eq!(
+            strip_template(&substitute_speaker(&template, false)),
+            "[English]: hello"
+        );
+    }
+
+    #[test]
+    fn speaker_marker_starts_the_block_without_a_prompt() {
+        let template = phrase_template(false, "English", "hello", true);
+        assert_eq!(
+            strip_template(&substitute_speaker(&template, true)),
+            "🔊\u{a0}hello"
+        );
+        assert_eq!(
+            strip_template(&substitute_speaker(&template, false)),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn no_speaker_marker_unless_asked_or_on_error_rows() {
+        assert!(!phrase_template(true, "English", "hello", false).contains(SPEAKER_MARKER));
+        let error = translation_template_from_body(
+            true,
+            "Russian",
+            &escape_markdown("Error: boom"),
+            true,
+            true,
+        );
+        assert!(!error.contains(SPEAKER_MARKER));
+    }
+
+    #[test]
+    fn speaker_marker_in_user_text_is_never_substituted() {
+        let template = phrase_template(false, "English", "a @speaker@ b", false);
+        assert!(!template.contains(SPEAKER_MARKER), "{template}");
+        assert_eq!(
+            strip_template(&substitute_speaker(&template, true)),
+            "a @speaker@ b"
+        );
+    }
+
     #[test]
     fn translation_template_from_body_error_row_is_whole_text_in_error_role() {
-        let template =
-            translation_template_from_body(true, "Russian", &escape_markdown("Error: boom"), true);
+        let template = translation_template_from_body(
+            true,
+            "Russian",
+            &escape_markdown("Error: boom"),
+            true,
+            false,
+        );
         assert_eq!(template, span(Role::Error, "Error\\: boom"));
     }
 
     #[test]
     fn translation_template_from_body_non_error_respects_show_prompt() {
         let body = escape_markdown("привет");
-        let with_prompt = translation_template_from_body(true, "Russian", &body, false);
+        let with_prompt = translation_template_from_body(true, "Russian", &body, false, false);
         assert_eq!(
             with_prompt,
             format!("{} привет", span(Role::Prompt, "\\[Russian\\]\\:"))
         );
-        let without_prompt = translation_template_from_body(false, "Russian", &body, false);
+        let without_prompt = translation_template_from_body(false, "Russian", &body, false, false);
         assert_eq!(without_prompt, "привет");
     }
 

@@ -88,6 +88,12 @@ export struct TranscriptEntry {
     translation-styled: styled-text,
     phrase-copy: string,
     translation-copy: string,
+    // The language name in each block's `[Lang]:` prompt, or "" when the
+    // block has no prompt. app.slint rebuilds the prompt from it to measure
+    // the speak button laid over the prompt; the prompt itself, with the
+    // speaker glyph, is part of `*-styled` (styled::SPEAKER_MARKER).
+    phrase-prompt: string,
+    translation-prompt: string,
 }
 
 // Reusable "theme default, or pick a color" field used four times in
@@ -183,32 +189,22 @@ component ColorPickerField {
     }
 }
 
-// A transcript block's text-to-speech control, drawn inside the block at the
-// start of its first line (see the transcript rows in AppWindow). One line
-// tall, so a one-line block doesn't grow around it. While another entry is speaking it
-// is disabled (dimmed, not clickable), so a second click can't start a
-// second, overlapping Sink; the speaking entry's own icon turns into "⏹"
-// and stops playback when clicked again.
-component SpeakerIcon inherits Rectangle {
+// A transcript block's speak button: laid over the block's `[🔊 Lang]:`
+// prompt (just `🔊` with the prompt off), which is part of the block's own
+// StyledText, so the text wraps under it as usual. Tinted while hovered and,
+// more strongly, while this block is speaking; a click while speaking stops
+// it. Disabled (no tint, not clickable) while another entry speaks, so a
+// second click can't start a second, overlapping Sink.
+component PromptSpeakButton inherits Rectangle {
     in property <bool> speaking;
     in property <bool> enabled: true;
-    in property <color> icon-color;
-    in property <length> font-size;
+    in property <color> accent;
     callback clicked();
 
     border-radius: 3px;
-    background: touch.has-hover && root.enabled ? root.icon-color.with-alpha(0.15) : transparent;
-    opacity: root.enabled ? 1.0 : 0.35;
-
-    Text {
-        width: 100%;
-        height: 100%;
-        text: root.speaking ? "⏹" : "🔊";
-        color: root.icon-color;
-        font-size: root.font-size;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
+    background: root.speaking ? root.accent.with-alpha(0.3)
+        : touch.has-hover && root.enabled ? root.accent.with-alpha(0.15)
+        : transparent;
 
     touch := TouchArea {
         enabled: root.enabled;
@@ -367,6 +363,10 @@ export component AppWindow inherits Window {
     in-out property <int> speaking-entry-index: -1;
     in-out property <bool> speaking-is-phrase: true;
     callback speak-requested(int, bool);
+    // The speaker glyph in each prompt follows tts-enabled: Rust re-renders
+    // the transcript (restyle_transcript).
+    callback transcript-restyle-requested();
+    changed tts-enabled => { transcript-restyle-requested(); }
 
     callback translate-requested(string, string, string);
     callback swap-requested();
@@ -481,16 +481,13 @@ export component AppWindow inherits Window {
                         // translation's first line is entirely controlled by
                         // phrases-spacing-px, down to 0.
                         Rectangle {
-                            // The speaker icon sits inside the block, at the start of
-                            // its first line, and the text is indented past it, wrapped
-                            // lines included (like a list marker). Not at the end of
-                            // the text: Slint doesn't tell where a wrapped line ends.
-                            // A std Button next to the block was used before, but it
-                            // can't be shorter than the style's minimum height (~32px),
-                            // so a one-line block got a button taller than itself.
+                            // The prompt is the block's speak button: `[🔊 Lang]:`
+                            // (just `🔊` with the prompt off) at the start of the text,
+                            // with a PromptSpeakButton laid over it. A std Button next
+                            // to the block was used before, but it can't be shorter
+                            // than the style's minimum height (~32px), so a one-line
+                            // block got a button taller than itself.
                             property <bool> speaker-shown: tts-enabled && entry.phrase-speech != "";
-                            property <length> speaker-width: speaker-shown ? phrase-size * 1.6px : 0px;
-                            property <length> text-x: speaker-shown ? 2px + speaker-width + 2px : 4px;
                             background: phrase-background;
                             border-radius: 3px;
                             height: phrase-line.preferred-height;
@@ -510,9 +507,9 @@ export component AppWindow inherits Window {
                                 default-font-size: phrase-size * 1px;
                                 horizontal-alignment: left;
                                 vertical-alignment: top;
-                                x: text-x;
+                                x: 4px;
                                 y: 0px;
-                                width: parent.width - text-x - 4px;
+                                width: parent.width - 8px;
                                 height: self.preferred-height;
                             }
 
@@ -543,22 +540,22 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            // One line's height in this block's font: the icon's height.
+                            // The prompt as rendered (styled::SPEAKER_PREFIX): the
+                            // speak button's size.
                             phrase-probe := Text {
-                                text: "X";
+                                text: entry.phrase-prompt != "" ? "[🔊\u{a0}" + entry.phrase-prompt + "]:" : "🔊";
                                 font-family: phrase-font;
                                 font-size: phrase-size * 1px;
                                 visible: false;
                             }
 
                             // Declared after the copy areas, so its left click wins.
-                            if speaker-shown: SpeakerIcon {
-                                width: speaker-width;
-                                height: min(phrase-probe.preferred-height, parent.height);
+                            if speaker-shown: PromptSpeakButton {
                                 x: 2px;
                                 y: 0px;
-                                icon-color: phrase-color;
-                                font-size: phrase-size * 1px;
+                                width: phrase-probe.preferred-width + 4px;
+                                height: min(phrase-probe.preferred-height, parent.height);
+                                accent: prompt-accent;
                                 speaking: speaking-entry-index == i && speaking-is-phrase;
                                 enabled: speaking-entry-index == -1 || (speaking-entry-index == i && speaking-is-phrase);
                                 clicked => { speak-requested(i, true); }
@@ -568,8 +565,6 @@ export component AppWindow inherits Window {
                         Rectangle {
                             // Speaker icon: see the phrase block above.
                             property <bool> speaker-shown: tts-enabled && !entry.translation-is-error && entry.translation-speech != "";
-                            property <length> speaker-width: speaker-shown ? translation-size * 1.6px : 0px;
-                            property <length> text-x: speaker-shown ? 2px + speaker-width + 2px : 4px;
                             background: translation-background;
                             border-radius: 3px;
                             height: translation-line.preferred-height;
@@ -585,9 +580,9 @@ export component AppWindow inherits Window {
                                 default-font-size: translation-size * 1px;
                                 horizontal-alignment: left;
                                 vertical-alignment: top;
-                                x: text-x;
+                                x: 4px;
                                 y: 0px;
-                                width: parent.width - text-x - 4px;
+                                width: parent.width - 8px;
                                 height: self.preferred-height;
                             }
 
@@ -615,22 +610,22 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            // One line's height in this block's font: the icon's height.
+                            // The prompt as rendered (styled::SPEAKER_PREFIX): the
+                            // speak button's size.
                             translation-probe := Text {
-                                text: "X";
+                                text: entry.translation-prompt != "" ? "[🔊\u{a0}" + entry.translation-prompt + "]:" : "🔊";
                                 font-family: translation-font;
                                 font-size: translation-size * 1px;
                                 visible: false;
                             }
 
                             // Declared after the copy areas, so its left click wins.
-                            if speaker-shown: SpeakerIcon {
-                                width: speaker-width;
-                                height: min(translation-probe.preferred-height, parent.height);
+                            if speaker-shown: PromptSpeakButton {
                                 x: 2px;
                                 y: 0px;
-                                icon-color: translation-color;
-                                font-size: translation-size * 1px;
+                                width: translation-probe.preferred-width + 4px;
+                                height: min(translation-probe.preferred-height, parent.height);
+                                accent: prompt-accent;
                                 speaking: speaking-entry-index == i && !speaking-is-phrase;
                                 enabled: speaking-entry-index == -1 || (speaking-entry-index == i && !speaking-is-phrase);
                                 clicked => { speak-requested(i, false); }
