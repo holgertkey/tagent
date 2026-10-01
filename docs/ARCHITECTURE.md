@@ -734,13 +734,14 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   factories' own check) plus "built-in name" and "already exists"; the Slint side shows
   the message only for a non-empty name, while the error alone keeps "Add" disabled. Rows
   come from `provider_form::profile_rows` (built-ins from the registry first, then
-  profiles, an unknown kind with "Delete" only). "Test" (`start_profile_test`) builds the
-  options from the view (plus the panel's unsaved edits when started there) with
+  profiles, an unknown kind with "Delete" only). "Test" (`start_profile_test`; only in the
+  options panel since 0.14.0+039, where it's used while editing) builds the options from
+  the view plus the panel's unsaved edits with
   `ProviderProfiles::options`, so `TAGENT_<NAME>_<KEY>` overrides apply, and runs one call
   per axis of `provider_form::axes_of(kind)` on a thread with its own Tokio runtime,
   through the same `*_with` factories as the app. The lines (`format_test_line`) come back
   via `invoke_from_event_loop` and a `Weak` upgrade, so a dialog closed meanwhile drops
-  them. One `testing` flag disables every Test button, and there's no timer besides the
+  them. The `testing` flag disables the button meanwhile, and there's no timer besides the
   transport's own budget. Since 0.14.0+038 the three pickers are on this tab (their
   per-picker "Options…" buttons and `sharing_note` are gone; the panel opens per row, with
   `selection_note`), each row carries its profile's ⚠, and the main window's ⚠ opens the

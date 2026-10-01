@@ -312,6 +312,11 @@ profiles.
   save writes it (minus names that no longer exist); `refresh_translate_provider_picker`
   filters with `config.hidden_providers`.
 
+**Follow-up (0.14.0+039, decided 2026-10-01):** "Test" stays only in the options panel;
+the rows lose theirs. A test is what you run while editing options, and the panel's Test
+already uses the unsaved values; the rows get narrower and the result shows next to the
+options it is about.
+
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.

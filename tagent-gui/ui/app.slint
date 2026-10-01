@@ -1316,8 +1316,8 @@ export component SettingsDialog inherits Dialog {
     // the dialog's OK). `new-profile-error` is "" when `new-profile-name` can
     // be added as a `new-profile-kinds[new-profile-kind-index]` profile.
     // `profile-note` says which pickers a delete reset; `test-output` holds
-    // the last Test's result lines, `testing-row` the row being tested (-1:
-    // none, or the options panel's Test).
+    // the result lines of the options panel's last Test, and `testing` is set
+    // while one runs.
     in-out property <[ProviderProfileRow]> profile-rows: [];
     in-out property <[string]> new-profile-kinds: [];
     in-out property <int> new-profile-kind-index: 0;
@@ -1326,7 +1326,6 @@ export component SettingsDialog inherits Dialog {
     in-out property <string> profile-note: "";
     in-out property <string> test-output: "";
     in-out property <bool> testing: false;
-    in-out property <int> testing-row: -1;
     // The selected tab (0 General, 1 Providers, ...), so main.rs can open
     // the dialog on Providers.
     in-out property <int> current-tab <=> tabs.current-index;
@@ -1334,7 +1333,6 @@ export component SettingsDialog inherits Dialog {
     callback profile-add-requested(string /* name */, int /* kind index */);
     callback profile-delete-requested(int /* row */);
     callback profile-options-requested(int /* row */);
-    callback profile-test-requested(int /* row */);
     callback profile-shown-changed(int /* row */, bool /* shown */);
     callback panel-test-requested();
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
@@ -1691,22 +1689,12 @@ export component SettingsDialog inherits Dialog {
                                     text: "Options…";
                                     clicked => { profile-options-requested(index); }
                                 }
-                                if row.known-kind: Button {
-                                    text: testing && testing-row == index ? "Testing…" : "Test";
-                                    enabled: !testing;
-                                    clicked => { profile-test-requested(index); }
-                                }
                                 if !row.builtin: Button {
                                     text: "Delete";
                                     clicked => { profile-delete-requested(index); }
                                 }
                             }
                         }
-                    }
-
-                    if test-output != "": Text {
-                        text: test-output;
-                        wrap: word-wrap;
                     }
 
                     Text { text: "New profile:"; font-weight: 700; }
@@ -1740,7 +1728,7 @@ export component SettingsDialog inherits Dialog {
                         font-size: 11px;
                     }
                     Text {
-                        text: "The checkbox is \"Show in lists\": unchecked hides an entry from the pickers (it keeps working where it's selected). Names use a-z, 0-9, _ and -. Everything here is saved when you click OK. A test of a paid service costs a few characters or tokens.";
+                        text: "The checkbox is \"Show in lists\": unchecked hides an entry from the pickers (it keeps working where it's selected). Names use a-z, 0-9, _ and -. Everything here is saved when you click OK. \"Options…\" has a Test button; a test of a paid service costs a few characters or tokens.";
                         wrap: word-wrap;
                         font-size: 11px;
                         opacity: 0.75;

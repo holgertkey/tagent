@@ -1266,7 +1266,6 @@ fn start_profile_test(
             if let Some(dialog) = dialog_weak.upgrade() {
                 dialog.set_test_output(text.into());
                 dialog.set_testing(false);
-                dialog.set_testing_row(-1);
             }
         });
     });
@@ -2843,25 +2842,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         };
 
         let dialog_weak = dialog.as_weak();
-        let draft_for_test = draft.clone();
-        let profiles = saved_profiles.clone();
-        let target = test_target.clone();
-        dialog.on_profile_test_requested(move |row| {
-            let Some(dialog) = dialog_weak.upgrade() else {
-                return;
-            };
-            let Some(profile) = usize::try_from(row)
-                .ok()
-                .and_then(|index| dialog.get_profile_rows().row_data(index))
-            else {
-                return;
-            };
-            let view = draft_for_test.borrow().view(&profiles);
-            dialog.set_testing_row(row);
-            start_profile_test(&dialog, &view, &profile.name, &target);
-        });
-
-        let dialog_weak = dialog.as_weak();
         let draft_for_panel_test = draft.clone();
         let panel = panel_edits.clone();
         let shown = panel_profile.clone();
@@ -2875,7 +2855,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let mut draft = draft_for_panel_test.borrow().clone();
             draft.edits.extend(panel.borrow().clone());
             let view = draft.view(&profiles);
-            dialog.set_testing_row(-1);
             start_profile_test(&dialog, &view, &shown.borrow(), &target);
         });
 

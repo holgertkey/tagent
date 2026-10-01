@@ -12,6 +12,14 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+039] - 2026-10-01
+
+### Changed
+- **"Test" for a provider profile is only in its "Options…" panel now**, no longer on each
+  row of Settings > Providers. You test while filling in options, and the panel's Test
+  already uses the values not yet saved; the rows are narrower, and the result shows next
+  to the options it concerns.
+
 ## [0.14.0+038] - 2026-10-01
 
 ### Added
