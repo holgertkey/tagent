@@ -4073,6 +4073,41 @@ mod tests {
         );
     }
 
+    /// Regression: the speaker icons must not make one-line transcript rows taller.
+    /// They used to be std `Button`s next to each block, and a `Button` can't be
+    /// shorter than its style's minimum height, so a one-line block got a button
+    /// taller than itself and the row grew around it.
+    #[test]
+    fn speaker_icons_keep_one_line_rows_at_text_height() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+        window.window().set_size(slint::PhysicalSize::new(480, 480));
+        window.show().unwrap();
+        for i in 0..3 {
+            let mut entry =
+                info_transcript_entry(format!("word {i}"), format!("translation {i}"));
+            entry.phrase_speech = format!("word {i}").into();
+            entry.translation_speech = format!("translation {i}").into();
+            push_transcript_entry(&window, entry);
+        }
+
+        let transcript_height = |tts_enabled: bool| {
+            window.set_tts_enabled(tts_enabled);
+            // See push_transcript_entry_scrolls_to_the_end: this lays the rows out.
+            window
+                .window()
+                .dispatch_event(slint::platform::WindowEvent::PointerMoved {
+                    position: slint::LogicalPosition::new(5.0, 5.0),
+                });
+            slint::platform::update_timers_and_animations();
+            window.get_transcript_viewport_height()
+        };
+
+        let without_icons = transcript_height(false);
+        assert!(without_icons > 0.0);
+        assert_eq!(transcript_height(true), without_icons);
+    }
+
     #[test]
     fn combo_index_finds_entry_case_insensitively() {
         let m = model(&["google", "other"]);

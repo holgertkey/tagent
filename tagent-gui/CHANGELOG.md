@@ -12,6 +12,16 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+040] - 2026-10-01
+
+### Changed
+- **The transcript's 🔊 speaker icons sit inside the phrase/translation blocks now**, at the
+  start of the first line, with the text indented past them (wrapped lines too, like a list
+  marker). They used to be buttons next to each block, and a button can't be shorter than
+  the style's minimum height, so a one-line entry got buttons taller than its text and the
+  row grew around them. One-line rows now keep the height of their text. Click, ⏹ while
+  speaking and the dimmed state while another entry speaks work as before.
+
 ## [0.14.0+039] - 2026-10-01
 
 ### Changed

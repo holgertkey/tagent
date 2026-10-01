@@ -1276,7 +1276,14 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 - **Text-to-speech playback** (Stage 10, shipped 2026-09-18): every transcript
   row gets two 🔊 speaker buttons — one for the phrase, one for the translation
   (hidden when `entry.translation-is-error` or the entry has no
-  `translation-speech`, e.g. a failed translation). `TranscriptEntry` grew four
+  `translation-speech`, e.g. a failed translation). Since 0.14.0+040 they are
+  `SpeakerIcon`s drawn inside each block, at the start of its first line, with
+  the text indented past them, rather than std `Button`s next to it (a
+  `Button` can't be shorter than the style's minimum height, so one-line rows
+  grew around it). Not at the end of the text: Slint 1.17 doesn't expose where
+  a wrapped line ends, and a `StyledText` link would break the no-menu
+  right-click copy (`StyledText` accepts presses of every button, `TouchArea`
+  grabs every press). `TranscriptEntry` grew four
   fields to carry what speech needs that the existing `phrase`/`translation`
   display strings can't (already prompt-formatted, and never had a language
   code at all): `phrase-speech`/`translation-speech` (raw, unprompted text —
