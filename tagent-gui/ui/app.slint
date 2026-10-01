@@ -8,7 +8,7 @@ import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, Spin
 // selectable `TextInput` -- there is no mouse selection or Ctrl+C in the
 // transcript any more, only a right-click "Copy" menu per block (see
 // `copy-block-requested`).
-// One field of Settings > General's provider options panel (built by main.rs
+// One field of Settings' provider options panel (built by main.rs
 // from the profile's `tagent` descriptor, see provider_form.rs).
 export struct ProviderOptionField {
     profile: string,
@@ -38,6 +38,13 @@ export struct ProviderProfileRow {
     builtin: bool,
     // "Options…" and "Test" only for a kind compiled into `tagent`.
     known-kind: bool,
+    // "Show in lists" checked: offered in the provider pickers.
+    shown: bool,
+    // "Show in lists" can be unchecked (not for the pickers' fallback, nor
+    // for an unknown kind, which no picker lists anyway).
+    hideable: bool,
+    // What the profile still lacks ("work: api_key required"), or "".
+    warning: string,
 }
 
 export struct TranscriptEntry {
@@ -269,6 +276,8 @@ export component AppWindow inherits Window {
     in-out property <int> translate-provider-index: 0;
     in-out property <string> translate-provider-warning: "";
     callback translate-provider-selected(string);
+    // The ⚠ next to the picker: opens Settings on the Providers tab.
+    callback provider-warning-clicked();
 
     // Independent display style for the phrase (original text) and
     // translation lines in the transcript — set from Rust based on
@@ -387,10 +396,11 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
                 accessible-label: translate-provider-warning;
                 // No tooltips in Slint's std widgets, so a click opens
-                // Settings, where the warning is spelled out.
+                // Settings on the Providers tab, where the warning is spelled
+                // out.
                 TouchArea {
                     mouse-cursor: pointer;
-                    clicked => { settings-requested(); }
+                    clicked => { provider-warning-clicked(); }
                 }
             }
 
@@ -1275,8 +1285,8 @@ export component SettingsDialog inherits Dialog {
     in-out property <[string]> speech-providers: ["google"];
     in-out property <int> speech-provider-index: 0;
     // Provider options live in a panel over the dialog, one profile at a time:
-    // a picker's "Options…" button asks main.rs (`provider-options-requested`,
-    // with the picker's index: 0 translation, 1 dictionary, 2 speech) to fill
+    // a Providers row's "Options…" button asks main.rs
+    // (`profile-options-requested`) to fill
     // `provider-option-fields`/`options-panel-title`/`options-panel-note` and
     // open it. Typing goes to main.rs through `provider-option-edited`; the
     // panel's OK keeps those edits for the dialog, its Cancel drops them, and
@@ -1298,7 +1308,6 @@ export component SettingsDialog inherits Dialog {
     in-out property <[string]> provider-warnings: ["", "", ""];
     in-out property <string> provider-warning-text: "";
     callback provider-selection-changed();
-    callback provider-options-requested(int /* picker */);
     callback provider-option-edited(int /* row */, string /* value */);
     callback provider-options-accepted();
     callback provider-options-cancelled();
@@ -1318,11 +1327,15 @@ export component SettingsDialog inherits Dialog {
     in-out property <string> test-output: "";
     in-out property <bool> testing: false;
     in-out property <int> testing-row: -1;
+    // The selected tab (0 General, 1 Providers, ...), so main.rs can open
+    // the dialog on Providers.
+    in-out property <int> current-tab <=> tabs.current-index;
     callback new-profile-name-edited(string /* name */);
     callback profile-add-requested(string /* name */, int /* kind index */);
     callback profile-delete-requested(int /* row */);
     callback profile-options-requested(int /* row */);
     callback profile-test-requested(int /* row */);
+    callback profile-shown-changed(int /* row */, bool /* shown */);
     callback panel-test-requested();
     // Stage 9: dictionary lookup for single-word input. Both apply immediately
     // (live-reloaded, no restart) -- see the General tab's own hint text below.
@@ -1543,82 +1556,19 @@ export component SettingsDialog inherits Dialog {
                 VerticalBox {
                     alignment: start;
 
-                    // Label/dropdown pairs share a row, so the General tab doesn't
-                    // grow by two lines per provider axis.
-                    GridLayout {
+                    HorizontalLayout {
                         spacing: 8px;
-                        Row {
-                            Text { text: "Translate provider:"; vertical-alignment: center; }
-                            ComboBox {
-                                model: providers;
-                                current-index <=> provider-index;
-                                selected => { provider-selection-changed(); }
-                            }
-                            Button {
-                                text: "Options…";
-                                clicked => { provider-options-requested(0); }
-                            }
-                            Text {
-                                text: provider-warnings[0] != "" ? "⚠" : "";
-                                vertical-alignment: center;
-                                min-width: 12px;
-                            }
+                        Text { text: "Default languages:"; vertical-alignment: center; }
+                        ComboBox {
+                            horizontal-stretch: 1;
+                            model: default-source-languages;
+                            current-index <=> default-source-index;
                         }
-                        Row {
-                            Text { text: "Dictionary provider:"; vertical-alignment: center; }
-                            ComboBox {
-                                model: dictionary-providers;
-                                current-index <=> dictionary-provider-index;
-                                selected => { provider-selection-changed(); }
-                            }
-                            Button {
-                                text: "Options…";
-                                clicked => { provider-options-requested(1); }
-                            }
-                            Text {
-                                text: provider-warnings[1] != "" ? "⚠" : "";
-                                vertical-alignment: center;
-                                min-width: 12px;
-                            }
-                        }
-                        Row {
-                            Text { text: "Speech provider:"; vertical-alignment: center; }
-                            ComboBox {
-                                model: speech-providers;
-                                current-index <=> speech-provider-index;
-                                selected => { provider-selection-changed(); }
-                            }
-                            Button {
-                                text: "Options…";
-                                clicked => { provider-options-requested(2); }
-                            }
-                            Text {
-                                text: provider-warnings[2] != "" ? "⚠" : "";
-                                vertical-alignment: center;
-                                min-width: 12px;
-                            }
-                        }
-                        // One row, like the main window's pair: the two
-                        // dropdowns share the provider dropdown's and the
-                        // Options… button's columns, so neither is squeezed
-                        // to the button's width.
-                        Row {
-                            Text { text: "Default languages:"; vertical-alignment: center; }
-                            HorizontalLayout {
-                                colspan: 2;
-                                spacing: 8px;
-                                ComboBox {
-                                    horizontal-stretch: 1;
-                                    model: default-source-languages;
-                                    current-index <=> default-source-index;
-                                }
-                                Text { text: "→"; vertical-alignment: center; }
-                                ComboBox {
-                                    horizontal-stretch: 1;
-                                    model: default-target-languages;
-                                    current-index <=> default-target-index;
-                                }
-                            }
+                        Text { text: "→"; vertical-alignment: center; }
+                        ComboBox {
+                            horizontal-stretch: 1;
+                            model: default-target-languages;
+                            current-index <=> default-target-index;
                         }
                     }
 
@@ -1627,11 +1577,6 @@ export component SettingsDialog inherits Dialog {
                         text: "⚠ The default source and target languages are the same.";
                         wrap: word-wrap;
                     }
-                    if provider-warning-text != "": Text {
-                        text: provider-warning-text;
-                        wrap: word-wrap;
-                    }
-
                     CheckBox { text: "Show dictionary for single words"; checked <=> show-dictionary; }
                     CheckBox { text: "Spell check suggestions"; checked <=> spell-check; }
                     CheckBox { text: "Enable text-to-speech"; checked <=> enable-text-to-speech; }
@@ -1651,7 +1596,7 @@ export component SettingsDialog inherits Dialog {
                         clicked => { reset-to-defaults-requested(); }
                     }
                     Text {
-                        text: "Resets every setting on every tab to its default value, except provider profiles and their options. Nothing is saved until you click OK.";
+                        text: "Resets every setting on every tab to its default value, except provider profiles, their options and \"Show in lists\". Nothing is saved until you click OK.";
                         wrap: word-wrap;
                     }
                 }
@@ -1661,8 +1606,59 @@ export component SettingsDialog inherits Dialog {
                 title: "Providers";
 
                 VerticalBox {
-                    Text {
-                        text: "Built-in providers and your profiles. A profile is a named set of options for a provider kind, e.g. several OpenAI-compatible servers side by side; the pickers on the General tab offer it on every axis its kind supports.";
+                    // Label/dropdown pairs share a row, so the tab doesn't grow
+                    // by two lines per provider axis.
+                    GridLayout {
+                        spacing: 8px;
+                        Row {
+                            Text { text: "Translation:"; vertical-alignment: center; }
+                            ComboBox {
+                                horizontal-stretch: 1;
+                                model: providers;
+                                current-index <=> provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Text {
+                                text: provider-warnings[0] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
+                        }
+                        Row {
+                            Text { text: "Dictionary:"; vertical-alignment: center; }
+                            ComboBox {
+                                horizontal-stretch: 1;
+                                model: dictionary-providers;
+                                current-index <=> dictionary-provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Text {
+                                text: provider-warnings[1] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
+                        }
+                        Row {
+                            Text { text: "Speech:"; vertical-alignment: center; }
+                            ComboBox {
+                                horizontal-stretch: 1;
+                                model: speech-providers;
+                                current-index <=> speech-provider-index;
+                                selected => { provider-selection-changed(); }
+                            }
+                            Text {
+                                text: provider-warnings[2] != "" ? "⚠" : "";
+                                vertical-alignment: center;
+                                min-width: 12px;
+                            }
+                        }
+                    }
+                    if provider-warning-text != "": Text {
+                        text: provider-warning-text;
+                        wrap: word-wrap;
+                    }
+                    if profile-note != "": Text {
+                        text: profile-note;
                         wrap: word-wrap;
                     }
 
@@ -1677,8 +1673,16 @@ export component SettingsDialog inherits Dialog {
 
                             for row[index] in profile-rows: HorizontalLayout {
                                 spacing: 8px;
+                                // "Show in lists"; no label, the hint below
+                                // the list explains it.
+                                CheckBox {
+                                    checked: row.shown;
+                                    enabled: row.hideable;
+                                    visible: row.known-kind;
+                                    toggled => { profile-shown-changed(index, self.checked); }
+                                }
                                 Text {
-                                    text: row.label;
+                                    text: row.label + (row.warning != "" ? "  ⚠" : "");
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
                                     overflow: elide;
@@ -1700,10 +1704,6 @@ export component SettingsDialog inherits Dialog {
                         }
                     }
 
-                    if profile-note != "": Text {
-                        text: profile-note;
-                        wrap: word-wrap;
-                    }
                     if test-output != "": Text {
                         text: test-output;
                         wrap: word-wrap;
@@ -1740,7 +1740,7 @@ export component SettingsDialog inherits Dialog {
                         font-size: 11px;
                     }
                     Text {
-                        text: "Names use a-z, 0-9, _ and -. Adding, deleting and options are saved when you click OK. Test uses the options as they are in this dialog, and a test of a paid service costs a few characters or tokens.";
+                        text: "The checkbox is \"Show in lists\": unchecked hides an entry from the pickers (it keeps working where it's selected). Names use a-z, 0-9, _ and -. Everything here is saved when you click OK. A test of a paid service costs a few characters or tokens.";
                         wrap: word-wrap;
                         font-size: 11px;
                         opacity: 0.75;

@@ -378,12 +378,12 @@ pub struct GuiConfig {
     #[serde(default = "default_show_context_menu")]
     pub show_context_menu: bool,
     /// Name of the text-to-speech backend (Stage 11), independent of
-    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "General"
+    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "Providers"
     /// (or hand-edited); live-reloaded, no restart needed.
     #[serde(default = "default_speech_provider")]
     pub speech_provider: String,
     /// Name of the dictionary backend (Stage 12), independent of
-    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "General"
+    /// [`Self::translate_provider`]. Chosen from a dropdown on Settings > "Providers"
     /// (or hand-edited); live-reloaded, no restart needed. A bad name disables
     /// dictionary lookups (single words fall back to a plain translation) rather than
     /// breaking translation.
@@ -393,12 +393,32 @@ pub struct GuiConfig {
     /// `{"deepl": {"api_key": "..."}}`. `translate_provider`, `dictionary_provider` and
     /// `speech_provider` name a profile (a built-in name like `"google"` works without an
     /// entry); an optional `"type"` entry picks the provider kind, defaulting to the
-    /// profile name. Names and keys are case-insensitive. Hand-edited only (no Settings UI
-    /// yet); `TAGENT_<NAME>_<KEY>` environment variables override values. Modeled here so
+    /// profile name. Names and keys are case-insensitive. Edited on Settings > "Providers"
+    /// or by hand; `TAGENT_<NAME>_<KEY>` environment variables override values. Modeled here so
     /// [`GuiConfigManager::update`], which rewrites the whole file, keeps it; its `Debug`
     /// masks secret values, so options never reach `tagent-gui.log` in full.
     #[serde(default)]
     pub provider_options: ProviderProfiles,
+    /// Providers and profiles left out of the provider pickers (Settings > "Providers"
+    /// "Show in lists" unchecked), lowercase. Only hides them from the lists: a hidden
+    /// entry still works wherever it is selected. Live-reloaded.
+    #[serde(default, deserialize_with = "lowercase_names")]
+    pub hidden_providers: Vec<String>,
+}
+
+/// Deserializes a list of names, trimmed and lowercased, empty ones and duplicates dropped.
+fn lowercase_names<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let names = Vec::<String>::deserialize(deserializer)?;
+    let mut normalized: Vec<String> = Vec::new();
+    for name in names.iter().map(|name| name.trim().to_lowercase()) {
+        if !name.is_empty() && !normalized.contains(&name) {
+            normalized.push(name);
+        }
+    }
+    Ok(normalized)
 }
 
 /// A provider profile selected for one axis: its name and effective options (config
@@ -485,6 +505,7 @@ impl Default for GuiConfig {
             speech_provider: default_speech_provider(),
             dictionary_provider: default_dictionary_provider(),
             provider_options: ProviderProfiles::new(),
+            hidden_providers: Vec::new(),
         }
     }
 }
@@ -1728,6 +1749,25 @@ mod tests {
             "llm": {"type": "openai-compat"}
         }
     }"#;
+
+    #[test]
+    fn hidden_providers_are_lowercased_and_survive_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        fs::write(
+            &path,
+            br#"{"hidden_providers": [" DeepL ", "work", "deepl", ""]}"#,
+        )
+        .unwrap();
+        let mut manager = GuiConfigManager::new_for_test(path.clone());
+        let loaded = manager.config().clone();
+        assert_eq!(loaded.hidden_providers, ["deepl", "work"]);
+        manager.update(loaded).unwrap();
+        assert_eq!(load_from_path(&path).hidden_providers, ["deepl", "work"]);
+        // A file without the key hides nothing.
+        fs::write(&path, br#"{}"#).unwrap();
+        assert!(load_from_path(&path).hidden_providers.is_empty());
+    }
 
     #[test]
     fn old_file_without_provider_options_defaults_to_empty() {

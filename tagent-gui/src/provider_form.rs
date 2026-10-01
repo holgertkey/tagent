@@ -221,30 +221,8 @@ pub fn warning(
     }
 }
 
-/// The provider axes, in the order of Settings > General's pickers.
+/// The provider axes, in the order of Settings > Providers' pickers.
 pub const AXES: [&str; 3] = ["translation", "dictionary", "speech"];
-
-/// The note shown in the options panel of picker `axis` when other pickers select the same
-/// profile (its options are shared, so an edit applies to all of them), or empty.
-pub fn sharing_note(selected: &[&str; 3], axis: usize) -> String {
-    let Some(profile) = selected.get(axis).map(|name| name.trim().to_lowercase()) else {
-        return String::new();
-    };
-    let others: Vec<&str> = selected
-        .iter()
-        .enumerate()
-        .filter(|&(other, name)| other != axis && name.trim().to_lowercase() == profile)
-        .map(|(other, _)| AXES[other])
-        .collect();
-    if others.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "Also selected for {}: these options apply there too.",
-            others.join(" and ")
-        )
-    }
-}
 
 /// Applies `edits` to `profiles`: a non-empty value sets the key, an empty (or
 /// whitespace-only) one removes it. Untouched keys, `type` and other profiles are kept.
@@ -370,17 +348,25 @@ pub struct ProfileRow {
     pub builtin: bool,
     /// Its kind is compiled into `tagent`: "Options…" and "Test" work.
     pub known_kind: bool,
+    /// Offered in the provider pickers ("Show in lists" checked).
+    pub shown: bool,
+    /// "Show in lists" can be unchecked (see [`can_hide`]).
+    pub hideable: bool,
 }
 
 /// The Providers tab's rows: every built-in kind (in registry order), then every profile
-/// of `view` that isn't named after one (sorted).
-pub fn profile_rows(view: &ProviderProfiles) -> Vec<ProfileRow> {
+/// of `view` that isn't named after one (sorted). `hidden` are the names left out of the
+/// pickers.
+pub fn profile_rows(view: &ProviderProfiles, hidden: &[String]) -> Vec<ProfileRow> {
     let kinds = builtin_kinds();
+    let shown = |name: &str| !hidden.iter().any(|hidden| hidden == name);
     let builtins = kinds.iter().map(|kind| ProfileRow {
         name: kind.to_string(),
         label: format!("{kind} (built-in)"),
         builtin: true,
         known_kind: true,
+        shown: shown(kind),
+        hideable: can_hide(kind),
     });
     let profiles = view
         .iter()
@@ -397,6 +383,8 @@ pub fn profile_rows(view: &ProviderProfiles) -> Vec<ProfileRow> {
                 },
                 builtin: false,
                 known_kind,
+                shown: shown(name),
+                hideable: known_kind,
             }
         });
     builtins.chain(profiles).collect()
@@ -408,6 +396,34 @@ const AXIS_KINDS: [&[&str]; 3] = [
     DICTIONARY_PROVIDERS,
     SPEECH_PROVIDERS,
 ];
+
+/// Whether "Show in lists" may hide `name`: anything but the first built-in kind of an
+/// axis (`google`), which pickers fall back to, so every picker keeps an entry.
+pub fn can_hide(name: &str) -> bool {
+    let name = name.trim().to_lowercase();
+    !AXIS_KINDS
+        .iter()
+        .any(|kinds| kinds.first() == Some(&name.as_str()))
+}
+
+/// The entries of a picker for the axis with built-in `kinds`: the built-ins, then the
+/// profiles of `view` whose kind is one of them, minus the `hidden` names, except
+/// `keep` (what the picker selects, so the selection never vanishes) and those
+/// [`can_hide`] refuses.
+pub fn picker_entries(
+    kinds: &[&str],
+    view: &ProviderProfiles,
+    hidden: &[String],
+    keep: &str,
+) -> Vec<String> {
+    let keep = keep.trim().to_lowercase();
+    kinds
+        .iter()
+        .map(|kind| kind.to_string())
+        .chain(view.profiles_of_kinds(kinds))
+        .filter(|name| *name == keep || !can_hide(name) || !hidden.contains(name))
+        .collect()
+}
 
 /// What the translation, dictionary and speech pickers should select once `view` is in
 /// effect: the `selected` profile while it's still offered on that axis, else the axis's
@@ -478,8 +494,8 @@ pub fn format_test_line(
     }
 }
 
-/// The note shown in the options panel opened from the Providers tab when General's
-/// pickers select `profile`, or empty.
+/// The note shown in the options panel when the Providers tab's pickers select
+/// `profile`, or empty.
 pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
     let profile = profile.trim().to_lowercase();
     let axes: Vec<&str> = selected
@@ -491,7 +507,7 @@ pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
     if axes.is_empty() {
         String::new()
     } else {
-        format!("Selected for {} on the General tab.", axes.join(" and "))
+        format!("Selected for {}.", axes.join(" and "))
     }
 }
 
@@ -731,22 +747,6 @@ mod tests {
     }
 
     #[test]
-    fn sharing_note_names_the_other_axes_with_the_same_profile() {
-        let selected = ["deepl", "google", "Google"];
-        assert_eq!(sharing_note(&selected, 0), "");
-        assert_eq!(
-            sharing_note(&selected, 1),
-            "Also selected for speech: these options apply there too."
-        );
-        let all = ["work", "work", "work"];
-        assert_eq!(
-            sharing_note(&all, 0),
-            "Also selected for dictionary and speech: these options apply there too."
-        );
-        assert_eq!(sharing_note(&all, 3), "");
-    }
-
-    #[test]
     fn apply_sets_and_removes_keys_and_keeps_the_rest() {
         let mut profiles = profiles();
         let edits: Edits = [
@@ -877,7 +877,7 @@ mod tests {
         let mut view = openai_profile("local");
         view.insert("google", "max_retries", "0");
         view.insert("llm", "type", "nope");
-        let rows = profile_rows(&view);
+        let rows = profile_rows(&view, &["deepl".to_string(), "llm".to_string()]);
         let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
         assert_eq!(
             labels,
@@ -893,6 +893,49 @@ mod tests {
         assert!(!rows[3].builtin && !rows[3].known_kind);
         assert!(!rows[4].builtin && rows[4].known_kind);
         assert_eq!(rows[4].name, "local");
+        // "Show in lists": google can't be hidden; an unknown kind has no checkbox.
+        let shown: Vec<(bool, bool)> = rows.iter().map(|row| (row.shown, row.hideable)).collect();
+        assert_eq!(
+            shown,
+            [
+                (true, false),
+                (false, true),
+                (true, true),
+                (false, false),
+                (true, true)
+            ]
+        );
+    }
+
+    #[test]
+    fn can_hide_refuses_only_the_fallback_kind() {
+        assert!(!can_hide("Google"));
+        assert!(can_hide("deepl"));
+        assert!(can_hide("openai"));
+        assert!(can_hide("local"));
+    }
+
+    #[test]
+    fn picker_entries_drop_hidden_names_but_keep_the_selection_and_google() {
+        let mut view = openai_profile("local");
+        view.insert("remote", "type", "openai");
+        view.insert("work", "type", "google");
+        let hidden: Vec<String> = ["google", "deepl", "local", "remote", "work"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            picker_entries(TRANSLATION_PROVIDERS, &view, &hidden, "Remote"),
+            ["google", "openai", "remote"]
+        );
+        assert_eq!(
+            picker_entries(TRANSLATION_PROVIDERS, &view, &[], ""),
+            ["google", "deepl", "openai", "local", "remote", "work"]
+        );
+        // Profiles of kinds without that axis aren't offered there.
+        assert_eq!(
+            picker_entries(SPEECH_PROVIDERS, &view, &[], "google"),
+            ["google", "work"]
+        );
     }
 
     #[test]
@@ -928,7 +971,7 @@ mod tests {
         let selected = ["local", "google", "LOCAL"];
         assert_eq!(
             selection_note(&selected, "local"),
-            "Selected for translation and speech on the General tab."
+            "Selected for translation and speech."
         );
         assert_eq!(selection_note(&selected, "deepl"), "");
     }

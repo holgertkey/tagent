@@ -89,12 +89,12 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 - **Tray**: close-to-tray, `start_minimized`, Show / Settings… / Quit.
 - **Settings dialog**: tabs General / Providers / View / Popup / Hotkeys & Tray; hotkey "Record" button
   with live validation; Reset to Defaults; themes and color schemes; prompt colors.
-- **Providers**: translation, dictionary and speech pickers in Settings > General (plus a
+- **Providers**: translation, dictionary and speech pickers in Settings > Providers (plus a
   session-only translation picker in the main window), user profiles from
-  `provider_options`, and an "Options…" panel per picker built from `tagent`'s registry
+  `provider_options`, and an "Options…" panel per profile built from `tagent`'s registry
   (password fields for secrets, ⚠ for missing required options, a multi-line editor with
-  the built-in default for prompts). A "Providers" tab creates, deletes and tests profiles
-  (0.14.0+037). Google, DeepL and OpenAI-compatible translation.
+  the built-in default for prompts). The "Providers" tab also creates, deletes and tests
+  profiles (0.14.0+037) and hides entries from the pickers ("Show in lists", 0.14.0+038). Google, DeepL and OpenAI-compatible translation.
 - **Window geometry** is remembered (`remember_window_geometry`).
 - **Terminal detach** on Linux/macOS (`--foreground` / `-f` to stay attached; the log goes
   to `tagent-gui.log` in the data dir).
@@ -267,6 +267,54 @@ user; the `OptionSpec` descriptions already give examples).
   the profile from the JSON and resets a picker that used it; Cancel restores it; Test on
   `google` shows three OK lines. User: Add an `openai` profile, fill `endpoint`/`model`
   in the panel, Test against a real server, OK, pick it in the main window and translate.
+
+### Planned stage — Pickers on the Providers tab, "Show in lists"
+
+**Status:** implemented in 0.14.0+038 (2026-10-01), on top of the Providers tab above;
+the manual UI check is open, together with that stage's.
+
+**Goal.** One place for everything about providers, and short pickers once there are many
+profiles.
+
+**Behavior.**
+- The translation, dictionary and speech pickers move from General to the top of the
+  Providers tab; General keeps the default languages and the rest. The pickers' "Options…"
+  buttons go away: each row of the list has its own. A row whose profile lacks a required
+  option shows the ⚠ too, so the fix is next to the warning. The note after a delete
+  ("translation now uses google") now sits right under the pickers it talks about.
+- The main window's ⚠ (and only it, not ⚙) opens Settings on the Providers tab.
+- **"Show in lists"**: a checkbox on each row of a known kind, built-ins included. Unchecked
+  hides the entry from the three pickers and the main window's picker; it is not
+  "disabled": a hidden profile still works wherever it's selected, and "Options…"/"Test"
+  work as before. The Providers tab always lists everything, so a hidden entry can come
+  back.
+  - The entry a picker currently selects stays in that picker even when hidden (the main
+    window: the provider in effect, including a session pick), so no selection vanishes.
+  - The first built-in of each axis (`google`, the fallback after a delete) can't be
+    hidden: its checkbox is disabled, so every picker has an entry.
+  - Stored as `hidden_providers` (a list of names, lowercase) in `tagent-gui.json`, not in
+    `provider_options`: it's a GUI preference, and an `enabled` key there would reach
+    `tagent` as a provider option. Unknown names are kept; a deleted profile's name is
+    dropped on save. Staged in the dialog like everything else (OK writes, Cancel drops;
+    the pickers follow at once). "Reset to Defaults" keeps it, like the profiles.
+
+**Implementation.**
+- `config.rs`: `hidden_providers: Vec<String>` (`#[serde(default)]`, lowercased on load).
+- `provider_form.rs` (pure, tested): `picker_entries(kinds, profiles, hidden, keep)` (built-ins
+  then profiles of the axis, minus hidden ones except `keep` and the axis's first
+  built-in), `can_hide(name)`, `ProfileRow` gains `shown`/`hideable`; `sharing_note` and
+  the per-picker panel path go.
+- `app.slint`: the picker grid moves into the Providers tab; `ProviderProfileRow` gains
+  `shown`, `hideable`, `warning`; callback `profile-shown-changed(int, bool)`; a
+  `current-tab` property bound to the `TabWidget`; on `AppWindow` a
+  `provider-warning-clicked` callback for the ⚠.
+- `main.rs`: the dialog's hidden set next to the `Draft`, used by `refresh_profiles`; the
+  save writes it (minus names that no longer exist); `refresh_translate_provider_picker`
+  filters with `config.hidden_providers`.
+
+**Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
+of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
+round-trip and lowercasing, saving drops deleted names.
 
 ## Deliberately not done (revisit only with a new reason)
 

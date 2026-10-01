@@ -741,7 +741,19 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   through the same `*_with` factories as the app. The lines (`format_test_line`) come back
   via `invoke_from_event_loop` and a `Weak` upgrade, so a dialog closed meanwhile drops
   them. One `testing` flag disables every Test button, and there's no timer besides the
-  transport's own budget.
+  transport's own budget. Since 0.14.0+038 the three pickers are on this tab (their
+  per-picker "Options…" buttons and `sharing_note` are gone; the panel opens per row, with
+  `selection_note`), each row carries its profile's ⚠, and the main window's ⚠ opens the
+  dialog on this tab through the `OPEN_SETTINGS_ON_PROVIDERS` thread-local (set by
+  `provider-warning-clicked`, read and cleared when the dialog is built; `current-tab` is
+  bound to the `TabWidget`'s `current-index`). "Show in lists" is `hidden_providers` in
+  `tagent-gui.json`, deliberately not a key in `provider_options` (that would reach `tagent`
+  as a provider option); the dialog stages it in an `Rc<RefCell<Vec<String>>>` beside the
+  `Draft`, and a delete drops the name, so a re-added profile starts shown. Every picker,
+  including the main window's, is built from `provider_form::picker_entries`, which leaves
+  hidden names out except the picker's own selection (so no selection vanishes) and the
+  axis's first built-in (`can_hide`), the fallback after a delete. `hidden_providers` is
+  part of `refresh_config_views`' change key, so a save refreshes the main window's picker.
 - **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
   `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
   (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling

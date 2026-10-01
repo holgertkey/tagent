@@ -12,6 +12,23 @@ decisions behind this project.
 
 ## [Unreleased]
 
+## [0.14.0+038] - 2026-10-01
+
+### Added
+- **"Show in lists"** on Settings > Providers: a checkbox on each row hides that provider
+  or profile from the provider pickers (Settings and the main window), so they stay short
+  once there are many profiles. It only hides: a hidden entry keeps working wherever it is
+  selected, and stays in a picker that currently selects it. `google`, which pickers fall
+  back to, can't be hidden. Saved as `hidden_providers` in `tagent-gui.json`; "Reset to
+  Defaults" keeps it.
+- A ⚠ on each row of the Providers tab whose profile lacks a required option.
+
+### Changed
+- **The translation, dictionary and speech pickers moved from General to the Providers
+  tab**, above the list; their "Options…" buttons are gone, since every row of the list
+  has one. General keeps the default languages and the other settings.
+- The ⚠ next to the main window's provider picker opens Settings on the Providers tab.
+
 ## [0.14.0+037] - 2026-10-01
 
 ### Added
