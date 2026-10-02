@@ -15,6 +15,11 @@ While the version is `0.y.z`, a breaking change to the public API bumps the mino
 version (`0.17` → `0.18`) and a compatible addition or fix bumps the patch
 (`0.17.0` → `0.17.1`). `1.0.0` waits until the API settles.
 
+There is one section per released version. Between releases `tagent/Cargo.toml` carries a
+`+BUILD` counter (`0.19.0+007`) that names a development iteration; it never gets a
+section of its own, and an entry may name its build in parentheses. Released versions
+have no `+BUILD`.
+
 ## [Unreleased]
 
 ## [0.19.0] - 2026-09-26

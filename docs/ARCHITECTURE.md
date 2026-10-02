@@ -1560,10 +1560,9 @@ its own independent counter, and the `+BUILD` is stripped at release — and log
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
 [`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
 syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
-workspace-root one. The `tagent` library crate's version (`0.19.0`) is likewise
-standalone, plain semver with no `+BUILD` suffix, with history in
-[`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is deliberately pre-1.0: the API is
-still moving (three provider traits, more providers to come), and under semver's `0.y.z`
+workspace-root one. The `tagent` library crate's version (`0.19.0+001`) is likewise
+standalone, with history in [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is
+deliberately pre-1.0: the API is still moving (three provider traits, more providers to come), and under semver's `0.y.z`
 rules a minor bump is the place for breaking changes, so `0.17` → `0.18` for a breaking
 change and `0.17.0` → `0.17.1` for a compatible addition or fix. It is bumped manually.
 **One `tagent` version per release cycle** (decided 2026-09-26): only the version present
@@ -1573,8 +1572,19 @@ compatible change, minor for a breaking one) and opens its `tagent/CHANGELOG.md`
 Later changes before the next release go into that same version and section, with no
 further bump. If a breaking change follows a patch bump within the cycle, the version is
 escalated to the next minor and the section header renamed. The last published version is
-`git show <latest v* tag>:tagent/Cargo.toml`. It is the library's counterpart of the apps'
-`+BUILD` counter. As a safety net for cycles where the version did move more than once,
+`git show <latest v* tag>:tagent/Cargo.toml`.
+Within a cycle, `tagent/Cargo.toml` also carries a `+BUILD` counter (decided 2026-10-02,
+"light" variant), so a dev iteration of the library can be named (e.g. `tagent
+0.19.0+007` in a plan's notes) the way the apps' iterations are: it is incremented after
+each change to the library's code (not for documentation-only changes), reset to `+000`
+when the cycle's version is picked or escalated (as for the apps; the 0.19.0 cycle,
+already under way, started the counter at `+001`), and stripped at release like the apps'
+(the release workflow refuses a `+` in any crate). Unlike the apps, the changelog keeps
+**one section per cycle version**, `## [0.19.0]`, never `## [0.19.0+NNN]` headers; an
+entry may name its build in parentheses (`(+007)`). Semver ignores build metadata when
+matching requirements, so the apps' `version = "0.19.0"` dependency on `tagent` matches
+`0.19.0+NNN`. Nothing syncs it (`tagent` has no `build.rs`). As a safety net for cycles where
+the version did move more than once,
 `.github/scripts/release-notes.sh` collects every `tagent` changelog section above the
 previous release's `tagent` version (not just the current version's, as for the apps), so an
 unpublished intermediate version's entries still reach the GitHub Release notes.

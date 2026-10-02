@@ -114,8 +114,11 @@ universality is built at the level of **capabilities**, and "any text server" is
   (Q4, recorded in CLAUDE.md "Version Management"): the first change after a release
   picks the version, and every later change until the next release goes into that same
   version and changelog section, escalating patch → minor only if a breaking change
-  arrives. The per-stage "Semver" lines below say which *kind* of change a stage is; the
-  actual number follows this rule. `tagent-cli` / `tagent-gui` get a `+BUILD` bump
+  arrives. Within the cycle, `tagent/Cargo.toml` carries a `+BUILD` counter (decided
+  2026-10-02; `0.19.0+001` onward, incremented per code change, stripped at release;
+  the changelog keeps one section per version), so a stage's notes can name the exact
+  iteration (`tagent 0.19.0+007`). The per-stage "Semver" lines below say which *kind*
+  of change a stage is; the actual number follows this rule. `tagent-cli` / `tagent-gui` get a `+BUILD` bump
   when their code changes. If an app starts using a newer `tagent` API, raise the `version`
   in its `tagent = { path = ..., version = ... }` dependency.
 - **Changelogs:** add an entry to each affected crate's own `CHANGELOG.md`
