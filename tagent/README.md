@@ -1,8 +1,8 @@
 # tagent
 
 Translation, dictionary lookup, and text-to-speech library, powered by the Google
-Translate API, with DeepL and any OpenAI-compatible chat server (OpenAI, Ollama, LM Studio, ...)
-as alternatives for translation. This is the reusable core behind
+Translate API, with DeepL (translation) and any OpenAI-compatible chat server (OpenAI, Ollama,
+LM Studio, ...; translation and dictionary) as alternatives. This is the reusable core behind
 [Tagent](https://github.com/holgertkey/tagent/tree/main/tagent-cli)'s CLI/hotkey
 application and the
 [`tagent-gui`](https://github.com/holgertkey/tagent/tree/main/tagent-gui) desktop app —
@@ -18,7 +18,7 @@ concern.
   | Axis | Trait | Factory | Built in |
   |---|---|---|---|
   | Translation (and language detection) | `TranslationProvider` | `create_provider()` | Google, DeepL (needs an `api_key`), OpenAI-compatible (needs an `endpoint` and a `model`) |
-  | Dictionary | `DictionaryProvider` | `create_dictionary_provider()` | Google |
+  | Dictionary | `DictionaryProvider` | `create_dictionary_provider()` | Google, OpenAI-compatible (needs an `endpoint` and a `model`) |
   | Speech (TTS) | `SpeechProvider` | `create_speech_provider()` | Google |
 
   `TRANSLATION_PROVIDERS`, `DICTIONARY_PROVIDERS` and `SPEECH_PROVIDERS` list the names
@@ -78,7 +78,7 @@ dependencies of its own. Turn off the default features to leave one out:
 |---|---|---|
 | `google` | yes | Google translation, dictionary and TTS (unofficial endpoints, no key) |
 | `deepl` | yes | DeepL translation (official API, needs an `api_key`) |
-| `openai` | yes | Translation through any OpenAI-compatible chat server (needs an `endpoint` and a `model`) |
+| `openai` | yes | Translation and dictionary through any OpenAI-compatible chat server (needs an `endpoint` and a `model`) |
 
 ```toml
 tagent = "0.19"                                                                 # Google + DeepL + OpenAI-compatible

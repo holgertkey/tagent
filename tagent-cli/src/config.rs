@@ -998,7 +998,13 @@ fn profile_example(kind: &str) -> Option<String> {
 /// The lines of one kind's example block, before they are commented out: the `## <kind>:`
 /// header line, the table header and one entry per option (with its explanation).
 fn example_block_lines(kind: &str, descriptors: &[&ProviderDescriptor]) -> Vec<String> {
-    let names: Vec<&str> = descriptors.iter().map(|d| d.display_name).collect();
+    // One name per provider, even when it serves several axes under the same name.
+    let mut names: Vec<&str> = Vec::new();
+    for descriptor in descriptors {
+        if !names.contains(&descriptor.display_name) {
+            names.push(descriptor.display_name);
+        }
+    }
     let transport = descriptors[0].transport;
     let mut options: Vec<&OptionSpec> = Vec::new();
     for option in descriptors.iter().flat_map(|d| d.options) {
@@ -3196,13 +3202,13 @@ api_key = "deepl-key"
             .collect()
     }
 
-    /// `toml` with the commented-out `#translate_prompt = """` ... `#"""` lines of an
-    /// enabled example block enabled too (`#` removed).
+    /// `toml` with the commented-out multi-line strings (`#<key> = """` ... `#"""`, the
+    /// prompts) of an enabled example block enabled too (`#` removed).
     pub(super) fn uncomment_prompt(toml: &str) -> String {
         let mut in_prompt = false;
         toml.lines()
             .map(|line| {
-                if line.starts_with("#translate_prompt = \"\"\"") {
+                if line.starts_with('#') && line.ends_with(" = \"\"\"") {
                     in_prompt = true;
                 }
                 let line = match line.strip_prefix('#') {
@@ -3219,10 +3225,10 @@ api_key = "deepl-key"
             .collect()
     }
 
-    /// The `openai` example with its prompt enabled loads the built-in prompt, which the
-    /// provider then uses as it is (the value's final newline is trimmed away).
+    /// The `openai` example with its prompts enabled loads the built-in prompts, which the
+    /// provider then uses as they are (the value's final newline is trimmed away).
     #[test]
-    fn the_openai_example_prompt_loads_as_the_default_prompt() {
+    fn the_openai_example_prompts_load_as_the_default_prompts() {
         let toml = uncomment_prompt(&uncomment_example(
             &render_config(&Config::default()),
             "openai",
@@ -3232,6 +3238,10 @@ api_key = "deepl-key"
         assert_eq!(
             options["translate_prompt"].trim(),
             providers::openai::DEFAULT_TRANSLATE_PROMPT
+        );
+        assert_eq!(
+            options["dictionary_prompt"].trim(),
+            providers::openai::DEFAULT_DICTIONARY_PROMPT
         );
         config
             .provider_options
@@ -3256,6 +3266,20 @@ api_key = "deepl-key"
             built(providers::create_speech_provider_with(name, &options).map(drop))?;
         }
         Ok(())
+    }
+
+    /// A kind serving several axes under one display name names it once in its header.
+    #[test]
+    fn example_headers_name_each_display_name_once() {
+        let toml = render_config(&Config::default());
+        assert!(
+            toml.contains("\n# ## openai: OpenAI-compatible\n"),
+            "{toml}"
+        );
+        assert!(
+            toml.contains("\n# ## google: Google Translate, Google Dictionary, Google TTS\n"),
+            "{toml}"
+        );
     }
 
     /// Every built-in provider kind gets a commented-out example with every option it

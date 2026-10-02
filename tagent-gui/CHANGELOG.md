@@ -20,6 +20,14 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-02
 
 ### Added
+- (+001) **The OpenAI-compatible provider can serve dictionary lookups too** (OpenAI, Ollama,
+  LM Studio, ...), from `tagent`'s new `openai` dictionary provider: offered in the
+  Settings > Providers dictionary picker, and one profile can serve translation and
+  dictionary at once. Its "Options…" panel gains `dictionary_prompt` (a multi-line editor
+  pre-filled with the built-in prompt) and `response_format` (`json_schema` or
+  `json_object`, for servers with structured output); "Test" now checks the dictionary
+  too for an `openai` profile. A failed lookup still falls back to a plain translation,
+  so "Test" is where a broken custom prompt shows.
 - (0.14.0+038) **"Show in lists"** on Settings > Providers: a checkbox on each row hides that provider
   or profile from the provider pickers (Settings and the main window), so they stay short
   once there are many profiles. It only hides: a hidden entry keeps working wherever it is

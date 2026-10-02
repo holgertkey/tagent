@@ -1,8 +1,8 @@
 //! # Tagent
 //!
 //! Translation, dictionary lookup, and text-to-speech library, powered by the
-//! Google Translate API, with DeepL and any OpenAI-compatible chat server (OpenAI, Ollama,
-//! LM Studio, ...) as alternatives for translation.
+//! Google Translate API, with DeepL (translation) and any OpenAI-compatible chat server
+//! (OpenAI, Ollama, LM Studio, ...; translation and dictionary) as alternatives.
 //!
 //! The crate is provider-agnostic. It has three independent provider axes, so the
 //! backend that translates, the one that looks words up, and the one that speaks are
@@ -11,7 +11,7 @@
 //! | Axis        | Trait                              | Factory                                 | Built-in                                        |
 //! |-------------|------------------------------------|-----------------------------------------|-------------------------------------------------|
 //! | Translation | [`providers::TranslationProvider`] | [`providers::create_provider`]          | [`providers::google::GoogleTranslateProvider`], [`providers::deepl::DeepLTranslateProvider`], [`providers::openai::OpenAiTranslateProvider`] |
-//! | Dictionary  | [`providers::DictionaryProvider`]  | [`providers::create_dictionary_provider`] | [`providers::google::GoogleDictionaryProvider`] |
+//! | Dictionary  | [`providers::DictionaryProvider`]  | [`providers::create_dictionary_provider`] | [`providers::google::GoogleDictionaryProvider`], [`providers::openai::OpenAiDictionaryProvider`] |
 //! | Speech      | [`providers::SpeechProvider`]      | [`providers::create_speech_provider`]   | [`providers::google::GoogleSpeechProvider`]     |
 //!
 //! The crate has no knowledge of configuration files, clipboards, hotkeys, or any
@@ -109,7 +109,7 @@
 //! |----------|---------|----------|
 //! | `google` | yes     | `"google"` on all three axes ([`providers::google`]) |
 //! | `deepl`  | yes     | `"deepl"` translation ([`providers::deepl`]) |
-//! | `openai` | yes     | `"openai"` translation through a chat-completions server ([`providers::openai`]) |
+//! | `openai` | yes     | `"openai"` translation and dictionary through a chat-completions server ([`providers::openai`]) |
 //!
 //! All are in `default` because none brings dependencies of its own (DeepL does nothing
 //! without an `api_key`, the OpenAI-compatible provider nothing without an `endpoint` and

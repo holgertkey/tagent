@@ -596,7 +596,9 @@ mod tests {
                 "temperature",
                 "translate_prompt",
                 "timeout_secs",
-                "max_retries"
+                "max_retries",
+                "response_format",
+                "dictionary_prompt"
             ]
         );
         let row = |key: &str| rows.iter().find(|row| row.label == key).unwrap();
@@ -604,34 +606,36 @@ mod tests {
         assert!(row("model").required && !row("model").secret);
         assert!(row("api_key").secret && !row("api_key").required);
         assert!(!row("translate_prompt").secret && !row("translate_prompt").required);
+        assert!(!row("response_format").required && !row("response_format").multiline);
         assert_eq!(
             missing_required(&profiles, "ollama", &Edits::new(), no_env),
             ["endpoint", "model"]
         );
     }
 
-    /// `translate_prompt` gets the multi-line editor, pre-filled from the library's
-    /// default; the default never becomes the field's value.
+    /// Both prompts (`translate_prompt` and, from the dictionary axis, `dictionary_prompt`)
+    /// get the multi-line editor, pre-filled from the library's defaults; a default never
+    /// becomes the field's value.
     #[test]
-    fn openai_prompt_is_multiline_with_the_built_in_default() {
+    fn openai_prompts_are_multiline_with_the_built_in_defaults() {
         let rows = fields(&ProviderProfiles::new(), &["openai"], &Edits::new(), no_env);
-        let prompt = rows
-            .iter()
-            .find(|row| row.label == "translate_prompt")
-            .unwrap();
-        assert!(prompt.multiline);
-        assert_eq!(
-            prompt.default,
-            tagent::providers::openai::DEFAULT_TRANSLATE_PROMPT
-        );
-        assert_eq!(prompt.value, "");
+        let prompts = ["translate_prompt", "dictionary_prompt"];
+        for (key, default) in prompts.into_iter().zip([
+            tagent::providers::openai::DEFAULT_TRANSLATE_PROMPT,
+            tagent::providers::openai::DEFAULT_DICTIONARY_PROMPT,
+        ]) {
+            let prompt = rows.iter().find(|row| row.label == key).unwrap();
+            assert!(prompt.multiline, "{key}");
+            assert_eq!(prompt.default, default);
+            assert_eq!(prompt.value, "");
+            // The shipped defaults have {to}, so they never warn about themselves.
+            assert_eq!(soft_warning(&prompt.default, ""), "");
+            assert_eq!(soft_warning(&prompt.default, &prompt.default), "");
+        }
         assert!(rows
             .iter()
-            .filter(|row| row.label != "translate_prompt")
+            .filter(|row| !prompts.contains(&row.label.as_str()))
             .all(|row| !row.multiline && row.default.is_empty()));
-        // The shipped default has {to}, so it never warns about itself.
-        assert_eq!(soft_warning(&prompt.default, ""), "");
-        assert_eq!(soft_warning(&prompt.default, &prompt.default), "");
     }
 
     #[test]
@@ -980,7 +984,7 @@ mod tests {
     fn axes_of_follows_the_compiled_in_kinds() {
         assert_eq!(axes_of("google"), ["translation", "dictionary", "speech"]);
         assert_eq!(axes_of("DeepL"), ["translation"]);
-        assert_eq!(axes_of("openai"), ["translation"]);
+        assert_eq!(axes_of("openai"), ["translation", "dictionary"]);
         assert!(axes_of("nope").is_empty());
     }
 

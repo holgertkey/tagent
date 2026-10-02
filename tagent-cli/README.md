@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+014
+# Tagent Text Translator v0.17.0+015
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -354,7 +354,7 @@ language is `Auto` asks DeepL to detect the language, which bills up to 100 char
 
 #### OpenAI-compatible servers (Ollama, LM Studio, OpenAI, ...)
 
-The `openai` provider kind (translation only) talks to any server with an OpenAI-style
+The `openai` provider kind (translation and dictionary) talks to any server with an OpenAI-style
 chat-completions API, local or in the cloud. `endpoint` is the base URL **including
 `/v1`** and has no default, so text only goes where you point it. A local
 [Ollama](https://ollama.com), for example:
@@ -388,6 +388,31 @@ Several profiles of one server with different prompts or models can coexist (`/p
 between them). Reasoning output (`<think>…</think>`) and quotes the model adds are removed;
 an answer the model cut off is an error, never a partial translation. Speaking `Auto`-source
 text asks the model to detect the language (one extra request).
+
+The same profile can also look single words up in the dictionary: the model answers with a
+JSON dictionary entry (parts of speech, translations, synonyms, a spelling correction):
+
+```toml
+[dictionary]
+dictionary_provider = "ollama"
+```
+
+With the profile on both, a single word costs two requests to the model, made at the same
+time; the result waits for the slower one (`timeout_secs` in the profile sets the budget,
+60 seconds by default). Two more options apply to lookups only:
+
+- `dictionary_prompt` replaces the built-in lookup prompt (shown in the generated config
+  file's `openai` example, like `translate_prompt`). It must keep asking for the same JSON
+  answer shape, or every lookup fails. A failed lookup falls back to a plain translation
+  without a message, so a broken prompt looks like "no dictionary entry".
+- `response_format = "json_schema"` (or `"json_object"`) asks the server for structured
+  output, which helps small models stay on the shape. It is not sent by default, since not
+  every server accepts it (LM Studio takes only `json_schema`); a server that rejects it
+  makes every lookup fail.
+
+A config file created before this version doesn't have `#dictionary_prompt` and
+`#response_format` in its `openai` example, and `--update-config` doesn't add lines to
+existing examples: `--print-default-config` shows the current example to copy from.
 
 ### Customizing Hotkeys
 
@@ -716,7 +741,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+014
+**Current Version**: v0.17.0+015
 
 ## Contributing
 
@@ -739,4 +764,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+014** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+015** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

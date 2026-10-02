@@ -127,48 +127,92 @@ const DEEPL_OPTIONS: &[OptionSpec] = &[
     MAX_RETRIES,
 ];
 
-/// The OpenAI-compatible chat options: the server, the model, an optional key, sampling,
-/// the prompt and the transport options.
+/// The OpenAI-compatible server's base URL (both axes).
 #[cfg(feature = "openai")]
-const OPENAI_OPTIONS: &[OptionSpec] = &[
-    OptionSpec {
-        key: "endpoint",
-        required: true,
-        secret: false,
-        description: "API base URL including /v1, e.g. http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1",
-        default: None,
-        multiline: false,
-    },
-    OptionSpec {
-        key: "model",
-        required: true,
-        secret: false,
-        description: "Model name, e.g. qwen3:8b or gpt-4o-mini",
-        default: None,
-        multiline: false,
-    },
-    OptionSpec {
-        key: "api_key",
-        required: false,
-        secret: true,
-        description: "API key, sent as a Bearer token; not needed for a local server",
-        default: None,
-        multiline: false,
-    },
-    OptionSpec {
-        key: "temperature",
-        required: false,
-        secret: false,
-        description: "Sampling temperature from 0 to 2; unset: the model's default",
-        default: None,
-        multiline: false,
-    },
+const ENDPOINT: OptionSpec = OptionSpec {
+    key: "endpoint",
+    required: true,
+    secret: false,
+    description: "API base URL including /v1, e.g. http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1",
+    default: None,
+    multiline: false,
+};
+
+/// The OpenAI-compatible model name (both axes).
+#[cfg(feature = "openai")]
+const MODEL: OptionSpec = OptionSpec {
+    key: "model",
+    required: true,
+    secret: false,
+    description: "Model name, e.g. qwen3:8b or gpt-4o-mini",
+    default: None,
+    multiline: false,
+};
+
+/// The OpenAI-compatible API key (both axes).
+#[cfg(feature = "openai")]
+const API_KEY: OptionSpec = OptionSpec {
+    key: "api_key",
+    required: false,
+    secret: true,
+    description: "API key, sent as a Bearer token; not needed for a local server",
+    default: None,
+    multiline: false,
+};
+
+/// The OpenAI-compatible sampling temperature (both axes).
+#[cfg(feature = "openai")]
+const TEMPERATURE: OptionSpec = OptionSpec {
+    key: "temperature",
+    required: false,
+    secret: false,
+    description: "Sampling temperature from 0 to 2; unset: the model's default",
+    default: None,
+    multiline: false,
+};
+
+/// The OpenAI-compatible chat options for translation: the server, the model, an optional
+/// key, sampling, the prompt and the transport options.
+#[cfg(feature = "openai")]
+const OPENAI_TRANSLATION_OPTIONS: &[OptionSpec] = &[
+    ENDPOINT,
+    MODEL,
+    API_KEY,
+    TEMPERATURE,
     OptionSpec {
         key: "translate_prompt",
         required: false,
         secret: false,
         description: "System prompt for translations; {from} and {to} become language names",
         default: Some(super::openai::DEFAULT_TRANSLATE_PROMPT),
+        multiline: true,
+    },
+    TIMEOUT_SECS,
+    MAX_RETRIES,
+];
+
+/// The OpenAI-compatible chat options for dictionary lookups: as for translation, plus the
+/// structured-output mode and the dictionary prompt.
+#[cfg(feature = "openai")]
+const OPENAI_DICTIONARY_OPTIONS: &[OptionSpec] = &[
+    ENDPOINT,
+    MODEL,
+    API_KEY,
+    TEMPERATURE,
+    OptionSpec {
+        key: "response_format",
+        required: false,
+        secret: false,
+        description: "Dictionary answers: json_schema or json_object for structured output, if the server supports it; unset: not sent",
+        default: None,
+        multiline: false,
+    },
+    OptionSpec {
+        key: "dictionary_prompt",
+        required: false,
+        secret: false,
+        description: "System prompt for dictionary lookups; must keep asking for the same JSON answer shape; {from} and {to} become language names",
+        default: Some(super::openai::DEFAULT_DICTIONARY_PROMPT),
         multiline: true,
     },
     TIMEOUT_SECS,
@@ -220,7 +264,7 @@ static TRANSLATION: &[ProviderDescriptor] = &[
     ProviderDescriptor {
         name: "openai",
         display_name: "OpenAI-compatible",
-        options: OPENAI_OPTIONS,
+        options: OPENAI_TRANSLATION_OPTIONS,
         transport: OPENAI_TRANSPORT,
     },
 ];
@@ -232,6 +276,13 @@ static DICTIONARY: &[ProviderDescriptor] = &[
         display_name: "Google Dictionary",
         options: TRANSPORT_OPTIONS,
         transport: GOOGLE_TRANSPORT,
+    },
+    #[cfg(feature = "openai")]
+    ProviderDescriptor {
+        name: "openai",
+        display_name: "OpenAI-compatible",
+        options: OPENAI_DICTIONARY_OPTIONS,
+        transport: OPENAI_TRANSPORT,
     },
 ];
 
@@ -496,6 +547,7 @@ mod tests {
             .options
             .iter()
             .all(|o| o.key == "translate_prompt" || (!o.multiline && o.default.is_none())));
+        assert!(!openai.options.iter().any(|o| o.key == "dictionary_prompt"));
         assert_eq!(openai.transport.timeout, Duration::from_secs(60));
         assert_eq!(openai.transport.max_retries, 1);
         assert!(openai.transport.retry_on_rate_limit);
@@ -503,9 +555,11 @@ mod tests {
             declared_option_keys("openai"),
             [
                 "api_key",
+                "dictionary_prompt",
                 "endpoint",
                 MAX_RETRIES_KEY,
                 "model",
+                "response_format",
                 "temperature",
                 TIMEOUT_SECS_KEY,
                 "translate_prompt"
@@ -513,6 +567,45 @@ mod tests {
         );
         assert!(is_secret_option("openai", "api_key"));
         assert!(!is_secret_option("openai", "translate_prompt"));
+    }
+
+    /// The dictionary axis shares the server options and the transport, and has its own
+    /// prompt and `response_format` instead of `translate_prompt`.
+    #[cfg(feature = "openai")]
+    #[test]
+    fn openai_dictionary_offers_its_prompt_and_response_format() {
+        let openai = dictionary_providers()
+            .iter()
+            .find(|d| d.name == "openai")
+            .unwrap();
+        assert_eq!(openai.display_name, "OpenAI-compatible");
+        assert_eq!(openai.transport, OPENAI_TRANSPORT);
+        let option = |key: &str| openai.options.iter().find(|o| o.key == key).unwrap();
+        assert!(option("endpoint").required && option("model").required);
+        assert!(option("api_key").secret && !option("api_key").required);
+        let prompt = option("dictionary_prompt");
+        assert!(prompt.multiline && !prompt.required && !prompt.secret);
+        assert_eq!(
+            prompt.default,
+            Some(super::super::openai::DEFAULT_DICTIONARY_PROMPT)
+        );
+        let format = option("response_format");
+        assert!(!format.required && !format.multiline && format.default.is_none());
+        assert!(format.description.contains("json_schema"));
+        assert!(format.description.contains("json_object"));
+        assert!(!openai.options.iter().any(|o| o.key == "translate_prompt"));
+        // The shared options are the same specs on both axes.
+        let translation = translation_providers()
+            .iter()
+            .find(|d| d.name == "openai")
+            .unwrap();
+        for key in ["endpoint", "model", "api_key", "temperature"] {
+            assert_eq!(
+                translation.options.iter().find(|o| o.key == key),
+                Some(option(key)),
+                "{key}"
+            );
+        }
     }
 
     #[cfg(feature = "deepl")]

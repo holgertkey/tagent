@@ -1495,7 +1495,7 @@ translation pass against a local Ollama.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 
-**Status:** planned (detailed 2026-10-02)
+**Status:** done (2026-10-02, tagent 0.19.0+002; tagent-cli 0.17.0+015, tagent-gui 0.15.0+001) — live tests and a manual "Test" pass not run yet (no server at hand)
 **Goal:** `OpenAiDictionaryProvider`, the dictionary axis of the `openai` kind: a chat
 model returns a bilingual dictionary entry as JSON, which the adapter parses and
 normalizes to the `DictionaryProvider` contract. Selectable in both apps through a
@@ -1711,7 +1711,44 @@ multi-line option (unit test); a newly generated `tagent-cli.toml` example block
 `#dictionary_prompt` and loads without unknown-key warnings when uncommented.
 Desirable, not blocking: live tests and a manual "Test" pass against a real server.
 
-**Notes after landing:** —
+**Notes after landing:**
+- Shipped as planned: `OpenAiDictionaryProvider::with_options`, `DEFAULT_DICTIONARY_PROMPT`,
+  `ChatClient::complete(system, user, response_format: Option<&Value>)` (translation and
+  detection pass `None`; the existing exact-body mock tests prove their body is
+  unchanged), the pure `parse_response_format`/`dictionary_schema`/
+  `parse_dictionary_answer`/`normalize_pos`/`normalize_groups` (with a `RawGroup` alias for
+  clippy's `type_complexity`), shared `ENDPOINT`/`MODEL`/`API_KEY`/`TEMPERATURE` specs and
+  `OPENAI_TRANSLATION_OPTIONS`/`OPENAI_DICTIONARY_OPTIONS` in the registry, `"openai"` in
+  `DICTIONARY_PROVIDERS` after `google`, a `build_dictionary` branch.
+- **Primary sources (read 2026-10-02):** Chat Completions nests the schema,
+  `{"type": "json_schema", "json_schema": {"name", "schema", "strict"}}` (the Responses
+  API's flat `text.format` is a different API); `json_object` is `{"type": "json_object"}`
+  and needs "JSON" in the messages
+  (<https://developers.openai.com/api/docs/guides/structured-outputs>). Ollama's
+  compatibility page still names no types, but its source
+  (<https://github.com/ollama/ollama/blob/main/openai/openai.go>, `FromChatRequest`) maps
+  `json_object` to its `format: "json"` and `json_schema` to the schema itself; anything
+  else is ignored. So Ollama accepts both values.
+- **Decision added while implementing — JSON without an `entries` list is `Decode`, not a
+  miss.** Decision 3 covered items inside `entries`; a reply that parses but has no
+  `entries` array (or a non-array one) is what a custom prompt asking for another shape
+  produces, and decision 2 wants that visible in "Test". So: no JSON object, or no
+  `entries` list → `Decode` with `PROMPT_SHAPE_HINT`; an empty list, or nothing valid in
+  it, or `"entries": null` → `Ok(None)`. Also tolerated: a bare string in `translations` counts as a translation
+  without synonyms.
+- The default prompt avoids `{from}` in mid-sentence positions that break with
+  `AUTO_SOURCE_WORDING` ("written in its original language (detect it), and give ...") and
+  describes synonyms as "in the language of the word" rather than `{from}`. The caps are
+  written into it as numbers; a test checks they match `MAX_POS_GROUPS`/
+  `MAX_TRANSLATIONS`/`MAX_SYNONYMS`, and another parses its one-line example as a valid
+  answer.
+- Apps: `tagent-gui` needed only test updates (`axes_of("openai")` now includes the
+  dictionary, so "Test" checks it automatically; the options rows add `response_format`
+  and `dictionary_prompt`). `tagent-cli`'s example header read `## openai:
+  OpenAI-compatible, OpenAI-compatible`, so `example_block_lines` now names each display
+  name once (tested); the test helper `uncomment_prompt` handles any `#<key> = """`.
+- Not run: the live tests (no server at hand) and the manual `tagent-gui` "Test" /
+  `tagent-cli` single-word pass.
 
 ### Stage P4 — Declarative HTTP (translation)
 

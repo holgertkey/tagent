@@ -1,6 +1,7 @@
 //! Translation, dictionary and speech provider traits, their factories, and the built-in
 //! implementations: Google (all three axes, [`google`]), DeepL (translation, keyed,
-//! [`deepl`]) and any OpenAI-compatible chat server (translation, [`openai`]), each behind
+//! [`deepl`]) and any OpenAI-compatible chat server (translation and dictionary,
+//! [`openai`]), each behind
 //! a Cargo feature of the same name, all on by default. A kind
 //! whose feature is off is unknown to the factories and missing from the registry.
 //!
@@ -666,6 +667,8 @@ pub const TRANSLATION_PROVIDERS: &[&str] = &[
 pub const DICTIONARY_PROVIDERS: &[&str] = &[
     #[cfg(feature = "google")]
     "google",
+    #[cfg(feature = "openai")]
+    "openai",
 ];
 
 /// Names [`create_speech_provider`] accepts, in the canonical (lowercase) spelling.
@@ -802,12 +805,14 @@ fn build_translation(
 /// | Name       | Provider                                          |
 /// |------------|---------------------------------------------------|
 /// | `"google"` | Google Translate's dictionary (`bd`) data          |
+/// | `"openai"` | Any OpenAI-compatible chat server (needs `endpoint` and `model`, so use [`create_dictionary_provider_with`]) |
 ///
 /// The same names are listed in [`DICTIONARY_PROVIDERS`].
 ///
 /// # Errors
 ///
-/// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider.
+/// Returns [`Error::UnknownProvider`] if `provider_name` does not match any known provider,
+/// and [`Error::InvalidOptions`] for a provider that needs options (`"openai"`).
 ///
 /// # Examples
 ///
@@ -852,7 +857,10 @@ pub fn create_dictionary_provider_with(
 }
 
 /// Builds a dictionary provider of a resolved `kind` (one of [`DICTIONARY_PROVIDERS`]).
-#[cfg_attr(not(feature = "google"), allow(unused_variables))]
+#[cfg_attr(
+    not(any(feature = "google", feature = "openai")),
+    allow(unused_variables)
+)]
 fn build_dictionary(
     kind: &str,
     options: &ProviderOptions,
@@ -860,6 +868,10 @@ fn build_dictionary(
     match kind {
         #[cfg(feature = "google")]
         "google" => Ok(Box::new(google::GoogleDictionaryProvider::with_options(
+            options,
+        )?)),
+        #[cfg(feature = "openai")]
+        "openai" => Ok(Box::new(openai::OpenAiDictionaryProvider::with_options(
             options,
         )?)),
         _ => Err(Error::UnknownProvider(kind.to_string())),

@@ -15,6 +15,22 @@ before 2026-10-02 have one header per build.
 ## [0.17.0] - 2026-10-02
 
 ### Added
+- (+015) **The OpenAI-compatible provider can serve dictionary lookups too** (OpenAI, Ollama,
+  LM Studio, ...), from `tagent`'s new `openai` dictionary provider. One profile can serve
+  both:
+  ```toml
+  [provider_options.ollama]
+  type = "openai"
+  endpoint = "http://localhost:11434/v1"
+  model = "qwen3:8b"
+  ```
+  with `translate_provider = "ollama"` and `dictionary_provider = "ollama"`. Optional
+  `dictionary_prompt` (the built-in prompt, as a commented-out multi-line string in a new
+  config file's `[provider_options.openai]` example) and `response_format`
+  (`json_schema` or `json_object`, for servers with structured output). An existing
+  config file's `openai` example doesn't get the two new lines from `--update-config`;
+  add them by hand or compare with `--print-default-config`. A failed lookup still falls
+  back to a plain translation, so a broken custom prompt shows up only as "no dictionary".
 - (+013) **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
   vLLM, ...) is available via a profile, from `tagent`'s new `openai` provider. A local
   Ollama, for example:
@@ -137,6 +153,8 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+015) The header line of a config file's example profile names a provider once when it
+  serves several kinds of lookup under the same name (`## openai: OpenAI-compatible`).
 - (+014) **One changelog section per version**: the `+BUILD` counter stays in the version
   (`--version`, the banner, this README) but no longer gets a section of its own; an entry
   names its build in parentheses. The unreleased sections since 0.16.0 (0.16.0+002 to

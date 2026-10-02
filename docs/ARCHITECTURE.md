@@ -212,6 +212,21 @@ the old single-crate `tagent`).
   or any BCP-47-shaped answer. `OptionSpec` gained `default` (the prompt) and `multiline`
   (a UI hint) for it; `tagent-gui`'s "Options…" panel edits such an option in a multi-line editor
   pre-filled with its default (`tagent-gui` 0.14.0+036, see the `tagent-gui` section).
+  Since Stage P3 (`tagent` 0.19.0+002) the same kind serves the dictionary axis too
+  (`OpenAiDictionaryProvider`, on the same `ChatClient`): the model answers with a JSON
+  entry (`word`, `corrected`, `entries[{pos, translations[{text, synonyms}]}]`), which is
+  parsed tolerantly and normalized to the `DictionaryProvider` contract (part-of-speech
+  tags → English words, dedupe, merged groups, 6 × 8 × 4 caps). The answer is requested
+  by the prompt (`dictionary_prompt`, default `DEFAULT_DICTIONARY_PROMPT`) rather than by
+  `response_format`, which is opt-in (`json_schema` | `json_object`): servers differ in
+  what they accept (LM Studio: `json_schema` only; Groq: `json_object` everywhere,
+  strict `json_schema` on few models; Ollama maps both), and because both apps fall back
+  to a plain translation on any lookup error, a server rejecting the field would switch
+  the dictionary off without a word. For the same reason a reply of the wrong shape is a
+  `Decode` error (visible in `tagent-gui`'s "Test") and only an empty `entries` list is a
+  miss. The registry splits the kind's options into `OPENAI_TRANSLATION_OPTIONS` and
+  `OPENAI_DICTIONARY_OPTIONS` over shared specs; both apps merge a kind's options across
+  axes, so the CLI's example block and the GUI's "Options…" panel show both prompts.
 - **Cargo features per provider** (Stage P1 part 2): `google`, `deepl` and (since Stage
   P2) `openai`, all in
   `default` (decided 2026-09-28: a provider without dependencies of its own is default,

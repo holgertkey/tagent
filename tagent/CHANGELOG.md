@@ -22,7 +22,7 @@ have no `+BUILD`.
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-09-26
+## [0.19.0] - 2026-10-02
 
 ### Changed
 - **Shared HTTP transport with retries and status mapping; the Google providers use it.**
@@ -41,6 +41,24 @@ have no `+BUILD`.
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- (+002) **OpenAI-compatible dictionary provider** (feature `openai`;
+  `providers::openai::OpenAiDictionaryProvider`, `"openai"` now also in
+  `DICTIONARY_PROVIDERS` and `dictionary_providers()`, display name `"OpenAI-compatible"`):
+  a chat model answers a single-word lookup with a JSON dictionary entry, which is parsed
+  tolerantly (a code fence, a `<think>` block or prose around the object are fine) and
+  normalized to the `DictionaryProvider` contract (part-of-speech tags such as `n`,
+  `adj.`, `PROPN` become English words, a label in another language becomes `other`;
+  duplicates and blanks are dropped, groups with the same label merged; at most 6 groups,
+  8 translations each, 4 synonyms per translation). An empty or `null` `entries` list is a miss
+  (`Ok(None)`); an answer without a JSON object or without an `entries` list is
+  `Error::Decode` quoting its start. `corrected` sets `corrected_word` only when it
+  differs from the input. Same options as translation (one profile can serve both axes),
+  plus `dictionary_prompt` (replaces the new `openai::DEFAULT_DICTIONARY_PROMPT`; must
+  keep asking for the same answer shape) and `response_format` (`json_schema` or
+  `json_object` to request structured output; not sent unless set, since servers differ in
+  what they accept). Usually built through a profile, e.g.
+  `dictionary_provider = "ollama"`. The name-only `create_dictionary_provider("openai")`
+  is `Error::InvalidOptions`, as for translation.
 - **`providers::validate_profile_name(name, kind)`**: checks a profile name the way the
   `*_with` factories do for a profile with a `type` option (only `a-z`, `0-9`, `_` and
   `-`, in any case; a built-in provider kind's name only for that kind), with the same

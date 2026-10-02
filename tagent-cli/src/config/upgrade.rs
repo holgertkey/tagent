@@ -707,14 +707,17 @@ mod tests {
         assert_eq!(unknown(&toml), vec![]);
     }
 
-    /// The `openai` block with its prompt enabled too: `#` removed from the lines of the
-    /// commented-out `translate_prompt`, the way the file tells the user to.
+    /// The `openai` block with its prompts enabled too: `#` removed from the lines of the
+    /// commented-out `translate_prompt` and `dictionary_prompt`, the way the file tells the
+    /// user to.
     #[test]
-    fn the_enabled_openai_prompt_has_no_unknown_options() {
+    fn the_enabled_openai_prompts_have_no_unknown_options() {
         let toml =
             super::super::tests::uncomment_example(&render_config(&Config::default()), "openai");
         let toml = super::super::tests::uncomment_prompt(&toml);
         assert!(toml.contains("\ntranslate_prompt = \"\"\"\n"), "{toml}");
+        assert!(toml.contains("\ndictionary_prompt = \"\"\"\n"), "{toml}");
+        assert!(toml.contains("\n#response_format = \"\"\n"), "{toml}");
         assert_eq!(unknown(&toml), vec![]);
     }
 
