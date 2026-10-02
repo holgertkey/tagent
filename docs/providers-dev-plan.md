@@ -139,7 +139,8 @@ Stage 0 is a release-process prerequisite. Stages A–F are the **foundation** (
 infrastructure, done once); the former Stage G (Cargo features per provider) moved into
 P1, where the second provider makes it useful (decided 2026-09-26). Stages P1, P2, … are **provider stages**, appended as
 providers are added. They are numbered separately so a new provider never renumbers the
-foundation.
+foundation. Stage U (one provider list for all three axes) is an **app-side** stage,
+neither foundation nor provider; it sits after F3, the other app-side stage.
 
 ---
 
@@ -936,32 +937,428 @@ masked profile secrets; a release build syncs the `0.17.0` version into the docs
 - `/config` (0.17.0+001) prints the settings as `[section]` + `key = value` lines, generated
   from the same `ConfigFile` serialization as the file (so no field list of its own), and
   profiles as `[provider_options.<name>]` tables; a test parses the settings part back.
+
 ---
 
+### Stage U — One provider list for all three axes (apps)
 
+**Status:** planned (2026-10-02)
+**Goal:** pick the translation, dictionary and speech provider for the current session
+from one list: `/p` in `tagent-cli`'s interactive mode, and a provider menu in
+`tagent-gui`'s main window. An app-side stage; the library only gains a shared axis
+type (U0).
+**Depends on:** Stages F and F3; `tagent-cli` Stage S (`/p` for the translation provider,
+see [`tagent-cli-dev-plan.md`](tagent-cli-dev-plan.md)); `tagent-gui`'s session-only
+translation picker (0.14.0+030) and the Settings > Providers tab (0.14.0+037/+038).
 
+#### Problem
 
+- **`tagent-cli`:**
+  - `/p` (Stage S) lists and switches only the translation provider.
+  - `dictionary_provider` and `speech_provider` can be changed only in
+    `tagent-cli.toml`.
+  - The dictionary provider is built once per run (`Translator::build`, field
+    `dictionary_provider: Result<Arc<dyn DictionaryProvider>, String>`), so changing it
+    needs a restart.
+  - The speech provider is already built on every playback
+    (`config.create_speech_provider()` in `SpeechManager::speak_text_in` and in both
+    speech-hotkey paths, `platform/{linux,windows}/keyboard.rs`). Only a way to set it
+    is missing.
+- **`tagent-gui`:** the main window's picker next to ⚙ switches only the translation
+  provider, for the session (`session_provider.rs`, `SESSION_TRANSLATE_PROVIDER`).
+  Dictionary and speech can be changed only in Settings > Providers, which saves to
+  the file.
+- **Two axes, two places.** Since P3 one profile often serves two axes (an `ollama`
+  profile of kind `openai` serves translation and the dictionary). Trying such a
+  profile means changing two settings in two places.
 
+#### Questions settled for this stage
 
+All four resolved 2026-10-02 by the user, each as the plan proposed.
 
+- **U-Q1. What does a bare `/p <name>` switch?**
+  - **Resolved:** the translation provider only, as today. This is backward compatible,
+    and no single command changes more than one axis.
+  - Rejected alternative: switch the one axis that offers `<name>`. `google`, `openai`
+    and every profile of a multi-axis kind would be ambiguous and need an axis anyway.
+  - Rejected alternative: switch every axis the profile serves. `/p ollama` would
+    silently change the dictionary too.
+- **U-Q2. List numbers (`/p 5`)?**
+  - **Resolved:** yes. It is the quickest pick and the only one that needs no axis word.
+  - Cost: the digits-only rule below.
+  - Cost: numbers shift when profiles are added. Acceptable, since `/p` prints the list
+    right there.
+- **U-Q3. A shared axis type in `tagent` (U0)?**
+  - **Resolved:** yes, U0 is part of the stage.
+  - `tagent-gui` already has `AXES`/`AXIS_KINDS` (`provider_form.rs`), and the CLI would
+    otherwise grow its own copy.
+  - Logic both apps need belongs in the library.
+  - It is a compatible addition to the current 0.19.0 cycle.
+- **U-Q4. GUI layout: G1 (one flat menu with section headers) or G2 (one submenu per
+  axis)?**
+  - **Resolved:** G1. It shows the current choice on all three axes at a glance, and each
+    choice takes one click.
+  - G2 is the fallback if Slint's menus can't do what G1 needs (see U5).
 
+#### Decisions
 
+**The list (`tagent-cli`):**
 
+```
+Providers:
+ Translation
+ *  1  google   Google Translate
+    2  deepl    DeepL (missing: api_key)
+    3  openai   OpenAI-compatible (missing: endpoint, model)
+    4  ollama   OpenAI-compatible (ollama)
+ Dictionary
+ *  5  google   Google Translate
+    6  openai   OpenAI-compatible (missing: endpoint, model)
+    7  ollama   OpenAI-compatible (ollama)
+ Speech (off: enable_text_to_speech = false)
+ *  8  google   Google Translate
+Switch with /p <number>, /p <name> (translation) or /p t|d|s <name>; /save keeps the choice.
+```
 
+- **Entries per axis follow today's rule for translation.** First the kinds compiled in
+  for that axis (`*_PROVIDERS`), then the profiles of those kinds (`profiles_of_kinds`).
+  The active one is marked. Missing required options come from that axis's registry
+  descriptor, so a profile can show different missing options on different axes.
+  Building the list builds no provider and makes no network call.
+- **Numbering** runs continuously across the axes in the order translation →
+  dictionary → speech, starting at 1.
+- **A disabled axis is still listed.** If `show_dictionary = false` or
+  `enable_text_to_speech = false`, its header says so, and switching is allowed. The
+  choice applies once the feature is turned on.
 
+**`/p` grammar (`tagent-cli`).** Profile names are `[a-z0-9_-]+`, so `2`, `t`, `d` and
+`s` are all valid profile names. The rules:
 
+| Input | Meaning |
+|-------|---------|
+| `/p`, `/provider` | the list |
+| `/p <digits>` | the list entry with that number |
+| `/p <name>` | the translation provider `<name>` (U-Q1) |
+| `/p <axis> <name>` | `<name>` on that axis. The second word is always a name, so `/p t 2` reaches a profile named `2` |
+| `/p <axis>` alone, if `<axis>` names no translation provider | usage hint for that axis (`Usage: /p d <name>`) |
+| three or more words, or an unknown axis word | `Usage: /p [number \| name \| t\|d\|s name]` |
 
+- **Axis words** (case-insensitive): `t`/`translation`, `d`/`dict`/`dictionary`,
+  `s`/`speech`.
+- **A number means the entry as it was shown.** It resolves against the list last
+  printed in this session: `InteractiveMode` keeps a snapshot of `(axis, name)` pairs.
+  If no list has been printed yet, it resolves against a freshly built one, the same
+  list `/p` would show. An out-of-range number is an error that names the valid range.
+- **A resolved number then goes through the normal by-name switch.** A profile deleted
+  from the file since the list was printed fails with the usual error.
+- **Messages name the axis**, e.g.
+  `Dictionary provider: OpenAI-compatible (ollama) (this session; /save to keep)` and
+  `... (dictionary provider unchanged)`. This matters most after a number, where the
+  user didn't type the axis.
+- **Validation and state work as in Stage S, per axis.**
+  - The provider is built from a copy of `Config` before switching
+    (`create_{translate,dictionary,speech}_provider`). On error nothing changes.
+  - The choice lives in the in-memory `Config`.
+  - A hot reload of an edited file resets every session choice, as it already does for
+    `/l` and `/p`.
+- **`/save` writes all three provider keys**, each under Stage S's rule: only if the key
+  is in the file or the value isn't the default.
+- **Side effect:** `dictionary_provider` becomes live-reloaded from the file, as
+  `translate_provider` did with Stage S.
 
+**The menu (`tagent-gui`, G1).** The ComboBox next to ⚙ becomes a button that names the
+translation provider in effect (`ollama ▾`). The button opens one menu:
 
+```
+ [Auto ▾] → [Russian ▾]   [ollama ▾]  ⚠  ⚙
+                              │
+              ┌───────────────┴──────────────────┐
+              │ Translation                      │  (disabled item = section header)
+              │   Google Translate               │
+              │   DeepL  ⚠ api_key               │
+              │ ✓ OpenAI-compatible (ollama)     │
+              ├──────────────────────────────────┤
+              │ Dictionary                       │
+              │ ✓ Google Translate               │
+              │   OpenAI-compatible (ollama)     │
+              ├──────────────────────────────────┤
+              │ Speech                           │
+              │ ✓ Google Translate               │
+              ├──────────────────────────────────┤
+              │ Providers…                       │  → Settings > Providers
+              └──────────────────────────────────┘
+```
 
+- **Picks are session-only on every axis**, as the translation picker is today. The
+  saved defaults stay in Settings > Providers. The transcript header marks each
+  overridden axis `(this session)`.
+- **Entries per axis** come from `provider_form::picker_entries`. Entries hidden with
+  "Show in lists" (`hidden_providers`) are left out, except the one in effect.
+- **An entry with a missing required option** can still be picked, as with today's
+  picker, and is marked ⚠.
+- **The ⚠ next to the button** shows when the provider in effect on any axis lacks a
+  required option. Today it checks translation only. A click still opens Settings on
+  the Providers tab.
+- **A disabled axis** keeps its section, with "(off)" in the header.
+- **No numbers and no keyboard grammar.** A click replaces both.
 
+#### Steps
 
+Each step is a `+BUILD` bump of the crate it changes, with an entry in that crate's
+`CHANGELOG.md`. Steps of one app may land in one `+BUILD`, as Stage S did. U7 is
+documentation only and gets no bump.
 
+##### U0 — `tagent`: `ProviderAxis` (U-Q3)
 
+- New in `tagent::providers` (unconditional, not behind a provider feature):
+  ```rust
+  /// One of the three independent provider axes.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+  pub enum ProviderAxis { Translation, Dictionary, Speech }
 
+  impl ProviderAxis {
+      /// Every axis, in display order.
+      pub const ALL: [ProviderAxis; 3] = [..];
+      /// The kinds compiled in for this axis (`TRANSLATION_PROVIDERS`, ...).
+      pub fn kinds(self) -> &'static [&'static str];
+      /// The registry descriptors for this axis (`translation_providers()`, ...).
+      pub fn descriptors(self) -> &'static [ProviderDescriptor];
+      /// Lowercase English label: `"translation"`, `"dictionary"`, `"speech"`.
+      pub fn label(self) -> &'static str;
+  }
+  ```
+  Leave out `#[non_exhaustive]`: apps `match` on it, and a fourth axis would be a
+  breaking change anyway.
+- **Semver:** a compatible addition in the 0.19.0 cycle (`+BUILD` bump). The apps keep
+  `version = "0.19.0"`. `tagent/CHANGELOG.md` `Added`.
+- **Tests:** for each axis, `kinds()` and `descriptors()` agree with `*_PROVIDERS` and
+  the registry (names, order). CI's feature-combination job checks this per feature.
+- **Docs:** rustdoc with an example (iterate `ALL`, print `label()` and `kinds()`).
+  `cargo doc -p tagent` stays clean.
+- Later steps replace `tagent-gui`'s `AXES`/`AXIS_KINDS` (and `axes_of`'s body) with it,
+  and `tagent-cli` uses it directly.
 
+##### U1 — `tagent-cli`: switchable dictionary provider in `Translator`
 
+- **A slot shared by all clones** replaces the field (`std::sync::Mutex`, never held
+  across an `.await`), as `ActiveTranslation` does:
+  ```rust
+  struct ActiveDictionary {
+      /// The `dictionary_provider` value `provider` was built from.
+      name: String,
+      /// The provider, or why it couldn't be built (non-fatal, unlike translation).
+      provider: Result<Arc<dyn DictionaryProvider>, String>,
+      /// A value that failed to build while a working provider was kept, reported once.
+      failed: Option<String>,
+  }
+  ```
+- **`fn dictionary_provider(&self, config) -> Result<Arc<dyn DictionaryProvider>, String>`,
+  every transition:**
+  - Name unchanged (case-insensitive): return the current value, `Ok` or `Err`.
+  - Name changed, build `Ok`: replace the slot and clear `failed`. This also recovers
+    from a startup `Err`.
+  - Name changed, build `Err`, current `Ok`: keep the working provider and print the
+    error once (`failed`), as for translation.
+  - Name changed, build `Err`, current `Err`: store the new `Err` under the new name, so
+    the banner shows the current reason, and print it once.
+  - Name back to the slot's working name: clear `failed`, so switching to the bad value
+    again reports it again.
+- **Call sites:** `get_dictionary_entry` (the lookup) and `active_providers` (the
+  banner's `Dictionary: ...` / `Dictionary: unavailable (...)` line). Both read the
+  config at that moment, as `translation_provider` does.
+- **The template drops** `# Note: Requires application restart to take effect` above
+  `dictionary_provider` (`config_template()`, `[dictionary]`). Existing files keep the
+  stale note, because `--update-config` adds keys and sections but never rewrites
+  comments. Accepted.
+- **Changelog `Changed`:** `dictionary_provider` is live-reloaded, no restart needed.
+- **Tests** (existing `MockProvider` seam plus a mock dictionary):
+  - A changed name rebuilds and an unchanged one doesn't (`Arc::ptr_eq`). Case is
+    ignored.
+  - Two `Translator` clones see the same switch (the hotkey path).
+  - `Ok` → bad keeps the provider and reports once.
+  - `Err` → good recovers.
+  - `Err` → bad stores the new error.
+  - `missing_dictionary_provider_fails_without_any_network_call` still holds.
 
+##### U2 — `tagent-cli`: one list for all axes
+
+- `ProviderListEntry` gains `axis`.
+- `Config::provider_list()` (plus `provider_list_using(lookup)` for tests) replaces
+  `translation_provider_list`. Its body is today's code parameterized by axis: kinds,
+  descriptors, and the config field that decides `active`.
+- `provider_list_lines` prints the new format: axis headers with the "off" note, a
+  number column, and the new footer.
+- The exact-output tests of the current list (`config.rs`, `Translation providers:`
+  header) are rewritten for the new format.
+- **New tests:**
+  - A profile of kind `openai` appears under translation and dictionary, not under
+    speech.
+  - Missing options are computed per axis.
+  - Numbering runs continuously.
+  - A disabled axis is listed with its note.
+  - An env override supplies a required option (`_using`).
+
+##### U3 — `tagent-cli`: `/p` on every axis
+
+- **Parser:** pure `parse_provider_command(text) -> Option<ProviderCommand>` with
+  `List`, `Number(usize)`, `Switch { axis, name }`, `AxisUsage(axis)` and `Usage`.
+- **Switch:** `switch_provider(&ConfigManager, axis, name) -> String` generalizes
+  `switch_translate_provider`. It stays a free function, so it is tested without an
+  `InteractiveMode`.
+- **Setter:** `ConfigManager::set_provider(axis, name)` replaces
+  `set_translate_provider`.
+- **Numbers:** `InteractiveMode` keeps the snapshot of the last printed list and
+  resolves numbers against it, as described in Decisions.
+- **Tab completion after `/p `:** axis words and translation names. After
+  `/p <axis> `: that axis's names. `TagentHelper` is stateless today, so it needs a
+  `ConfigManager` clone to read profiles.
+- **Registration:**
+  - `display_help()`: the three forms.
+  - The banner's `Commands:` line is unchanged (`/p (provider)`).
+  - `tagent-cli/README.md` "Interactive Commands".
+- **Tests:**
+  - The grammar table above, row by row.
+  - `/p 2` is a number even when a profile named `2` exists; `/p t 2` reaches that
+    profile.
+  - `/p t` alone selects a profile named `t` if there is one, else gives the
+    translation-axis usage hint.
+  - `/pp` and `/providers` don't match.
+  - Per-axis switch: success, failure (config unchanged, message names the axis), and
+    already active.
+  - Numbers: resolved against the snapshot, out of range, no snapshot yet.
+
+##### U4 — `tagent-cli`: `/save` writes all three provider keys
+
+- `with_session_settings` also sets `[dictionary] dictionary_provider` and
+  `[speech] speech_provider`, each only if the key exists in the file or the value
+  isn't the default.
+- Update `save_config`'s doc comment and the `/save` line in help and README ("the
+  languages and the providers").
+- **Tests:**
+  - For each key, comments survive.
+  - A file without the key gets it only when the value isn't the default.
+  - A second save with no changes is byte-identical.
+
+##### U5 — `tagent-gui`: a session choice per axis (pure logic and wiring)
+
+- **Before starting:** read the Slint 1.17.1 docs for `ContextMenuArea`, `Menu`,
+  `MenuItem` and `MenuSeparator`. Settle:
+  - **Blocking for G1:** can a `Menu` take `for`/`if` over a model? The entries come
+    from the config.
+  - Can `ContextMenuArea.show(point)` be called from a `Button`'s `clicked`, with the
+    menu positioned under the button?
+  - Does `MenuItem.checked` show a checkmark without `checkable`? `checkable` toggles on
+    activation, which is wrong for a radio-like choice set from the model.
+  - What does a disabled `MenuItem` used as a section header look like, in light and
+    dark themes?
+
+  If G1 needs workarounds, stop and discuss G2 or a plain `PopupWindow` list instead
+  ("simple over clever").
+- **`session_provider.rs`:** a `SessionChoices` value holds one `Option<SessionChoice>`
+  per axis. `select(axis, picked, configured)` and `resolve(axis, configured, available)`
+  keep today's rules, independently per axis: a choice ends when that axis's configured
+  value changes, when its profile disappears, or when the default is picked again.
+- **`main.rs`:**
+  - `SESSION_TRANSLATE_PROVIDER` → `SESSION_PROVIDERS: Mutex<SessionChoices>`.
+  - `effective_translate_provider` → `effective_provider(config, axis) -> (String, bool)`.
+  - `translate_provider_choice` → `effective_provider_choice(config, axis)`.
+- **Call sites:**
+  - The dictionary lookup in `spawn_translation` (today
+    `cfg.provider_choice(&cfg.dictionary_provider)`).
+  - The speech paths (`start_speaking`, the speech hotkey; today
+    `cfg.provider_choice(&cfg.speech_provider)`).
+  - The translation sites keep working through the generalized function.
+- **`providers_header`:** `(this session)` on each overridden axis.
+  `ProvidersHeaderKey` gains the effective dictionary and speech providers; without
+  them, a pick on those axes wouldn't refresh the header.
+- **Tests:** axes are independent; each reset rule works per axis; a speech pick doesn't
+  touch the translation choice.
+
+##### U6 — `tagent-gui`: the provider menu (G1)
+
+- `app.slint`: a `Button` (`<name in effect> ▾`, with an accessible label naming all
+  three providers) inside a `ContextMenuArea` whose `Menu` is built from a model:
+  ```slint
+  struct ProviderMenuEntry { axis: int, name: string, title: string,
+                             checked: bool, header: bool, warning: string }
+  callback provider-picked(int /* axis */, string /* name */);
+  ```
+  Use separators between axes. The last item, "Providers…", opens Settings on the
+  Providers tab (`OPEN_SETTINGS_ON_PROVIDERS`). The ComboBox and
+  `translate-providers`/`translate-provider-index` go away.
+- **Model builder:** a pure builder in Rust (new `provider_menu.rs`, or in
+  `provider_form.rs`). Per axis it uses `picker_entries` (hidden entries, the current
+  one always kept), the display title, `checked` for the provider in effect, and a ⚠
+  for missing required options.
+- **Refresh:** `refresh_translate_provider_picker` → `refresh_provider_menu`, called
+  from `refresh_config_views` as today. `provider-picked` → `select` + refresh.
+- **Tests:** the builder (sections in order; a hidden profile left out unless it is in
+  effect; `checked`; ⚠ per axis; a disabled axis note).
+- **Visual check:** screenshots in light and dark themes. Don't automate with
+  `xdotool`, because keypresses can leak into the terminal session. Then a manual pass
+  by the user (pick on each axis, check the header and that hotkey translation/speech
+  use the pick).
+- `tagent-gui/README.md` is updated only with the next semver bump, per that crate's
+  cadence. `CHANGELOG.md` is updated at every step.
+
+##### U7 — Documentation
+
+- **`CLAUDE.md`:**
+  - "Translator Orchestrator": the dictionary slot; `/p` on every axis; the dictionary
+    provider is no longer built once per run.
+  - "Configuration System": drop "restart required" for `dictionary_provider`; `/save`
+    writes the providers.
+  - "tagent-gui": the provider menu and per-axis session choices.
+  - "Dictionary Provider Trait" if it mentions the once-per-run build.
+- **`docs/ARCHITECTURE.md`:** "Switching the translation provider at runtime"
+  (Stage S) is extended to all axes.
+- **`tagent-cli/README.md`:** the configuration section's list of settings that need a
+  restart.
+- **`docs/tagent-cli-dev-plan.md`:** Stage S "Out of scope" points here.
+  **`docs/tagent-gui-dev-plan.md`:** a roadmap entry.
+- **This stage:** status and "Notes after landing".
+
+#### Semver and changelogs
+
+- **`tagent`:** U0 is a compatible addition in the 0.19.0 cycle (`+BUILD`), `Added`.
+- **`tagent-cli`:** 0.17.0, `+BUILD` per step (U1–U4). `Changed` for the live-reloaded
+  dictionary provider and the new `/p`; `Added` for the numbers and the axis forms.
+- **`tagent-gui`:** 0.15.0, `+BUILD` per step (U5–U6), `Changed`.
+
+#### Out of scope
+
+- The tray menu: the same sections there would allow switching without opening the
+  window, but the tray menu can come up empty on a slow start (slint#13624). Separate
+  step after the menu proves itself.
+- Named provider sets (`/p local` switching all axes at once): see Backlog.
+- `/p` filtered to one axis (`/p d` listing only the dictionary): the full list is short.
+- A one-shot CLI flag (`tagent-cli --provider ...`).
+- Saving a choice from `tagent-gui`'s menu: Settings > Providers is where defaults are
+  saved.
+- `/config` showing that a session choice differs from the file.
+
+#### Done when
+
+- **`tagent-cli`:**
+  - `/p` prints the three-section list.
+  - `/p 7`, `/p d ollama` and `/p ollama` switch the right axis and say which.
+  - A hotkey translation right after `/p d ollama` uses the new dictionary, with no
+    restart.
+  - `/save` keeps all three; an edit of `dictionary_provider` in the file applies
+    without a restart.
+- **`tagent-gui`:**
+  - The menu shows three sections with the providers in effect checked.
+  - A pick on each axis is used by the button, the hotkey and speech, and the header
+    marks it `(this session)`.
+  - Changing the default in Settings ends that axis's pick.
+- **Checks:** `cargo test`, `cargo clippy --workspace -- -D warnings` and
+  `cargo doc -p tagent` are clean.
+
+#### Notes after landing
+
+*(fill in)*
+
+---
 
 ## Provider stages
 
@@ -1786,6 +2183,10 @@ LibreTranslate reference config against the mock server.
   (check `rodio` decodability, which currently has only `symphonia-mp3` enabled).
 - Translation: Microsoft Translator, Yandex, Lingva (probably via P4 config instead of code).
 - Dictionary: a Wiktionary-based provider.
+- Apps: named provider sets, e.g. `[provider_sets.local]` with `translate`, `dictionary`
+  and `speech` keys, selected with `/p local` (or a menu entry) to switch all three axes
+  at once. Builds on Stage U; worth it only if switching between fixed combinations
+  becomes routine.
 - ~~`tagent-gui` Settings UI for creating, editing and deleting provider profiles (Q3).~~
   Done in `tagent-gui` 0.14.0+037 (2026-10-01): a "Providers" tab (any kind, no presets,
   with a "Test" button), see [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md); `tagent`
