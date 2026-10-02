@@ -5,12 +5,17 @@ All notable changes to Tagent Text Translator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with build numbers.
 
+There is one section per version. Between releases the version carries a `+BUILD` counter
+(`0.17.0+014`) that names a development iteration; an entry names its build in
+parentheses (`(+014)`, or the full version for an earlier version's build). Sections from
+before 2026-10-02 have one header per build.
+
 ## [Unreleased]
 
-## [0.17.0+013] - 2026-09-30
+## [0.17.0] - 2026-10-02
 
 ### Added
-- **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
+- (+013) **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
   vLLM, ...) is available via a profile, from `tagent`'s new `openai` provider. A local
   Ollama, for example:
   ```toml
@@ -24,99 +29,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `temperature` and `translate_prompt` are optional. A new config file has a commented-out
   `[provider_options.openai]` example, including the built-in prompt as a multi-line string
   to copy and edit.
-- **`--update-config` adds the example profile of a newly available provider to an
+- (+013) **`--update-config` adds the example profile of a newly available provider to an
   existing config file**, at the end, reported as `the example profile for <kind> (at the
   end)`. A provider counts as present when the file has its example block (commented out
   or not) or a profile named after it; a deleted block comes back on the next
   `--update-config`, never on its own, and the startup notice doesn't count example
   blocks.
-
-## [0.17.0+012] - 2026-09-29
-
-### Changed
-- **A translation is labeled with the provider that made it** instead of the target
-  language, which the prompt already shows:
-  ```
-  [auto → ru]: Hello my friend
-  [deepl]: Привет, друг мой
-  ```
-  The label is the `translate_provider` value (a provider or profile name, lowercase), and
-  it names the provider actually used: after a `/p` or a config edit whose provider fails
-  to build, that is the one kept. A dictionary article keeps `[Word]: `; CLI mode, the
-  clipboard and the history have no labels and are unchanged.
-- **Hotkey translations show the language pair** (`[auto → ru]: `) in the line with the
-  selected text, as the interactive prompt does, instead of the source language alone
-  (`[Auto]: `). The prompt reprinted after a hotkey translation (without an interactive
-  line editor) shows the pair too.
-- The template's comments for `source_prompt_color`/`target_prompt_color` describe the new
-  labels.
-
-## [0.17.0+011] - 2026-09-29
-
-### Changed
-- **The default target language comes from the system's preferred languages**
-  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on Windows
-  and macOS): the first one Tagent knows, else English, as in `tagent-gui`. It was always
-  Russian before. It applies to a new `tagent-cli.toml` and to a file without
-  `target_language`; a value in the file is never replaced. `--print-default-config` shows
-  the default for the system it runs on.
-
-## [0.17.0+010] - 2026-09-29
-
-### Changed
-- **`tagent-cli.toml` stores language codes**: `source_language = "auto"`,
-  `target_language = "ru"`, as `tagent-gui.json` already does. Names still work: `"Russian"`,
-  `"ru"` and `"RU"` all mean Russian, in the file as with `/l` and `-l`. Prompts, the banner
-  and `/l`'s messages keep showing names (`[Russian]: `, `Auto (auto) -> Russian (ru)`), and
-  `/config` shows the name after the code (`target_language = "ru"  # Russian`). The file is
-  not rewritten on its own: **the first `/save` writes the languages as codes** (both of
-  them, comments kept), whether or not you changed them. `--update-config` doesn't convert
-  names.
-- A language value Tagent doesn't list (e.g. `"uk"`, `"zh-TW"`) is kept as it is and passed
-  to the provider, as before, and now gets one warning when the file is read
-  (`source_language = "uk" is not a known language, used as a language code`). The warning
-  about an `Auto` target also names the file now.
-- The template lists the language codes with their names, generated from Tagent's language
-  table, so a new language appears in it by itself.
-- The `Auto`-target replacement (`/l auto`, a swap with an `Auto` source, `target_language =
-  "auto"` in the file) is still English, now stored as `en`.
-
-## [0.17.0+009] - 2026-09-29
-
-### Added
-- **`/p` and `/provider`: switch the translation provider without restarting.** `/p` lists
+- (+009) **`/p` and `/provider`: switch the translation provider without restarting.** `/p` lists
   the translation providers, the built-in ones and your `[provider_options.<name>]` profiles
   of those kinds, marks the active one with `*` and names any required option that is still
   unset (`deepl  DeepL (missing: api_key)`). `/p deepl` (or a profile name) switches to it
   for the rest of the session, for the hotkey as well as the prompt. The provider is checked
   first: if it can't be used (unknown name, missing `api_key`), you get the reason and the
   current provider stays.
-
-### Changed
-- **`/save` also saves the translation provider** chosen with `/p` (`translate_provider` in
-  `[provider]`), in place like the languages. A file without a `[provider]` section gets one
-  only when the provider differs from the default.
-- **`translate_provider` is now reloaded from the file** like most other settings: an edit
-  takes effect with the next translation, no restart needed. A value that can't be used is
-  reported once and the current provider stays. Translation and the language detection
-  before speaking an `Auto` phrase now always use the same provider (before, speech already
-  followed the edited file while translation didn't until a restart). As with `/l`, editing
-  the file while running replaces a provider chosen with `/p` but not yet saved.
-
-## [0.17.0+008] - 2026-09-29
-
-### Added
-- **A startup notice about new settings.** In unified mode, when `tagent-cli.toml` lacks
+- (+008) **A startup notice about new settings.** In unified mode, when `tagent-cli.toml` lacks
   settings this version has, one line after the banner says so:
   `Config: 3 new settings are available (run /config update or tagent-cli --update-config)`.
   It is not shown in one-shot CLI mode, whose output may go to a script. A setting you
   commented out in its section (`# speech_hotkey = "Alt+S"`) counts as present, so that is
   how to keep one out of your file without seeing the notice again.
-
-## [0.17.0+007] - 2026-09-29
-
-### Added
-- **`tagent-cli --update-config` and `/config update`** add what your `tagent-cli.toml`
+- (+007) **`tagent-cli --update-config` and `/config update`** add what your `tagent-cli.toml`
   lacks compared to this version: missing settings go at the end of their section with
   their explanation and default value, missing sections are added whole in their usual
   place, and the example provider profiles (from `0.17.0+004`) are appended if the file
@@ -128,20 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this version doesn't know, for you to fix or remove. A file that is already complete is
   not touched; a file Tagent can't load is left as it is, with the same error as at
   startup.
-
-## [0.17.0+006] - 2026-09-29
-
-### Added
-- **`tagent-cli --print-default-config`** prints a complete new `tagent-cli.toml` to
+- (+006) **`tagent-cli --print-default-config`** prints a complete new `tagent-cli.toml` to
   stdout: every setting with its explanation and default value, and the example provider
   profiles. It reads and writes no file, so it also works while your own file has an error.
   Useful to see what a newer version offers:
   `tagent-cli --print-default-config > tagent-cli.new.toml`, then compare the two files.
-
-## [0.17.0+005] - 2026-09-29
-
-### Added
-- **Warnings about unknown keys in `tagent-cli.toml`.** A key or section this version
+- (+005) **Warnings about unknown keys in `tagent-cli.toml`.** A key or section this version
   doesn't know is no longer ignored silently: each one is reported on stderr at startup
   and on every hot reload that re-reads the file, with its line number and, when a known
   name is close, a suggestion:
@@ -156,11 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `api_key`?"). The warnings never stop the program; the setting keeps its default, as
   before. The known keys come from the configuration template itself, so the check follows
   every later change to it.
-
-## [0.17.0+004] - 2026-09-28
-
-### Added
-- **Ready-made provider profiles in a new `tagent-cli.toml`.** The "Provider profiles"
+- (+004) **Ready-made provider profiles in a new `tagent-cli.toml`.** The "Provider profiles"
   section at the end of the file now holds one commented-out `[provider_options.<name>]`
   block per available provider (today `google` and `deepl`), plus a second-instance
   example (`[provider_options.deepl-work]` with `type = "deepl"`). Remove the leading `# `
@@ -171,33 +91,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generated from `tagent`'s provider registry, so they follow the providers this build
   includes. Only a newly created config file gets them; an existing one is left as it is
   (delete or rename it to have a fresh one written).
-
-## [0.17.0+003] - 2026-09-28
-
-### Added
-- **The startup banner (and `/clear`) shows the providers in use**, in a `Providers:` block
+- (+003) **The startup banner (and `/clear`) shows the providers in use**, in a `Providers:` block
   between the languages and the hotkeys: `Translation: Google Translate`,
   `Dictionary: Google Dictionary`, `Speech: Google TTS`. Each is the provider's own name,
   so a profile shows as e.g. `DeepL (work)`. The dictionary line appears only with
   `show_dictionary`, the speech line only with `enable_text_to_speech`. A provider that
   can't be built shows `unavailable (<reason>)`. Translation and dictionary are the ones
   built at startup (a change to them needs a restart); speech follows the current config.
-
-## [0.17.0+002] - 2026-09-28
-
-### Added
-- **DeepL translation provider available via a profile.** Set `translate_provider =
+- (+002) **DeepL translation provider available via a profile.** Set `translate_provider =
   "deepl"` and give it a key in `[provider_options.deepl]` (`api_key = "..."`, a Free key
   ends in `:fx`) or in the `TAGENT_DEEPL_API_KEY` environment variable. Optional:
   `endpoint`, `timeout_secs`, `max_retries`. A named profile works too
   (`[provider_options.work]` with `type = "deepl"`). DeepL is translation only; keep
   `dictionary_provider`/`speech_provider` on `google`. Speaking `Auto`-source text with
   DeepL selected detects the language through DeepL, which bills up to 100 characters.
-
-## [0.17.0+001] - 2026-09-27
+- (0.16.0+008) **Provider profiles and options.** `TranslateProvider`, `DictionaryProvider` and
+  `SpeechProvider` now take a profile name. A `[Provider:<name>]` section passes options to
+  that provider (keys as the library names them: `api_key`, `endpoint`, `model`,
+  `timeout_secs`, `max_retries`, ...), and its optional `type` key makes it a named profile
+  of a provider kind (`[Provider:work]` + `type = google`). Built-in names work without a
+  section, as before. Profile names and keys are case-insensitive (saved back lowercase).
+  A `TAGENT_<NAME>_<KEY>` environment variable overrides a key.
+  `/save` keeps the sections. An invalid option names the section to fix.
+- (0.16.0+008) **`/config` lists the provider profiles** with their effective options: secret values
+  masked (`••••` plus the last four characters), and a value from the environment marked
+  with its variable.
+- (0.16.0+006) **Dictionary entries are highlighted**: part-of-speech labels and synonym brackets are shown
+  in their own colors, the spelling-correction notice in another, and translation, speech,
+  clipboard and history errors in red. Four new `[Colors]` keys set them: `PartOfSpeechColor`
+  (default `Cyan`), `SynonymColor` (`Green`), `NoticeColor` (`Magenta`) and `ErrorColor`
+  (`Red`); `None` turns one off. Existing config files get the defaults. As before, colors are
+  only used when output goes to a terminal, and the clipboard and the history file get plain
+  text.
+- (0.16.0+005) **Replay the last translation as speech**: in interactive mode, a bare `/s` (or `/speech`)
+  speaks the last translated phrase, and the new `/ss` speaks its translation, in the target
+  language of that translation. "Last" covers both typed input and hotkey translations. For a
+  single word shown as a dictionary entry, `/ss` speaks only the main translation, not the
+  whole entry. `/s <text>` works as before.
+- (0.16.0+004) **The current language pair is always visible**: the interactive prompt now shows it as
+  language codes (`[auto → ru]: ` instead of `[Auto]: `), the terminal window title reads
+  `Tagent — auto → ru`, and the startup banner has a `Languages: Auto (auto) -> Russian (ru)`
+  line. The prompt and title follow `/l` and config-file edits (the latter show up at the next
+  prompt). The title is visible even while a hotkey translation is triggered from another
+  application; the previous title is restored on exit (on Linux/macOS, in terminals that
+  support xterm's title stack; others leave it to the shell).
 
 ### Changed
-- **`/config` (and `--config`) shows the settings as they appear in `tagent-cli.toml`:**
+- (+014) **One changelog section per version**: the `+BUILD` counter stays in the version
+  (`--version`, the banner, this README) but no longer gets a section of its own; an entry
+  names its build in parentheses. The unreleased sections since 0.16.0 (0.16.0+002 to
+  0.17.0+013) were merged into this one. `build.rs` no longer rewrites the topmost
+  changelog header; it warns when there is no section for the current version.
+- (+012) **A translation is labeled with the provider that made it** instead of the target
+  language, which the prompt already shows:
+  ```
+  [auto → ru]: Hello my friend
+  [deepl]: Привет, друг мой
+  ```
+  The label is the `translate_provider` value (a provider or profile name, lowercase), and
+  it names the provider actually used: after a `/p` or a config edit whose provider fails
+  to build, that is the one kept. A dictionary article keeps `[Word]: `; CLI mode, the
+  clipboard and the history have no labels and are unchanged.
+- (+012) **Hotkey translations show the language pair** (`[auto → ru]: `) in the line with the
+  selected text, as the interactive prompt does, instead of the source language alone
+  (`[Auto]: `). The prompt reprinted after a hotkey translation (without an interactive
+  line editor) shows the pair too.
+- (+012) The template's comments for `source_prompt_color`/`target_prompt_color` describe the new
+  labels.
+- (+011) **The default target language comes from the system's preferred languages**
+  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on Windows
+  and macOS): the first one Tagent knows, else English, as in `tagent-gui`. It was always
+  Russian before. It applies to a new `tagent-cli.toml` and to a file without
+  `target_language`; a value in the file is never replaced. `--print-default-config` shows
+  the default for the system it runs on.
+- (+010) **`tagent-cli.toml` stores language codes**: `source_language = "auto"`,
+  `target_language = "ru"`, as `tagent-gui.json` already does. Names still work: `"Russian"`,
+  `"ru"` and `"RU"` all mean Russian, in the file as with `/l` and `-l`. Prompts, the banner
+  and `/l`'s messages keep showing names (`[Russian]: `, `Auto (auto) -> Russian (ru)`), and
+  `/config` shows the name after the code (`target_language = "ru"  # Russian`). The file is
+  not rewritten on its own: **the first `/save` writes the languages as codes** (both of
+  them, comments kept), whether or not you changed them. `--update-config` doesn't convert
+  names.
+- (+010) A language value Tagent doesn't list (e.g. `"uk"`, `"zh-TW"`) is kept as it is and passed
+  to the provider, as before, and now gets one warning when the file is read
+  (`source_language = "uk" is not a known language, used as a language code`). The warning
+  about an `Auto` target also names the file now.
+- (+010) The template lists the language codes with their names, generated from Tagent's language
+  table, so a new language appears in it by itself.
+- (+010) The `Auto`-target replacement (`/l auto`, a swap with an `Auto` source, `target_language =
+  "auto"` in the file) is still English, now stored as `en`.
+- (+009) **`/save` also saves the translation provider** chosen with `/p` (`translate_provider` in
+  `[provider]`), in place like the languages. A file without a `[provider]` section gets one
+  only when the provider differs from the default.
+- (+009) **`translate_provider` is now reloaded from the file** like most other settings: an edit
+  takes effect with the next translation, no restart needed. A value that can't be used is
+  reported once and the current provider stays. Translation and the language detection
+  before speaking an `Auto` phrase now always use the same provider (before, speech already
+  followed the edited file while translation didn't until a restart). As with `/l`, editing
+  the file while running replaces a provider chosen with `/p` but not yet saved.
+- (+001) **`/config` (and `--config`) shows the settings as they appear in `tagent-cli.toml`:**
   `[section]` headers and `key = value` lines with the file's key names and value format
   (the languages followed by their code, e.g. `target_language = "Russian"  # ru`), so a
   line can be copied into the file as is. It now lists every setting, colors and
@@ -205,11 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left out. Provider profiles appear as `[provider_options.<name>]` tables with `type`
   first, secrets still masked, and a value from the environment marked with
   `# from env TAGENT_<NAME>_<KEY>`.
-
-## [0.17.0] - 2026-09-27
-
-### Changed
-- **Breaking: the configuration file is now TOML, `tagent-cli.toml`,** in the same folder
+- (+000) **Breaking: the configuration file is now TOML, `tagent-cli.toml`,** in the same folder
   as before (`~/.config/tagent-cli/` on Linux/macOS, `%APPDATA%\tagent-cli\` on Windows).
   **The old `tagent-cli.conf` is no longer read and is not migrated:** on first start a
   commented default `tagent-cli.toml` is created; copy your settings over by hand, then
@@ -220,124 +208,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[Provider] TranslateProvider = google` → `[provider] translate_provider = "google"`).
   A provider profile `[Provider:<name>]` becomes `[provider_options.<name>]` with the same
   keys, and its values are quoted strings, numbers too (`timeout_secs = "15"`).
-- **Comments survive `/save`.** It now changes only `source_language` and
+- (+000) **Comments survive `/save`.** It now changes only `source_language` and
   `target_language` in the existing file; comments, key order, unknown keys and provider
   profiles stay as they are (it used to rewrite the whole file from a template). A comment
   can also follow a value on the same line now (`copy_to_clipboard = true  # note`); in
   the INI file it became part of the value.
-- **A mistake in the config file is reported with its line and column** (e.g.
+- (+000) **A mistake in the config file is reported with its line and column** (e.g.
   `copy_to_clipboard = "yes"`, or a string without quotes). At startup it is fatal; a
   broken edit while the app runs prints one warning and keeps the previous settings until
   the file is fixed. (In the INI file, an unreadable value silently fell back to its
   default.) The warning is now also printed by interactive mode, CLI mode and speech,
   which ignored reload errors before.
-- The help text, `/config` and error messages use the new key names
+- (+000) The help text, `/config` and error messages use the new key names
   (`supported values for speech_provider`, `check [provider_options.<name>] in
   tagent-cli.toml`).
-
-### Removed
-- The legacy color keys `AutoPromptColor` and `TranslationPromptColor` (read as
-  `SourcePromptColor`/`TargetPromptColor` until now), and `CopyToClipboard` under
-  `[Translation]` (read as a fallback for `[Interface]`). Use `source_prompt_color`,
-  `target_prompt_color` and `[interface] copy_to_clipboard`.
-
-## [0.16.0+008] - 2026-09-26
-
-### Added
-- **Provider profiles and options.** `TranslateProvider`, `DictionaryProvider` and
-  `SpeechProvider` now take a profile name. A `[Provider:<name>]` section passes options to
-  that provider (keys as the library names them: `api_key`, `endpoint`, `model`,
-  `timeout_secs`, `max_retries`, ...), and its optional `type` key makes it a named profile
-  of a provider kind (`[Provider:work]` + `type = google`). Built-in names work without a
-  section, as before. Profile names and keys are case-insensitive (saved back lowercase).
-  A `TAGENT_<NAME>_<KEY>` environment variable overrides a key.
-  `/save` keeps the sections. An invalid option names the section to fix.
-- **`/config` lists the provider profiles** with their effective options: secret values
-  masked (`••••` plus the last four characters), and a value from the environment marked
-  with its variable.
-
-### Security
-- **`tagent-cli.conf` is written with permissions `0600`** on Linux/macOS (on creation and
-  on every `/save`, tightening an existing file), since it can now hold API keys.
-
-## [0.16.0+007] - 2026-09-26
-
-### Changed
-- **Google requests now retry once on a connection failure or an HTTP 502/503/504**
+- (0.16.0+007) **Google requests now retry once on a connection failure or an HTTP 502/503/504**
   (`tagent` 0.19.0's shared transport), within the same 10-second budget as before. A
   Google rate limit (HTTP 429) is reported as `rate limited by the provider` and is never
   retried, and HTTP errors read `HTTP 503 Service Unavailable` instead of
   `HTTP error: 503 Service Unavailable`. Network error messages no longer include the
   request URL, which contained the text being translated.
-- **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
+- (0.16.0+007) **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
   `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
   keyed services. No behavior change: nothing returns them yet, and every new variant is
   shown with its own message.
-
-## [0.16.0+006] - 2026-09-25
-
-### Added
-- **Dictionary entries are highlighted**: part-of-speech labels and synonym brackets are shown
-  in their own colors, the spelling-correction notice in another, and translation, speech,
-  clipboard and history errors in red. Four new `[Colors]` keys set them: `PartOfSpeechColor`
-  (default `Cyan`), `SynonymColor` (`Green`), `NoticeColor` (`Magenta`) and `ErrorColor`
-  (`Red`); `None` turns one off. Existing config files get the defaults. As before, colors are
-  only used when output goes to a terminal, and the clipboard and the history file get plain
-  text.
-
-### Changed
-- **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
+- (0.16.0+006) **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
   `tagent` 0.18.3) and is shared with `tagent-gui`; the output text is unchanged.
-
-## [0.16.0+005] - 2026-09-25
-
-### Added
-- **Replay the last translation as speech**: in interactive mode, a bare `/s` (or `/speech`)
-  speaks the last translated phrase, and the new `/ss` speaks its translation, in the target
-  language of that translation. "Last" covers both typed input and hotkey translations. For a
-  single word shown as a dictionary entry, `/ss` speaks only the main translation, not the
-  whole entry. `/s <text>` works as before.
-
-### Fixed
-- **A bare `/s` or `/speech` is no longer translated as text**: it used to fall through to
-  translation of the literal string `/s`.
-
-## [0.16.0+004] - 2026-09-25
-
-### Added
-- **The current language pair is always visible**: the interactive prompt now shows it as
-  language codes (`[auto → ru]: ` instead of `[Auto]: `), the terminal window title reads
-  `Tagent — auto → ru`, and the startup banner has a `Languages: Auto (auto) -> Russian (ru)`
-  line. The prompt and title follow `/l` and config-file edits (the latter show up at the next
-  prompt). The title is visible even while a hotkey translation is triggered from another
-  application; the previous title is restored on exit (on Linux/macOS, in terminals that
-  support xterm's title stack; others leave it to the shell).
-
-### Changed
-- **`/clear` reprints the same banner as at startup** (version, language pair, active hotkeys,
+- (0.16.0+004) **`/clear` reprints the same banner as at startup** (version, language pair, active hotkeys,
   commands), instead of a separate shorter header.
+- (0.16.0+003) **`/l` (swap) with an "Auto" source now says what it did**: it still uses English as the
+  new target, and now prints `Source was Auto; using English as the new target` instead of
+  doing it silently.
+- (0.16.0+003) **Same-language pairs** (e.g. `English -> English`) are allowed, with a
+  `Note: source and target are the same language` notice. They're kept on purpose for future
+  monolingual dictionaries.
 
-## [0.16.0+003] - 2026-09-25
+### Removed
+- (+000) The legacy color keys `AutoPromptColor` and `TranslationPromptColor` (read as
+  `SourcePromptColor`/`TargetPromptColor` until now), and `CopyToClipboard` under
+  `[Translation]` (read as a fallback for `[Interface]`). Use `source_prompt_color`,
+  `target_prompt_color` and `[interface] copy_to_clipboard`.
+- (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
-- **"Auto" can no longer become the target language**: `/l auto`, `/l <src> auto`,
+- (0.16.0+005) **A bare `/s` or `/speech` is no longer translated as text**: it used to fall through to
+  translation of the literal string `/s`.
+- (0.16.0+003) **"Auto" can no longer become the target language**: `/l auto`, `/l <src> auto`,
   `tagent-cli -l auto ...` and a hand-edited `TargetLanguage = Auto` used to produce a pair
   like `Auto -> Auto`. Auto-detection only makes sense for the source, so an "Auto" target is
   now replaced with English, with a notice (`Target can't be Auto; using English instead`).
   The config file itself is not rewritten.
-
-### Changed
-- **`/l` (swap) with an "Auto" source now says what it did**: it still uses English as the
-  new target, and now prints `Source was Auto; using English as the new target` instead of
-  doing it silently.
-- **Same-language pairs** (e.g. `English -> English`) are allowed, with a
-  `Note: source and target are the same language` notice. They're kept on purpose for future
-  monolingual dictionaries.
-
-## [0.16.0+002] - 2026-09-24
-
-### Fixed
-- **Hotkey copy with a non-Latin keyboard layout on Linux**: the simulated Ctrl+C no
+- (0.16.0+002) **Hotkey copy with a non-Latin keyboard layout on Linux**: the simulated Ctrl+C no
   longer goes through `xdotool`, which switched the XKB group (keyboard layout) to the Latin
   one and back for every key it sent; with e.g. the Russian layout active the hotkey took up
   to several seconds to copy the selection. Ctrl+C is now sent directly through the X11
@@ -347,8 +268,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layout the application receives the same Ctrl+C as when pressed by hand (Ctrl plus that
   layout's letter on the C key).
 
-### Removed
-- **`xdotool` is no longer needed** at run time on Linux.
+### Security
+- (0.16.0+008) **`tagent-cli.conf` is written with permissions `0600`** on Linux/macOS (on creation and
+  on every `/save`, tightening an existing file), since it can now hold API keys.
 
 ## [0.16.0] - 2026-09-20
 

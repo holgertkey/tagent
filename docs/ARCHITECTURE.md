@@ -1529,22 +1529,28 @@ and:
    `MAJOR.MINOR.PATCH[+BUILD]`).
 2. `sync_version_in_docs()`: pattern-matches and rewrites version strings in
    `tagent-cli/README.md` (its own package-local README, since the move to a
-   three-crate workspace — see "Workspace layout" above), `CHANGELOG.md` (also
-   package-local; it used to be the workspace-root `CHANGELOG.md` until each crate got
-   its own changelog), and `../CLAUDE.md` — paths are relative to `tagent-cli/` (the
+   three-crate workspace — see "Workspace layout" above) and `../CLAUDE.md` — paths are relative to `tagent-cli/` (the
    package's manifest dir, where `build.rs` actually runs from), *not* the workspace
    root, so `CLAUDE.md` is the one file that lives one level up from the package.
    (The thin root `README.md` and the new `tagent/README.md` /
    `tagent-gui/README.md` are version-agnostic signposts — none of them contain a
    version string, so none are build.rs sync targets.) Skips the write if the value is
-   already current, to avoid needless rebuilds/timestamp churn. The `CHANGELOG.md`
-   pattern explicitly skips over a `## [Unreleased]` header — see
-   `update_version_in_file`'s `Unreleased]` guard — so it never overwrites that
-   section's content when scanning forward for the next `] - ` (regression-tested in
-   `build.rs`'s own `#[cfg(test)]` module). **Silent failure mode**: if any of these
+   already current, to avoid needless rebuilds/timestamp churn. **Silent failure mode**: if any of these
    relative paths is wrong, `update_version_in_file` just returns `Ok(())` and skips
    that file — no build error, no warning. Verify a version-bump build actually touched
    the docs by diffing them, not by the build succeeding.
+   `CHANGELOG.md` (package-local) is **not** rewritten since 2026-10-02:
+   `check_changelog_section()` only prints a `cargo:warning` when the topmost
+   `## [VERSION] - DATE` header (skipping `## [Unreleased]`) isn't the current version
+   without its `+BUILD`. The changelog has one section per `MAJOR.MINOR.PATCH` (the
+   "light" `+BUILD`, see below), so a build bump needs no header change, and renaming the
+   topmost header on a version change would relabel the previous, possibly released,
+   version's entries (the old sync did that, which is why a new section had to be added
+   *before* a bump). `update_version_in_file` keeps its `## [Unreleased]` guard and the
+   changelog-shaped regression tests from that time; they still describe how it treats
+   such input. The tests run with
+   `CARGO_PKG_VERSION=0.0.0 rustc --edition 2021 --test tagent-cli/build.rs` (Cargo doesn't
+   run a build script's tests).
 3. On Windows only, when the `binary-resources` feature is active, embeds the app icon
    (`assets/icons/taa_256.ico`, inside the `tagent-cli/` package itself) and version resource
    via `winres`.
@@ -1553,13 +1559,22 @@ There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`
 prototype had one (writing into `tagent-gui/src-tauri/Cargo.toml` etc.), but it was
 removed once `tagent-gui` moved to Slint and that Tauri layout stopped existing.
 `tagent-gui`'s own version is whatever is in `tagent-gui/Cargo.toml`
-(currently `0.14.0`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
+(currently `0.15.0`) and is not synced by anything. As of the 2026-08-15 independence decision (see "Concept" at the top of the
 `tagent-gui` section above), this is deliberate rather than merely unaddressed:
 `tagent-gui` versions on its own track — `MAJOR.MINOR.PATCH+BUILD` like `tagent-cli`, but with
 its own independent counter, and the `+BUILD` is stripped at release — and logs its history
 in its own [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md), separate from
-[`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md), which `tagent-cli/build.rs`
-syncs into. Every crate has its own changelog next to its `Cargo.toml`; there is no
+[`tagent-cli/CHANGELOG.md`](../tagent-cli/CHANGELOG.md).
+**"Light" `+BUILD` for all three crates** (decided 2026-10-02): the counter is for the
+developer's own orientation; it lives in `Cargo.toml` (and, for the apps, in the banner,
+`--version` and README), while every changelog has **one section per
+`MAJOR.MINOR.PATCH`**, never one per build, with each entry naming its build in
+parentheses (`- (+014) ...`). Older per-build headers stay; the unreleased ones were
+merged then (`tagent-cli` 0.16.0+002…0.17.0+013 into `0.17.0`, `tagent-gui`
+0.14.0+001…+041 into `0.15.0`). The same day's rule: after a release, `+BUILD` never
+continues on the released version (`tagent-gui` had run to `0.14.0+041` past its 0.14.0
+release, which crates.io wouldn't have accepted again); the next code change picks a new
+version. Every crate has its own changelog next to its `Cargo.toml`; there is no
 workspace-root one. The `tagent` library crate's version (`0.19.0+001`) is likewise
 standalone, with history in [`tagent/CHANGELOG.md`](../tagent/CHANGELOG.md). It is
 deliberately pre-1.0: the API is still moving (three provider traits, more providers to come), and under semver's `0.y.z`
@@ -1579,9 +1594,9 @@ Within a cycle, `tagent/Cargo.toml` also carries a `+BUILD` counter (decided 202
 each change to the library's code (not for documentation-only changes), reset to `+000`
 when the cycle's version is picked or escalated (as for the apps; the 0.19.0 cycle,
 already under way, started the counter at `+001`), and stripped at release like the apps'
-(the release workflow refuses a `+` in any crate). Unlike the apps, the changelog keeps
+(the release workflow refuses a `+` in any crate). As for the apps, the changelog keeps
 **one section per cycle version**, `## [0.19.0]`, never `## [0.19.0+NNN]` headers; an
-entry may name its build in parentheses (`(+007)`). Semver ignores build metadata when
+entry names its build in parentheses (`(+007)`). Semver ignores build metadata when
 matching requirements, so the apps' `version = "0.19.0"` dependency on `tagent` matches
 `0.19.0+NNN`. Nothing syncs it (`tagent` has no `build.rs`). As a safety net for cycles where
 the version did move more than once,

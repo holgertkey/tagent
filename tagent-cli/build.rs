@@ -58,7 +58,8 @@ fn build_windows_resources(version: &str) {
     // resource) at link time.
 }
 
-/// Synchronize version in documentation files (README.md, CLAUDE.md, CHANGELOG.md)
+/// Synchronize version in documentation files (README.md, CLAUDE.md), and check that
+/// CHANGELOG.md has a section for the version.
 /// This ensures version is defined only in Cargo.toml and auto-syncs everywhere
 fn sync_version_in_docs(version: &str) {
     // Files to update with version patterns
@@ -72,12 +73,6 @@ fn sync_version_in_docs(version: &str) {
             ],
         ),
         ("../CLAUDE.md", vec![("(v", ") built in Rust")]),
-        (
-            "CHANGELOG.md",
-            vec![
-                ("## [", "] - "), // Changelog section header: ## [VERSION] - DATE
-            ],
-        ),
     ];
 
     for (file_path, patterns) in files {
@@ -88,6 +83,43 @@ fn sync_version_in_docs(version: &str) {
             );
         }
     }
+
+    check_changelog_section("CHANGELOG.md", version);
+}
+
+/// Warn when CHANGELOG.md's topmost version section isn't `version` without its `+BUILD`.
+///
+/// The changelog has one section per `MAJOR.MINOR.PATCH` (`## [0.17.0] - DATE`); the build
+/// counter never gets its own header, so nothing here rewrites a header. A new version's
+/// section is added by hand: renaming the topmost one automatically would relabel the
+/// previous version's (possibly released) entries.
+fn check_changelog_section(file_path: &str, version: &str) {
+    let Ok(content) = fs::read_to_string(file_path) else {
+        return;
+    };
+    let expected = base_version(version);
+    match topmost_changelog_version(&content) {
+        Some(found) if found == expected => {}
+        found => println!(
+            "cargo:warning={file_path} has no `## [{expected}] - DATE` section at the top \
+             (topmost: {}); add one for this version's entries",
+            found.unwrap_or("none")
+        ),
+    }
+}
+
+/// `version` without its `+BUILD` suffix (`"0.17.0+013"` -> `"0.17.0"`).
+fn base_version(version: &str) -> &str {
+    version.split('+').next().unwrap_or(version)
+}
+
+/// The version of the topmost `## [VERSION] - DATE` header, skipping `## [Unreleased]`.
+fn topmost_changelog_version(content: &str) -> Option<&str> {
+    content
+        .lines()
+        .filter_map(|line| line.strip_prefix("## ["))
+        .filter(|rest| !rest.starts_with("Unreleased]"))
+        .find_map(|rest| rest.split_once("] - ").map(|(version, _)| version))
 }
 
 /// Update version in a specific file using pattern matching
@@ -341,6 +373,34 @@ mod tests {
         let updated = fs::read_to_string(&path).unwrap();
         fs::remove_file(&path).ok();
         assert_eq!(updated, "## [0.13.0] - 2026-01-01\n");
+    }
+
+    #[test]
+    fn base_version_drops_the_build_counter() {
+        assert_eq!(base_version("0.17.0+013"), "0.17.0");
+        assert_eq!(base_version("0.17.0"), "0.17.0");
+    }
+
+    #[test]
+    fn topmost_changelog_version_skips_unreleased() {
+        let content = "# Changelog\n\n## [Unreleased]\n\n- Pending.\n\n\
+                       ## [0.17.0] - 2026-09-30\n\n## [0.16.0+008] - 2026-09-26\n";
+        assert_eq!(topmost_changelog_version(content), Some("0.17.0"));
+        assert_eq!(topmost_changelog_version("## [Unreleased]\n"), None);
+    }
+
+    #[test]
+    fn changelog_check_never_rewrites_a_header() {
+        // One section per MAJOR.MINOR.PATCH: a build bump or a new version must leave
+        // every header alone (renaming the topmost one would relabel the previous
+        // version's entries).
+        let content = "## [Unreleased]\n\n## [0.17.0] - 2026-09-30\n";
+        let path = write_temp_file("changelog_check", content);
+        check_changelog_section(path.to_str().unwrap(), "0.17.0+014");
+        check_changelog_section(path.to_str().unwrap(), "0.18.0");
+        let updated = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(updated, content);
     }
 
     #[test]

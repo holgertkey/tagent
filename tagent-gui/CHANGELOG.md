@@ -10,57 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 the `tagent` library. See [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the design
 decisions behind this project.
 
+There is one section per version. Between releases the version carries a `+BUILD` counter
+(`0.15.0+003`) that names a development iteration; an entry names its build in
+parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
+`(0.14.0+041)`). Sections from before 2026-10-02 have one header per build.
+
 ## [Unreleased]
 
-## [0.14.0+041] - 2026-10-01
-
-### Changed
-- **The `[Language]:` prompt of a transcript block is its speak button now**, shown as
-  `[🔊 English]:` (just `🔊` when the prompt is turned off). Click it to hear the phrase or
-  translation, click again to stop; it is tinted on hover and while it speaks. Replaces the
-  separate 🔊 icon at the start of the block from 0.14.0+040, so the text is no longer
-  indented and uses the full width of the transcript. With text-to-speech off, the glyph
-  disappears from the prompts. Copied text, history and the popup don't get the glyph.
-
-## [0.14.0+040] - 2026-10-01
-
-### Changed
-- **The transcript's 🔊 speaker icons sit inside the phrase/translation blocks now**, at the
-  start of the first line, with the text indented past them (wrapped lines too, like a list
-  marker). They used to be buttons next to each block, and a button can't be shorter than
-  the style's minimum height, so a one-line entry got buttons taller than its text and the
-  row grew around them. One-line rows now keep the height of their text. Click, ⏹ while
-  speaking and the dimmed state while another entry speaks work as before.
-
-## [0.14.0+039] - 2026-10-01
-
-### Changed
-- **"Test" for a provider profile is only in its "Options…" panel now**, no longer on each
-  row of Settings > Providers. You test while filling in options, and the panel's Test
-  already uses the values not yet saved; the rows are narrower, and the result shows next
-  to the options it concerns.
-
-## [0.14.0+038] - 2026-10-01
+## [0.15.0] - 2026-10-02
 
 ### Added
-- **"Show in lists"** on Settings > Providers: a checkbox on each row hides that provider
+- (0.14.0+038) **"Show in lists"** on Settings > Providers: a checkbox on each row hides that provider
   or profile from the provider pickers (Settings and the main window), so they stay short
   once there are many profiles. It only hides: a hidden entry keeps working wherever it is
   selected, and stays in a picker that currently selects it. `google`, which pickers fall
   back to, can't be hidden. Saved as `hidden_providers` in `tagent-gui.json`; "Reset to
   Defaults" keeps it.
-- A ⚠ on each row of the Providers tab whose profile lacks a required option.
-
-### Changed
-- **The translation, dictionary and speech pickers moved from General to the Providers
-  tab**, above the list; their "Options…" buttons are gone, since every row of the list
-  has one. General keeps the default languages and the other settings.
-- The ⚠ next to the main window's provider picker opens Settings on the Providers tab.
-
-## [0.14.0+037] - 2026-10-01
-
-### Added
-- **A "Providers" tab in Settings** for creating and deleting provider profiles, no
+- (0.14.0+038) A ⚠ on each row of the Providers tab whose profile lacks a required option.
+- (0.14.0+037) **A "Providers" tab in Settings** for creating and deleting provider profiles, no
   hand-editing of `provider_options` in `tagent-gui.json` needed. It lists the built-in
   providers (`google`, `deepl`, `openai`) and every profile as `name (kind)`, each with
   "Options…" (the existing options panel) and "Test"; profiles also get "Delete". Under the
@@ -76,7 +43,7 @@ decisions behind this project.
   profile. A profile with an unknown kind (hand-edited, or its provider compiled out) is
   listed with "Delete" only. Nothing on the tab is specific to a provider: it is all
   driven by `tagent`'s provider registry.
-- **"Test" for a provider profile**, on each row of the Providers tab and in the options
+- (0.14.0+037) **"Test" for a provider profile**, on each row of the Providers tab and in the options
   panel (there with the panel's unsaved values). It builds the profile exactly as the app
   would (options of this dialog plus `TAGENT_<NAME>_<KEY>` environment overrides) and
   makes one call per thing the provider does: a translation of "Hello, world!" into the
@@ -85,11 +52,7 @@ decisions behind this project.
   One line per call, e.g. `translation: OK (0.9 s): Hallo, Welt!` or
   `translation: failed: <error>`; a missing required option fails before any network
   call. A test of a paid service costs a few characters or tokens.
-
-## [0.14.0+036] - 2026-10-01
-
-### Added
-- **A multi-line editor for prompt options** in Settings > General's "Options…" panel. An
+- (0.14.0+036) **A multi-line editor for prompt options** in Settings > General's "Options…" panel. An
   option `tagent` declares as multi-line (today the `openai` kind's `translate_prompt`)
   gets a text editor under its label instead of a one-line field. With no value set, the
   editor shows the provider's built-in prompt, ready to edit in place. "Reset to default"
@@ -98,88 +61,23 @@ decisions behind this project.
   when the prompt has no `{to}`, since the model then isn't told the target language.
   Nothing in the panel is specific to a provider: it follows the option's declared
   `multiline` and `default`.
-
-## [0.14.0+035] - 2026-09-30
-
-### Added
-- **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
+- (0.14.0+035) **An OpenAI-compatible translation provider** (OpenAI, Ollama, LM Studio, OpenRouter,
   vLLM, ...) is available via a profile, from `tagent`'s new `openai` provider: a
   `provider_options` entry with `"type": "openai"`, an `endpoint` (the base URL including
   `/v1`, e.g. `http://localhost:11434/v1`) and a `model`. Settings > General offers
   `openai` in the translation picker (and every profile of that kind); its "Options…" panel has `endpoint` and
   `model` as required fields and `api_key` as a password field. The `translate_prompt`
   option is a single-line field for now.
-
-## [0.14.0+034] - 2026-09-29
-
-### Changed
-- **Windows renders on the GPU again**: `tagent-gui` no longer forces Slint's software
-  renderer (added in `0.14.0+011`) and uses Slint's default GPU renderer, as on the other
-  platforms. `SLINT_BACKEND=winit-software` still selects the software renderer.
-
-### Fixed
-- **Windows redraw glitches caused by the software renderer**. It redraws only what changed
-  since its last frame and isn't told when Windows discards a window's contents, so:
-  translating the same phrase with the hotkey again left the popup invisible; the main
-  window shown again from the tray came back with its language row blank; and the main
-  window restored from the taskbar was drawn slowly and only partly.
-
-### Known issues
-- The `0.14.0+011` layout-switch hang can come back on machines with an NVIDIA OpenGL
-  driver, with keyboard-layout switchers that broadcast `WM_INPUTLANGCHANGEREQUEST` to
-  all windows (ccaps 0.10.1 and later post it to the foreground window only). If it
-  happens, start `tagent-gui` with `SLINT_BACKEND=winit-software`.
-
-## [0.14.0+033] - 2026-09-29
-
-### Changed
-- The system-locale lookup behind the default target language, and the check for a
-  known language code, now use `tagent`'s `languages::language_for_locales` and
-  `languages::language_code` (shared with `tagent-cli`). No visible change.
-
-## [0.14.0+032] - 2026-09-28
-
-### Changed
-- **Settings > General shows the default language pair in one row**, `Default languages:
-  [Auto] → [Russian]`, below the provider pickers, instead of two rows above them.
-
-## [0.14.0+031] - 2026-09-28
-
-### Added
-- **Default language pair in Settings > General** ("Default source language" / "Default
+- (0.14.0+031) **Default language pair in Settings > General** ("Default source language" / "Default
   target language"), saved as language codes in `tagent-gui.json`'s new
   `source_language`/`target_language` (e.g. `"auto"`, `"ru"`). The main window starts with
   this pair; picking another language there, or ⇄, still holds for the run only. A new
   default (Settings OK or a hand-edit of the file) switches the main window to it, already
   for the translation that picks up the edit. Settings warns when the two are the same
   language.
-- An unknown code in the file is replaced (with a warning in the log) by `"auto"` for the
+- (0.14.0+031) An unknown code in the file is replaced (with a warning in the log) by `"auto"` for the
   source and the system default for the target; the file keeps it until the next save.
-
-### Changed
-- **The default target language comes from the system's preferred languages**
-  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on
-  Windows and macOS): the first one Tagent knows, else English. It was always Russian
-  before, so an existing `tagent-gui.json` without `target_language` may start with a
-  different target now; set it once in Settings > General.
-
-## [0.14.0+030] - 2026-09-28
-
-### Changed
-- **The main window's translation provider picker now switches for this run only**
-  instead of saving to `tagent-gui.json`, like the language pickers next to it. The pick
-  applies to everything in the running app (the Translate button, the hotkey, and language
-  detection for speaking `Auto`-source text), and the transcript header marks it, e.g.
-  `Translation: Google Translate (this session)`. Settings > General keeps showing and
-  saving the default. The pick ends when the app exits, when the default changes (a
-  Settings save or a hand-edit of the file; the picker then follows the new default), when
-  its profile is removed from `provider_options`, or when the default itself is picked
-  again.
-
-## [0.14.0+029] - 2026-09-28
-
-### Added
-- **Translation provider picker in the main window**, next to ⚙, with the same choices
+- (0.14.0+029) **Translation provider picker in the main window**, next to ⚙, with the same choices
   as Settings > General (built-in providers and translation profiles from
   `provider_options`). A pick is saved to `tagent-gui.json` at once and applies to the
   next translation, from the window and from the hotkey. The picker follows the config:
@@ -187,97 +85,46 @@ decisions behind this project.
   is open updates Settings' own picker too. While the selected provider lacks a required
   option (e.g. DeepL without `api_key`), a ⚠ appears next to it; clicking it opens
   Settings.
-
-## [0.14.0+028] - 2026-09-28
-
-### Changed
-- **Provider options moved behind an "Options…" button** next to each of Settings >
-  General's three provider pickers, instead of one long list under them. The button opens
-  a panel over the Settings tabs with the fields of that provider only. When another
-  picker selects the same profile (e.g. `google` for both dictionary and speech), the panel
-  says so, since the options apply to both. The panel's OK keeps the edits and its Cancel
-  drops them; nothing is saved until Settings' own OK, which is disabled while the panel is
-  open.
-
-### Added
-- **A ⚠ next to a provider picker** whose provider lacks a required option, with a line
+- (0.14.0+028) **A ⚠ next to a provider picker** whose provider lacks a required option, with a line
   below the pickers naming it (e.g. `deepl: api_key required`). An environment variable
   such as `TAGENT_DEEPL_API_KEY` counts as set.
-
-## [0.14.0+027] - 2026-09-28
-
-### Added
-- **The transcript header shows the providers in use**, in a `Providers:` block before the
+- (0.14.0+027) **The transcript header shows the providers in use**, in a `Providers:` block before the
   active hotkeys: `Translation: Google Translate`, `Dictionary: Google Dictionary`,
   `Speech: Google TTS`. Each is the provider's own name, so a profile shows as e.g.
   `DeepL (work)`. The dictionary line appears only with `show_dictionary`, the speech line
   only with `enable_text_to_speech`. A provider that can't be built (e.g. a DeepL profile
   without `api_key`) shows `unavailable (<reason>)`. Follows the config live: a Settings
   save or a hand-edit of `tagent-gui.json` updates it with the next translation.
-
-## [0.14.0+026] - 2026-09-28
-
-### Added
-- **DeepL translation provider** in Settings > General's translation picker. Its
+- (0.14.0+026) **DeepL translation provider** in Settings > General's translation picker. Its
   "Provider options" show `api_key` (a password field, required; a Free key ends in `:fx`),
   `endpoint`, `timeout_secs` and `max_retries`; the key can also come from the
   `TAGENT_DEEPL_API_KEY` environment variable, or a named profile in `provider_options`
   with `"type": "deepl"`. DeepL is translation only; dictionary and speech stay on Google.
   Speaking `Auto`-source text with DeepL selected detects the language through DeepL,
   which bills up to 100 characters.
-
-## [0.14.0+025] - 2026-09-27
-
-### Changed
-- **All 15 languages the `tagent` library knows are offered**, up from 5: the source and
-  target dropdowns are built from `tagent::languages::LANGUAGES` (Chinese, Japanese,
-  Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic and Hindi are new), with
-  Auto still offered as a source only. English/Russian/Spanish/French/German stay first,
-  and Russian is still the default target.
-
-## [0.14.0+024] - 2026-09-26
-
-### Added
-- **`.deb` package**: each release now also attaches `tagent-gui_<version>-1_amd64.deb`
+- (0.14.0+024) **`.deb` package**: each release now also attaches `tagent-gui_<version>-1_amd64.deb`
   (built with `cargo-deb` from `[package.metadata.deb]` in `Cargo.toml`). It installs
   `/usr/bin/tagent-gui`, the launcher entry, the icon in the `hicolor` theme, and the README
   and CHANGELOG; dependencies are computed from the binary. After installing it, the app is
   in the app grid and the dock shows its icon with no `--install-desktop` step.
-- The Linux release archive now carries `tagent-gui.desktop` and `tagent-gui.png` next to
+- (0.14.0+024) The Linux release archive now carries `tagent-gui.desktop` and `tagent-gui.png` next to
   the binary. `assets/linux/tagent-gui.desktop` is the entry both packages ship; a test
   keeps it identical to the one `--install-desktop` writes (apart from `Exec=`).
-
-## [0.14.0+023] - 2026-09-26
-
-### Added
-- **Linux desktop integration**: `tagent-gui --install-desktop` writes a launcher entry
+- (0.14.0+023) **Linux desktop integration**: `tagent-gui --install-desktop` writes a launcher entry
   (`~/.local/share/applications/tagent-gui.desktop`, `Exec=` the running executable) and the
   app icon (`~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png`, embedded in the
   binary), so GNOME's dock, Alt+Tab and the app grid show the Tagent icon instead of a
   generic one, and Tagent can be started from the app grid. `--uninstall-desktop` removes
   both files. Installing is explicit, never automatic; run it again after moving the binary.
   Both honor `$XDG_DATA_HOME`.
-
-### Changed
-- On Linux the window class is now pinned to `tagent-gui` (`slint::set_xdg_app_id`:
-  `WM_CLASS` on X11, the app id on Wayland) instead of following the executable's file name,
-  so it matches the installed entry's `StartupWMClass=`.
-
-## [0.14.0+022] - 2026-09-26
-
-### Added
-- **Settings > General "Provider options"**: for each profile the three provider pickers
+- (0.14.0+022) **Settings > General "Provider options"**: for each profile the three provider pickers
   select, one field per option its provider declares (for Google: `timeout_secs` and
   `max_retries`), with a short description; secret options (API keys) are password fields,
   required ones are marked `*`. The list follows the pickers as they change, typed values
   survive switching a picker back and forth, and nothing is written before OK. An empty
   field removes the option (the provider's default applies). A field an environment
   variable currently overrides says so. "Reset to Defaults" leaves provider options alone.
-
-## [0.14.0+021] - 2026-09-26
-
-### Added
-- **Provider profiles and options** in `tagent-gui.json`: a new `provider_options` object,
+- (0.14.0+021) **Provider profiles and options** in `tagent-gui.json`: a new `provider_options` object,
   `{"<profile>": {"<key>": "<value>", ...}}`, passes options (`api_key`, `endpoint`,
   `model`, `timeout_secs`, `max_retries`, ...) to a provider, and an optional `"type"` entry
   makes the profile a named instance of a provider kind. `translate_provider`,
@@ -287,162 +134,21 @@ decisions behind this project.
   created by hand-editing; the Settings pickers offer them on every axis their kind supports,
   and saving Settings keeps them (read fresh at save time, so a hand-edit made while the
   dialog is open survives).
-
-### Security
-- **`tagent-gui.json` is written with permissions `0600`** on Linux/macOS (on creation and
-  on every save, tightening an existing file), since it can now hold API keys.
-
-## [0.14.0+020] - 2026-09-26
-
-### Changed
-- **Google requests now retry once on a connection failure or an HTTP 502/503/504**
-  (`tagent` 0.19.0's shared transport), within the same 10-second budget as before. A
-  Google rate limit (HTTP 429) is reported as `rate limited by the provider` and is never
-  retried, and HTTP errors read `HTTP 503 Service Unavailable` instead of
-  `HTTP error: 503 Service Unavailable`. Network error messages no longer include the
-  request URL, which contained the text being translated.
-- **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
-  `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
-  keyed services. No behavior change: nothing returns them yet, and every new variant is
-  shown with its own message.
-
-## [0.14.0+019] - 2026-09-25
-
-### Changed
-- **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
-  `tagent` 0.18.3) instead of a copy in `dictionary.rs`, and is shared with `tagent-cli`. The
-  transcript, the popup and copied text are unchanged.
-
-## [0.14.0+018] - 2026-09-25
-
-### Changed
-- **The target-language dropdown no longer offers "Auto"**: auto-detection only makes sense
-  for the source language, and picking it as the target used to be accepted by the dropdown
-  and then fail with `Error: "Auto" is not a valid target language` on translate. The two
-  dropdowns now have their own language lists, and that error is gone.
-- **The ⇄ swap button is disabled while the source language is "Auto"**, instead of silently
-  replacing the target with English. With two concrete languages it swaps them as before.
-
-## [0.14.0+017] - 2026-09-24
-
-### Fixed
-- **Hotkey copy with a non-Latin keyboard layout on Linux**: the simulated Ctrl+C no
-  longer goes through `xdotool`, which switched the XKB group (keyboard layout) to the Latin
-  one and back for every key it sent; with e.g. the Russian layout active the hotkey took up
-  to several seconds to copy the selection. Ctrl+C is now sent directly through the X11
-  XTest extension by physical key, without touching the layout. It first waits for the
-  hotkey's own key to be released (while it's held, the hotkey's key grab would swallow the
-  Ctrl+C), then releases only the modifiers that are actually still held. With a non-Latin
-  layout the application receives the same Ctrl+C as when pressed by hand (Ctrl plus that
-  layout's letter on the C key).
-
-### Removed
-- **`xdotool` is no longer needed** at run time on Linux.
-
-## [0.14.0+015] - 2026-09-24
-
-### Changed
-- **The popup drags with a plain left-button drag, from any point of it**: holding Ctrl is no
-  longer needed (Ctrl+drag still works), and the thin margin around the phrase/translation
-  text can be grabbed too, not just the text itself. Right-click still copies a line; a plain
-  click without moving does nothing. The popup also no longer risks auto-hiding while the
-  button is held down over the text.
-
-## [0.14.0+014] - 2026-09-24
-
-### Added
-- **Option to turn off the hotkey popup**: a new "Show popup on hotkey" checkbox on
+- (0.14.0+014) **Option to turn off the hotkey popup**: a new "Show popup on hotkey" checkbox on
   Settings > Popup (`show_popup` in `tagent-gui.json`, default `true`, applies at once).
   With it off, the global translate hotkey still translates the selection into the
   transcript, but no popup appears.
-
-## [0.14.0+013] - 2026-09-24
-
-### Changed
-- **Doesn't hold the terminal (Linux/macOS)**: started from a terminal, `tagent-gui` now
-  re-launches itself in its own session with no controlling terminal and returns the prompt
-  at once. Closing the terminal or pressing Ctrl+C there no longer stops the app. Its
-  diagnostics go to `tagent-gui.log` in the data directory
-  (`~/.local/share/tagent-gui/` on Linux). A log bigger than 1 MiB is started over.
-  `--foreground` (or `-f`) keeps the old attached behavior, with output in the terminal.
-  Launches from outside a terminal (desktop launcher, autostart, systemd) behave as before.
-  Windows already behaved this way.
-
-## [0.14.0+012] - 2026-09-24
-
-### Added
-- **Semantic highlighting in the hotkey popup**: the popup now uses the same role-tagged
+- (0.14.0+012) **Semantic highlighting in the hotkey popup**: the popup now uses the same role-tagged
   templates as the transcript. A dictionary hit shows part-of-speech labels, `[synonyms]`
   and the spelling-correction notice in their own colors, and an error shows in the error
   color. Before, only the `[Language]:` prompt was colored. The colors come from the popup's
   own background, and they update right away when the theme or popup colors change.
-
-## [0.14.0+011] - 2026-09-23
-
-### Fixed
-- **Hang on a keyboard-layout switch (Windows)**: switching the layout could freeze
-  `tagent-gui` for good, most readily with switchers that broadcast
-  `WM_INPUTLANGCHANGEREQUEST` to all windows. The cause was a deadlock between the UI thread
-  and the NVIDIA OpenGL driver's own thread over the IMM lock. `tagent-gui` now uses Slint's
-  software renderer on Windows, which never loads the OpenGL driver; setting `SLINT_BACKEND`
-  (e.g. `winit-femtovg`) still overrides it.
-
-## [0.14.0+010] - 2026-09-22
-
-### Removed
-- **The main window's own Esc handler** added in `0.14.0+008`. Since `0.14.0+009` the global
-  keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
-
-## [0.14.0+009] - 2026-09-22
-
-### Fixed
-- **Global hotkeys work while the Tagent window is focused (Windows).** With the main window
-  focused, Alt+A / Alt+S just typed "a" / "s" into the input field, because the global keyboard
-  hook received no key events at all there. Cause: Slint's winit backend registers the keyboard
-  for raw input, and while a window of that process is in the foreground its own low-level hook
-  gets nothing. `tagent-gui` now drops that raw keyboard registration right after creating its
-  window (window keyboard input is unaffected), so both hotkeys, and Esc for speech, now work
-  in Tagent's own windows too -- e.g. select text in the input field and press Alt+A.
-## [0.14.0+008] - 2026-09-22
-
-### Fixed
-- **Esc now stops speech while the main window is focused on Windows.** Pressing Esc during
-  playback started by a transcript speaker button (or by the speech hotkey) did nothing while the
-  main window had focus, because the global keyboard hook receives no keystrokes aimed at
-  `tagent-gui`'s own window. The main window now handles Esc itself as well; the global hook still
-  covers every other window. Esc still reaches the focused control as before.
-
-## [0.14.0+007] - 2026-09-22
-
-### Added
-- **The popup can be dragged again**, gated behind holding Ctrl (Ctrl+left-click-drag)
+- (0.14.0+007) **The popup can be dragged again**, gated behind holding Ctrl (Ctrl+left-click-drag)
   instead of a plain click, so it no longer conflicts with right-click-to-copy over the same
   phrase/translation text -- `0.14.0+006` had disabled dragging entirely to make room for that
   feature. Works over the phrase/translation text itself; the popup's thin outer margin still
   doesn't support it.
-
-## [0.14.0+006] - 2026-09-22
-
-### Fixed
-- **Right-click copy in the popup, redesigned** -- `0.14.0+005`'s version (below) didn't work as
-  built: with the menu on, it opened as soon as the popup appeared instead of on right-click, and
-  was clipped out of view on a small popup; with it off, right-click copied nothing. Replaced
-  with a simpler design instead of debugging the broken one further: no menu at all any more
-  (the "Show menu on right-click" setting no longer affects the popup), right-click a specific
-  line (phrase or translation) to copy just that one, same border-flash feedback as before.
-
-### Changed
-- **The popup can no longer be dragged.** Temporarily disabled to make room for the fix above:
-  copying a specific line needs to know which one the cursor is over, which needs its own
-  click-handling area on each line -- the same surface dragging already used for
-  "drag from anywhere, including the text". The two would compete for the same clicks, so
-  dragging is off for now rather than shipping a fix for one broken feature that quietly breaks
-  another.
-
-## [0.14.0+005] - 2026-09-22
-
-### Added
-- **Right-click copy in the hotkey popup**, reusing the same "Show menu on right-click" setting
+- (0.14.0+005) **Right-click copy in the hotkey popup**, reusing the same "Show menu on right-click" setting
   as the transcript. With the menu off (default), right-click anywhere on the popup copies the
   translation, with a brief border flash confirming it. With the menu on, right-click opens a
   menu with "Copy phrase" and "Copy translation" (phrase omitted when the popup isn't showing
@@ -452,24 +158,11 @@ decisions behind this project.
   phrase; you selected it to trigger the popup).
   **Superseded the same day by `0.14.0+006` above** -- this version didn't work as intended;
   see that entry.
-
-## [0.14.0+004] - 2026-09-22
-
-### Added
-- **"Show menu on right-click" setting** (Settings > General, default off): with it off, right-click
+- (0.14.0+004) **"Show menu on right-click" setting** (Settings > General, default off): with it off, right-click
   on a transcript block copies it immediately instead of opening a one-item "Copy" menu -- a brief
   border flash confirms the copy since there's no menu-click to see it happen. With it on, right-click
   opens the "Copy" menu, same as before this change.
-
-### Changed
-- **Right-click copies immediately by default.** This changes the transcript's out-of-the-box
-  right-click behavior introduced by the "Semantic highlighting" release above: previously right-click
-  always opened a "Copy" menu; now it copies directly unless "Show menu on right-click" is turned on.
-
-## [0.14.0+003] - 2026-09-22
-
-### Added
-- **Configurable prompt color**: the `[Language]:` prompt shown before the phrase and
+- (0.14.0+003) **Configurable prompt color**: the `[Language]:` prompt shown before the phrase and
   translation text -- in the input box, the transcript's own highlighted prefix (Stage 13),
   and (new) the hotkey popup's own prefix -- now has its own color picker, independent of
   the phrase/translation text colors. `prompt_color` (Settings > View) covers the main
@@ -478,28 +171,16 @@ decisions behind this project.
   if that's also empty) -- the same fallback chain `popup_color` already uses through
   `translation_color`. Each of the 14 non-"Default" color-scheme presets in Settings > View
   also picked up its own matching prompt accent.
-- The hotkey popup's own phrase/translation lines are now `StyledText` (were plain `Text`),
+- (0.14.0+003) The hotkey popup's own phrase/translation lines are now `StyledText` (were plain `Text`),
   so its `[Language]:` prefix can actually be highlighted in `popup_prompt_color` -- no other
   visual change to the popup; still no dictionary-structure highlighting there (out of scope,
   same as before).
-
-## [0.14.0+002] - 2026-09-22
-
-### Changed
-- **The transcript is now view-only**: no mouse selection, no Ctrl+C. Right-click a phrase or
-  translation block and choose "Copy" instead -- it copies just that block, as clean text (no
-  `[Language]:` prefix, no markup; a dictionary hit copies the whole article). This is the
-  tradeoff for the highlighting below: Slint's `StyledText` (needed to color parts of one
-  wrapped paragraph differently) has no selection of its own. The input box, Settings, popup
-  and tray are unaffected.
-
-### Added
-- **Semantic highlighting** in the transcript: a dictionary article's structure (part-of-speech
+- (0.14.0+002) **Semantic highlighting** in the transcript: a dictionary article's structure (part-of-speech
   labels, `[synonyms]`), a spelling-correction notice, the `[Language]:` prompt prefix, and error
   rows each get their own color, automatically derived from the block's own background (no new
   config or Settings controls). Colors re-render live if the desktop theme flips while `tagent-gui`
   is running (`Auto` theme) or the phrase/translation background is changed in Settings.
-- New `tagent-gui/src/styled.rs`: markdown templates with role-tagged `<font color="@role">`
+- (0.14.0+002) New `tagent-gui/src/styled.rs`: markdown templates with role-tagged `<font color="@role">`
   spans (colors substituted in at render time, never baked into a saved template), a mandatory
   `escape_markdown` every user- or provider-derived string goes through first, and
   `RoleColors::for_background` (WCAG-contrast-checked light/dark palettes). `dictionary.rs` gained
@@ -508,15 +189,176 @@ decisions behind this project.
   `format_dictionary_entry`'s output (what the popup and history still use) is unchanged, pinned
   by a golden test.
 
-## [0.14.0+001] - 2026-09-21
+### Changed
+- (+000) **Version 0.15.0**: the work since the 0.14.0 release (0.14.0+001 to
+  0.14.0+041) goes out as 0.15.0, and its sections were merged into this one. From
+  now on there is one changelog section per version; the `+BUILD` counter stays in the
+  version and an entry names its build in parentheses.
+- (0.14.0+041) **The `[Language]:` prompt of a transcript block is its speak button now**, shown as
+  `[🔊 English]:` (just `🔊` when the prompt is turned off). Click it to hear the phrase or
+  translation, click again to stop; it is tinted on hover and while it speaks. Replaces the
+  separate 🔊 icon at the start of the block from 0.14.0+040, so the text is no longer
+  indented and uses the full width of the transcript. With text-to-speech off, the glyph
+  disappears from the prompts. Copied text, history and the popup don't get the glyph.
+- (0.14.0+040) **The transcript's 🔊 speaker icons sit inside the phrase/translation blocks now**, at the
+  start of the first line, with the text indented past them (wrapped lines too, like a list
+  marker). They used to be buttons next to each block, and a button can't be shorter than
+  the style's minimum height, so a one-line entry got buttons taller than its text and the
+  row grew around them. One-line rows now keep the height of their text. Click, ⏹ while
+  speaking and the dimmed state while another entry speaks work as before.
+- (0.14.0+039) **"Test" for a provider profile is only in its "Options…" panel now**, no longer on each
+  row of Settings > Providers. You test while filling in options, and the panel's Test
+  already uses the values not yet saved; the rows are narrower, and the result shows next
+  to the options it concerns.
+- (0.14.0+038) **The translation, dictionary and speech pickers moved from General to the Providers
+  tab**, above the list; their "Options…" buttons are gone, since every row of the list
+  has one. General keeps the default languages and the other settings.
+- (0.14.0+038) The ⚠ next to the main window's provider picker opens Settings on the Providers tab.
+- (0.14.0+034) **Windows renders on the GPU again**: `tagent-gui` no longer forces Slint's software
+  renderer (added in `0.14.0+011`) and uses Slint's default GPU renderer, as on the other
+  platforms. `SLINT_BACKEND=winit-software` still selects the software renderer.
+- (0.14.0+033) The system-locale lookup behind the default target language, and the check for a
+  known language code, now use `tagent`'s `languages::language_for_locales` and
+  `languages::language_code` (shared with `tagent-cli`). No visible change.
+- (0.14.0+032) **Settings > General shows the default language pair in one row**, `Default languages:
+  [Auto] → [Russian]`, below the provider pickers, instead of two rows above them.
+- (0.14.0+031) **The default target language comes from the system's preferred languages**
+  (`LANGUAGE`/`LC_ALL`/`LC_MESSAGES`/`LANG` on Linux, the preferred UI languages on
+  Windows and macOS): the first one Tagent knows, else English. It was always Russian
+  before, so an existing `tagent-gui.json` without `target_language` may start with a
+  different target now; set it once in Settings > General.
+- (0.14.0+030) **The main window's translation provider picker now switches for this run only**
+  instead of saving to `tagent-gui.json`, like the language pickers next to it. The pick
+  applies to everything in the running app (the Translate button, the hotkey, and language
+  detection for speaking `Auto`-source text), and the transcript header marks it, e.g.
+  `Translation: Google Translate (this session)`. Settings > General keeps showing and
+  saving the default. The pick ends when the app exits, when the default changes (a
+  Settings save or a hand-edit of the file; the picker then follows the new default), when
+  its profile is removed from `provider_options`, or when the default itself is picked
+  again.
+- (0.14.0+028) **Provider options moved behind an "Options…" button** next to each of Settings >
+  General's three provider pickers, instead of one long list under them. The button opens
+  a panel over the Settings tabs with the fields of that provider only. When another
+  picker selects the same profile (e.g. `google` for both dictionary and speech), the panel
+  says so, since the options apply to both. The panel's OK keeps the edits and its Cancel
+  drops them; nothing is saved until Settings' own OK, which is disabled while the panel is
+  open.
+- (0.14.0+025) **All 15 languages the `tagent` library knows are offered**, up from 5: the source and
+  target dropdowns are built from `tagent::languages::LANGUAGES` (Chinese, Japanese,
+  Korean, Italian, Portuguese, Dutch, Polish, Turkish, Arabic and Hindi are new), with
+  Auto still offered as a source only. English/Russian/Spanish/French/German stay first,
+  and Russian is still the default target.
+- (0.14.0+023) On Linux the window class is now pinned to `tagent-gui` (`slint::set_xdg_app_id`:
+  `WM_CLASS` on X11, the app id on Wayland) instead of following the executable's file name,
+  so it matches the installed entry's `StartupWMClass=`.
+- (0.14.0+020) **Google requests now retry once on a connection failure or an HTTP 502/503/504**
+  (`tagent` 0.19.0's shared transport), within the same 10-second budget as before. A
+  Google rate limit (HTTP 429) is reported as `rate limited by the provider` and is never
+  retried, and HTTP errors read `HTTP 503 Service Unavailable` instead of
+  `HTTP error: 503 Service Unavailable`. Network error messages no longer include the
+  request URL, which contained the text being translated.
+- (0.14.0+020) **Built against `tagent` 0.19.0**, whose `Error` is now `#[non_exhaustive]` and gained
+  `Auth`, `RateLimited`, `QuotaExceeded`, `Unsupported` and `InvalidOptions` variants for
+  keyed services. No behavior change: nothing returns them yet, and every new variant is
+  shown with its own message.
+- (0.14.0+019) **The dictionary layout now comes from the `tagent` library** (`tagent::article`, new in
+  `tagent` 0.18.3) instead of a copy in `dictionary.rs`, and is shared with `tagent-cli`. The
+  transcript, the popup and copied text are unchanged.
+- (0.14.0+018) **The target-language dropdown no longer offers "Auto"**: auto-detection only makes sense
+  for the source language, and picking it as the target used to be accepted by the dropdown
+  and then fail with `Error: "Auto" is not a valid target language` on translate. The two
+  dropdowns now have their own language lists, and that error is gone.
+- (0.14.0+018) **The ⇄ swap button is disabled while the source language is "Auto"**, instead of silently
+  replacing the target with English. With two concrete languages it swaps them as before.
+- (0.14.0+015) **The popup drags with a plain left-button drag, from any point of it**: holding Ctrl is no
+  longer needed (Ctrl+drag still works), and the thin margin around the phrase/translation
+  text can be grabbed too, not just the text itself. Right-click still copies a line; a plain
+  click without moving does nothing. The popup also no longer risks auto-hiding while the
+  button is held down over the text.
+- (0.14.0+013) **Doesn't hold the terminal (Linux/macOS)**: started from a terminal, `tagent-gui` now
+  re-launches itself in its own session with no controlling terminal and returns the prompt
+  at once. Closing the terminal or pressing Ctrl+C there no longer stops the app. Its
+  diagnostics go to `tagent-gui.log` in the data directory
+  (`~/.local/share/tagent-gui/` on Linux). A log bigger than 1 MiB is started over.
+  `--foreground` (or `-f`) keeps the old attached behavior, with output in the terminal.
+  Launches from outside a terminal (desktop launcher, autostart, systemd) behave as before.
+  Windows already behaved this way.
+- (0.14.0+006) **The popup can no longer be dragged.** Temporarily disabled to make room for the fix above:
+  copying a specific line needs to know which one the cursor is over, which needs its own
+  click-handling area on each line -- the same surface dragging already used for
+  "drag from anywhere, including the text". The two would compete for the same clicks, so
+  dragging is off for now rather than shipping a fix for one broken feature that quietly breaks
+  another.
+- (0.14.0+004) **Right-click copies immediately by default.** This changes the transcript's out-of-the-box
+  right-click behavior introduced by the "Semantic highlighting" release above: previously right-click
+  always opened a "Copy" menu; now it copies directly unless "Show menu on right-click" is turned on.
+- (0.14.0+002) **The transcript is now view-only**: no mouse selection, no Ctrl+C. Right-click a phrase or
+  translation block and choose "Copy" instead -- it copies just that block, as clean text (no
+  `[Language]:` prefix, no markup; a dictionary hit copies the whole article). This is the
+  tradeoff for the highlighting below: Slint's `StyledText` (needed to color parts of one
+  wrapped paragraph differently) has no selection of its own. The input box, Settings, popup
+  and tray are unaffected.
+
+### Removed
+- (0.14.0+017) **`xdotool` is no longer needed** at run time on Linux.
+- (0.14.0+010) **The main window's own Esc handler** added in `0.14.0+008`. Since `0.14.0+009` the global
+  keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
-- **Transcript now scrolls to the newest entry**: adding an entry left the view one entry short
+- (0.14.0+034) **Windows redraw glitches caused by the software renderer**. It redraws only what changed
+  since its last frame and isn't told when Windows discards a window's contents, so:
+  translating the same phrase with the hotkey again left the popup invisible; the main
+  window shown again from the tray came back with its language row blank; and the main
+  window restored from the taskbar was drawn slowly and only partly.
+- (0.14.0+017) **Hotkey copy with a non-Latin keyboard layout on Linux**: the simulated Ctrl+C no
+  longer goes through `xdotool`, which switched the XKB group (keyboard layout) to the Latin
+  one and back for every key it sent; with e.g. the Russian layout active the hotkey took up
+  to several seconds to copy the selection. Ctrl+C is now sent directly through the X11
+  XTest extension by physical key, without touching the layout. It first waits for the
+  hotkey's own key to be released (while it's held, the hotkey's key grab would swallow the
+  Ctrl+C), then releases only the modifiers that are actually still held. With a non-Latin
+  layout the application receives the same Ctrl+C as when pressed by hand (Ctrl plus that
+  layout's letter on the C key).
+- (0.14.0+011) **Hang on a keyboard-layout switch (Windows)**: switching the layout could freeze
+  `tagent-gui` for good, most readily with switchers that broadcast
+  `WM_INPUTLANGCHANGEREQUEST` to all windows. The cause was a deadlock between the UI thread
+  and the NVIDIA OpenGL driver's own thread over the IMM lock. `tagent-gui` now uses Slint's
+  software renderer on Windows, which never loads the OpenGL driver; setting `SLINT_BACKEND`
+  (e.g. `winit-femtovg`) still overrides it.
+- (0.14.0+009) **Global hotkeys work while the Tagent window is focused (Windows).** With the main window
+  focused, Alt+A / Alt+S just typed "a" / "s" into the input field, because the global keyboard
+  hook received no key events at all there. Cause: Slint's winit backend registers the keyboard
+  for raw input, and while a window of that process is in the foreground its own low-level hook
+  gets nothing. `tagent-gui` now drops that raw keyboard registration right after creating its
+  window (window keyboard input is unaffected), so both hotkeys, and Esc for speech, now work
+  in Tagent's own windows too -- e.g. select text in the input field and press Alt+A.
+- (0.14.0+008) **Esc now stops speech while the main window is focused on Windows.** Pressing Esc during
+  playback started by a transcript speaker button (or by the speech hotkey) did nothing while the
+  main window had focus, because the global keyboard hook receives no keystrokes aimed at
+  `tagent-gui`'s own window. The main window now handles Esc itself as well; the global hook still
+  covers every other window. Esc still reaches the focused control as before.
+- (0.14.0+006) **Right-click copy in the popup, redesigned** -- `0.14.0+005`'s version (below) didn't work as
+  built: with the menu on, it opened as soon as the popup appeared instead of on right-click, and
+  was clipped out of view on a small popup; with it off, right-click copied nothing. Replaced
+  with a simpler design instead of debugging the broken one further: no menu at all any more
+  (the "Show menu on right-click" setting no longer affects the popup), right-click a specific
+  line (phrase or translation) to copy just that one, same border-flash feedback as before.
+- (0.14.0+001) **Transcript now scrolls to the newest entry**: adding an entry left the view one entry short
   of the bottom, because the scroll was computed from the content height before the new row had
   been laid out. It is now done in `app.slint` from `changed` handlers on the transcript's
   content and visible heights, so the view also stays at the end when the input box is resized or
   the text re-wraps. Covered by a headless regression test (`i-slint-backend-testing`, a new
   dev-dependency).
+
+### Security
+- (0.14.0+021) **`tagent-gui.json` is written with permissions `0600`** on Linux/macOS (on creation and
+  on every save, tightening an existing file), since it can now hold API keys.
+
+### Known issues
+- (0.14.0+034) The `0.14.0+011` layout-switch hang can come back on machines with an NVIDIA OpenGL
+  driver, with keyboard-layout switchers that broadcast `WM_INPUTLANGCHANGEREQUEST` to
+  all windows (ccaps 0.10.1 and later post it to the foreground window only). If it
+  happens, start `tagent-gui` with `SLINT_BACKEND=winit-software`.
 
 ## [0.14.0] - 2026-09-20
 
