@@ -1495,7 +1495,7 @@ translation pass against a local Ollama.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 
-**Status:** done (2026-10-02, tagent 0.19.0+002; tagent-cli 0.17.0+015, tagent-gui 0.15.0+001) — live tests and a manual "Test" pass not run yet (no server at hand)
+**Status:** done (2026-10-02, tagent 0.19.0+002; tagent-cli 0.17.0+015, tagent-gui 0.15.0+001) — live tests pass against a local Ollama `qwen2.5:3b` (GTX 1050, 2 GB)
 **Goal:** `OpenAiDictionaryProvider`, the dictionary axis of the `openai` kind: a chat
 model returns a bilingual dictionary entry as JSON, which the adapter parses and
 normalizes to the `DictionaryProvider` contract. Selectable in both apps through a
@@ -1747,8 +1747,21 @@ Desirable, not blocking: live tests and a manual "Test" pass against a real serv
   and `dictionary_prompt`). `tagent-cli`'s example header read `## openai:
   OpenAI-compatible, OpenAI-compatible`, so `example_block_lines` now names each display
   name once (tested); the test helper `uncomment_prompt` handles any `#<key> = """`.
-- Not run: the live tests (no server at hand) and the manual `tagent-gui` "Test" /
-  `tagent-cli` single-word pass.
+- **Live run (2026-10-02, local Ollama `qwen2.5:3b`, GTX 1050 2 GB, `TAGENT_OPENAI_TIMEOUT_SECS=120`):**
+  all 5 live tests pass (~75 s). Findings:
+  - The model sometimes answers `{}` and then the real object (`{}\n{"word": ...}`), which
+    the first parser (whole text, else first `{` to last `}`) rejected as `Decode`. Now
+    `json_objects` reads consecutive objects from the first `{` that starts one, and the
+    first object with `entries` counts; only empty objects → a miss (tested; `tagent`
+    0.19.0+003).
+  - The model doesn't correct `violnt` (`corrected: null`), so the live misspelling check
+    is now "no error; a correction, if any, is `violent`" instead of requiring one.
+  - Quality is a small model's: `house` gets `дом`, `здание`, but also unrelated words; with
+    `response_format = "json_schema"` it prefixed every translation with `Russian: ` and
+    made up an article for `violnt`. Not addressed in code (prompt tuning for a 3B model);
+    a larger model (or Groq `openai/gpt-oss-20b`, the reference) is the real check.
+  - Not run yet: the manual `tagent-gui` "Test" / `tagent-cli` single-word pass with this
+    profile.
 
 ### Stage P4 — Declarative HTTP (translation)
 

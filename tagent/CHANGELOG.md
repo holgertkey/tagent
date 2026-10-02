@@ -25,6 +25,12 @@ have no `+BUILD`.
 ## [0.19.0] - 2026-10-02
 
 ### Changed
+- (+003) **The OpenAI-compatible dictionary provider reads an answer made of several JSON
+  objects**: small models (seen with `qwen2.5:3b` on Ollama) sometimes write an empty `{}`
+  before the real entry, which was an `Error::Decode` (and so, in both applications, a
+  silent fallback to plain translation). Objects that follow each other are now read in
+  turn and the first with an `entries` key counts; an answer of empty objects only is a
+  miss (`Ok(None)`).
 - **Shared HTTP transport with retries and status mapping; the Google providers use it.**
   Every call has a time budget (Google: 10 seconds, as before) that now covers one retry:
   a connection failure or an HTTP 502/503/504 is retried once after a short pause, if
