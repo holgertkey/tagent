@@ -1760,8 +1760,8 @@ Desirable, not blocking: live tests and a manual "Test" pass against a real serv
     `response_format = "json_schema"` it prefixed every translation with `Russian: ` and
     made up an article for `violnt`. Not addressed in code (prompt tuning for a 3B model);
     a larger model (or Groq `openai/gpt-oss-20b`, the reference) is the real check.
-  - Not run yet: the manual `tagent-gui` "Test" / `tagent-cli` single-word pass with this
-    profile.
+  - Manual pass (2026-10-02): the user confirmed lookups through the `ollama` profile
+    work in both applications.
 
 ### Stage P4 — Declarative HTTP (translation)
 

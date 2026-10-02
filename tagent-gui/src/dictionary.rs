@@ -21,7 +21,25 @@ pub fn is_single_word(text: &str) -> bool {
 
 /// Returns a localized notice to show when a spelling correction was applied.
 pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
-    let phrase = match target_lang {
+    format!("{} {}", correction_phrase(target_lang), corrected_word)
+}
+
+/// [`correction_notice`] as a template: the phrase in [`Role::Notice`], the
+/// corrected word itself in [`Role::Plain`] (the block's own text color).
+pub fn correction_notice_template(corrected_word: &str, target_lang: &str) -> String {
+    format!(
+        "{} {}",
+        styled::span(
+            Role::Notice,
+            &styled::escape_markdown(correction_phrase(target_lang))
+        ),
+        styled::span(Role::Plain, &styled::escape_markdown(corrected_word))
+    )
+}
+
+/// The localized phrase preceding the corrected word in a correction notice.
+fn correction_phrase(target_lang: &str) -> &'static str {
+    match target_lang {
         "ru" => "Показан перевод слова",
         "es" => "Mostrando traducción de la palabra",
         "fr" => "Traduction affichée pour le mot",
@@ -30,8 +48,7 @@ pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
         "pt" => "Tradução mostrada para a palavra",
         "zh" => "显示单词翻译",
         _ => "Showing translation for word",
-    };
-    format!("{} {}", phrase, corrected_word)
+    }
 }
 
 pub use tagent::article::primary_line;
@@ -141,6 +158,31 @@ mod tests {
             correction_notice("violent", "en"),
             "Showing translation for word violent"
         );
+    }
+
+    #[test]
+    fn correction_notice_template_leaves_the_word_plain() {
+        assert_eq!(
+            correction_notice_template("violent", "ru"),
+            "<font color=\"@notice\">Показан перевод слова</font> \
+             violent"
+        );
+    }
+
+    #[test]
+    fn correction_notice_template_escapes_the_word() {
+        let template = correction_notice_template("*violent*", "en");
+        assert!(template.ends_with("</font> \\*violent\\*"));
+    }
+
+    #[test]
+    fn correction_notice_template_renders() {
+        let colors = styled::RoleColors::default();
+        assert!(styled::render_template_checked(
+            &correction_notice_template("violent", "ru"),
+            &colors
+        )
+        .is_ok());
     }
 
     fn sample_entry() -> DictionaryEntry {

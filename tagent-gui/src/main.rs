@@ -1978,16 +1978,13 @@ fn spawn_translation(
                         if spell_check {
                             if let Some(corrected) = &entry.corrected_word {
                                 if corrected.to_lowercase() != request_text.to_lowercase() {
-                                    let notice_text =
-                                        dictionary::correction_notice(corrected, &to_code);
-                                    body.push_str(&notice_text);
-                                    body.push_str("\n\n");
-                                    let notice_template = styled::span(
-                                        styled::Role::Notice,
-                                        &styled::escape_markdown(&notice_text),
-                                    );
-                                    template =
-                                        styled::join_with_blank_line(&notice_template, &template);
+                                    body.push_str(&dictionary::correction_notice(
+                                        corrected, &to_code,
+                                    ));
+                                    body.push('\n');
+                                    let notice_template =
+                                        dictionary::correction_notice_template(corrected, &to_code);
+                                    template = format!("{notice_template}\n{template}");
                                 }
                             }
                         }

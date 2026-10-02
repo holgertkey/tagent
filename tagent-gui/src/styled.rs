@@ -73,19 +73,13 @@ pub fn span(role: Role, escaped_text: &str) -> String {
     }
 }
 
-/// A single blank paragraph gap between two joined templates.
+/// A blank line inside a template (see [`escape_markdown`]).
 ///
 /// A raw `\n\n` parses as an empty CommonMark paragraph, which `StyledText` collapses
 /// to zero height (Stage 13 plan, gate G2) -- an NBSP-only line renders as one
 /// full-height blank line instead, matching the gap a literal blank line gives the
 /// plain-text formatters.
 pub const BLANK_LINE: &str = "\u{a0}";
-
-/// Joins two templates with one [`BLANK_LINE`] gap between them -- e.g. a
-/// spelling-correction notice above a dictionary article.
-pub fn join_with_blank_line(first: &str, second: &str) -> String {
-    format!("{first}\n{BLANK_LINE}\n{second}")
-}
 
 /// Escapes `text` for safe embedding in a template.
 ///
@@ -805,13 +799,5 @@ mod tests {
         );
         let without_prompt = translation_template_from_body(false, "Russian", &body, false, false);
         assert_eq!(without_prompt, "привет");
-    }
-
-    #[test]
-    fn join_with_blank_line_inserts_one_nbsp_line() {
-        assert_eq!(
-            join_with_blank_line("a", "b"),
-            format!("a\n{BLANK_LINE}\nb")
-        );
     }
 }

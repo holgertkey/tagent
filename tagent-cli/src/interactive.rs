@@ -516,12 +516,10 @@ impl InteractiveMode {
                             if corrected.to_lowercase() != text.to_lowercase() {
                                 println!(
                                     "{}",
-                                    config::colorize(
-                                        &crate::translator::Translator::correction_notice(
-                                            corrected,
-                                            target_code
-                                        ),
-                                        &config.notice_color
+                                    crate::translator::Translator::correction_notice(
+                                        corrected,
+                                        target_code,
+                                        config
                                     )
                                 );
                             }

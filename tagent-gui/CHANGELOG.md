@@ -198,6 +198,11 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+002) **The spelling-correction notice highlights the corrected word and no longer has a
+  blank line after it**: in "Показан перевод слова violent" only the phrase keeps the
+  notice color, the word is shown in the translation's own text color (`translation_color`,
+  `popup_color` in the popup), and the dictionary article follows on the next line, in the
+  transcript, the popup and the copied text.
 - (+000) **Version 0.15.0**: the work since the 0.14.0 release (0.14.0+001 to
   0.14.0+041) goes out as 0.15.0, and its sections were merged into this one. From
   now on there is one changelog section per version; the `+BUILD` counter stays in the

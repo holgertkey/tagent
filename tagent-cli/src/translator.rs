@@ -345,9 +345,10 @@ impl Translator {
                     if config.spell_check {
                         if let Some(ref corrected) = corrected_word {
                             if corrected.to_lowercase() != original_text.to_lowercase() {
-                                self.emit_line(config::colorize(
-                                    &Self::correction_notice(corrected, &target_code),
-                                    &config.notice_color,
+                                self.emit_line(Self::correction_notice(
+                                    corrected,
+                                    &target_code,
+                                    &config,
                                 ));
                             }
                         }
@@ -541,9 +542,23 @@ impl Translator {
         }
     }
 
-    /// Returns a localized notice to show when a spelling correction was applied.
-    pub fn correction_notice(corrected_word: &str, target_lang: &str) -> String {
-        let phrase = match target_lang {
+    /// Returns the localized spelling-correction notice, colored for the terminal: the
+    /// phrase in `notice_color`, the corrected word itself in `source_prompt_color`.
+    pub fn correction_notice(
+        corrected_word: &str,
+        target_lang: &str,
+        config: &config::Config,
+    ) -> String {
+        format!(
+            "{} {}",
+            config::colorize(Self::correction_phrase(target_lang), &config.notice_color),
+            config::colorize(corrected_word, &config.source_prompt_color)
+        )
+    }
+
+    /// The localized phrase preceding the corrected word in a correction notice.
+    fn correction_phrase(target_lang: &str) -> &'static str {
+        match target_lang {
             "ru" => "Показан перевод слова",
             "es" => "Mostrando traducción de la palabra",
             "fr" => "Traduction affichée pour le mot",
@@ -552,8 +567,7 @@ impl Translator {
             "pt" => "Tradução mostrada para a palavra",
             "zh" => "显示单词翻译",
             _ => "Showing translation for word",
-        };
-        format!("{} {}", phrase, corrected_word)
+        }
     }
 
     /// Public method to translate text
@@ -765,15 +779,46 @@ mod tests {
     }
 
     #[test]
-    fn test_correction_notice_russian() {
-        let notice = Translator::correction_notice("violent", "ru");
-        assert_eq!(notice, "Показан перевод слова violent");
+    fn test_correction_phrase_russian() {
+        assert_eq!(Translator::correction_phrase("ru"), "Показан перевод слова");
     }
 
     #[test]
-    fn test_correction_notice_english() {
-        let notice = Translator::correction_notice("violent", "en");
-        assert_eq!(notice, "Showing translation for word violent");
+    fn test_correction_phrase_english_fallback() {
+        assert_eq!(
+            Translator::correction_phrase("en"),
+            "Showing translation for word"
+        );
+    }
+
+    #[test]
+    fn test_correction_notice_colors_the_word_with_the_source_prompt_color() {
+        let config = config::Config {
+            notice_color: "Magenta".to_string(),
+            source_prompt_color: "Cyan".to_string(),
+            ..config::Config::default()
+        };
+        assert_eq!(
+            Translator::correction_notice("violent", "ru", &config),
+            format!(
+                "{} {}",
+                config::colorize("Показан перевод слова", "Magenta"),
+                config::colorize("violent", "Cyan")
+            )
+        );
+    }
+
+    #[test]
+    fn test_correction_notice_plain_without_colors() {
+        let config = config::Config {
+            notice_color: String::new(),
+            source_prompt_color: String::new(),
+            ..config::Config::default()
+        };
+        assert_eq!(
+            Translator::correction_notice("violent", "ru", &config),
+            "Показан перевод слова violent"
+        );
     }
 
     #[derive(Clone, Default)]

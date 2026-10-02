@@ -153,6 +153,9 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+016) **The spelling-correction notice highlights the corrected word**: in
+  "Показан перевод слова violent" the word is now shown in `source_prompt_color`, the rest
+  stays in `notice_color`.
 - (+015) The header line of a config file's example profile names a provider once when it
   serves several kinds of lookup under the same name (`## openai: OpenAI-compatible`).
 - (+014) **One changelog section per version**: the `+BUILD` counter stays in the version
