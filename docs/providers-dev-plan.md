@@ -1492,17 +1492,223 @@ translation pass against a local Ollama.
 
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 
-**Status:** planned
-**Scope:** `OpenAiDictionaryProvider` in the same module (`openai.rs`, kind `openai`,
-reusing P2's chat-call helper and options), with its own editable prompt option
-`dictionary_prompt` (`DEFAULT_DICTIONARY_PROMPT`, `multiline`), separate from P2's
-`translate_prompt`. It asks for a JSON object
-matching the `DictionaryEntry` shape (structured output if the endpoint supports it,
-otherwise JSON-in-prompt plus strict parsing). It must honor the `DictionaryProvider`
-contract: definitions in `to`, synonyms in `from`, lowercase English part-of-speech
-labels, and `Ok(None)` for a miss (never `Some` with no definitions).
-**Tests:** parsing of valid, partially valid and invalid JSON; contract normalization
-(part-of-speech labels, empty groups dropped).
+**Status:** planned (detailed 2026-10-02)
+**Goal:** `OpenAiDictionaryProvider`, the dictionary axis of the `openai` kind: a chat
+model returns a bilingual dictionary entry as JSON, which the adapter parses and
+normalizes to the `DictionaryProvider` contract. Selectable in both apps through a
+profile (`dictionary_provider = "ollama"`), with no app code changes (registry-driven,
+like P2). One profile can serve translation and dictionary at once.
+
+**Before starting:**
+- Re-read the chat-completions docs linked in P2, plus OpenAI's structured outputs guide
+  (`response_format` with `json_schema` / `json_object`, the "the word JSON must appear in
+  the messages" rule for `json_object`).
+- **Verify from a primary source** which `response_format` types Ollama accepts on
+  `/v1/chat/completions` (its compatibility page, read 2026-10-02, lists the field as
+  supported but names no types). Known so far (read 2026-10-02):
+  - LM Studio documents `json_schema` only
+    (<https://lmstudio.ai/docs/developer/openai-compat/structured-output>);
+  - Groq supports `json_object` on all models, and `json_schema` in strict mode only on a
+    few (GPT-OSS 20B/120B, ...), best-effort otherwise; strict mode needs every field
+    `required` and `additionalProperties: false`
+    (<https://console.groq.com/docs/structured-outputs>).
+
+**Why the defaults below are cautious:** a dictionary error is **invisible** in both apps.
+`tagent-cli`'s `Translator` (`Err(_) => perform_translation`) and `tagent-gui`'s
+`spawn_translation` (`match dict_result`) fall back to plain translation without a word,
+so a 400, a `Decode` or a cut-off answer just reads as "no dictionary article". The only
+place a user sees the error is `tagent-gui`'s Settings "Test" (`lookup("hello", "en",
+target)`, which shows `"no entry"` for `Ok(None)`). Hence: nothing that a server might
+reject is sent by default, and errors carry enough text to be useful in "Test".
+
+**Decisions (2026-10-02):**
+1. **`response_format` is not sent by default.** No type works on every server (see
+   above), and one that gets a 400 would silently switch the dictionary off. The default
+   is JSON requested by the prompt plus tolerant parsing. A new option `response_format`
+   (`json_schema` | `json_object`; unset/blank = not sent, anything else
+   `InvalidOptions`) opts in. The schema sent with `json_schema` lives in code
+   (`dictionary_schema()`), written to satisfy strict mode (all fields `required`,
+   `additionalProperties: false`), but sent with `strict: false` so best-effort servers
+   accept it. The rustdoc notes OpenAI's rule that `json_object` needs the word "JSON" in
+   the messages (the default prompt has it; a custom one must keep it).
+2. **`dictionary_prompt` is editable as a whole** (like `translate_prompt`), not a fixed
+   suffix appended to a user part. The rustdoc and the option's description say a custom
+   prompt must keep asking for the answer shape below; a prompt that doesn't makes every
+   lookup a `Decode` error (visible in "Test").
+3. **Error vs. miss:** an answer that can't be parsed as JSON → `Decode` with an excerpt
+   (same `describe_body`-style quoting as P2); partially valid JSON keeps its valid
+   items; nothing valid left, or an explicit miss (`entries` empty) → `Ok(None)`.
+4. **Size limits, in the prompt and in the parser:** at most 6 part-of-speech groups,
+   8 translations per group, 4 synonyms per translation (crate-private consts; extra
+   items are dropped by normalization). Keeps the answer short, so `finish_reason:
+   "length"` (→ `Api`, and a silent fallback) stays unlikely even on small models.
+5. **Spelling correction, not lemmatization:** the prompt asks to look the word up as
+   given (an inflected form is fine, `running` stays `running`) and to fill `corrected`
+   only for a misspelling. `corrected_word` is set only when it differs from the input
+   case-insensitively.
+6. **Transport defaults stay shared** (`OPENAI_TRANSPORT`: 60 s, 1 retry). With one
+   `openai` profile on both axes, a single word means two concurrent chat calls (apps
+   `tokio::join!` translation and lookup) and the hotkey waits for the slower one; a
+   shorter dictionary budget would instead silently disable the dictionary on a slow
+   model. Users can set `timeout_secs` per profile. Documented in the module rustdoc.
+7. **The default prompt must survive the TOML example:** `DEFAULT_DICTIONARY_PROMPT` is
+   rendered as `# #dictionary_prompt = """` in `tagent-cli.toml`'s example block, so it
+   has no `\`, `"""`, `=` or line starting with `[` (P2's test is extended to it). The
+   answer shape is therefore given as a **one-line** JSON example in the prompt, not a
+   pretty-printed one.
+8. **Existing `tagent-cli.toml` files don't get `#dictionary_prompt`:**
+   `upgrade::has_example` treats the `openai` block as present, and `--update-config`
+   doesn't add lines inside example blocks. Accepted limitation (the option is optional,
+   documented in the module rustdoc and `tagent-cli/README.md`, and shown by
+   `tagent-gui`'s "Options…" panel); a newly generated file has it.
+
+**Answer shape** (what the prompt asks for and the parser reads):
+
+```json
+{"word": "<the word as looked up>", "corrected": "<corrected spelling or null>",
+ "entries": [{"pos": "noun", "translations": [{"text": "<translation into {to}>", "synonyms": ["<{from} word>"]}]}]}
+```
+
+A miss is `"entries": []`. `word` is informational only (`DictionaryEntry::word` is
+always the caller's input).
+
+**Scope / files:**
+- `tagent/src/providers/openai.rs`:
+  - `pub struct OpenAiDictionaryProvider { chat: ChatClient, prompt: String, response_format: Option<ResponseFormat> }`,
+    `with_options(&ProviderOptions) -> Result<Self, Error>` (no `new()`), `name()` →
+    `"OpenAI-compatible"` (the profile wrapper adds `" (<profile>)"`).
+  - `pub const DEFAULT_DICTIONARY_PROMPT` with `{from}`/`{to}` (rendered by P2's
+    `render_prompt`, so `"auto"` becomes `AUTO_SOURCE_WORDING` and the lookup works with
+    an auto source; synonyms are then in the detected language). The user message is the
+    word alone.
+  - `ChatClient::complete` gains an optional extra body field (`response_format`), or a
+    `complete_with(system, user, extra: Option<Value>)`; `build_request_body` gets the
+    parameter (translation passes `None`, its body is unchanged — tested).
+  - Pure, unit-tested helpers: `parse_response_format(Option<&str>)`,
+    `dictionary_schema() -> Value`, `parse_dictionary_answer(answer, word) ->
+    Result<Option<DictionaryEntry>, Error>` (after `clean_answer`: parse the whole text,
+    else the slice from the first `{` to the last `}`, else `Decode`),
+    `normalize_pos(&str) -> Option<String>`, the definition normalization (trim; drop
+    blank texts and synonyms; dedupe case-insensitively; drop synonyms equal to the
+    translation; drop empty groups; merge groups with the same label in first-seen order;
+    apply decision 4's caps).
+  - `lookup`: a word that is blank after trimming → `Ok(None)` with no request (the trait
+    has no `EmptyText` case for lookups; callers only pass single words anyway).
+  - Module rustdoc: a "Dictionary" section (options, answer shape, normalization, limits,
+    `response_format`, the two-calls latency note), the options table gains
+    `dictionary_prompt` and `response_format`.
+- **Part-of-speech normalization:** lowercased and trimmed (with a trailing `.`
+  removed); tags and abbreviations mapped to full words (`n`/`noun` → `noun`, `v`/`vb` →
+  `verb`, `adj` → `adjective`, `adv` → `adverb`, `prep` → `preposition`,
+  `conj`/`cconj`/`sconj` → `conjunction`, `pron` → `pronoun`, `intj`/`interj` →
+  `interjection`, `det` → `determiner`, `art` → `article`, `num` → `numeral`, `part` →
+  `particle`, `propn` → `noun`, `aux` → `verb`); any other value of ASCII letters and
+  spaces is kept (`"phrasal verb"`, `"abbreviation"`; `article::part_of_speech_label`
+  shows unknown labels as "other"); anything else (a foreign-language label, empty) →
+  `"other"`. The prompt lists the canonical labels (`noun, verb, adjective, adverb,
+  pronoun, preposition, conjunction, interjection, article, determiner, numeral,
+  particle, phrase`).
+- `tagent/src/providers/registry.rs`: shared consts for the common options (`ENDPOINT`,
+  `MODEL`, `API_KEY`, `TEMPERATURE`, like `TIMEOUT_SECS`); `OPENAI_TRANSLATION_OPTIONS`
+  (today's `OPENAI_OPTIONS`) and `OPENAI_DICTIONARY_OPTIONS` (common + `response_format`
+  + `dictionary_prompt` with `default: Some(DEFAULT_DICTIONARY_PROMPT)`, `multiline:
+  true` + transport options); an `openai` descriptor in `DICTIONARY`, display name
+  `"OpenAI-compatible"`, transport `OPENAI_TRANSPORT`. Both apps already merge a kind's
+  options across axes (`tagent-gui`'s `provider_form::declared_options`, `tagent-cli`'s
+  `provider_kinds`), so the "Options…" panel and the example block show both prompts.
+- `tagent/src/providers/mod.rs`: `"openai"` in `DICTIONARY_PROVIDERS`, a branch in
+  `build_dictionary` (`cfg(feature = "openai")`), the factory docs' table and module
+  docs. The `DICTIONARY_PROVIDERS` doctest and `registry::required_options` callers need
+  a URL for `endpoint` (as in P2).
+- No new Cargo feature (same `openai` feature); check that `cfg_attr` dead-code allows
+  and the CI feature-combination rows still pass.
+- Apps: no code change expected. `tagent-cli`: tests that list dictionary providers and
+  the example-block tests (`uncommented_example_profiles_build`, unknown-key check of an
+  uncommented block with `dictionary_prompt`); `tagent-gui`: a unit test that the
+  `openai` "Options…" fields include `dictionary_prompt` (multiline) and
+  `response_format`. `+BUILD` bumps if tests/code change, changelog entries (for
+  `tagent-cli`, add the section before the bump).
+- Commits: one (as P2 found, the library change moves the apps' tests in the same step).
+
+**Options** (dictionary axis; the common ones as in P2):
+
+| Key | Required | Secret | Default |
+|---|---|---|---|
+| `endpoint`, `model` | yes | no | — (as P2) |
+| `api_key` | no | yes | none → no `Authorization` header |
+| `temperature` | no | no | not sent |
+| `response_format` | no | no | not sent (decision 1); `json_schema` or `json_object` |
+| `dictionary_prompt` | no | no | `DEFAULT_DICTIONARY_PROMPT`; `{from}`/`{to}` substituted; `multiline` |
+| `timeout_secs`, `max_retries` | no | no | transport defaults (60 s, 1) |
+
+Example profile serving both axes (`tagent-cli.toml`):
+
+```toml
+[provider_options.ollama]
+type = "openai"
+endpoint = "http://localhost:11434/v1"
+model = "qwen3:8b"
+#response_format = "json_schema"
+
+[provider]
+translate_provider = "ollama"
+
+[dictionary]
+dictionary_provider = "ollama"
+```
+
+**Language codes:** as P2: BCP-47 in, language names in the prompt; `"auto"` supported
+via `AUTO_SOURCE_WORDING`.
+
+**Semver:** additive; goes into the current cycle's `tagent` 0.19.0, same changelog
+section, no bump. `tagent-cli` / `tagent-gui`: `+BUILD` bumps only if their code or tests
+change.
+**Changelogs:** `tagent/CHANGELOG.md` 0.19.0 (`OpenAiDictionaryProvider`,
+`DEFAULT_DICTIONARY_PROMPT`, `openai` in `DICTIONARY_PROVIDERS`, the `dictionary_prompt` /
+`response_format` options); `tagent-cli` / `tagent-gui`: "the OpenAI-compatible provider
+(OpenAI, Ollama, LM Studio, ...) can serve dictionary lookups too, via a profile".
+
+**Tests:**
+- Unit: `parse_dictionary_answer` on valid JSON, JSON in a code fence, after `<think>`,
+  with prose around it, partially valid (a group without `pos`, a translation without
+  `text`, wrong types → skipped), empty `entries` → `None`, all items invalid → `None`,
+  not JSON → `Decode` with excerpt; `normalize_pos` (tags, abbreviations with dots,
+  upper case, unknown English word kept, foreign label → `other`); merging duplicate
+  groups, dedupe, caps; `corrected` set only when different (case-insensitive), `null`
+  and blank ignored; `parse_response_format` (unset, both values, case, garbage →
+  `InvalidOptions`); `dictionary_schema()` is strict-compatible (every object has all
+  keys `required` and `additionalProperties: false`); prompt rendering incl. `"auto"`;
+  `DEFAULT_DICTIONARY_PROMPT` passes the TOML-safety test and contains "JSON", `{from}`,
+  `{to}`; option validation (missing `endpoint`/`model`).
+- Mock server (`wiremock`): a lookup round trip checking the body (no `response_format`
+  by default; `json_schema` / `json_object` when set) and the `Bearer` header; a miss →
+  `Ok(None)`; a 400 (as for an unsupported `response_format`) → `Api`; `length` → `Api`;
+  non-JSON content → `Decode`; a sentinel key never appears in error messages; a blank
+  word makes no request.
+- Factory/registry: profile `ollama` with `type = openai` on the dictionary axis (label
+  `"OpenAI-compatible (ollama)"`); registry/list/factory agreement (existing tests).
+- Live, `#[ignore]` (`TAGENT_LIVE_TESTS=1`, `TAGENT_OPENAI_ENDPOINT`, `TAGENT_OPENAI_MODEL`,
+  optional `TAGENT_OPENAI_API_KEY`; reference: Groq `openai/gpt-oss-20b`): `en → ru`
+  lookup of a common word (has a `noun` or `verb` group, Cyrillic translations, Latin
+  synonyms), a misspelling (`corrected` set), a non-word (`None` or an entry, no error),
+  and the same with `response_format = "json_schema"`.
+- Manual: `tagent-gui` Settings "Test" on an `openai` profile shows a dictionary line;
+  a `tagent-cli` single-word translation through `dictionary_provider = "<profile>"`.
+
+**Docs:** `openai` module rustdoc (decision notes above); `cargo doc -p tagent` clean with
+default and `--all-features`; CLAUDE.md ("Dictionary Provider Trait" / the
+OpenAI-compatible bullet: dictionary axis, options, answer shape) and
+`docs/ARCHITECTURE.md`; `tagent-cli/README.md` gets the two-axes profile example and the
+`#dictionary_prompt` note for older config files (decision 8); fill "Notes after landing"
+here.
+**Done when:** `cargo test`, clippy `-D warnings` (all feature combinations in CI),
+`cargo doc -p tagent` clean; unit and mock tests cover every case above; `tagent-gui`
+offers "OpenAI-compatible" in the dictionary picker with `dictionary_prompt` as a
+multi-line option (unit test); a newly generated `tagent-cli.toml` example block has
+`#dictionary_prompt` and loads without unknown-key warnings when uncommented.
+Desirable, not blocking: live tests and a manual "Test" pass against a real server.
+
+**Notes after landing:** —
 
 ### Stage P4 — Declarative HTTP (translation)
 
