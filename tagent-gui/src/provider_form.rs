@@ -494,6 +494,23 @@ pub fn format_test_line(
     }
 }
 
+/// The word a dictionary "Test" looks up: common enough that every dictionary has it.
+pub const TEST_WORD: &str = "hello";
+
+/// What a dictionary "Test" shows after "OK": the lookup (`"hello" (en → ru)`) and its
+/// primary translation, or that there was no entry. A miss on [`TEST_WORD`] isn't a
+/// healthy result, so it says so (a small language model sometimes answers `{}`).
+pub fn dictionary_test_detail(from: &str, to: &str, primary: Option<&str>) -> String {
+    let lookup = format!("\"{TEST_WORD}\" ({from} → {to})");
+    match primary {
+        Some(primary) => format!("{lookup}: {primary}"),
+        None => format!(
+            "no entry for {lookup}, although a dictionary should know it; \
+             the provider's answers look unreliable"
+        ),
+    }
+}
+
 /// The note shown in the options panel when the Providers tab's pickers select
 /// `profile`, or empty.
 pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
@@ -986,6 +1003,22 @@ mod tests {
         assert_eq!(axes_of("DeepL"), ["translation"]);
         assert_eq!(axes_of("openai"), ["translation", "dictionary"]);
         assert!(axes_of("nope").is_empty());
+    }
+
+    #[test]
+    fn dictionary_test_detail_names_the_lookup() {
+        assert_eq!(
+            dictionary_test_detail("en", "ru", Some("привет")),
+            "\"hello\" (en → ru): привет"
+        );
+        let miss = dictionary_test_detail("en", "ru", None);
+        assert!(
+            miss.starts_with("no entry for \"hello\" (en → ru)"),
+            "{miss}"
+        );
+        assert!(miss.contains("unreliable"), "{miss}");
+        // Fits the test line without being cut.
+        assert!(miss.chars().count() <= TEST_DETAIL_CHARS, "{miss}");
     }
 
     #[test]

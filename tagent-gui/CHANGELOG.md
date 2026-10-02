@@ -198,6 +198,12 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+003) **Settings' "Test" names the dictionary lookup it makes**: `dictionary: OK (3.9 s):
+  "hello" (en → ru): привет`. A miss read just "no entry", as if no word had been sent; it
+  now says `no entry for "hello" (en → ru)` and that the provider's answers look unreliable,
+  since every dictionary should know that word (a small language model sometimes answers
+  with an empty `{}`). With `tagent` 0.19.0+004, a model's malformed JSON answer shows as
+  "not valid JSON" with the parse error, instead of "not a JSON object".
 - (+002) **The spelling-correction notice highlights the corrected word and no longer has a
   blank line after it**: in "Показан перевод слова violent" only the phrase keeps the
   notice color, the word is shown in the translation's own text color (`translation_color`,

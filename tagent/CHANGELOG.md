@@ -174,6 +174,16 @@ have no `+BUILD`.
   detection now documents `Error::Unsupported` from `detect_language`
   (`resolve_source_language` already falls back to `"en"` on any error).
 
+### Fixed
+- (+004) **The OpenAI-compatible dictionary provider reports a malformed JSON answer as
+  such**: small models (seen with `qwen2.5:3b` on Ollama) sometimes write broken JSON, e.g.
+  `]` closing an object. The `Error::Decode` said "not a JSON object" (or "no `entries`
+  list", when a valid inner object was found) and blamed a custom `dictionary_prompt`; it
+  now says "not valid JSON", with the parse error's line and column and a hint that
+  `response_format = "json_schema"` may help. An empty `{}` followed by a malformed object
+  was a silent miss (`Ok(None)`) and is now that error too; a lone `{}`, with or without
+  prose after it, stays a miss.
+
 ## [0.18.3] - 2026-09-25
 
 ### Added

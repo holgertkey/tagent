@@ -1304,11 +1304,18 @@ async fn test_profile_axis(
         }
         "dictionary" => {
             let provider = providers::create_dictionary_provider_with(profile, options)?;
-            Ok(match provider.lookup("hello", "en", target).await? {
-                Some(entry) => tagent::article::primary_line(&entry, None)
-                    .unwrap_or_else(|| "an entry".to_string()),
-                None => "no entry".to_string(),
-            })
+            let entry = provider
+                .lookup(provider_form::TEST_WORD, "en", target)
+                .await?;
+            let primary = entry.map(|entry| {
+                tagent::article::primary_line(&entry, None)
+                    .unwrap_or_else(|| "an entry".to_string())
+            });
+            Ok(provider_form::dictionary_test_detail(
+                "en",
+                target,
+                primary.as_deref(),
+            ))
         }
         _ => {
             let provider = providers::create_speech_provider_with(profile, options)?;

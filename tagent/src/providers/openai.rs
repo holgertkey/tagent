@@ -77,7 +77,8 @@
 //!   a row, the first with an `entries` key counts, since small models sometimes write an
 //!   empty `{}` first. An answer that holds no JSON object, or only objects without an
 //!   `entries` list (a custom prompt asking for another shape), is [`Error::Decode`]
-//!   quoting its start; a lone empty `{}` is a miss. Items of the wrong shape are skipped (a group
+//!   quoting its start; so is malformed JSON (small models sometimes write a stray
+//!   bracket), with the parse error. A lone empty `{}` is a miss. Items of the wrong shape are skipped (a group
 //!   without `pos`, a translation without `text`; a bare string counts as a translation
 //!   without synonyms). An empty (or `null`) `entries` list, or one with nothing valid
 //!   left, is a miss, `Ok(None)`. `word` is informational: [`DictionaryEntry::word`] is always the caller's
@@ -189,6 +190,9 @@ const MAX_EXCERPT_CHARS: usize = 80;
 /// Appended to a decode error of a dictionary answer that has the wrong shape.
 const PROMPT_SHAPE_HINT: &str =
     "a custom `dictionary_prompt` must ask for the answer shape the default prompt asks for";
+/// Appended to a decode error for a dictionary answer that is malformed JSON.
+const BROKEN_JSON_HINT: &str =
+    "small models sometimes write broken JSON; `response_format = \"json_schema\"` may help";
 /// At most this many part-of-speech groups are kept from a dictionary answer.
 const MAX_POS_GROUPS: usize = 6;
 /// At most this many translations per part-of-speech group are kept.
@@ -529,23 +533,39 @@ fn dictionary_schema() -> Value {
 ///
 /// The JSON is found by [`json_objects`] (prose around it is ignored); of several objects,
 /// the first with an `entries` key counts (small models sometimes write an empty `{}`
-/// before the real answer). No JSON object → [`Error::Decode`] quoting the answer's start;
-/// only empty objects (`{}`) → a miss; objects without an `entries` list (a custom prompt
+/// before the real answer). No JSON object → [`Error::Decode`] quoting the answer's start
+/// (with the parse error when an object starts but is malformed, as small models sometimes
+/// write); no `entries` and a malformed object → that parse error; only empty objects
+/// (`{}`) → a miss; objects without an `entries` list (a custom prompt
 /// asking for another shape) → [`Error::Decode`]. Items of the wrong shape are skipped; an
 /// empty (or `null`) `entries` list, or one with nothing valid left, is a miss
 /// (`Ok(None)`). See [`normalize_groups`] for the rest.
 fn parse_dictionary_answer(answer: &str, word: &str) -> Result<Option<DictionaryEntry>, Error> {
-    let objects = json_objects(answer);
-    if objects.is_empty() {
-        return Err(Error::Decode(format!(
-            "the model's answer is not a JSON object ({}); {PROMPT_SHAPE_HINT}",
+    let (objects, broken) = json_objects(answer);
+    let broken_json = |error: serde_json::Error| {
+        Error::Decode(format!(
+            "the model's answer is not valid JSON ({error}): {}; {BROKEN_JSON_HINT}",
             describe_body(answer.as_bytes())
-        )));
+        ))
+    };
+    if objects.is_empty() {
+        return Err(match broken {
+            Some(error) => broken_json(error),
+            None => Error::Decode(format!(
+                "the model's answer is not a JSON object ({}); {PROMPT_SHAPE_HINT}",
+                describe_body(answer.as_bytes())
+            )),
+        });
     }
     let Some(json) = objects
         .iter()
         .find(|object| object.get("entries").is_some())
     else {
+        // A malformed object explains a missing `entries` best: what was found may be
+        // pieces of it, or an empty `{}` written before it.
+        if let Some(error) = broken {
+            return Err(broken_json(error));
+        }
         if objects
             .iter()
             .all(|object| object.as_object().is_some_and(|map| map.is_empty()))
@@ -616,21 +636,43 @@ fn parse_dictionary_answer(answer: &str, word: &str) -> Result<Option<Dictionary
 /// The JSON objects in `text`: the whole text if it is one, else the objects that follow
 /// each other from the first `{` that starts at least one (whitespace between them is
 /// fine; anything after the last is ignored). Values other than objects are left out.
-fn json_objects(text: &str) -> Vec<Value> {
+///
+/// The second value is the parse error of a malformed object: one at an earlier `{` (the
+/// objects found then may be pieces of it) or right after the objects found. Text that
+/// merely follows the objects (prose) is not an error.
+fn json_objects(text: &str) -> (Vec<Value>, Option<serde_json::Error>) {
     if let Ok(value @ Value::Object(_)) = serde_json::from_str::<Value>(text) {
-        return vec![value];
+        return (vec![value], None);
     }
+    let mut first_broken = None;
     for (start, _) in text.match_indices('{') {
-        let objects: Vec<Value> = serde_json::Deserializer::from_str(&text[start..])
-            .into_iter::<Value>()
-            .map_while(Result::ok)
-            .filter(Value::is_object)
-            .collect();
+        let rest = &text[start..];
+        let mut stream = serde_json::Deserializer::from_str(rest).into_iter::<Value>();
+        let mut objects = Vec::new();
+        let mut broken = None;
+        loop {
+            let offset = stream.byte_offset();
+            match stream.next() {
+                Some(Ok(value)) => {
+                    if value.is_object() {
+                        objects.push(value);
+                    }
+                }
+                Some(Err(error)) => {
+                    if rest[offset..].trim_start().starts_with('{') {
+                        broken = Some(error);
+                    }
+                    break;
+                }
+                None => break,
+            }
+        }
+        first_broken = first_broken.or(broken);
         if !objects.is_empty() {
-            return objects;
+            return (objects, first_broken);
         }
     }
-    Vec::new()
+    (Vec::new(), first_broken)
 }
 
 /// One part-of-speech group of a dictionary answer as parsed, before normalization:
@@ -1569,9 +1611,57 @@ mod tests {
                 .unwrap_or_else(|| panic!("{raw}: no entry"));
             assert_eq!(entry.definitions.len(), 2, "{raw}");
         }
-        assert_eq!(json_objects("[1] {} 2"), vec![json!({})]);
-        assert!(json_objects("no braces").is_empty());
-        assert!(json_objects("{ broken").is_empty());
+        let objects = |text: &str| json_objects(text).0;
+        assert_eq!(objects("[1] {} 2"), vec![json!({})]);
+        assert!(objects("no braces").is_empty());
+        assert!(objects("{ broken").is_empty());
+        // Prose after the objects is not a malformed object.
+        assert!(json_objects("{} I don't know this word.").1.is_none());
+        assert!(json_objects("{} {\"entries\": [").1.is_some());
+    }
+
+    /// A real `qwen2.5:3b` answer: `]]` closes a translation object, so the outer object is
+    /// malformed while the second group alone parses. Must report the broken JSON, not a
+    /// missing `entries` list or a miss.
+    #[test]
+    fn malformed_json_is_reported_as_such() {
+        let broken = r#"{
+  "word": "hello",
+  "corrected": null,
+  "entries": [
+    {
+      "pos": "interjection",
+      "translations": [
+        {"text": "здравствуй", "synonyms": ["приветствие"]]
+      ]
+    },
+    {
+      "pos": "noun",
+      "translations": [
+        {"text": "приветствие", "synonyms": []}
+      ]
+    }
+  ]
+}"#;
+        for answer in [
+            broken.to_string(),
+            format!("{{}}\n{broken}"),
+            r#"{"word": "hello", "entries": [{"pos": "noun""#.to_string(),
+        ] {
+            match parse_dictionary_answer(&answer, "hello") {
+                Err(Error::Decode(message)) => {
+                    assert!(message.contains("not valid JSON"), "{message}");
+                    assert!(message.contains(" at line "), "{message}");
+                    assert!(message.contains(BROKEN_JSON_HINT), "{message}");
+                    assert!(!message.contains(PROMPT_SHAPE_HINT), "{message}");
+                }
+                other => panic!("{answer}: {other:?}"),
+            }
+        }
+        // A lone `{}`, with or without prose after it, stays a miss.
+        for answer in ["{}", "{}\nI don't know this word."] {
+            assert!(parse_dictionary_answer(answer, "hello").unwrap().is_none());
+        }
     }
 
     #[test]
@@ -1631,7 +1721,7 @@ mod tests {
         let message = decode("Привет — a greeting.");
         assert!(message.contains("\"Привет — a greeting.\""), "{message}");
         assert!(message.contains(PROMPT_SHAPE_HINT), "{message}");
-        assert!(decode("{not json}").contains("not a JSON object"));
+        assert!(decode("{not json}").contains("not valid JSON"));
         assert!(decode("[1, 2]").contains("not a JSON object"));
         // JSON, but not the shape the prompt asks for.
         for answer in [
