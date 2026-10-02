@@ -352,12 +352,16 @@ library's option keys need no mapping.
     `# Provider profiles` line, only the part from `# Ready-made profiles` when it has the
     explanation but not the examples (files from before `0.17.0+004`). A file that has
     both markers gets the block of each provider kind it lacks (`has_example`: its
-    `## <kind>:` header line, commented out or not, a `[provider_options.<kind>]` header
+    `## <kind>:` header line, as written since `0.17.0+017` or commented out as `# ## `
+    before, a `[provider_options.<kind>]` header
     line, commented out or not, or a real profile of that name), appended to `trailing()`
     after a lone `#` in registry order, as `profile_example(kind)` renders it — the same
     text `profile_examples()` puts into a new file, so a generated file stays up to date
     (`0.17.0+013`, Stage P2; before, a new provider's example never reached an existing
-    file). The `<kind>-work` second-instance block isn't re-added on its own, and the
+    file). The named examples that follow a kind's block (the `<kind>-work` second
+    instance after the first kind with required options, `deepl`; the custom `ollama`
+    profile after `openai`, from `custom_example_lines`; `0.17.0+017`) aren't re-added on
+    their own, and the
     startup notice counts settings only, so a deleted block doesn't nag. An option with a
     `default` (the OpenAI-compatible `translate_prompt`) is rendered as a commented-out
     multi-line string, one `#` per line (`# #translate_prompt = """` … `# #"""`), so

@@ -153,6 +153,15 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+017) **A new config file's example profiles are grouped by provider**: the second
+  `deepl` profile (`[provider_options.deepl-work]`) now follows the `deepl` block instead
+  of ending the file, and the `openai` block is followed by a ready-to-use profile of
+  your own for a local Ollama (`[provider_options.ollama]`, `type = "openai"`, endpoint
+  and model filled in). Each block's `##` title line is no longer commented out a second
+  time (`## deepl: DeepL` instead of `# ## deepl: DeepL`), so the titles stand out and
+  enabling a profile means removing `# ` from the lines below its title. `--update-config`
+  doesn't move, add or reformat these in an existing file (it still recognizes both title
+  forms); compare with `--print-default-config` and copy what you want by hand.
 - (+016) **The spelling-correction notice highlights the corrected word**: in
   "Показан перевод слова violent" the word is now shown in `source_prompt_color`, the rest
   stays in `notice_color`.

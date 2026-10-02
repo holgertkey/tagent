@@ -890,10 +890,10 @@ speech_provider = "google"
 # timeout_secs, max_retries, ...), and every value is a quoted string, numbers too.
 # An environment variable TAGENT_<NAME>_<KEY> (e.g. TAGENT_DEEPL_API_KEY) overrides a key.
 #
-# Ready-made profiles for every available provider follow. To use one, remove the
-# leading hash and space from each line of its block and fill in the empty values; the
-# numbers shown are the defaults. Lines starting with ## are explanations, and a
-# #key = "" line is an optional key: uncomment it too if you need it.
+# Ready-made profiles for every available provider follow, each under a ## title. To
+# use one, remove the leading hash and space from each line below its title and fill in
+# the empty values; the numbers shown are the defaults. Lines starting with ## are
+# explanations, and a #key = "" line is an optional key: uncomment it too if you need it.
 #
 {profile_examples}"#,
         language_codes = language_code_lines(),
@@ -953,37 +953,75 @@ fn provider_kinds() -> Vec<(&'static str, Vec<&'static ProviderDescriptor>)> {
 /// (or a compiled-out one) is reflected without touching the template. Removing the
 /// leading `"# "` from a block's lines gives a working profile: required keys are empty
 /// strings to fill in, the transport options carry the provider's defaults, and any other
-/// optional key stays commented out (`#key`). Every line starts with `"# "` and blocks are
-/// separated by a lone `"#"`.
+/// optional key stays commented out (`#key`). A kind's block may be followed by an example
+/// of a profile with a name of its own: the kind's custom one ([`custom_example_lines`]),
+/// else, for the first kind with required options, a generic second profile
+/// ([`second_instance_lines`]). Each block starts with its `##` title lines; every line
+/// below them starts with `"# "`, and blocks are separated by a lone `"#"`.
 fn profile_examples() -> String {
     let mut lines: Vec<String> = Vec::new();
-    let mut second_instance = None;
+    let mut second_instance_shown = false;
     for (kind, descriptors) in provider_kinds() {
-        let mut required: Vec<&str> = Vec::new();
-        for option in descriptors.iter().flat_map(|d| d.options) {
-            if option.required && !required.contains(&option.key) {
-                required.push(option.key);
-            }
-        }
-        if second_instance.is_none() && !required.is_empty() {
-            second_instance = Some((kind, required));
-        }
         lines.extend(example_block_lines(kind, &descriptors));
         lines.push(String::new());
-    }
-    if let Some((kind, required)) = second_instance {
-        lines.push(format!(
-            "## A second {kind} profile (e.g. another account), selected by its own name"
-        ));
-        lines.push(format!("[provider_options.{kind}-work]"));
-        lines.push(format!("type = \"{kind}\""));
-        for key in required {
-            lines.push(format!("{key} = \"\""));
+        let extra = match custom_example_lines(kind) {
+            Some(custom) => custom,
+            None if second_instance_shown => Vec::new(),
+            None => {
+                let second = second_instance_lines(kind, &descriptors);
+                second_instance_shown = !second.is_empty();
+                second
+            }
+        };
+        if !extra.is_empty() {
+            lines.extend(extra);
+            lines.push(String::new());
         }
-        lines.push(String::new());
     }
     lines.pop();
     commented_out(&lines)
+}
+
+/// A generic second profile of kind `kind` (`<kind>-work`, with the required keys empty),
+/// before it is commented out; empty for a kind without required options.
+fn second_instance_lines(kind: &str, descriptors: &[&ProviderDescriptor]) -> Vec<String> {
+    let mut required: Vec<&str> = Vec::new();
+    for option in descriptors.iter().flat_map(|d| d.options) {
+        if option.required && !required.contains(&option.key) {
+            required.push(option.key);
+        }
+    }
+    if required.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![
+        format!("## A second {kind} profile (e.g. another account), selected by its own name"),
+        format!("[provider_options.{kind}-work]"),
+        format!("type = \"{kind}\""),
+    ];
+    lines.extend(required.iter().map(|key| format!("{key} = \"\"")));
+    lines
+}
+
+/// A ready-to-use profile of kind `kind` under a name of its own, for a kind whose
+/// typical use is a particular server rather than one service (`openai`: a local
+/// Ollama); `None` for the other kinds.
+fn custom_example_lines(kind: &str) -> Option<Vec<String>> {
+    match kind {
+        "openai" => Some(
+            [
+                "## A profile of your own for a particular server, here a local Ollama, selected",
+                "## by its own name; one profile can serve translations and dictionary lookups",
+                "[provider_options.ollama]",
+                "type = \"openai\"",
+                "endpoint = \"http://localhost:11434/v1\"",
+                "model = \"qwen3:8b\"",
+            ]
+            .map(String::from)
+            .to_vec(),
+        ),
+        _ => None,
+    }
 }
 
 /// The example block of provider kind `kind` alone, exactly as [`profile_examples`] writes
@@ -1052,13 +1090,23 @@ fn example_block_lines(kind: &str, descriptors: &[&ProviderDescriptor]) -> Vec<S
     lines
 }
 
-/// `lines` as TOML comments: `"# <line>"`, an empty line as a lone `"#"`.
+/// `lines` as TOML comments: `"# <line>"`, an empty line as a lone `"#"`. A block's
+/// title (its `##` lines above the table header) stays as it is, already a comment, so it
+/// stands out from the commented-out lines and isn't part of what a user uncomments.
 fn commented_out(lines: &[String]) -> String {
+    let mut in_title = true;
     lines
         .iter()
         .map(|line| {
             if line.is_empty() {
-                "#\n".to_string()
+                in_title = true;
+                return "#\n".to_string();
+            }
+            if line.starts_with('[') {
+                in_title = false;
+            }
+            if in_title && line.starts_with("## ") {
+                format!("{line}\n")
             } else {
                 format!("# {line}\n")
             }
@@ -3273,11 +3321,11 @@ api_key = "deepl-key"
     fn example_headers_name_each_display_name_once() {
         let toml = render_config(&Config::default());
         assert!(
-            toml.contains("\n# ## openai: OpenAI-compatible\n"),
+            toml.contains("\n## openai: OpenAI-compatible\n"),
             "{toml}"
         );
         assert!(
-            toml.contains("\n# ## google: Google Translate, Google Dictionary, Google TTS\n"),
+            toml.contains("\n## google: Google Translate, Google Dictionary, Google TTS\n"),
             "{toml}"
         );
     }
@@ -3358,6 +3406,57 @@ api_key = "deepl-key"
             build_example_profile(&filled, kind, &name)
                 .unwrap_or_else(|e| panic!("{name} filled: {e}"));
         }
+    }
+
+    /// Each example block starts with its `##` title lines, uncommented; every other line
+    /// down to the separating `"#"` is commented out with `"# "`.
+    #[test]
+    fn example_titles_are_plain_comments_above_commented_out_lines() {
+        let toml = render_config(&Config::default());
+        let examples = &toml[toml.find("\n#\n## google:").expect(&toml) + 3..];
+        let mut titles = 0;
+        for block in examples.trim_end().split("\n#\n") {
+            let lines: Vec<&str> = block.lines().filter(|line| !line.is_empty()).collect();
+            let title_end = lines
+                .iter()
+                .position(|line| !line.starts_with("## "))
+                .expect(block);
+            assert!(title_end > 0, "{block}");
+            titles += 1;
+            assert!(lines[title_end].starts_with("# [provider_options."), "{block}");
+            for line in &lines[title_end..] {
+                assert!(line.starts_with("# "), "{line}\n{block}");
+            }
+        }
+        assert_eq!(titles, provider_kinds().len() + 2, "{examples}");
+    }
+
+    /// A profile of one's own name follows its kind's block: the second deepl profile
+    /// after deepl, the Ollama profile after openai.
+    #[test]
+    fn named_examples_follow_their_kinds_block() {
+        let toml = render_config(&Config::default());
+        let position = |name: &str| {
+            toml.find(&format!("\n# [provider_options.{name}]\n"))
+                .unwrap_or_else(|| panic!("{name}: {toml}"))
+        };
+        assert!(position("deepl") < position("deepl-work"));
+        assert!(position("deepl-work") < position("openai"));
+        assert!(position("openai") < position("ollama"));
+        assert_eq!(toml.matches("-work]\n").count(), 1, "{toml}");
+    }
+
+    /// The uncommented Ollama example is a complete profile of kind openai: it builds on
+    /// both of the kind's axes as it is, with no unknown keys.
+    #[test]
+    fn uncommented_ollama_example_builds_as_is() {
+        let enabled = uncomment_example(&render_config(&Config::default()), "ollama");
+        assert!(unknown_keys_in(&enabled).is_empty(), "{enabled}");
+        let config = parse_config(&enabled).unwrap_or_else(|e| panic!("{e}\n{enabled}"));
+        let options = config.provider_options.get("ollama").expect("ollama");
+        assert_eq!(options["type"], "openai");
+        assert_eq!(options["endpoint"], "http://localhost:11434/v1");
+        build_example_profile(&config, "openai", "ollama").unwrap();
     }
 
     /// Real profiles are written below the examples, which stay comments.

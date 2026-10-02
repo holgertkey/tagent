@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.17.0+016"
+version = "0.17.0+017"
 dependencies = [
  "arboard",
  "async-trait",

@@ -933,7 +933,9 @@ enable_text_to_speech = false
         for extra in [
             // The block uncommented (only its first lines matter).
             "## openai: OpenAI-compatible\n[provider_options.openai]\nendpoint = \"http://localhost:11434/v1\"\nmodel = \"m\"\n",
-            // The block header, still commented out.
+            // The block header, as a new file writes it, and commented out as before
+            // 0.17.0+017.
+            "## openai: OpenAI-compatible\n",
             "# ## openai: OpenAI-compatible\n",
             // A commented-out table of the kind.
             "#[provider_options.openai]\n",
@@ -970,7 +972,7 @@ enable_text_to_speech = false
         let text = upgraded(&content).content;
         let config = parse_config(&text).unwrap();
         assert_eq!(config.provider_options.get("work").unwrap().len(), 2);
-        assert!(text.contains("api_key = \"k\"\n#\n# ## openai:"), "{text}");
+        assert!(text.contains("api_key = \"k\"\n#\n## openai:"), "{text}");
     }
 
     /// A file as 0.17.0+000 to +003 wrote it: the profiles explanation with a small
