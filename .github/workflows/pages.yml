@@ -1,0 +1,64 @@
+name: User book
+
+# Builds the user book (docs/user, mdBook) and deploys it to GitHub Pages,
+# https://holgertkey.github.io/tagent/, on every push to `main` that changes the book
+# (the generated reference pages live in docs/user too, so a code change that alters
+# them redeploys) or this workflow.
+#
+# Needs Settings > Pages > Source: "GitHub Actions"; the `github-pages` environment
+# allows deploys from `main`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/user/**'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer run waits instead of cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the user book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache mdBook
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdbook
+          key: ${{ runner.os }}-mdbook-0.5
+
+      - name: Build
+        run: |
+          command -v mdbook || cargo install mdbook --no-default-features --features search --vers "^0.5" --locked
+          mdbook build docs/user
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/user/book
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

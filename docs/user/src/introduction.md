@@ -32,6 +32,16 @@ XWayland. On macOS, translation, the dictionary and speech work, but the global 
 and the clipboard features don't yet. See
 [Troubleshooting: Platforms](troubleshooting/platforms.md).
 
+## Which version this guide describes
+
+This guide follows the development of Tagent: it is updated whenever the project's main
+branch changes, which can be ahead of the latest release. What a release doesn't have
+yet is listed in each application's changelog
+([tagent-cli](https://github.com/holgertkey/tagent/blob/main/tagent-cli/CHANGELOG.md),
+[tagent-gui](https://github.com/holgertkey/tagent/blob/main/tagent-gui/CHANGELOG.md))
+under the version that has no release on the
+[releases page](https://github.com/holgertkey/tagent/releases) yet.
+
 ## Where to start
 
 1. [Install](getting-started/install.md) one or both.

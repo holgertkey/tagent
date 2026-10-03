@@ -14,7 +14,8 @@ Where the rest lives:
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
 **Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D6 are
-done (D3 still lacks the screenshots that need clicks).
+done, D7 is in place and deploys on the first
+merge into `main` (D3 still lacks the screenshots that need clicks).
 
 ---
 
@@ -87,7 +88,11 @@ Each was settled by its proposal on 2026-10-03; the alternatives are kept for th
   - **Alternative:** plain `.md` files in `docs/user/`, rendered by GitHub. No build and no
     site, but also no search, no side navigation and no includes. This is a fallback if
     publishing is not wanted.
-- **UD-Q2. When does the site update?**
+- **UD-Q2. When does the site update?** **Revised 2026-10-03, during D7:** on every push
+  to `main` that changes `docs/user` (the user's call; `main` only gets merges from
+  `dev`, so it is close to a release anyway, and deploying from a branch needs no tag
+  rule in the `github-pages` environment). The introduction says the guide follows
+  `main`. The original proposal below is kept for the record.
   - **Proposed:** on a `v*` tag push, as part of the release, so the site describes the
     latest release, the version users download. Without a tag the site doesn't change.
   - **Alternative:** every push to `main`. The site would then describe unreleased
@@ -369,6 +374,17 @@ Each step is one commit, unless noted otherwise:
     run, if wanted).
 - Set `homepage` (or `documentation`) in `tagent-cli/Cargo.toml` and
   `tagent-gui/Cargo.toml` to the book's URL, so crates.io links to it.
+- **Done** (2026-10-03; the user set Pages' source to "GitHub Actions"):
+  - `.github/workflows/pages.yml` builds the book and deploys it (`configure-pages@v5`,
+    `upload-pages-artifact@v4`, `deploy-pages@v4`, the versions GitHub's Pages docs show
+    now) on a push to `main` touching `docs/user/**` or the workflow itself (UD-Q2 as
+    revised). No manual run and no `release.yml` job: a release's commit is already on
+    `main` and published. A first version with `workflow_dispatch` and a `release.yml`
+    job was replaced before it was committed.
+  - The `github-pages` environment allows deploys from `main` only, which is all this
+    needs.
+  - `homepage` and `documentation` of `tagent-cli` and `tagent-gui` point to the book
+    (metadata only, no version bump). actionlint is clean.
 
 ### D8 — Process
 
