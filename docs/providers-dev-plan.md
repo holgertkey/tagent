@@ -943,7 +943,7 @@ masked profile secrets; a release build syncs the `0.17.0` version into the docs
 ### Stage U — One provider list for all three axes (apps)
 
 **Status:** implemented (2026-10-03: `tagent` 0.19.0+005, `tagent-cli` 0.17.0+018,
-`tagent-gui` 0.15.0+004); the user's manual pass of the GUI menu is pending
+`tagent-gui` 0.15.0+004; the user's manual pass confirmed it the same day)
 **Goal:** pick the translation, dictionary and speech provider for the current session
 from one list: `/p` in `tagent-cli`'s interactive mode, and a provider menu in
 `tagent-gui`'s main window. An app-side stage; the library only gains a shared axis
@@ -1373,13 +1373,13 @@ documentation only and gets no bump.
   sections. This replaces the plan's single model with `header`/`warning` fields, which
   would have needed mixed item types in one `for`. The ⚠ is part of an entry's title
   (`DeepL (work)  ⚠ api_key`).
-- **The header's look is unchecked.** The disabled `MenuItem` used as a section header,
-  in light and dark themes, still needs the user's manual pass. Opening the menu needs a
-  real click, and that wasn't automated (see U6). A screenshot of the main window, menu
-  closed, shows the new `google ▾` button in the dark theme.
-- **The ⚠ next to the button covers only turned-on axes.** A dictionary or speech
-  provider that isn't used (`show_dictionary`/`enable_text_to_speech` off) doesn't
-  warn. Its menu entry still carries its own ⚠.
+- **Checked by hand.** Opening the menu needs a real click, which wasn't automated (see
+  U6): a screenshot covered the main window with the menu closed (the new `google ▾`
+  button, dark theme), and the user's manual pass covered the menu and `/p`.
+- **The ⚠ next to the button covers only turned-on axes** (a deviation from Decisions'
+  "any axis", kept by the user on 2026-10-03). A dictionary or speech provider that isn't
+  used (`show_dictionary`/`enable_text_to_speech` off) doesn't warn. Its menu entry still
+  carries its own ⚠.
 - **The `/p` parser takes a predicate.** It is `parse_provider_command(text,
   is_translation_name)`, because "`/p t` selects a profile named `t` if there is one"
   needs the translation names. With `|_| false` it doubles as the "is this a `/p`
