@@ -9,8 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use tagent::providers::{
     dictionary_providers, env_var_name, speech_providers, translation_providers,
-    validate_profile_name, OptionSpec, ProviderProfiles, DICTIONARY_PROVIDERS, SPEECH_PROVIDERS,
-    TRANSLATION_PROVIDERS,
+    validate_profile_name, OptionSpec, ProviderAxis, ProviderProfiles,
 };
 
 /// One row of the "Provider options" list: a profile heading, or an option field.
@@ -221,9 +220,6 @@ pub fn warning(
     }
 }
 
-/// The provider axes, in the order of Settings > Providers' pickers.
-pub const AXES: [&str; 3] = ["translation", "dictionary", "speech"];
-
 /// Applies `edits` to `profiles`: a non-empty value sets the key, an empty (or
 /// whitespace-only) one removes it. Untouched keys, `type` and other profiles are kept.
 fn apply(profiles: &mut ProviderProfiles, edits: &Edits) {
@@ -390,20 +386,13 @@ pub fn profile_rows(view: &ProviderProfiles, hidden: &[String]) -> Vec<ProfileRo
     builtins.chain(profiles).collect()
 }
 
-/// The built-in kinds of each picker axis, in [`AXES`] order.
-const AXIS_KINDS: [&[&str]; 3] = [
-    TRANSLATION_PROVIDERS,
-    DICTIONARY_PROVIDERS,
-    SPEECH_PROVIDERS,
-];
-
 /// Whether "Show in lists" may hide `name`: anything but the first built-in kind of an
 /// axis (`google`), which pickers fall back to, so every picker keeps an entry.
 pub fn can_hide(name: &str) -> bool {
     let name = name.trim().to_lowercase();
-    !AXIS_KINDS
+    !ProviderAxis::ALL
         .iter()
-        .any(|kinds| kinds.first() == Some(&name.as_str()))
+        .any(|axis| axis.kinds().first() == Some(&name.as_str()))
 }
 
 /// The entries of a picker for the axis with built-in `kinds`: the built-ins, then the
@@ -430,16 +419,17 @@ pub fn picker_entries(
 /// first built-in kind. Also returns a note naming each picker that fell back, or `""`.
 pub fn picker_fallbacks(selected: &[String; 3], view: &ProviderProfiles) -> ([String; 3], String) {
     let mut notes: Vec<String> = Vec::new();
-    let next: [String; 3] = std::array::from_fn(|axis| {
-        let kinds = AXIS_KINDS[axis];
-        let name = selected[axis].trim().to_lowercase();
+    let next: [String; 3] = std::array::from_fn(|index| {
+        let axis = ProviderAxis::ALL[index];
+        let kinds = axis.kinds();
+        let name = selected[index].trim().to_lowercase();
         let offered =
             kinds.contains(&name.as_str()) || view.profiles_of_kinds(kinds).contains(&name);
         if offered {
             return name;
         }
         let fallback = kinds.first().copied().unwrap_or_default().to_string();
-        notes.push(format!("{} now uses {fallback}", AXES[axis]));
+        notes.push(format!("{} now uses {fallback}", axis.label()));
         fallback
     });
     let note = if notes.is_empty() {
@@ -453,14 +443,13 @@ pub fn picker_fallbacks(selected: &[String; 3], view: &ProviderProfiles) -> ([St
     (next, note)
 }
 
-/// The axes ([`AXES`]) provider kind `kind` implements, in that order: what a "Test" of
-/// one of its profiles calls.
-pub fn axes_of(kind: &str) -> Vec<&'static str> {
+/// The axes provider kind `kind` implements, in [`ProviderAxis::ALL`] order: what a
+/// "Test" of one of its profiles calls.
+pub fn axes_of(kind: &str) -> Vec<ProviderAxis> {
     let kind = kind.trim().to_lowercase();
-    AXES.iter()
-        .zip(AXIS_KINDS)
-        .filter(|(_, kinds)| kinds.contains(&kind.as_str()))
-        .map(|(axis, _)| *axis)
+    ProviderAxis::ALL
+        .into_iter()
+        .filter(|axis| axis.kinds().contains(&kind.as_str()))
         .collect()
 }
 
@@ -517,9 +506,9 @@ pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
     let profile = profile.trim().to_lowercase();
     let axes: Vec<&str> = selected
         .iter()
-        .zip(AXES)
+        .zip(ProviderAxis::ALL)
         .filter(|(name, _)| name.trim().to_lowercase() == profile)
-        .map(|(_, axis)| axis)
+        .map(|(_, axis)| axis.label())
         .collect();
     if axes.is_empty() {
         String::new()
@@ -531,6 +520,7 @@ pub fn selection_note(selected: &[&str; 3], profile: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tagent::providers::{SPEECH_PROVIDERS, TRANSLATION_PROVIDERS};
 
     fn no_env(_: &str) -> Option<String> {
         None
@@ -999,9 +989,12 @@ mod tests {
 
     #[test]
     fn axes_of_follows_the_compiled_in_kinds() {
-        assert_eq!(axes_of("google"), ["translation", "dictionary", "speech"]);
-        assert_eq!(axes_of("DeepL"), ["translation"]);
-        assert_eq!(axes_of("openai"), ["translation", "dictionary"]);
+        assert_eq!(axes_of("google"), ProviderAxis::ALL);
+        assert_eq!(axes_of("DeepL"), [ProviderAxis::Translation]);
+        assert_eq!(
+            axes_of("openai"),
+            [ProviderAxis::Translation, ProviderAxis::Dictionary]
+        );
         assert!(axes_of("nope").is_empty());
     }
 

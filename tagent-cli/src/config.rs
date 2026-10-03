@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tagent::providers::{
-    self, DictionaryProvider, OptionSpec, ProviderDescriptor, ProviderOptions, ProviderProfiles,
-    SpeechProvider, TranslationProvider,
+    self, DictionaryProvider, OptionSpec, ProviderAxis, ProviderDescriptor, ProviderOptions,
+    ProviderProfiles, SpeechProvider, TranslationProvider,
 };
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
@@ -145,27 +145,69 @@ impl Config {
         })
     }
 
-    /// The translation providers `/p` offers: every translation kind compiled in, then the
-    /// profiles of those kinds, with the active one marked. Nothing is built, so this makes
-    /// no network calls and needs no valid options.
-    pub fn translation_provider_list(&self) -> Vec<ProviderListEntry> {
-        self.translation_provider_list_using(|var| std::env::var(var).ok())
+    /// Builds the provider of `axis` (see [`Self::create_translate_provider`] and its
+    /// twins) and returns its display name, e.g. to check a choice before switching to it.
+    /// Building makes no network call. The error is ready to show.
+    pub fn build_provider_name(&self, axis: ProviderAxis) -> Result<String, String> {
+        match axis {
+            ProviderAxis::Translation => self
+                .create_translate_provider()
+                .map(|provider| provider.name().to_string()),
+            ProviderAxis::Dictionary => self
+                .create_dictionary_provider()
+                .map(|provider| provider.name().to_string()),
+            ProviderAxis::Speech => self
+                .create_speech_provider()
+                .map(|provider| provider.name().to_string()),
+        }
     }
 
-    /// [`Self::translation_provider_list`] with the environment replaced by `lookup`.
-    fn translation_provider_list_using(
+    /// The `*_provider` value in effect on `axis`: `translate_provider`,
+    /// `dictionary_provider` or `speech_provider`.
+    pub fn provider_name(&self, axis: ProviderAxis) -> &str {
+        match axis {
+            ProviderAxis::Translation => &self.translate_provider,
+            ProviderAxis::Dictionary => &self.dictionary_provider,
+            ProviderAxis::Speech => &self.speech_provider,
+        }
+    }
+
+    /// The setting that turns `axis` off, if it is off: `show_dictionary = false` or
+    /// `enable_text_to_speech = false` (translation can't be turned off).
+    pub fn axis_disabled_by(&self, axis: ProviderAxis) -> Option<&'static str> {
+        match axis {
+            ProviderAxis::Translation => None,
+            ProviderAxis::Dictionary => (!self.show_dictionary).then_some("show_dictionary"),
+            ProviderAxis::Speech => {
+                (!self.enable_text_to_speech).then_some("enable_text_to_speech")
+            }
+        }
+    }
+
+    /// The providers `/p` offers, axis by axis (translation, dictionary, speech): for each,
+    /// every kind compiled in for that axis, then the profiles of those kinds, with the one
+    /// in effect marked. Nothing is built, so this makes no network calls and needs no
+    /// valid options.
+    pub fn provider_list(&self) -> Vec<ProviderListEntry> {
+        self.provider_list_using(|var| std::env::var(var).ok())
+    }
+
+    /// [`Self::provider_list`] with the environment replaced by `lookup`.
+    fn provider_list_using(
         &self,
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Vec<ProviderListEntry> {
-        let kinds = providers::TRANSLATION_PROVIDERS;
-        let names = kinds
-            .iter()
-            .map(|kind| kind.to_string())
-            .chain(self.provider_options.profiles_of_kinds(kinds));
-        names
-            .map(|name| {
+        let mut entries = Vec::new();
+        for axis in ProviderAxis::ALL {
+            let kinds = axis.kinds();
+            let names = kinds
+                .iter()
+                .map(|kind| kind.to_string())
+                .chain(self.provider_options.profiles_of_kinds(kinds));
+            for name in names {
                 let kind = self.provider_options.kind_of(&name);
-                let descriptor = providers::translation_providers()
+                let descriptor = axis
+                    .descriptors()
                     .iter()
                     .find(|descriptor| descriptor.name == kind);
                 let display_name = match descriptor {
@@ -187,14 +229,16 @@ impl Config {
                             .collect()
                     })
                     .unwrap_or_default();
-                ProviderListEntry {
-                    active: name.eq_ignore_ascii_case(&self.translate_provider),
+                entries.push(ProviderListEntry {
+                    axis,
+                    active: name.eq_ignore_ascii_case(self.provider_name(axis)),
                     name,
                     display_name,
                     missing,
-                }
-            })
-            .collect()
+                });
+            }
+        }
+        entries
     }
 
     /// The profiles `/config` describes: every `[provider_options.<name>]` table plus the three
@@ -776,7 +820,6 @@ spell_check = true
 # Dictionary lookup backend (a provider profile name), independent of translate_provider
 # Supported values: {dictionary_providers}
 # Default: google
-# Note: Requires application restart to take effect
 dictionary_provider = "google"
 
 [interface]
@@ -1204,11 +1247,12 @@ pub fn default_config_text() -> String {
 }
 
 /// `content` (an existing `tagent-cli.toml`) with the session settings set to `config`'s:
-/// the languages (`/l`) and the translation provider (`/p`), the only values the app itself
+/// the languages (`/l`) and the three providers (`/p`), the only values the app itself
 /// changes. Everything else — comments, order, unknown keys, provider profiles — stays as
-/// it is. `translate_provider` is written only when the file has the key or when the value
-/// differs from the default a missing key stands for, so saving an untouched session adds
-/// nothing to a file without a `[provider]` section.
+/// it is. Each provider key (`translate_provider`, `dictionary_provider`,
+/// `speech_provider`) is written only when the file has the key or when the value differs
+/// from the default a missing key stands for, so saving an untouched session adds nothing
+/// to a file without those keys.
 fn with_session_settings(content: &str, config: &Config) -> Result<String, String> {
     let mut doc: DocumentMut = content.parse().map_err(|e| format!("{e}"))?;
     set_value(
@@ -1223,17 +1267,21 @@ fn with_session_settings(content: &str, config: &Config) -> Result<String, Strin
         "target_language",
         Value::from(config.target_language.as_str()),
     )?;
-    let has_provider_key = doc
-        .get("provider")
-        .and_then(Item::as_table_like)
-        .is_some_and(|table| table.contains_key("translate_provider"));
-    if has_provider_key || config.translate_provider != Config::default().translate_provider {
-        set_value(
-            &mut doc,
-            "provider",
-            "translate_provider",
-            Value::from(config.translate_provider.as_str()),
-        )?;
+    let default = Config::default();
+    for axis in ProviderAxis::ALL {
+        let (section, key) = match axis {
+            ProviderAxis::Translation => ("provider", "translate_provider"),
+            ProviderAxis::Dictionary => ("dictionary", "dictionary_provider"),
+            ProviderAxis::Speech => ("speech", "speech_provider"),
+        };
+        let has_key = doc
+            .get(section)
+            .and_then(Item::as_table_like)
+            .is_some_and(|table| table.contains_key(key));
+        let value = config.provider_name(axis);
+        if has_key || value != default.provider_name(axis) {
+            set_value(&mut doc, section, key, Value::from(value))?;
+        }
     }
     Ok(doc.to_string())
 }
@@ -1425,32 +1473,65 @@ pub struct ActiveProviders {
     pub speech: Result<String, String>,
 }
 
-/// One line of `/p`'s list, see [`Config::translation_provider_list`].
+/// One line of `/p`'s list, see [`Config::provider_list`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderListEntry {
-    /// The name `/p <name>` and `translate_provider` take: a kind or a profile name.
+    /// The axis this entry is listed under.
+    pub axis: ProviderAxis,
+    /// The name `/p` and the axis's `*_provider` setting take: a kind or a profile name.
     pub name: String,
     /// What the provider calls itself, e.g. `"DeepL (deepl-work)"` for a profile.
     pub display_name: String,
-    /// Whether this is the `translate_provider` in effect.
+    /// Whether this is the provider in effect on its axis.
     pub active: bool,
     /// Required options that are unset (or empty), e.g. `api_key`.
     pub missing: Vec<String>,
 }
 
-/// `/p`'s output lines for `entries`.
-pub fn provider_list_lines(entries: &[ProviderListEntry]) -> Vec<String> {
-    let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
-    let mut lines = vec!["Translation providers:".to_string()];
-    for entry in entries {
-        let marker = if entry.active { '*' } else { ' ' };
-        let mut line = format!("{marker} {:width$}  {}", entry.name, entry.display_name);
-        if !entry.missing.is_empty() {
-            line.push_str(&format!(" (missing: {})", entry.missing.join(", ")));
-        }
-        lines.push(line);
+/// The heading `/p` shows for `axis`: `"Translation"`, `"Dictionary"` or `"Speech"`.
+pub fn axis_title(axis: ProviderAxis) -> &'static str {
+    match axis {
+        ProviderAxis::Translation => "Translation",
+        ProviderAxis::Dictionary => "Dictionary",
+        ProviderAxis::Speech => "Speech",
     }
-    lines.push("Switch with /p <name>; /save keeps the choice.".to_string());
+}
+
+/// `/p`'s output lines for `entries` (as [`Config::provider_list`] returns them): one
+/// section per axis, with a note on an axis `config` turns off, and the entries numbered
+/// continuously from 1 in list order, which is what `/p <number>` refers to.
+pub fn provider_list_lines(entries: &[ProviderListEntry], config: &Config) -> Vec<String> {
+    let name_width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
+    let number_width = entries.len().to_string().len();
+    let mut lines = vec!["Providers:".to_string()];
+    for axis in ProviderAxis::ALL {
+        let mut heading = format!(" {}", axis_title(axis));
+        if let Some(setting) = config.axis_disabled_by(axis) {
+            heading.push_str(&format!(" (off: {setting} = false)"));
+        }
+        lines.push(heading);
+        for (index, entry) in entries.iter().enumerate() {
+            if entry.axis != axis {
+                continue;
+            }
+            let marker = if entry.active { '*' } else { ' ' };
+            let mut line = format!(
+                " {marker} {:>number_width$}  {:name_width$}  {}",
+                index + 1,
+                entry.name,
+                entry.display_name
+            );
+            if !entry.missing.is_empty() {
+                line.push_str(&format!(" (missing: {})", entry.missing.join(", ")));
+            }
+            lines.push(line);
+        }
+    }
+    lines.push(
+        "Switch with /p <number>, /p <name> (translation) or /p t|d|s <name>; \
+         /save keeps the choice."
+            .to_string(),
+    );
     lines
 }
 
@@ -1624,7 +1705,7 @@ impl ConfigManager {
             .unwrap_or_else(|| self.config_path.clone())
     }
 
-    /// Save the current languages and translation provider to the config file (see
+    /// Save the current languages and providers to the config file (see
     /// [`with_session_settings`]), editing it in place so comments,
     /// key order, unknown keys and provider profiles are kept. A missing file is written
     /// in full from the current configuration.
@@ -1670,12 +1751,17 @@ impl ConfigManager {
         }
     }
 
-    /// Set the translation provider (a profile name) in memory, without saving to file.
-    /// The [`Translator`](crate::translator::Translator) switches to it on its next use;
-    /// callers validate the name first (`/p` builds the provider before calling this).
-    pub fn set_translate_provider(&self, name: &str) {
+    /// Set the provider of `axis` (`translate_provider`, `dictionary_provider` or
+    /// `speech_provider`) in memory, without saving to file. Doesn't validate `name`:
+    /// callers validate it first (`/p` builds the provider before calling this).
+    pub fn set_provider(&self, axis: ProviderAxis, name: &str) {
         if let Ok(mut config) = self.config.lock() {
-            config.translate_provider = name.to_string();
+            let field = match axis {
+                ProviderAxis::Translation => &mut config.translate_provider,
+                ProviderAxis::Dictionary => &mut config.dictionary_provider,
+                ProviderAxis::Speech => &mut config.speech_provider,
+            };
+            *field = name.to_string();
         }
     }
 
@@ -1802,9 +1888,13 @@ impl ConfigManager {
         println!("  /l, /lang               - Swap source and target languages");
         println!("  /l, /lang <target>      - Set target language (source=Auto)");
         println!("  /l, /lang <src> <tgt>   - Set source and target languages");
-        println!("  /p, /provider           - List the translation providers");
-        println!("  /p, /provider <name>    - Switch the translation provider for this session");
-        println!("  /save                   - Save the languages and translation provider to file");
+        println!("  /p, /provider           - List the providers of every axis, numbered");
+        println!("  /p <number>             - Switch to that entry of the list for this session");
+        println!("  /p <name>               - Switch the translation provider for this session");
+        println!(
+            "  /p t|d|s <name>         - Switch the translation, dictionary or speech provider"
+        );
+        println!("  /save                   - Save the languages and providers to file");
         println!("  /config update          - Add the settings the config file lacks");
         println!("  /clear, /cls            - Clear screen");
         println!("  /q, /quit, /e, /exit    - Exit program");
@@ -3320,10 +3410,7 @@ api_key = "deepl-key"
     #[test]
     fn example_headers_name_each_display_name_once() {
         let toml = render_config(&Config::default());
-        assert!(
-            toml.contains("\n## openai: OpenAI-compatible\n"),
-            "{toml}"
-        );
+        assert!(toml.contains("\n## openai: OpenAI-compatible\n"), "{toml}");
         assert!(
             toml.contains("\n## google: Google Translate, Google Dictionary, Google TTS\n"),
             "{toml}"
@@ -3423,7 +3510,10 @@ api_key = "deepl-key"
                 .expect(block);
             assert!(title_end > 0, "{block}");
             titles += 1;
-            assert!(lines[title_end].starts_with("# [provider_options."), "{block}");
+            assert!(
+                lines[title_end].starts_with("# [provider_options."),
+                "{block}"
+            );
             for line in &lines[title_end..] {
                 assert!(line.starts_with("# "), "{line}\n{block}");
             }
@@ -3640,7 +3730,7 @@ api_key = "secret-0123456789"  # from the account page
                         [translation]\nsource_language = \"auto\"\ntarget_language = \"ru\"\n";
         fs::write(&path, original).unwrap();
         manager.load_config().unwrap();
-        manager.set_translate_provider("deepl-work");
+        manager.set_provider(ProviderAxis::Translation, "deepl-work");
         manager.save_config().unwrap();
 
         let written = fs::read_to_string(&path).unwrap();
@@ -3669,7 +3759,7 @@ api_key = "secret-0123456789"  # from the account page
         manager.save_config().unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
 
-        manager.set_translate_provider("deepl-work");
+        manager.set_provider(ProviderAxis::Translation, "deepl-work");
         manager.save_config().unwrap();
         let written = fs::read_to_string(&path).unwrap();
         assert!(written.starts_with(original), "{written}");
@@ -3679,6 +3769,73 @@ api_key = "secret-0123456789"  # from the account page
         );
         manager.load_config().unwrap();
         assert_eq!(manager.get_config().translate_provider, "deepl-work");
+        let _ = fs::remove_file(&path);
+    }
+
+    /// `/save` after `/p d` and `/p s` writes those keys in place, comments kept, and a
+    /// second save changes nothing.
+    #[test]
+    fn save_writes_the_dictionary_and_speech_providers_in_place() {
+        let (manager, path) = manager_at("save_axes");
+        let original = "[dictionary]\n# lookups\ndictionary_provider = \"google\"  # default\n\n\
+                        [speech]\n# voice\nspeech_provider = \"google\"  # default\n";
+        fs::write(&path, original).unwrap();
+        manager.load_config().unwrap();
+        manager.set_provider(ProviderAxis::Dictionary, "ollama");
+        manager.set_provider(ProviderAxis::Speech, "work");
+        manager.save_config().unwrap();
+
+        let written = fs::read_to_string(&path).unwrap();
+        let expected = original
+            .replace(
+                "dictionary_provider = \"google\"",
+                "dictionary_provider = \"ollama\"",
+            )
+            .replace("speech_provider = \"google\"", "speech_provider = \"work\"");
+        // The languages are written too; the provider lines are what this test is about.
+        assert!(written.starts_with(&expected), "{written}");
+
+        manager.save_config().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), written);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A file without `dictionary_provider`/`speech_provider` gets each only when it was
+    /// switched away from the default.
+    #[test]
+    fn save_adds_missing_dictionary_and_speech_keys_only_when_needed() {
+        let (manager, path) = manager_at("save_axes_missing");
+        let original = "[translation]\nsource_language = \"auto\"\ntarget_language = \"ru\"\n\n\
+                        [dictionary]\nshow_dictionary = true\n";
+        fs::write(&path, original).unwrap();
+        manager.load_config().unwrap();
+
+        manager.save_config().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+
+        manager.set_provider(ProviderAxis::Dictionary, "ollama");
+        manager.save_config().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains(
+                "[dictionary]\nshow_dictionary = true\ndictionary_provider = \"ollama\"\n"
+            ),
+            "{written}"
+        );
+        assert!(!written.contains("speech_provider"), "{written}");
+        assert!(!written.contains("[speech]"), "{written}");
+
+        manager.set_provider(ProviderAxis::Speech, "work");
+        manager.save_config().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains("[speech]\nspeech_provider = \"work\"\n"),
+            "{written}"
+        );
+        manager.load_config().unwrap();
+        let config = manager.get_config();
+        assert_eq!(config.dictionary_provider, "ollama");
+        assert_eq!(config.speech_provider, "work");
         let _ = fs::remove_file(&path);
     }
 
@@ -3927,31 +4084,80 @@ api_key = "secret-0123456789"  # from the account page
         config
     }
 
-    #[test]
-    fn provider_list_has_kinds_then_profiles_of_translation_kinds() {
-        let config = provider_list_config();
-
-        let entries = config.translation_provider_list_using(|_| None);
-
-        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["google", "deepl", "openai", "work"]);
-        assert_eq!(entries[0].display_name, "Google Translate");
-        assert_eq!(entries[2].display_name, "OpenAI-compatible");
-        assert_eq!(entries[3].display_name, "DeepL (work)");
-        let active: Vec<bool> = entries.iter().map(|e| e.active).collect();
-        assert_eq!(active, [true, false, false, false]);
+    /// The entries of `axis`, as `(name, display name)` pairs.
+    fn axis_entries(entries: &[ProviderListEntry], axis: ProviderAxis) -> Vec<&ProviderListEntry> {
+        entries.iter().filter(|e| e.axis == axis).collect()
     }
 
     #[test]
-    fn provider_list_reports_missing_required_options() {
+    fn provider_list_has_kinds_then_profiles_per_axis() {
         let config = provider_list_config();
 
-        let entries = config.translation_provider_list_using(|_| None);
+        let entries = config.provider_list_using(|_| None);
 
-        assert_eq!(entries[0].missing, Vec::<String>::new());
-        assert_eq!(entries[1].missing, ["api_key"]);
-        assert_eq!(entries[2].missing, ["endpoint", "model"]);
-        assert_eq!(entries[3].missing, Vec::<String>::new());
+        let names = |axis| -> Vec<&str> {
+            axis_entries(&entries, axis)
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect()
+        };
+        assert_eq!(
+            names(ProviderAxis::Translation),
+            ["google", "deepl", "openai", "work"]
+        );
+        assert_eq!(names(ProviderAxis::Dictionary), ["google", "openai"]);
+        assert_eq!(names(ProviderAxis::Speech), ["google"]);
+        let translation = axis_entries(&entries, ProviderAxis::Translation);
+        assert_eq!(translation[0].display_name, "Google Translate");
+        assert_eq!(translation[2].display_name, "OpenAI-compatible");
+        assert_eq!(translation[3].display_name, "DeepL (work)");
+        let active: Vec<bool> = translation.iter().map(|e| e.active).collect();
+        assert_eq!(active, [true, false, false, false]);
+        // Axes come in display order, each in one block.
+        let axes: Vec<ProviderAxis> = entries.iter().map(|e| e.axis).collect();
+        let mut sorted = axes.clone();
+        sorted.sort_by_key(|axis| ProviderAxis::ALL.iter().position(|a| a == axis));
+        assert_eq!(axes, sorted);
+    }
+
+    /// A profile of kind `openai` serves translation and the dictionary, not speech.
+    #[test]
+    fn provider_list_puts_a_profile_under_every_axis_its_kind_serves() {
+        let mut config = provider_list_config();
+        config.provider_options.insert("ollama", "type", "openai");
+
+        let entries = config.provider_list_using(|_| None);
+
+        let axes: Vec<ProviderAxis> = entries
+            .iter()
+            .filter(|e| e.name == "ollama")
+            .map(|e| e.axis)
+            .collect();
+        assert_eq!(axes, [ProviderAxis::Translation, ProviderAxis::Dictionary]);
+        let dictionary = axis_entries(&entries, ProviderAxis::Dictionary);
+        assert_eq!(dictionary[2].display_name, "OpenAI-compatible (ollama)");
+    }
+
+    #[test]
+    fn provider_list_reports_missing_required_options_per_axis() {
+        let mut config = provider_list_config();
+        config.provider_options.insert("ollama", "type", "openai");
+        config
+            .provider_options
+            .insert("ollama", "model", "qwen3:8b");
+
+        let entries = config.provider_list_using(|_| None);
+
+        let translation = axis_entries(&entries, ProviderAxis::Translation);
+        assert_eq!(translation[0].missing, Vec::<String>::new());
+        assert_eq!(translation[1].missing, ["api_key"]);
+        assert_eq!(translation[2].missing, ["endpoint", "model"]);
+        assert_eq!(translation[3].name, "ollama");
+        assert_eq!(translation[3].missing, ["endpoint"]);
+        assert_eq!(translation[4].missing, Vec::<String>::new());
+        let dictionary = axis_entries(&entries, ProviderAxis::Dictionary);
+        assert_eq!(dictionary[1].missing, ["endpoint", "model"]);
+        assert_eq!(dictionary[2].missing, ["endpoint"]);
     }
 
     /// A required option supplied through `TAGENT_<NAME>_<KEY>` counts as set.
@@ -3959,44 +4165,103 @@ api_key = "secret-0123456789"  # from the account page
     fn provider_list_counts_env_overrides() {
         let config = provider_list_config();
 
-        let entries = config.translation_provider_list_using(|var| {
+        let entries = config.provider_list_using(|var| {
             (var == "TAGENT_DEEPL_API_KEY").then(|| "key:fx".to_string())
         });
 
+        assert_eq!(entries[1].name, "deepl");
         assert_eq!(entries[1].missing, Vec::<String>::new());
     }
 
     #[test]
-    fn provider_list_marks_the_active_profile() {
+    fn provider_list_marks_the_active_profile_per_axis() {
         let mut config = provider_list_config();
         config.translate_provider = "Work".to_string();
+        config.dictionary_provider = "OpenAI".to_string();
 
-        let entries = config.translation_provider_list_using(|_| None);
+        let entries = config.provider_list_using(|_| None);
 
-        let active: Vec<&str> = entries
+        let active: Vec<(ProviderAxis, &str)> = entries
             .iter()
             .filter(|e| e.active)
-            .map(|e| e.name.as_str())
+            .map(|e| (e.axis, e.name.as_str()))
             .collect();
-        assert_eq!(active, ["work"]);
+        assert_eq!(
+            active,
+            [
+                (ProviderAxis::Translation, "work"),
+                (ProviderAxis::Dictionary, "openai"),
+                (ProviderAxis::Speech, "google"),
+            ]
+        );
     }
 
     #[test]
-    fn provider_list_lines_align_names_and_mark_the_active_one() {
+    fn provider_list_lines_number_continuously_across_axes() {
         let config = provider_list_config();
 
-        let lines = provider_list_lines(&config.translation_provider_list_using(|_| None));
+        let lines = provider_list_lines(&config.provider_list_using(|_| None), &config);
 
         assert_eq!(
             lines,
             [
-                "Translation providers:",
-                "* google  Google Translate",
-                "  deepl   DeepL (missing: api_key)",
-                "  openai  OpenAI-compatible (missing: endpoint, model)",
-                "  work    DeepL (work)",
-                "Switch with /p <name>; /save keeps the choice.",
+                "Providers:",
+                " Translation",
+                " * 1  google  Google Translate",
+                "   2  deepl   DeepL (missing: api_key)",
+                "   3  openai  OpenAI-compatible (missing: endpoint, model)",
+                "   4  work    DeepL (work)",
+                " Dictionary",
+                " * 5  google  Google Dictionary",
+                "   6  openai  OpenAI-compatible (missing: endpoint, model)",
+                " Speech",
+                " * 7  google  Google TTS",
+                "Switch with /p <number>, /p <name> (translation) or /p t|d|s <name>; \
+                 /save keeps the choice.",
             ]
+        );
+    }
+
+    /// A turned-off axis is still listed (switching it is allowed), with a note.
+    #[test]
+    fn provider_list_lines_note_a_disabled_axis() {
+        let mut config = provider_list_config();
+        config.show_dictionary = false;
+        config.enable_text_to_speech = false;
+
+        let lines = provider_list_lines(&config.provider_list_using(|_| None), &config);
+
+        assert!(lines.contains(&" Translation".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&" Dictionary (off: show_dictionary = false)".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&" Speech (off: enable_text_to_speech = false)".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&" * 7  google  Google TTS".to_string()),
+            "{lines:?}"
+        );
+    }
+
+    /// Two-digit numbers keep the names aligned.
+    #[test]
+    fn provider_list_lines_right_align_numbers() {
+        let mut config = provider_list_config();
+        for name in ["a1", "a2", "a3", "a4"] {
+            config.provider_options.insert(name, "type", "google");
+        }
+
+        let lines = provider_list_lines(&config.provider_list_using(|_| None), &config);
+
+        assert_eq!(lines[2], " *  1  google  Google Translate");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == " *  9  google  Google Dictionary"),
+            "{lines:?}"
         );
     }
 }

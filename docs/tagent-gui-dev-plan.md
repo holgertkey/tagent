@@ -144,7 +144,12 @@ Candidates, not yet scheduled; the order is a suggestion.
    `default`, "Reset to default", and a soft ⚠ when `{to}` is missing; driven only by the
    `OptionSpec`, so P3's `dictionary_prompt` needs no GUI change. See the changelog and
    "tagent-gui: Slint desktop GUI" in `docs/ARCHITECTURE.md`.
-5. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
+5. ~~**Provider menu for all three axes.**~~ Done in 0.15.0+004 (2026-10-03, Stage U of
+   [`providers-dev-plan.md`](providers-dev-plan.md)): the ComboBox next to ⚙ became a
+   menu with a Translation, a Dictionary and a Speech section; picks are session-only
+   per axis. The same sections in the tray menu are a possible follow-up, once the menu
+   proves itself (and slint#13624 is fixed).
+6. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
 

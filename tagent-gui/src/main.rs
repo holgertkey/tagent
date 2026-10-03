@@ -8,6 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tagent::providers::ProviderAxis;
 use tagent::{languages, providers};
 
 mod config;
@@ -19,6 +20,7 @@ mod dictionary;
 mod platform;
 mod popup_position;
 mod provider_form;
+mod provider_menu;
 mod session_provider;
 mod speech;
 mod styled;
@@ -92,7 +94,7 @@ thread_local! {
 
 /// Selects `config`'s language pair in the main window's dropdowns at startup and whenever
 /// that pair changes (a Settings save or a hand-edit). In between, a pick in the window
-/// holds for the run, like its translation provider picker.
+/// holds for the run, like a pick in its provider menu.
 fn refresh_default_languages(window: &AppWindow, config: &config::GuiConfig) {
     let pair = (
         config.source_language.clone(),
@@ -1273,7 +1275,7 @@ fn start_profile_test(
             let started = std::time::Instant::now();
             let result = runtime.block_on(test_profile_axis(axis, &profile, &options, &target));
             lines.push(provider_form::format_test_line(
-                axis,
+                axis.label(),
                 started.elapsed(),
                 &result,
             ));
@@ -1292,17 +1294,17 @@ fn start_profile_test(
 /// app uses (a missing required option fails here, before any network call) and makes one
 /// call. Returns what to show after "OK".
 async fn test_profile_axis(
-    axis: &str,
+    axis: providers::ProviderAxis,
     profile: &str,
     options: &providers::ProviderOptions,
     target: &str,
 ) -> Result<String, tagent::error::Error> {
     match axis {
-        "translation" => {
+        providers::ProviderAxis::Translation => {
             let provider = providers::create_provider_with(profile, options)?;
             provider.translate_text("Hello, world!", "en", target).await
         }
-        "dictionary" => {
+        providers::ProviderAxis::Dictionary => {
             let provider = providers::create_dictionary_provider_with(profile, options)?;
             let entry = provider
                 .lookup(provider_form::TEST_WORD, "en", target)
@@ -1317,7 +1319,7 @@ async fn test_profile_axis(
                 primary.as_deref(),
             ))
         }
-        _ => {
+        providers::ProviderAxis::Speech => {
             let provider = providers::create_speech_provider_with(profile, options)?;
             let audio = provider.speak_chunk("Hello", "en").await?;
             Ok(format!("{} bytes of audio", audio.len()))
@@ -1527,40 +1529,45 @@ fn provider_header_lines(
     lines.join("\n")
 }
 
-/// [`provider_header_lines`] for `config`'s selected providers, named by building each
-/// one through `tagent`'s factories (no network involved) and asking for its `name()`,
-/// so a profile shows the way `tagent` labels it, e.g. `"DeepL (work)"`. The translation
-/// provider is the one in effect; a main-window pick for this run is marked
-/// `(this session)`.
+/// [`provider_header_lines`] for the providers in effect (see [`effective_provider`]),
+/// named by building each one through `tagent`'s factories (no network involved) and
+/// asking for its `name()`, so a profile shows the way `tagent` labels it, e.g.
+/// `"DeepL (work)"`. A main-window pick for this run is marked `(this session)`.
 fn providers_header(config: &config::GuiConfig) -> String {
-    let (translate_name, session) = effective_translate_provider(config);
-    let translation = config.provider_choice(&translate_name);
-    let dictionary = config.provider_choice(&config.dictionary_provider);
-    let speech = config.provider_choice(&config.speech_provider);
-    provider_header_lines(
-        config,
-        providers::create_provider_with(&translation.name, &translation.options)
-            .map(|p| {
+    let [translation, dictionary, speech] = ProviderAxis::ALL.map(|axis| {
+        let (name, session) = effective_provider(config, axis);
+        let choice = config.provider_choice(&name);
+        let built = match axis {
+            ProviderAxis::Translation => {
+                providers::create_provider_with(&choice.name, &choice.options)
+                    .map(|p| p.name().to_string())
+            }
+            ProviderAxis::Dictionary => {
+                providers::create_dictionary_provider_with(&choice.name, &choice.options)
+                    .map(|p| p.name().to_string())
+            }
+            ProviderAxis::Speech => {
+                providers::create_speech_provider_with(&choice.name, &choice.options)
+                    .map(|p| p.name().to_string())
+            }
+        };
+        built
+            .map(|name| {
                 if session {
-                    format!("{} (this session)", p.name())
+                    format!("{name} (this session)")
                 } else {
-                    p.name().to_string()
+                    name
                 }
             })
-            .map_err(|e| e.to_string()),
-        providers::create_dictionary_provider_with(&dictionary.name, &dictionary.options)
-            .map(|p| p.name().to_string())
-            .map_err(|e| e.to_string()),
-        providers::create_speech_provider_with(&speech.name, &speech.options)
-            .map(|p| p.name().to_string())
-            .map_err(|e| e.to_string()),
-    )
+            .map_err(|e| e.to_string())
+    });
+    provider_header_lines(config, translation, dictionary, speech)
 }
 
-/// What the `Providers:` header and the translation picker depend on: the translation
-/// provider in effect (see [`effective_translate_provider`]), then config fields.
+/// What the `Providers:` header and the provider menu depend on: the provider in effect on
+/// each axis (see [`effective_provider`]), then config fields.
 type ProvidersHeaderKey = (
-    String,
+    [String; 3],
     String,
     String,
     String,
@@ -1577,77 +1584,106 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// The translation provider picked in the main window for this run, if any (see
+/// The providers picked in the main window for this run, per axis (see
 /// `session_provider`). Read by the button, hotkey and speech paths, some on their own
 /// threads, hence a `Mutex` rather than a `thread_local!`.
-static SESSION_TRANSLATE_PROVIDER: Mutex<Option<session_provider::SessionChoice>> =
-    Mutex::new(None);
+static SESSION_PROVIDERS: Mutex<session_provider::SessionChoices> =
+    Mutex::new(session_provider::SessionChoices::new());
 
-/// Records a pick in the main window's translation provider picker, over `config`'s
-/// `translate_provider`.
-fn select_session_translate_provider(config: &config::GuiConfig, picked: &str) {
-    session_provider::select(
-        &mut SESSION_TRANSLATE_PROVIDER.lock().unwrap(),
-        picked,
-        &config.translate_provider,
-    );
+/// Records a pick on `axis` in the main window's provider menu, over `config`'s
+/// configured provider of that axis.
+fn select_session_provider(config: &config::GuiConfig, axis: ProviderAxis, picked: &str) {
+    SESSION_PROVIDERS
+        .lock()
+        .unwrap()
+        .select(axis, picked, config.provider_name(axis));
 }
 
-/// The translation provider in effect: the main window's pick for this run while it
-/// still applies, otherwise `config`'s `translate_provider`. The second value is `true`
-/// for a pick.
-fn effective_translate_provider(config: &config::GuiConfig) -> (String, bool) {
-    let offered = config.profiles_of_kinds(providers::TRANSLATION_PROVIDERS);
-    let name = session_provider::resolve(
-        &mut SESSION_TRANSLATE_PROVIDER.lock().unwrap(),
-        &config.translate_provider,
-        |name| {
-            providers::TRANSLATION_PROVIDERS
-                .iter()
-                .any(|known| known.eq_ignore_ascii_case(name))
+/// The provider in effect on `axis`: the main window's pick for this run while it still
+/// applies, otherwise `config`'s configured one. The second value is `true` for a pick.
+fn effective_provider(config: &config::GuiConfig, axis: ProviderAxis) -> (String, bool) {
+    let kinds = axis.kinds();
+    let offered = config.profiles_of_kinds(kinds);
+    let configured = config.provider_name(axis);
+    let name = SESSION_PROVIDERS
+        .lock()
+        .unwrap()
+        .resolve(axis, configured, |name| {
+            kinds.iter().any(|known| known.eq_ignore_ascii_case(name))
                 || offered
                     .iter()
                     .any(|profile| profile.eq_ignore_ascii_case(name))
-        },
-    );
-    let session = name != config.translate_provider;
+        });
+    let session = name != configured;
     (name, session)
 }
 
-/// [`config::GuiConfig::provider_choice`] for the translation provider in effect (see
-/// [`effective_translate_provider`]).
-fn translate_provider_choice(config: &config::GuiConfig) -> config::ProviderChoice {
-    config.provider_choice(&effective_translate_provider(config).0)
+/// [`config::GuiConfig::provider_choice`] for the provider in effect on `axis` (see
+/// [`effective_provider`]).
+fn effective_provider_choice(
+    config: &config::GuiConfig,
+    axis: ProviderAxis,
+) -> config::ProviderChoice {
+    config.provider_choice(&effective_provider(config, axis).0)
 }
 
-/// Fills the main window's translation provider picker from `config`: the same choices
-/// as Settings > Providers' (hidden entries left out, except the provider in effect),
-/// the provider in effect selected, and a warning when it lacks a required option.
-fn refresh_translate_provider_picker(window: &AppWindow, config: &config::GuiConfig) {
-    let (current, _) = effective_translate_provider(config);
-    let entries = provider_form::picker_entries(
-        providers::TRANSLATION_PROVIDERS,
+/// Fills the main window's provider menu from `config` (see [`provider_menu::sections`]):
+/// one section per axis with the provider in effect checked, the button naming the
+/// translation provider in effect, and the ⚠ when a provider in effect on a turned-on axis
+/// lacks a required option.
+fn refresh_provider_menu(window: &AppWindow, config: &config::GuiConfig) {
+    let effective = ProviderAxis::ALL.map(|axis| effective_provider(config, axis).0);
+    let enabled = ProviderAxis::ALL.map(|axis| config.axis_enabled(axis));
+    let env = |var: &str| std::env::var(var).ok();
+    let sections = provider_menu::sections(
         &config.provider_options,
         &config.hidden_providers,
-        &current,
+        &effective,
+        enabled,
+        env,
     );
-    let (model, index) = provider_choices(&entries, &current);
-    window.set_translate_providers(model);
-    window.set_translate_provider_index(index);
-    window.set_translate_provider_warning(
-        provider_form::warning(
-            &config.provider_options,
-            &current,
-            &provider_form::Edits::new(),
-            |var| std::env::var(var).ok(),
-        )
-        .into(),
+    for section in sections {
+        let heading = SharedString::from(section.heading.as_str());
+        let model = ModelRc::new(VecModel::from(
+            section
+                .entries
+                .into_iter()
+                .map(|entry| ProviderMenuEntry {
+                    name: entry.name.into(),
+                    title: entry.title.into(),
+                    checked: entry.checked,
+                })
+                .collect::<Vec<_>>(),
+        ));
+        match section.axis {
+            ProviderAxis::Translation => {
+                window.set_translation_menu_heading(heading);
+                window.set_translation_menu(model);
+            }
+            ProviderAxis::Dictionary => {
+                window.set_dictionary_menu_heading(heading);
+                window.set_dictionary_menu(model);
+            }
+            ProviderAxis::Speech => {
+                window.set_speech_menu_heading(heading);
+                window.set_speech_menu(model);
+            }
+        }
+    }
+    let [translation, dictionary, speech] = &effective;
+    window.set_provider_button_text(format!("{translation} ▾").into());
+    window.set_provider_button_label(
+        format!("Providers: translation {translation}, dictionary {dictionary}, speech {speech}")
+            .into(),
+    );
+    window.set_provider_warning(
+        provider_menu::warning(&config.provider_options, &effective, enabled, env).into(),
     );
 }
 
 /// Updates what the main window shows from the config -- its default language pair
 /// ([`refresh_default_languages`]), the transcript header's `Providers:` block and the
-/// translation provider picker. Called wherever the UI thread reloads the config (and at
+/// provider menu. Called wherever the UI thread reloads the config (and at
 /// startup, and on a Settings save); each part changes only when a field it depends on
 /// changed since the last call, so the translate and hotkey paths don't pay for it every
 /// time. Tracking the fields rather than `check_and_reload`'s result keeps it right when
@@ -1657,7 +1693,7 @@ fn refresh_config_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfig
     let config = config_manager.lock().unwrap().config().clone();
     refresh_default_languages(window, &config);
     let key: ProvidersHeaderKey = (
-        effective_translate_provider(&config).0,
+        ProviderAxis::ALL.map(|axis| effective_provider(&config, axis).0),
         config.translate_provider.clone(),
         config.dictionary_provider.clone(),
         config.speech_provider.clone(),
@@ -1671,7 +1707,7 @@ fn refresh_config_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfig
         return;
     }
     window.set_active_providers(providers_header(&config).into());
-    refresh_translate_provider_picker(window, &config);
+    refresh_provider_menu(window, &config);
     LAST_PROVIDERS_HEADER_KEY.with(|cell| *cell.borrow_mut() = Some(key));
 }
 
@@ -1831,8 +1867,8 @@ fn start_speaking(
                     manager.check_and_reload();
                     let cfg = manager.config();
                     (
-                        translate_provider_choice(cfg),
-                        cfg.provider_choice(&cfg.speech_provider),
+                        effective_provider_choice(cfg, ProviderAxis::Translation),
+                        effective_provider_choice(cfg, ProviderAxis::Speech),
                     )
                 };
                 let speech_provider = providers::create_speech_provider_with(
@@ -2530,8 +2566,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             manager.check_and_reload();
             let cfg = manager.config();
             (
-                translate_provider_choice(cfg),
-                cfg.provider_choice(&cfg.dictionary_provider),
+                effective_provider_choice(cfg, ProviderAxis::Translation),
+                effective_provider_choice(cfg, ProviderAxis::Dictionary),
                 cfg.show_prompt,
                 cfg.show_dictionary,
                 cfg.spell_check,
@@ -2605,26 +2641,33 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     });
 
-    // A pick in the main window's translation provider picker holds for this run only
-    // (see `session_provider`): nothing is written, and Settings keeps showing the saved
-    // default.
+    // A pick in the main window's provider menu holds for this run only, on its axis (see
+    // `session_provider`): nothing is written, and Settings keeps showing the saved
+    // defaults.
     let window_weak = window.as_weak();
     let config_manager_for_picker = config_manager.clone();
-    window.on_translate_provider_selected(move |provider| {
+    window.on_provider_picked(move |axis, provider| {
+        let Some(axis) = usize::try_from(axis)
+            .ok()
+            .and_then(|index| ProviderAxis::ALL.get(index).copied())
+        else {
+            return;
+        };
         let config = {
             let mut manager = config_manager_for_picker.lock().unwrap();
             // Compared with the current default, so read it fresh.
             manager.check_and_reload();
             manager.config().clone()
         };
-        select_session_translate_provider(&config, &provider);
+        select_session_provider(&config, axis, &provider);
         if let Some(window) = window_weak.upgrade() {
             refresh_config_views(&window, &config_manager_for_picker);
         }
     });
 
-    // The ⚠ next to the main window's provider picker opens Settings on the Providers
-    // tab, where the missing option is spelled out and "Options…" is at hand.
+    // The ⚠ next to the main window's provider menu, and the menu's "Providers…", open
+    // Settings on the Providers tab, where a missing option is spelled out and "Options…"
+    // is at hand.
     let window_weak_for_warning = window.as_weak();
     window.on_provider_warning_clicked(move || {
         if let Some(window) = window_weak_for_warning.upgrade() {
@@ -3710,8 +3753,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         manager.check_and_reload();
                         let cfg = manager.config();
                         (
-                            translate_provider_choice(cfg),
-                            cfg.provider_choice(&cfg.dictionary_provider),
+                            effective_provider_choice(cfg, ProviderAxis::Translation),
+                            effective_provider_choice(cfg, ProviderAxis::Dictionary),
                             cfg.show_prompt,
                             cfg.show_dictionary,
                             cfg.spell_check,
@@ -4299,47 +4342,66 @@ mod tests {
         assert_eq!(lines[2], "  Speech: Google TTS (gui-test-header)");
     }
 
-    /// The main window's picker offers the built-in names plus translation profiles,
-    /// selects the configured one and warns while its required key is missing.
+    /// The main window's menu offers the built-in names plus profiles on each axis,
+    /// checks the configured ones, names the translation provider on its button and
+    /// warns while a required key is missing. The profile names are unusual so no
+    /// `TAGENT_<NAME>_<KEY>` in the developer's shell can interfere.
     #[test]
-    fn translate_provider_picker_follows_the_config() {
+    fn provider_menu_follows_the_config() {
         i_slint_backend_testing::init_no_event_loop();
         let window = AppWindow::new().unwrap();
 
         let mut profiles = tagent::providers::ProviderProfiles::new();
-        profiles.insert("gui-test-picker", "type", "deepl");
+        profiles.insert("gui-test-menu", "type", "deepl");
+        profiles.insert("gui-test-llm", "type", "openai");
+        profiles.insert("gui-test-llm", "endpoint", "http://localhost:11434/v1");
+        profiles.insert("gui-test-llm", "model", "m");
         let mut config = config::GuiConfig {
-            translate_provider: "gui-test-picker".to_string(),
+            translate_provider: "gui-test-menu".to_string(),
+            dictionary_provider: "gui-test-llm".to_string(),
+            enable_text_to_speech: false,
             provider_options: profiles,
             ..config::GuiConfig::default()
         };
-        refresh_translate_provider_picker(&window, &config);
-        let names: Vec<String> = window
-            .get_translate_providers()
-            .iter()
-            .map(|name| name.to_string())
-            .collect();
-        assert!(names.starts_with(&["google".to_string(), "deepl".to_string()]));
-        assert!(names.contains(&"gui-test-picker".to_string()));
-        let selected = combo_selection(
-            &window.get_translate_providers(),
-            window.get_translate_provider_index(),
-            "",
+        refresh_provider_menu(&window, &config);
+
+        let entries = |model: ModelRc<ProviderMenuEntry>| -> Vec<(String, bool)> {
+            model
+                .iter()
+                .map(|entry| (entry.name.to_string(), entry.checked))
+                .collect()
+        };
+        let translation = entries(window.get_translation_menu());
+        assert!(
+            translation.starts_with(&[("google".to_string(), false), ("deepl".to_string(), false)])
         );
-        assert_eq!(selected, "gui-test-picker");
+        assert!(translation.contains(&("gui-test-menu".to_string(), true)));
+        let dictionary = entries(window.get_dictionary_menu());
+        assert!(dictionary.contains(&("gui-test-llm".to_string(), true)));
+        assert!(!dictionary.iter().any(|(name, _)| name == "gui-test-menu"));
         assert_eq!(
-            window.get_translate_provider_warning(),
-            "gui-test-picker: api_key required"
+            entries(window.get_speech_menu()),
+            [("google".to_string(), true)]
+        );
+        assert_eq!(window.get_speech_menu_heading(), "Speech (off)");
+        assert_eq!(window.get_provider_button_text(), "gui-test-menu ▾");
+        assert_eq!(
+            window.get_provider_warning(),
+            "gui-test-menu: api_key required"
         );
 
         config
             .provider_options
-            .insert("gui-test-picker", "api_key", "k:fx");
-        refresh_translate_provider_picker(&window, &config);
-        assert_eq!(window.get_translate_provider_warning(), "");
+            .insert("gui-test-menu", "api_key", "k:fx");
+        refresh_provider_menu(&window, &config);
+        assert_eq!(window.get_provider_warning(), "");
 
         config.translate_provider = "google".to_string();
-        refresh_translate_provider_picker(&window, &config);
-        assert_eq!(window.get_translate_provider_index(), 0);
+        refresh_provider_menu(&window, &config);
+        assert_eq!(window.get_provider_button_text(), "google ▾");
+        assert_eq!(
+            entries(window.get_translation_menu())[0],
+            ("google".to_string(), true)
+        );
     }
 }

@@ -942,7 +942,8 @@ masked profile secrets; a release build syncs the `0.17.0` version into the docs
 
 ### Stage U — One provider list for all three axes (apps)
 
-**Status:** planned (2026-10-02)
+**Status:** implemented (2026-10-03: `tagent` 0.19.0+005, `tagent-cli` 0.17.0+018,
+`tagent-gui` 0.15.0+004); the user's manual pass of the GUI menu is pending
 **Goal:** pick the translation, dictionary and speech provider for the current session
 from one list: `/p` in `tagent-cli`'s interactive mode, and a provider menu in
 `tagent-gui`'s main window. An app-side stage; the library only gains a shared axis
@@ -1356,7 +1357,39 @@ documentation only and gets no bump.
 
 #### Notes after landing
 
-*(fill in)*
+- **One `+BUILD` per crate.** U1–U4 landed together as `tagent-cli` 0.17.0+018, and U5–U6
+  as `tagent-gui` 0.15.0+004, as Stage S did. U0 is `tagent` 0.19.0+005.
+- **U5's Slint questions, answered from the 1.17.1 compiler sources**
+  (`i-slint-compiler/builtins.slint` and `passes/lower_menus.rs`; the 1.17 web docs URL
+  returned 404).
+  - `for` and `if` inside a `Menu` are lowered. Only the `ContextMenuArea`'s root `Menu`
+    may not be conditional or repeated.
+  - `ContextMenuArea.show(Point)` takes a position relative to the area. The button calls
+    it with `{x: 0, y: button.height}`.
+  - `MenuItem.checked` draws a checkmark without `checkable`.
+  - Nothing needed a workaround, so G1 stayed.
+- **Layout: one `for` per axis.** The menu has three models (`translation-menu`, ...),
+  each preceded by a fixed, disabled header `MenuItem`, with `MenuSeparator`s between the
+  sections. This replaces the plan's single model with `header`/`warning` fields, which
+  would have needed mixed item types in one `for`. The ⚠ is part of an entry's title
+  (`DeepL (work)  ⚠ api_key`).
+- **The header's look is unchecked.** The disabled `MenuItem` used as a section header,
+  in light and dark themes, still needs the user's manual pass. Opening the menu needs a
+  real click, and that wasn't automated (see U6). A screenshot of the main window, menu
+  closed, shows the new `google ▾` button in the dark theme.
+- **The ⚠ next to the button covers only turned-on axes.** A dictionary or speech
+  provider that isn't used (`show_dictionary`/`enable_text_to_speech` off) doesn't
+  warn. Its menu entry still carries its own ⚠.
+- **The `/p` parser takes a predicate.** It is `parse_provider_command(text,
+  is_translation_name)`, because "`/p t` selects a profile named `t` if there is one"
+  needs the translation names. With `|_| false` it doubles as the "is this a `/p`
+  command at all" check, before the config is reloaded.
+- **`Config::build_provider_name(axis)`** builds the provider of an axis and returns its
+  display name. `switch_provider` uses it to validate a choice and for the message.
+- **Display names in the `tagent-cli` list come from the registry**, so the dictionary
+  row reads `Google Dictionary`, not `Google Translate` as in the plan's sketch.
+- **Out-of-range digits.** A number too large for `usize` becomes `Number(0)`, which is
+  out of range like 0 and gets the same "choose 1-N" error.
 
 ---
 

@@ -22,7 +22,7 @@ have no `+BUILD`.
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-10-02
+## [0.19.0] - 2026-10-03
 
 ### Changed
 - (+003) **The OpenAI-compatible dictionary provider reads an answer made of several JSON
@@ -47,6 +47,11 @@ have no `+BUILD`.
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- (+005) **`providers::ProviderAxis`**: the three provider axes (`Translation`,
+  `Dictionary`, `Speech`) as one type, with `ALL` (display order), `kinds()` (the axis's
+  `*_PROVIDERS` list), `descriptors()` (its registry) and `label()` (`"translation"`, ...),
+  so an application can walk every axis in one loop instead of keeping its own copy of
+  the three lists. Not `#[non_exhaustive]`, so applications can `match` on it.
 - (+002) **OpenAI-compatible dictionary provider** (feature `openai`;
   `providers::openai::OpenAiDictionaryProvider`, `"openai"` now also in
   `DICTIONARY_PROVIDERS` and `dictionary_providers()`, display name `"OpenAI-compatible"`):

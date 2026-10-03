@@ -372,7 +372,9 @@ documentation only, no bump).
 
 - Switching the dictionary and speech providers (`/p dict ...`, `/p speech ...`); see
   Decisions. The dictionary provider is also built once per run today, so it would need
-  the same slot as S1.
+  the same slot as S1. Done later in Stage U of
+  [`providers-dev-plan.md`](providers-dev-plan.md) (`0.17.0+018`: `/p d|s <name>`,
+  numbered list, the dictionary slot).
 - `tagent-gui`: it already has its own session-only provider picker (`tagent-gui` 0.14.0+030).
 - A one-shot CLI flag (`tagent-cli --provider deepl "text"`): a separate small feature
   if wanted; S1's rebuild-on-change makes it trivial.

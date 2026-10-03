@@ -12,9 +12,35 @@ before 2026-10-02 have one header per build.
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-10-02
+## [0.17.0] - 2026-10-03
 
 ### Added
+- (+018) **`/p` switches the dictionary and speech providers too.** `/p` now lists all three
+  axes, numbered continuously:
+  ```
+  Providers:
+   Translation
+   * 1  google  Google Translate
+     2  deepl   DeepL (missing: api_key)
+     3  openai  OpenAI-compatible (missing: endpoint, model)
+     4  ollama  OpenAI-compatible (ollama)
+   Dictionary
+   * 5  google  Google Dictionary
+     6  openai  OpenAI-compatible (missing: endpoint, model)
+     7  ollama  OpenAI-compatible (ollama)
+   Speech
+   * 8  google  Google TTS
+  Switch with /p <number>, /p <name> (translation) or /p t|d|s <name>; /save keeps the choice.
+  ```
+  `/p 7` picks an entry by its number (as last listed), `/p d ollama` names the axis
+  (`t`/`translation`, `d`/`dict`/`dictionary`, `s`/`speech`), and `/p ollama` still
+  switches the translation provider only. A profile serving two axes (kind `openai`) is
+  listed under both, with the missing options of each. An axis turned off
+  (`show_dictionary = false`, `enable_text_to_speech = false`) is listed with a note and can
+  still be switched; the choice applies once it is turned on. The message names the axis
+  (`Dictionary provider: OpenAI-compatible (ollama) (this session; /save to keep)`).
+  Digits after `/p` are always a number, so a profile named `2` is reached with `/p t 2`.
+  Tab completes the axis words and provider names after `/p`.
 - (+015) **The OpenAI-compatible provider can serve dictionary lookups too** (OpenAI, Ollama,
   LM Studio, ...), from `tagent`'s new `openai` dictionary provider. One profile can serve
   both:
@@ -153,6 +179,14 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+018) **`dictionary_provider` no longer needs a restart**: a change from `/p d`, or an
+  edit of the file, is used by the next lookup, from the prompt and the hotkey. A value that
+  can't be built keeps the working dictionary provider and is reported once; a dictionary
+  provider that failed at startup is replaced as soon as a usable one is chosen. The
+  template drops its "requires application restart" note (an existing file keeps it,
+  since `--update-config` never rewrites comments).
+- (+018) **`/save` writes `dictionary_provider` and `speech_provider` too**, under the same rule
+  as `translate_provider`: only if the key is in the file or the value isn't the default.
 - (+017) **A new config file's example profiles are grouped by provider**: the second
   `deepl` profile (`[provider_options.deepl-work]`) now follows the `deepl` block instead
   of ending the file, and the `openai` block is followed by a ready-to-use profile of

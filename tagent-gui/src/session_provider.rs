@@ -1,21 +1,26 @@
-//! The main window's translation provider picker: a choice for this run only, on top of
-//! `translate_provider` in `tagent-gui.json`.
+//! The main window's provider menu: a choice for this run only on each provider axis, on
+//! top of `translate_provider`, `dictionary_provider` and `speech_provider` in
+//! `tagent-gui.json`.
 //!
-//! A choice lasts until the app exits or the configured value changes (a Settings save or
-//! a hand-edit of the file: the user picked a new default, so the window follows it), and
-//! is dropped when its profile disappears from the config. Picking the configured value
-//! drops it too, so "overridden" always means "differs from the default".
+//! A choice lasts until the app exits or that axis's configured value changes (a Settings
+//! save or a hand-edit of the file: the user picked a new default, so the window follows
+//! it), and is dropped when its profile disappears from the config. Picking the configured
+//! value drops it too, so "overridden" always means "differs from the default". The axes
+//! are independent: a choice on one never ends or changes another.
 //!
 //! Pure logic (no Slint types, no globals), so it's unit-tested here; `main.rs` keeps the
-//! one live instance behind a `Mutex`, since the hotkey and speech paths read it from
-//! their own threads.
+//! one live [`SessionChoices`] behind a `Mutex`, since the hotkey and speech paths read it
+//! from their own threads.
 
-/// A translation provider picked in the main window for this run.
+use tagent::providers::ProviderAxis;
+
+/// A provider picked in the main window for this run, on one axis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionChoice {
     /// The picked provider or profile name.
     chosen: String,
-    /// `translate_provider` when it was picked; a different value there ends the choice.
+    /// The axis's configured provider when it was picked; a different value there ends the
+    /// choice.
     configured: String,
 }
 
@@ -32,7 +37,7 @@ pub fn select(choice: &mut Option<SessionChoice>, picked: &str, configured: &str
     };
 }
 
-/// The translation provider to use now: this run's choice while it still applies,
+/// The provider to use now on one axis: this run's choice while it still applies,
 /// otherwise `configured`. A choice that no longer applies (the configured value changed,
 /// or `available` rejects it) is dropped here.
 pub fn resolve(
@@ -47,6 +52,46 @@ pub fn resolve(
         *choice = None;
     }
     configured.to_string()
+}
+
+/// This run's choices, one per provider axis.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionChoices {
+    /// Indexed like [`ProviderAxis::ALL`].
+    choices: [Option<SessionChoice>; 3],
+}
+
+impl SessionChoices {
+    /// No choices: every axis uses its configured provider.
+    pub const fn new() -> Self {
+        Self {
+            choices: [None, None, None],
+        }
+    }
+
+    fn slot(&mut self, axis: ProviderAxis) -> &mut Option<SessionChoice> {
+        let index = match axis {
+            ProviderAxis::Translation => 0,
+            ProviderAxis::Dictionary => 1,
+            ProviderAxis::Speech => 2,
+        };
+        &mut self.choices[index]
+    }
+
+    /// [`select`] on `axis`; the other axes keep their choices.
+    pub fn select(&mut self, axis: ProviderAxis, picked: &str, configured: &str) {
+        select(self.slot(axis), picked, configured);
+    }
+
+    /// [`resolve`] on `axis`; the other axes keep their choices.
+    pub fn resolve(
+        &mut self,
+        axis: ProviderAxis,
+        configured: &str,
+        available: impl Fn(&str) -> bool,
+    ) -> String {
+        resolve(self.slot(axis), configured, available)
+    }
 }
 
 #[cfg(test)]
@@ -99,5 +144,72 @@ mod tests {
             "google"
         );
         assert_eq!(choice, None);
+    }
+
+    #[test]
+    fn axes_are_independent() {
+        let mut choices = SessionChoices::new();
+        choices.select(ProviderAxis::Translation, "deepl", "google");
+        choices.select(ProviderAxis::Dictionary, "ollama", "google");
+
+        assert_eq!(
+            choices.resolve(ProviderAxis::Translation, "google", all),
+            "deepl"
+        );
+        assert_eq!(
+            choices.resolve(ProviderAxis::Dictionary, "google", all),
+            "ollama"
+        );
+        assert_eq!(
+            choices.resolve(ProviderAxis::Speech, "google", all),
+            "google"
+        );
+    }
+
+    /// A speech pick, and dropping it, leave the translation choice alone.
+    #[test]
+    fn a_speech_pick_does_not_touch_the_translation_choice() {
+        let mut choices = SessionChoices::new();
+        choices.select(ProviderAxis::Translation, "deepl", "google");
+        choices.select(ProviderAxis::Speech, "work", "google");
+        choices.select(ProviderAxis::Speech, "google", "google");
+
+        assert_eq!(
+            choices.resolve(ProviderAxis::Speech, "google", all),
+            "google"
+        );
+        assert_eq!(
+            choices.resolve(ProviderAxis::Translation, "google", all),
+            "deepl"
+        );
+    }
+
+    /// Each reset rule ends only its own axis's choice.
+    #[test]
+    fn reset_rules_work_per_axis() {
+        let mut choices = SessionChoices::new();
+        choices.select(ProviderAxis::Translation, "deepl", "google");
+        choices.select(ProviderAxis::Dictionary, "ollama", "google");
+        choices.select(ProviderAxis::Speech, "work", "google");
+
+        // A new configured dictionary provider ends the dictionary choice only.
+        assert_eq!(
+            choices.resolve(ProviderAxis::Dictionary, "openai", all),
+            "openai"
+        );
+        // A vanished profile ends the speech choice only.
+        assert_eq!(
+            choices.resolve(ProviderAxis::Speech, "google", |name| name != "work"),
+            "google"
+        );
+        assert_eq!(
+            choices.resolve(ProviderAxis::Translation, "google", all),
+            "deepl"
+        );
+        assert_eq!(
+            choices.resolve(ProviderAxis::Dictionary, "google", all),
+            "google",
+            "the ended choice doesn't come back with the old default"
+        );
     }
 }

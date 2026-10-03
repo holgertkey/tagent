@@ -73,6 +73,30 @@ impl ActiveTranslation {
     }
 }
 
+/// The dictionary provider in use, shared by every clone of a [`Translator`] like
+/// [`ActiveTranslation`], so a switch (`/p d`, or a hot reload of `dictionary_provider`)
+/// reaches the hotkey path too.
+struct ActiveDictionary {
+    /// The `dictionary_provider` value `provider` was built from.
+    name: String,
+    /// The provider, or why it couldn't be built (non-fatal, unlike translation: lookups
+    /// then fail at once and callers fall back to plain translation).
+    provider: Result<Arc<dyn DictionaryProvider>, String>,
+    /// A `dictionary_provider` value that failed to build while a working provider was
+    /// kept, so the error is reported once rather than on every lookup.
+    failed: Option<String>,
+}
+
+impl ActiveDictionary {
+    fn new(name: &str, provider: Result<Arc<dyn DictionaryProvider>, String>) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
+            name: name.to_string(),
+            provider,
+            failed: None,
+        }))
+    }
+}
+
 /// High-level translation orchestrator.
 ///
 /// `Translator` ties together a [`TranslationProvider`] and a [`DictionaryProvider`] (from
@@ -82,9 +106,7 @@ impl ActiveTranslation {
 #[derive(Clone)]
 pub struct Translator {
     translation: Arc<Mutex<ActiveTranslation>>,
-    /// The error message when the configured `dictionary_provider` could not be created;
-    /// dictionary lookups then fail immediately and callers fall back to plain translation.
-    dictionary_provider: Result<Arc<dyn DictionaryProvider>, String>,
+    dictionary: Arc<Mutex<ActiveDictionary>>,
     clipboard: ClipboardManager,
     config_manager: Arc<ConfigManager>,
     window_manager: Option<Arc<WindowManager>>,
@@ -147,7 +169,7 @@ impl Translator {
 
         Ok(Self {
             translation: ActiveTranslation::new(&config.translate_provider, Arc::from(provider)),
-            dictionary_provider,
+            dictionary: ActiveDictionary::new(&config.dictionary_provider, dictionary_provider),
             clipboard: ClipboardManager::new(),
             config_manager,
             window_manager,
@@ -157,17 +179,16 @@ impl Translator {
         })
     }
 
-    /// The providers for the banner: translation for `config`'s `translate_provider` (see
-    /// [`Self::translation_provider`]), dictionary as built at startup (kept for the whole
-    /// run), speech from `config`, since it is built again for every playback.
+    /// The providers for the banner: translation and dictionary for `config`'s
+    /// `translate_provider` and `dictionary_provider` (see [`Self::translation_provider`]
+    /// and [`Self::dictionary_provider`]), speech from `config`, since it is built again
+    /// for every playback.
     pub fn active_providers(&self, config: &config::Config) -> config::ActiveProviders {
         config::ActiveProviders {
             translation: Ok(self.translation_provider(config).name().to_string()),
             dictionary: self
-                .dictionary_provider
-                .as_ref()
-                .map(|dictionary| dictionary.name().to_string())
-                .map_err(Clone::clone),
+                .dictionary_provider(config)
+                .map(|dictionary| dictionary.name().to_string()),
             speech: config
                 .create_speech_provider()
                 .map(|speech| speech.name().to_string()),
@@ -515,8 +536,7 @@ impl Translator {
         // No dictionary provider: fail before any network call so the caller's fallback to
         // plain translation runs exactly once.
         let dictionary_provider = self
-            .dictionary_provider
-            .as_ref()
+            .dictionary_provider(&self.config_manager.get_config())
             .map_err(|_| "Dictionary provider unavailable")?;
 
         // Run regular translation and dictionary lookup concurrently
@@ -700,6 +720,61 @@ impl Translator {
         (name, provider)
     }
 
+    /// The dictionary provider for `config`'s `dictionary_provider`, or why there is none,
+    /// rebuilt when that value has changed since the slot was filled (`/p d`, or a hot
+    /// reload of the file). A value that fails to build keeps a working provider (the error
+    /// is shown once per value); with no working provider, the new error replaces the old
+    /// one, so the banner shows the current reason.
+    fn dictionary_provider(
+        &self,
+        config: &config::Config,
+    ) -> Result<Arc<dyn DictionaryProvider>, String> {
+        let wanted = &config.dictionary_provider;
+        let (provider, error) = {
+            let mut active = self.dictionary.lock().unwrap();
+            let mut error = None;
+            if active.name.eq_ignore_ascii_case(wanted) {
+                active.failed = None;
+            } else if !active
+                .failed
+                .as_ref()
+                .is_some_and(|failed| failed.eq_ignore_ascii_case(wanted))
+            {
+                match config.create_dictionary_provider() {
+                    Ok(provider) => {
+                        active.name = wanted.clone();
+                        active.provider = Ok(Arc::from(provider));
+                        active.failed = None;
+                    }
+                    Err(message) => {
+                        let kept = active.provider.as_ref().ok().map(|p| p.name().to_string());
+                        error = Some(match kept {
+                            Some(kept) => {
+                                active.failed = Some(wanted.clone());
+                                format!(
+                                    "Dictionary provider unavailable: {message}\n(keeping {kept})"
+                                )
+                            }
+                            None => {
+                                active.name = wanted.clone();
+                                active.provider = Err(message.clone());
+                                format!(
+                                    "Dictionary provider unavailable: {message}; \
+                                     dictionary lookups disabled"
+                                )
+                            }
+                        });
+                    }
+                }
+            }
+            (active.provider.clone(), error)
+        };
+        if let Some(error) = error {
+            self.emit_line(error);
+        }
+        provider
+    }
+
     /// Translate text using translation provider
     async fn translate_text_internal(
         &self,
@@ -869,7 +944,7 @@ mod tests {
         ));
         let translator = Translator {
             translation: ActiveTranslation::new("google", provider),
-            dictionary_provider: Err("no dictionary provider".to_string()),
+            dictionary: ActiveDictionary::new("google", Err("no dictionary provider".to_string())),
             clipboard: ClipboardManager::new(),
             config_manager: config_manager.clone(),
             window_manager: None,
@@ -930,9 +1005,13 @@ mod tests {
     ) -> Translator {
         Translator {
             translation: ActiveTranslation::new("google", Arc::new(provider)),
-            dictionary_provider: dictionary
-                .map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>)
-                .ok_or_else(|| "no dictionary provider".to_string()),
+            // Named after the test config's `dictionary_provider`, so the mock is kept.
+            dictionary: ActiveDictionary::new(
+                "google",
+                dictionary
+                    .map(|d| Arc::new(d) as Arc<dyn DictionaryProvider>)
+                    .ok_or_else(|| "no dictionary provider".to_string()),
+            ),
             clipboard: ClipboardManager::new(),
             config_manager: test_config_manager(unique),
             window_manager: None,
@@ -1177,9 +1256,10 @@ mod tests {
         let printer = MockPrinter::default();
         let captured = printer.messages.clone();
         translator.set_external_printer(printer);
-        translator
-            .config_manager
-            .set_translate_provider("no-such-provider");
+        translator.config_manager.set_provider(
+            tagent::providers::ProviderAxis::Translation,
+            "no-such-provider",
+        );
         let config = translator.config_manager.get_config();
 
         translator
@@ -1208,7 +1288,7 @@ mod tests {
         translator.translation.lock().unwrap().name = "DeepL-Work".to_string();
         translator
             .config_manager
-            .set_translate_provider("DeepL-Work");
+            .set_provider(tagent::providers::ProviderAxis::Translation, "DeepL-Work");
 
         let translation = translator
             .translate_text_internal("Hello", "en", "ru")
@@ -1226,5 +1306,132 @@ mod tests {
         let providers = translator.active_providers(&config);
 
         assert_eq!(providers.translation, Ok("DeepL".to_string()));
+    }
+
+    /// A config whose `dictionary_provider` is `name`, with an `ollama` profile of kind
+    /// `openai` that builds offline (nothing is looked up, so no request goes out).
+    fn config_with_dictionary(translator: &Translator, name: &str) -> config::Config {
+        let mut config = translator.config_manager.get_config();
+        config.dictionary_provider = name.to_string();
+        config.provider_options.insert("ollama", "type", "openai");
+        config
+            .provider_options
+            .insert("ollama", "endpoint", "http://localhost:11434/v1");
+        config.provider_options.insert("ollama", "model", "dummy");
+        config
+    }
+
+    fn mock_dictionary() -> Option<MockDictionary> {
+        Some(MockDictionary { entry: None })
+    }
+
+    #[test]
+    fn dictionary_provider_is_kept_while_dictionary_provider_is_unchanged() {
+        let translator = translator_with(MockProvider::new(""), mock_dictionary(), "dict_same");
+        let config = config_with_dictionary(&translator, "GOOGLE");
+
+        let first = translator.dictionary_provider(&config).unwrap();
+        let second = translator.dictionary_provider(&config).unwrap();
+
+        assert_eq!(first.name(), "mock dictionary", "case is ignored");
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn changed_dictionary_provider_rebuilds_the_provider() {
+        let translator = translator_with(MockProvider::new(""), mock_dictionary(), "dict_switch");
+        let config = config_with_dictionary(&translator, "ollama");
+
+        let first = translator.dictionary_provider(&config).unwrap();
+        let second = translator.dictionary_provider(&config).unwrap();
+
+        assert_eq!(first.name(), "OpenAI-compatible (ollama)");
+        assert!(Arc::ptr_eq(&first, &second), "built once, then kept");
+    }
+
+    /// The hotkey path and interactive mode hold clones of one `Translator`.
+    #[test]
+    fn dictionary_switch_is_shared_between_clones() {
+        let translator = translator_with(MockProvider::new(""), mock_dictionary(), "dict_clones");
+        let hotkey_copy = translator.clone();
+        let config = config_with_dictionary(&translator, "ollama");
+
+        let switched = translator.dictionary_provider(&config).unwrap();
+
+        let active = hotkey_copy.dictionary.lock().unwrap();
+        assert_eq!(active.name, "ollama");
+        assert!(Arc::ptr_eq(active.provider.as_ref().unwrap(), &switched));
+    }
+
+    #[test]
+    fn failed_dictionary_rebuild_keeps_working_provider_and_reports_once() {
+        let translator = translator_with(MockProvider::new(""), mock_dictionary(), "dict_failed");
+        let printer = MockPrinter::default();
+        let captured = printer.messages.clone();
+        translator.set_external_printer(printer);
+        let bad = config_with_dictionary(&translator, "no-such-provider");
+
+        assert_eq!(
+            translator.dictionary_provider(&bad).unwrap().name(),
+            "mock dictionary"
+        );
+        assert_eq!(
+            translator.dictionary_provider(&bad).unwrap().name(),
+            "mock dictionary"
+        );
+
+        let messages = captured.lock().unwrap().clone();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(messages[0].contains("no-such-provider"), "{messages:?}");
+        assert!(
+            messages[0].contains("keeping mock dictionary"),
+            "{messages:?}"
+        );
+
+        // Back to the working value and then to the bad one again: reported again.
+        let good = config_with_dictionary(&translator, "google");
+        translator.dictionary_provider(&good).unwrap();
+        translator.dictionary_provider(&bad).unwrap();
+        assert_eq!(captured.lock().unwrap().len(), 2);
+    }
+
+    /// A startup failure is not permanent: a value that builds replaces it.
+    #[test]
+    fn unavailable_dictionary_recovers_when_a_good_value_arrives() {
+        let translator = translator_with(MockProvider::new(""), None, "dict_recover");
+        translator.dictionary.lock().unwrap().name = "broken".to_string();
+        let config = config_with_dictionary(&translator, "google");
+
+        let provider = translator.dictionary_provider(&config).unwrap();
+
+        assert_eq!(provider.name(), "Google Dictionary");
+        assert_eq!(
+            translator.active_providers(&config).dictionary.as_deref(),
+            Ok("Google Dictionary")
+        );
+    }
+
+    /// With no working provider to keep, a new bad value replaces the stored error, so the
+    /// banner names the current reason; it is reported once.
+    #[test]
+    fn unavailable_dictionary_stores_the_new_error() {
+        let translator = translator_with(MockProvider::new(""), None, "dict_new_error");
+        let printer = MockPrinter::default();
+        let captured = printer.messages.clone();
+        translator.set_external_printer(printer);
+        let bad = config_with_dictionary(&translator, "no-such-provider");
+
+        let error = translator.dictionary_provider(&bad).err().unwrap();
+        assert!(error.contains("no-such-provider"), "{error}");
+        assert_eq!(
+            translator.dictionary_provider(&bad).err(),
+            Some(error.clone())
+        );
+        assert_eq!(translator.active_providers(&bad).dictionary, Err(error));
+        assert_eq!(
+            translator.dictionary.lock().unwrap().name,
+            "no-such-provider"
+        );
+        assert_eq!(captured.lock().unwrap().len(), 1);
     }
 }

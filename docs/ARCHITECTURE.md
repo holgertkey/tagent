@@ -321,10 +321,30 @@ library's option keys need no mapping.
   provider, and a value that failed to build). `translation_provider(&config)` rebuilds it
   when `config.translate_provider` differs (case-insensitively), before each translation
   and for the banner, so `/p` only has to change the in-memory `Config`
-  (`ConfigManager::set_translate_provider`, after building the provider once to validate
+  (`ConfigManager::set_translate_provider`, `set_provider(axis, ..)` since Stage U, after building the provider once to validate
   it) and the hotkey path follows; a hot reload of the file works the same way. A value
   that fails to build keeps the previous provider and is reported once (`failed`). The lock
-  is never held across an `.await`. The dictionary provider is still built once per run.
+  is never held across an `.await`.
+- **Switching every provider axis at runtime** (Stage U, `tagent-cli` 0.17.0+018,
+  `tagent-gui` 0.15.0+004). In `tagent-cli`, the dictionary provider gets the same kind
+  of slot (`Arc<Mutex<ActiveDictionary>>`), but it holds a `Result`, because a bad
+  dictionary provider must never break translation: a value that fails to build keeps a
+  working provider (reported once), and with no working provider the new error replaces
+  the stored one, so a startup failure recovers once a usable value arrives. The speech
+  provider is built per playback, so changing `speech_provider` in the in-memory `Config`
+  is enough. `/p` lists the three axes numbered continuously; `/p <n>` resolves against
+  the list last printed (a snapshot of `(axis, name)` pairs in `InteractiveMode`), so a
+  number means what was shown. The `/p` grammar has to stay unambiguous although profile
+  names are `[a-z0-9_-]+` (so `2` or `t` can be profiles): digits are always a number,
+  the second word of `/p <axis> <name>` is always a name, and a lone axis word is a
+  translation profile only if one has that name. `tagent::providers::ProviderAxis`
+  (`tagent` 0.19.0+005) gives both apps one type to walk the axes (`ALL`, `kinds()`,
+  `descriptors()`, `label()`). In `tagent-gui`, the session choice became one per axis
+  (`session_provider::SessionChoices`), shown in a `ContextMenuArea` menu: Slint 1.17
+  lowers `for`/`if` inside a `Menu` (only the root `Menu` may not be conditional), and
+  `MenuItem.checked` draws a checkmark without `checkable` (which would toggle it on
+  activation, wrong for a radio-like choice set from the model). One `for` per axis
+  between fixed header items and `MenuSeparator`s keeps it simple.
 - **Following template changes** (Stage C, `tagent-cli/src/config/upgrade.rs`, a child
   module so it can use `config.rs`'s private template functions). The template is the only
   list of known sections and keys; there is no `config_version`.
@@ -773,7 +793,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   including the main window's, is built from `provider_form::picker_entries`, which leaves
   hidden names out except the picker's own selection (so no selection vanishes) and the
   axis's first built-in (`can_hide`), the fallback after a delete. `hidden_providers` is
-  part of `refresh_config_views`' change key, so a save refreshes the main window's picker.
+  part of `refresh_config_views`' change key, so a save refreshes the main window's provider menu.
 - **Theme** (`GuiConfig.theme`, `"auto"`/`"light"`/`"dark"`; `View` tab in
   `SettingsDialog`): switches via `std-widgets`' `Palette.color-scheme`
   (`ColorScheme.unknown`/`.light`/`.dark`), but **not** by calling

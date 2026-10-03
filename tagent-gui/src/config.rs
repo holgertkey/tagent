@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tagent::languages;
-use tagent::providers::{ProviderOptions, ProviderProfiles};
+use tagent::providers::{ProviderAxis, ProviderOptions, ProviderProfiles};
 
 fn default_translate_provider() -> String {
     "google".to_string()
@@ -511,6 +511,26 @@ impl Default for GuiConfig {
 }
 
 impl GuiConfig {
+    /// The configured provider of `axis`: `translate_provider`, `dictionary_provider` or
+    /// `speech_provider`.
+    pub fn provider_name(&self, axis: ProviderAxis) -> &str {
+        match axis {
+            ProviderAxis::Translation => &self.translate_provider,
+            ProviderAxis::Dictionary => &self.dictionary_provider,
+            ProviderAxis::Speech => &self.speech_provider,
+        }
+    }
+
+    /// Whether `axis` is turned on: always for translation, `show_dictionary` and
+    /// `enable_text_to_speech` for the other two.
+    pub fn axis_enabled(&self, axis: ProviderAxis) -> bool {
+        match axis {
+            ProviderAxis::Translation => true,
+            ProviderAxis::Dictionary => self.show_dictionary,
+            ProviderAxis::Speech => self.enable_text_to_speech,
+        }
+    }
+
     /// Profile `name` with its effective options: its `provider_options` entry (matched
     /// case-insensitively), with `TAGENT_<NAME>_<KEY>` environment variables taking
     /// precedence.

@@ -47,6 +47,16 @@ export struct ProviderProfileRow {
     warning: string,
 }
 
+// One pickable entry of the main window's provider menu (built by main.rs
+// from provider_menu.rs): the kind or profile name a pick selects, what the
+// menu shows (display name, plus "⚠ <keys>" while a required option is
+// missing), and whether it is the provider in effect on its axis.
+export struct ProviderMenuEntry {
+    name: string,
+    title: string,
+    checked: bool,
+}
+
 export struct TranscriptEntry {
     phrase: string,
     translation: string,
@@ -297,16 +307,27 @@ export component AppWindow inherits Window {
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 0;
 
-    // The translation provider picker next to ⚙: the choices and the provider
-    // in effect (set by main.rs's `refresh_config_views`: this run's pick, or
-    // the config's default, so a new default from Settings or a hand-edit shows
-    // up here), and what the selected profile still lacks
+    // The provider menu next to ⚙ (set by main.rs's `refresh_config_views`):
+    // one section per axis (translation, dictionary, speech), each with its
+    // header ("Dictionary (off)" for a turned-off axis) and entries, the
+    // provider in effect checked (this run's pick, or the config's default, so
+    // a new default from Settings or a hand-edit shows up here). The button
+    // names the translation provider in effect; its accessible label names all
+    // three. `provider-warning` is what the providers in effect still lack
     // ("deepl: api_key required"), or "".
-    in-out property <[string]> translate-providers: [];
-    in-out property <int> translate-provider-index: 0;
-    in-out property <string> translate-provider-warning: "";
-    callback translate-provider-selected(string);
-    // The ⚠ next to the picker: opens Settings on the Providers tab.
+    in-out property <string> provider-button-text: "";
+    in-out property <string> provider-button-label: "";
+    in-out property <string> translation-menu-heading: "Translation";
+    in-out property <string> dictionary-menu-heading: "Dictionary";
+    in-out property <string> speech-menu-heading: "Speech";
+    in-out property <[ProviderMenuEntry]> translation-menu: [];
+    in-out property <[ProviderMenuEntry]> dictionary-menu: [];
+    in-out property <[ProviderMenuEntry]> speech-menu: [];
+    in-out property <string> provider-warning: "";
+    // A pick: axis 0 = translation, 1 = dictionary, 2 = speech.
+    callback provider-picked(int, string);
+    // The ⚠ next to the menu button, and the menu's "Providers…": open Settings
+    // on the Providers tab.
     callback provider-warning-clicked();
 
     // Independent display style for the phrase (original text) and
@@ -416,19 +437,61 @@ export component AppWindow inherits Window {
 
             Rectangle { horizontal-stretch: 1; }
 
-            // Quick switch of the translation provider for this run only (same
-            // list as Settings > General's); nothing is saved, see main.rs's
-            // `session_provider`.
-            ComboBox {
-                model: translate-providers;
-                current-index <=> translate-provider-index;
-                selected(value) => { translate-provider-selected(value); }
+            // Quick switch of the provider on each axis for this run only (same
+            // lists as Settings > Providers'); nothing is saved, see main.rs's
+            // `session_provider`. A click opens the menu under the button (a
+            // right-click too, as for any `ContextMenuArea`).
+            provider-menu-area := ContextMenuArea {
+                Menu {
+                    MenuItem {
+                        title: translation-menu-heading;
+                        enabled: false;
+                    }
+                    for entry in translation-menu: MenuItem {
+                        title: entry.title;
+                        checked: entry.checked;
+                        activated => { provider-picked(0, entry.name); }
+                    }
+                    MenuSeparator { }
+                    MenuItem {
+                        title: dictionary-menu-heading;
+                        enabled: false;
+                    }
+                    for entry in dictionary-menu: MenuItem {
+                        title: entry.title;
+                        checked: entry.checked;
+                        activated => { provider-picked(1, entry.name); }
+                    }
+                    MenuSeparator { }
+                    MenuItem {
+                        title: speech-menu-heading;
+                        enabled: false;
+                    }
+                    for entry in speech-menu: MenuItem {
+                        title: entry.title;
+                        checked: entry.checked;
+                        activated => { provider-picked(2, entry.name); }
+                    }
+                    MenuSeparator { }
+                    MenuItem {
+                        title: "Providers…";
+                        activated => { provider-warning-clicked(); }
+                    }
+                }
+
+                provider-button := Button {
+                    text: provider-button-text;
+                    accessible-label: provider-button-label;
+                    clicked => {
+                        provider-menu-area.show({ x: 0, y: provider-button.height });
+                    }
+                }
             }
 
-            if translate-provider-warning != "": Text {
+            if provider-warning != "": Text {
                 text: "⚠";
                 vertical-alignment: center;
-                accessible-label: translate-provider-warning;
+                accessible-label: provider-warning;
                 // No tooltips in Slint's std widgets, so a click opens
                 // Settings on the Providers tab, where the warning is spelled
                 // out.

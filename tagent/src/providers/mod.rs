@@ -679,6 +679,71 @@ pub const SPEECH_PROVIDERS: &[&str] = &[
     "google",
 ];
 
+/// One of the three independent provider axes: translation, dictionary and speech.
+///
+/// Each axis has its own provider trait ([`TranslationProvider`], [`DictionaryProvider`],
+/// [`SpeechProvider`]), name list and registry; this type lets an application walk them
+/// in one loop, e.g. to list every provider it can switch to.
+///
+/// # Examples
+///
+/// ```
+/// use tagent::providers::ProviderAxis;
+///
+/// for axis in ProviderAxis::ALL {
+///     println!("{}: {}", axis.label(), axis.kinds().join(", "));
+///     assert_eq!(axis.kinds().len(), axis.descriptors().len());
+/// }
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProviderAxis {
+    /// Text translation ([`TranslationProvider`]).
+    Translation,
+    /// Single-word dictionary lookup ([`DictionaryProvider`]).
+    Dictionary,
+    /// Text-to-speech ([`SpeechProvider`]).
+    Speech,
+}
+
+impl ProviderAxis {
+    /// Every axis, in display order: translation, dictionary, speech.
+    pub const ALL: [ProviderAxis; 3] = [
+        ProviderAxis::Translation,
+        ProviderAxis::Dictionary,
+        ProviderAxis::Speech,
+    ];
+
+    /// The provider kinds compiled in for this axis ([`TRANSLATION_PROVIDERS`],
+    /// [`DICTIONARY_PROVIDERS`] or [`SPEECH_PROVIDERS`]).
+    pub fn kinds(self) -> &'static [&'static str] {
+        match self {
+            ProviderAxis::Translation => TRANSLATION_PROVIDERS,
+            ProviderAxis::Dictionary => DICTIONARY_PROVIDERS,
+            ProviderAxis::Speech => SPEECH_PROVIDERS,
+        }
+    }
+
+    /// The registry descriptors for this axis ([`translation_providers`],
+    /// [`dictionary_providers`] or [`speech_providers`]), in the same order as
+    /// [`kinds`](Self::kinds).
+    pub fn descriptors(self) -> &'static [ProviderDescriptor] {
+        match self {
+            ProviderAxis::Translation => translation_providers(),
+            ProviderAxis::Dictionary => dictionary_providers(),
+            ProviderAxis::Speech => speech_providers(),
+        }
+    }
+
+    /// Lowercase English label: `"translation"`, `"dictionary"` or `"speech"`.
+    pub fn label(self) -> &'static str {
+        match self {
+            ProviderAxis::Translation => "translation",
+            ProviderAxis::Dictionary => "dictionary",
+            ProviderAxis::Speech => "speech",
+        }
+    }
+}
+
 /// Instantiate a translation provider by name.
 ///
 /// # Supported names
@@ -1017,6 +1082,38 @@ mod tests {
             create_provider("deepl"),
             Err(Error::InvalidOptions(_))
         ));
+    }
+
+    #[test]
+    fn provider_axis_matches_lists_and_registry() {
+        let expected: [(ProviderAxis, &[&str], &[ProviderDescriptor], &str); 3] = [
+            (
+                ProviderAxis::Translation,
+                TRANSLATION_PROVIDERS,
+                translation_providers(),
+                "translation",
+            ),
+            (
+                ProviderAxis::Dictionary,
+                DICTIONARY_PROVIDERS,
+                dictionary_providers(),
+                "dictionary",
+            ),
+            (
+                ProviderAxis::Speech,
+                SPEECH_PROVIDERS,
+                speech_providers(),
+                "speech",
+            ),
+        ];
+        assert_eq!(ProviderAxis::ALL, expected.map(|(axis, ..)| axis));
+        for (axis, kinds, descriptors, label) in expected {
+            assert_eq!(axis.kinds(), kinds);
+            assert!(std::ptr::eq(axis.descriptors(), descriptors));
+            let names: Vec<_> = axis.descriptors().iter().map(|d| d.name).collect();
+            assert_eq!(names, axis.kinds());
+            assert_eq!(axis.label(), label);
+        }
     }
 
     #[test]

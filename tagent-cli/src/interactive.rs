@@ -13,7 +13,8 @@ use rustyline::{Context, EditMode, Editor, Helper};
 use std::error::Error;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use tagent::providers::ProviderAxis;
 
 /// Slash-commands offered for Tab-completion at the interactive prompt.
 const SLASH_COMMANDS: &[&str] = &[
@@ -72,59 +73,180 @@ fn parse_speech_command(text: &str) -> Option<SpeechCommand<'_>> {
 /// A parsed `/p` or `/provider` command.
 #[derive(Debug, PartialEq, Eq)]
 enum ProviderCommand<'a> {
-    /// Bare `/p`: list the translation providers.
+    /// Bare `/p`: list the providers of every axis.
     List,
-    /// `/p <name>`: switch the translation provider for this session.
-    Switch(&'a str),
-    /// `/p` with more than one argument.
+    /// `/p <digits>`: the entry with that number in the list last shown.
+    Number(usize),
+    /// `/p <name>` (translation) or `/p <axis> <name>`: switch that axis's provider for
+    /// this session.
+    Switch { axis: ProviderAxis, name: &'a str },
+    /// `/p <axis>` alone, when `<axis>` isn't a translation provider's name.
+    AxisUsage(ProviderAxis),
+    /// Anything else after `/p`: three or more words, or an unknown axis word.
     Usage,
 }
 
+/// The axis an axis word names (`t`/`translation`, `d`/`dict`/`dictionary`,
+/// `s`/`speech`, any case), if any.
+fn parse_axis(word: &str) -> Option<ProviderAxis> {
+    match word.to_ascii_lowercase().as_str() {
+        "t" | "translation" => Some(ProviderAxis::Translation),
+        "d" | "dict" | "dictionary" => Some(ProviderAxis::Dictionary),
+        "s" | "speech" => Some(ProviderAxis::Speech),
+        _ => None,
+    }
+}
+
+/// The short axis word `/p <axis> <name>` takes for `axis`.
+fn axis_word(axis: ProviderAxis) -> &'static str {
+    match axis {
+        ProviderAxis::Translation => "t",
+        ProviderAxis::Dictionary => "d",
+        ProviderAxis::Speech => "s",
+    }
+}
+
 /// Parses `text` (already trimmed) as a provider command; `None` if it isn't one.
-fn parse_provider_command(text: &str) -> Option<ProviderCommand<'_>> {
+///
+/// Profile names are `[a-z0-9_-]+`, so a lone argument could be a number, an axis word
+/// and a profile name at once. Digits are always a number; a lone axis word is a
+/// translation provider if `is_translation_name` says one has that name, else a usage
+/// hint for that axis; the second of two words is always a name, so `/p t 2` reaches a
+/// profile named `2`.
+fn parse_provider_command(
+    text: &str,
+    is_translation_name: impl Fn(&str) -> bool,
+) -> Option<ProviderCommand<'_>> {
     if text == "/p" || text == "/provider" {
         return Some(ProviderCommand::List);
     }
     let rest = text
         .strip_prefix("/p ")
         .or_else(|| text.strip_prefix("/provider "))?;
-    let mut args = rest.split_whitespace();
-    match (args.next(), args.next()) {
-        (Some(name), None) => Some(ProviderCommand::Switch(name)),
-        _ => Some(ProviderCommand::Usage),
+    let args: Vec<&str> = rest.split_whitespace().collect();
+    Some(match args[..] {
+        [arg] if arg.bytes().all(|b| b.is_ascii_digit()) => {
+            // Too many digits to be any entry's number: out of range like 0.
+            ProviderCommand::Number(arg.parse().unwrap_or(0))
+        }
+        [arg] => match parse_axis(arg) {
+            Some(axis) if !is_translation_name(arg) => ProviderCommand::AxisUsage(axis),
+            _ => ProviderCommand::Switch {
+                axis: ProviderAxis::Translation,
+                name: arg,
+            },
+        },
+        [axis, name] => match parse_axis(axis) {
+            Some(axis) => ProviderCommand::Switch { axis, name },
+            None => ProviderCommand::Usage,
+        },
+        _ => ProviderCommand::Usage,
+    })
+}
+
+/// Whether `config` offers a translation provider (kind or profile) named `name`.
+fn is_translation_name(config: &config::Config, name: &str) -> bool {
+    config.provider_list().iter().any(|entry| {
+        entry.axis == ProviderAxis::Translation && entry.name.eq_ignore_ascii_case(name)
+    })
+}
+
+/// The `(axis, name)` of entry `number` (1-based) of a list `/p` showed, or the message
+/// to show when there is no such entry.
+fn resolve_provider_number(
+    list: &[(ProviderAxis, String)],
+    number: usize,
+) -> Result<(ProviderAxis, String), String> {
+    match number.checked_sub(1).and_then(|index| list.get(index)) {
+        Some(entry) => Ok(entry.clone()),
+        None if list.is_empty() => Err("No providers to choose from".to_string()),
+        None => Err(format!(
+            "No provider number {number}: choose 1-{} (/p shows the list)",
+            list.len()
+        )),
     }
 }
 
-/// Switches `config_manager`'s translation provider to `name` (in memory) if it can be
-/// built, otherwise leaves it unchanged. Returns the message to show.
-fn switch_translate_provider(config_manager: &ConfigManager, name: &str) -> String {
+/// Switches `config_manager`'s provider of `axis` to `name` (in memory) if it can be
+/// built, otherwise leaves it unchanged. Returns the message to show, which names the
+/// axis (the user may have typed only a number).
+fn switch_provider(config_manager: &ConfigManager, axis: ProviderAxis, name: &str) -> String {
+    let title = config::axis_title(axis);
     let name = name.to_lowercase();
     let mut config = config_manager.get_config();
-    if config.translate_provider.eq_ignore_ascii_case(&name) {
-        return match config.create_translate_provider() {
-            Ok(provider) => format!("Translation provider: {} (already active)", provider.name()),
+    if config.provider_name(axis).eq_ignore_ascii_case(&name) {
+        return match config.build_provider_name(axis) {
+            Ok(display_name) => format!("{title} provider: {display_name} (already active)"),
             Err(message) => message,
         };
     }
-    config.translate_provider = name.clone();
-    match config.create_translate_provider() {
-        Ok(provider) => {
-            config_manager.set_translate_provider(&name);
-            format!(
-                "Translation provider: {} (this session; /save to keep)",
-                provider.name()
-            )
+    let field = match axis {
+        ProviderAxis::Translation => &mut config.translate_provider,
+        ProviderAxis::Dictionary => &mut config.dictionary_provider,
+        ProviderAxis::Speech => &mut config.speech_provider,
+    };
+    *field = name.clone();
+    match config.build_provider_name(axis) {
+        Ok(display_name) => {
+            config_manager.set_provider(axis, &name);
+            format!("{title} provider: {display_name} (this session; /save to keep)")
         }
         Err(message) => config::colorize(
-            &format!("{message}\n(translation provider unchanged)"),
+            &format!("{message}\n({} provider unchanged)", axis.label()),
             &config.error_color,
         ),
     }
 }
 
-/// Rustyline [`Helper`] that Tab-completes slash-commands. Hints, highlighting, and
-/// validation are left at rustyline's no-op defaults.
-struct TagentHelper;
+/// The words Tab offers after `/p ` (`args` is what follows it): the axis words and the
+/// translation providers for the first word, the providers of that axis for the second.
+/// Each candidate is a whole word; what the user typed of it is matched as a prefix.
+fn provider_completions(config: &config::Config, args: &str) -> Vec<String> {
+    let mut words: Vec<&str> = args.split_whitespace().collect();
+    if args.is_empty() || args.ends_with(char::is_whitespace) {
+        words.push("");
+    }
+    let (axis, partial) = match words[..] {
+        [partial] => (None, partial),
+        [axis, partial] => match parse_axis(axis) {
+            Some(axis) => (Some(axis), partial),
+            None => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+    let names = |axis: ProviderAxis| {
+        config
+            .provider_list()
+            .into_iter()
+            .filter(move |entry| entry.axis == axis)
+            .map(|entry| entry.name)
+    };
+    let candidates: Vec<String> = match axis {
+        Some(axis) => names(axis).collect(),
+        None => ["translation", "dictionary", "speech"]
+            .into_iter()
+            .map(String::from)
+            .chain(names(ProviderAxis::Translation))
+            .collect(),
+    };
+    let partial = partial.to_ascii_lowercase();
+    let mut matching: Vec<String> = Vec::new();
+    for candidate in candidates {
+        if candidate.starts_with(&partial) && !matching.contains(&candidate) {
+            matching.push(candidate);
+        }
+    }
+    matching
+}
+
+/// Rustyline [`Helper`] that Tab-completes slash-commands, and the axis words and provider
+/// names after `/p`. Hints, highlighting, and validation are left at rustyline's no-op
+/// defaults.
+struct TagentHelper {
+    /// Where `/p`'s completions read the provider profiles from; `None` completes
+    /// slash-commands only.
+    config_manager: Option<Arc<ConfigManager>>,
+}
 
 impl Completer for TagentHelper {
     type Candidate = String;
@@ -138,6 +260,15 @@ impl Completer for TagentHelper {
         // Only complete slash-commands, and only while the cursor sits at the end of them.
         if pos != line.len() || !line.starts_with('/') {
             return Ok((0, Vec::new()));
+        }
+
+        let provider_args = line
+            .strip_prefix("/p ")
+            .or_else(|| line.strip_prefix("/provider "));
+        if let (Some(args), Some(manager)) = (provider_args, &self.config_manager) {
+            let word_start = line.rfind(char::is_whitespace).map_or(0, |space| space + 1);
+            let candidates = provider_completions(&manager.get_config(), args);
+            return Ok((word_start, candidates));
         }
 
         let candidates: Vec<String> = SLASH_COMMANDS
@@ -165,6 +296,9 @@ pub struct InteractiveMode {
     config_manager: Arc<ConfigManager>,
     should_exit: Arc<AtomicBool>,
     speech_manager: SpeechManager,
+    /// The `(axis, name)` pairs of the list `/p` last printed, in order, so `/p <number>`
+    /// means the entry as it was shown even if profiles changed since.
+    provider_snapshot: Mutex<Option<Vec<(ProviderAxis, String)>>>,
 }
 
 impl InteractiveMode {
@@ -177,6 +311,7 @@ impl InteractiveMode {
             config_manager,
             should_exit,
             speech_manager,
+            provider_snapshot: Mutex::new(None),
         }
     }
 
@@ -193,7 +328,9 @@ impl InteractiveMode {
             .build();
 
         let mut editor = Editor::<TagentHelper, DefaultHistory>::with_config(rl_config)?;
-        editor.set_helper(Some(TagentHelper));
+        editor.set_helper(Some(TagentHelper {
+            config_manager: Some(self.config_manager.clone()),
+        }));
 
         let history_path = ConfigManager::get_default_interactive_history_path()
             .map_err(|e| format!("Failed to resolve interactive history path: {}", e))?;
@@ -337,21 +474,7 @@ impl InteractiveMode {
             return Ok(true);
         }
 
-        if let Some(command) = parse_provider_command(text) {
-            match command {
-                ProviderCommand::List => {
-                    self.config_manager.reload_or_warn();
-                    let config = self.config_manager.get_config();
-                    for line in config::provider_list_lines(&config.translation_provider_list()) {
-                        println!("{line}");
-                    }
-                }
-                ProviderCommand::Switch(name) => {
-                    let message = self.switch_translate_provider(name);
-                    println!("{message}");
-                }
-                ProviderCommand::Usage => println!("Usage: /p [provider]"),
-            }
+        if self.handle_provider_command(text) {
             println!();
             return Ok(true);
         }
@@ -476,11 +599,48 @@ impl InteractiveMode {
         }
     }
 
-    /// `/p <name>`: switches the translation provider for this session if it can be built;
-    /// otherwise keeps the current one. Returns the message to show.
-    fn switch_translate_provider(&self, name: &str) -> String {
+    /// Runs `text` if it is a `/p` command (see [`parse_provider_command`]); `false` if it
+    /// isn't one. The file is reloaded first, so the list and a switch see its profiles.
+    fn handle_provider_command(&self, text: &str) -> bool {
+        if parse_provider_command(text, |_| false).is_none() {
+            return false;
+        }
         self.config_manager.reload_or_warn();
-        switch_translate_provider(&self.config_manager, name)
+        let config = self.config_manager.get_config();
+        let snapshot = |entries: Vec<config::ProviderListEntry>| -> Vec<(ProviderAxis, String)> {
+            entries
+                .into_iter()
+                .map(|entry| (entry.axis, entry.name))
+                .collect()
+        };
+        match parse_provider_command(text, |name| is_translation_name(&config, name)) {
+            None => return false,
+            Some(ProviderCommand::List) => {
+                let entries = config.provider_list();
+                for line in config::provider_list_lines(&entries, &config) {
+                    println!("{line}");
+                }
+                *self.provider_snapshot.lock().unwrap() = Some(snapshot(entries));
+            }
+            Some(ProviderCommand::Number(number)) => {
+                let shown = self.provider_snapshot.lock().unwrap().clone();
+                let list = shown.unwrap_or_else(|| snapshot(config.provider_list()));
+                match resolve_provider_number(&list, number) {
+                    Ok((axis, name)) => {
+                        println!("{}", switch_provider(&self.config_manager, axis, &name));
+                    }
+                    Err(message) => println!("{}", config::colorize(&message, &config.error_color)),
+                }
+            }
+            Some(ProviderCommand::Switch { axis, name }) => {
+                println!("{}", switch_provider(&self.config_manager, axis, name));
+            }
+            Some(ProviderCommand::AxisUsage(axis)) => {
+                println!("Usage: /p {} <name>", axis_word(axis));
+            }
+            Some(ProviderCommand::Usage) => println!("Usage: /p [number | name | t|d|s name]"),
+        }
+        true
     }
 
     /// Translate text in interactive mode
@@ -697,34 +857,115 @@ mod tests {
         assert_eq!(pair.target, config::AUTO_TARGET_FALLBACK);
     }
 
-    #[test]
-    fn parses_provider_commands() {
-        assert_eq!(parse_provider_command("/p"), Some(ProviderCommand::List));
-        assert_eq!(
-            parse_provider_command("/provider"),
-            Some(ProviderCommand::List)
-        );
-        assert_eq!(
-            parse_provider_command("/p deepl"),
-            Some(ProviderCommand::Switch("deepl"))
-        );
-        assert_eq!(
-            parse_provider_command("/provider   deepl-work"),
-            Some(ProviderCommand::Switch("deepl-work"))
-        );
-        assert_eq!(
-            parse_provider_command("/p deepl google"),
-            Some(ProviderCommand::Usage)
-        );
-        assert_eq!(parse_provider_command("/pp"), None);
-        assert_eq!(parse_provider_command("/print"), None);
-        assert_eq!(parse_provider_command("/providers"), None);
-        assert_eq!(parse_provider_command("p deepl"), None);
+    fn switch(axis: ProviderAxis, name: &str) -> Option<ProviderCommand<'_>> {
+        Some(ProviderCommand::Switch { axis, name })
     }
 
-    /// A config manager over a file with a `work` profile (Google) and a `nokey` profile
-    /// (DeepL without its required `api_key`).
-    fn provider_test_manager(unique: &str) -> ConfigManager {
+    /// The grammar table of Stage U, row by row, with no profiles named like axis words.
+    #[test]
+    fn parses_provider_commands() {
+        let parse = |text| parse_provider_command(text, |_| false);
+        assert_eq!(parse("/p"), Some(ProviderCommand::List));
+        assert_eq!(parse("/provider"), Some(ProviderCommand::List));
+        assert_eq!(parse("/p 5"), Some(ProviderCommand::Number(5)));
+        assert_eq!(parse("/provider 12"), Some(ProviderCommand::Number(12)));
+        assert_eq!(
+            parse("/p deepl"),
+            switch(ProviderAxis::Translation, "deepl")
+        );
+        assert_eq!(
+            parse("/provider   deepl-work"),
+            switch(ProviderAxis::Translation, "deepl-work")
+        );
+        assert_eq!(
+            parse("/p d ollama"),
+            switch(ProviderAxis::Dictionary, "ollama")
+        );
+        assert_eq!(
+            parse("/p DICT ollama"),
+            switch(ProviderAxis::Dictionary, "ollama")
+        );
+        assert_eq!(
+            parse("/p dictionary x"),
+            switch(ProviderAxis::Dictionary, "x")
+        );
+        assert_eq!(parse("/p s google"), switch(ProviderAxis::Speech, "google"));
+        assert_eq!(
+            parse("/p speech google"),
+            switch(ProviderAxis::Speech, "google")
+        );
+        assert_eq!(
+            parse("/p t deepl"),
+            switch(ProviderAxis::Translation, "deepl")
+        );
+        assert_eq!(
+            parse("/p translation deepl"),
+            switch(ProviderAxis::Translation, "deepl")
+        );
+        assert_eq!(
+            parse("/p d"),
+            Some(ProviderCommand::AxisUsage(ProviderAxis::Dictionary))
+        );
+        assert_eq!(
+            parse("/p S"),
+            Some(ProviderCommand::AxisUsage(ProviderAxis::Speech))
+        );
+        assert_eq!(parse("/p deepl google"), Some(ProviderCommand::Usage));
+        assert_eq!(parse("/p d ollama extra"), Some(ProviderCommand::Usage));
+        assert_eq!(parse("/pp"), None);
+        assert_eq!(parse("/print"), None);
+        assert_eq!(parse("/providers"), None);
+        assert_eq!(parse("p deepl"), None);
+    }
+
+    /// Digits are always a number, even when a profile has that name; the axis form
+    /// reaches the profile.
+    #[test]
+    fn digits_are_a_number_and_the_axis_form_reaches_a_numeric_profile() {
+        let parse = |text| parse_provider_command(text, |name| name == "2");
+        assert_eq!(parse("/p 2"), Some(ProviderCommand::Number(2)));
+        assert_eq!(parse("/p t 2"), switch(ProviderAxis::Translation, "2"));
+        // Too many digits for any entry: out of range like 0.
+        assert_eq!(
+            parse("/p 99999999999999999999999"),
+            Some(ProviderCommand::Number(0))
+        );
+    }
+
+    /// A lone axis word is a translation provider if one has that name.
+    #[test]
+    fn lone_axis_word_selects_a_translation_profile_of_that_name() {
+        let parse = |text| parse_provider_command(text, |name| name == "t");
+        assert_eq!(parse("/p t"), switch(ProviderAxis::Translation, "t"));
+        assert_eq!(
+            parse("/p d"),
+            Some(ProviderCommand::AxisUsage(ProviderAxis::Dictionary))
+        );
+    }
+
+    #[test]
+    fn provider_numbers_resolve_against_the_list() {
+        let list = vec![
+            (ProviderAxis::Translation, "google".to_string()),
+            (ProviderAxis::Dictionary, "ollama".to_string()),
+        ];
+
+        assert_eq!(
+            resolve_provider_number(&list, 2),
+            Ok((ProviderAxis::Dictionary, "ollama".to_string()))
+        );
+        for number in [0, 3] {
+            let error = resolve_provider_number(&list, number).unwrap_err();
+            assert!(error.contains(&format!("number {number}")), "{error}");
+            assert!(error.contains("1-2"), "{error}");
+        }
+        assert!(resolve_provider_number(&[], 1).is_err());
+    }
+
+    /// A config manager over a file with a `work` profile (Google), a `nokey` profile
+    /// (DeepL without its required `api_key`), an `ollama` profile (OpenAI-compatible,
+    /// translation and dictionary; builds offline) and a profile named `t`.
+    fn provider_test_manager(unique: &str) -> Arc<ConfigManager> {
         let path = std::env::temp_dir().join(format!(
             "tagent_test_interactive_{}_{}.toml",
             unique,
@@ -733,23 +974,48 @@ mod tests {
         std::fs::write(
             &path,
             "[provider_options.work]\ntype = \"google\"\n\
-             [provider_options.nokey]\ntype = \"deepl\"\n",
+             [provider_options.nokey]\ntype = \"deepl\"\n\
+             [provider_options.ollama]\ntype = \"openai\"\n\
+             endpoint = \"http://localhost:11434/v1\"\nmodel = \"dummy\"\n\
+             [provider_options.t]\ntype = \"google\"\n",
         )
         .unwrap();
         let manager = ConfigManager::new(path.to_str().unwrap()).unwrap();
         let _ = std::fs::remove_file(&path);
-        manager
+        Arc::new(manager)
     }
 
     #[test]
     fn switching_provider_changes_the_config_in_memory() {
         let manager = provider_test_manager("switch_ok");
 
-        let message = switch_translate_provider(&manager, "WORK");
+        let message = switch_provider(&manager, ProviderAxis::Translation, "WORK");
 
         assert_eq!(manager.get_config().translate_provider, "work");
+        assert!(message.starts_with("Translation provider: "), "{message}");
         assert!(message.contains("Google Translate (work)"), "{message}");
         assert!(message.contains("/save"), "{message}");
+    }
+
+    #[test]
+    fn switching_dictionary_and_speech_changes_only_that_axis() {
+        let manager = provider_test_manager("switch_axes");
+
+        let message = switch_provider(&manager, ProviderAxis::Dictionary, "ollama");
+        assert_eq!(
+            message,
+            "Dictionary provider: OpenAI-compatible (ollama) (this session; /save to keep)"
+        );
+        let message = switch_provider(&manager, ProviderAxis::Speech, "work");
+        assert_eq!(
+            message,
+            "Speech provider: Google TTS (work) (this session; /save to keep)"
+        );
+
+        let config = manager.get_config();
+        assert_eq!(config.translate_provider, "google");
+        assert_eq!(config.dictionary_provider, "ollama");
+        assert_eq!(config.speech_provider, "work");
     }
 
     #[test]
@@ -757,21 +1023,120 @@ mod tests {
         let manager = provider_test_manager("switch_bad");
 
         for name in ["no-such-provider", "nokey"] {
-            let message = switch_translate_provider(&manager, name);
+            let message = switch_provider(&manager, ProviderAxis::Translation, name);
 
             assert_eq!(manager.get_config().translate_provider, "google");
-            assert!(message.contains("unchanged"), "{name}: {message}");
+            assert!(
+                message.contains("translation provider unchanged"),
+                "{name}: {message}"
+            );
         }
+        // DeepL serves no dictionary, so its profile can't be the dictionary provider.
+        let message = switch_provider(&manager, ProviderAxis::Dictionary, "nokey");
+        assert_eq!(manager.get_config().dictionary_provider, "google");
+        assert!(
+            message.contains("dictionary provider unchanged"),
+            "{message}"
+        );
+        let message = switch_provider(&manager, ProviderAxis::Speech, "ollama");
+        assert_eq!(manager.get_config().speech_provider, "google");
+        assert!(message.contains("speech provider unchanged"), "{message}");
     }
 
     #[test]
     fn switching_to_the_active_provider_is_a_no_op() {
         let manager = provider_test_manager("switch_same");
 
-        let message = switch_translate_provider(&manager, "google");
-
+        let message = switch_provider(&manager, ProviderAxis::Translation, "google");
         assert_eq!(manager.get_config().translate_provider, "google");
         assert!(message.contains("already active"), "{message}");
+
+        let message = switch_provider(&manager, ProviderAxis::Dictionary, "Google");
+        assert_eq!(
+            message,
+            "Dictionary provider: Google Dictionary (already active)"
+        );
+    }
+
+    /// `is_translation_name` sees profiles, so `/p t` reaches the profile `t`.
+    #[test]
+    fn translation_names_include_profiles() {
+        let manager = provider_test_manager("names");
+        let config = manager.get_config();
+
+        assert!(is_translation_name(&config, "t"));
+        assert!(is_translation_name(&config, "OLLAMA"));
+        assert!(!is_translation_name(&config, "d"));
+    }
+
+    #[test]
+    fn provider_command_numbers_follow_the_printed_list() {
+        let manager = provider_test_manager("numbers");
+        let mode = InteractiveMode::with_translator(
+            Translator::new_cli(manager.clone()).unwrap(),
+            manager.clone(),
+        );
+        let entries = manager.get_config().provider_list();
+        let number = entries
+            .iter()
+            .position(|e| e.axis == ProviderAxis::Dictionary && e.name == "ollama")
+            .unwrap()
+            + 1;
+
+        // No list printed yet: a fresh one is used.
+        assert!(mode.handle_provider_command(&format!("/p {number}")));
+        assert_eq!(manager.get_config().dictionary_provider, "ollama");
+
+        // The snapshot wins over the current list.
+        *mode.provider_snapshot.lock().unwrap() =
+            Some(vec![(ProviderAxis::Speech, "work".to_string())]);
+        assert!(mode.handle_provider_command("/p 1"));
+        assert_eq!(manager.get_config().speech_provider, "work");
+        assert!(mode.handle_provider_command("/p 2"));
+        assert_eq!(manager.get_config().translate_provider, "google");
+
+        // `/p` replaces the snapshot with what it printed.
+        assert!(mode.handle_provider_command("/p"));
+        assert_eq!(
+            mode.provider_snapshot
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .len(),
+            entries.len()
+        );
+        assert!(!mode.handle_provider_command("/pp"));
+    }
+
+    #[test]
+    fn completes_axis_words_and_provider_names_after_p() {
+        let manager = provider_test_manager("complete");
+        let helper = TagentHelper {
+            config_manager: Some(manager),
+        };
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+        let complete = |line: &str| helper.complete(line, line.len(), &ctx).unwrap();
+
+        let (start, candidates) = complete("/p d");
+        assert_eq!(start, 3);
+        assert_eq!(candidates, ["dictionary", "deepl"]);
+
+        let (start, candidates) = complete("/p d ");
+        assert_eq!(start, 5);
+        assert_eq!(candidates, ["google", "openai", "ollama", "t", "work"]);
+
+        let (start, candidates) = complete("/provider speech w");
+        assert_eq!(start, 17);
+        assert_eq!(candidates, ["work"]);
+
+        let (_, candidates) = complete("/p o");
+        assert_eq!(candidates, ["openai", "ollama"]);
+        assert!(complete("/p x y").1.is_empty());
+        assert!(complete("/p d google x").1.is_empty());
+        // Slash-commands still complete.
+        assert!(complete("/pro").1.contains(&"/provider".to_string()));
     }
 
     #[test]
@@ -804,7 +1169,9 @@ mod tests {
 
     #[test]
     fn completes_slash_commands_by_prefix() {
-        let helper = TagentHelper;
+        let helper = TagentHelper {
+            config_manager: None,
+        };
         let history = DefaultHistory::new();
         let ctx = Context::new(&history);
 
@@ -818,7 +1185,9 @@ mod tests {
 
     #[test]
     fn no_completion_without_leading_slash() {
-        let helper = TagentHelper;
+        let helper = TagentHelper {
+            config_manager: None,
+        };
         let history = DefaultHistory::new();
         let ctx = Context::new(&history);
 
@@ -828,7 +1197,9 @@ mod tests {
 
     #[test]
     fn no_completion_when_cursor_not_at_end() {
-        let helper = TagentHelper;
+        let helper = TagentHelper {
+            config_manager: None,
+        };
         let history = DefaultHistory::new();
         let ctx = Context::new(&history);
 

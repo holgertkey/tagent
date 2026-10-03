@@ -17,7 +17,7 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 
 ## [Unreleased]
 
-## [0.15.0] - 2026-10-02
+## [0.15.0] - 2026-10-03
 
 ### Added
 - (+001) **The OpenAI-compatible provider can serve dictionary lookups too** (OpenAI, Ollama,
@@ -198,6 +198,18 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+004) **The main window's provider picker is now a menu for all three axes.** The
+  button next to ⚙ names the translation provider in effect (`ollama ▾`) and opens one
+  menu with a Translation, a Dictionary and a Speech section, the provider in effect
+  checked in each, plus "Providers…" (Settings on the Providers tab). A pick holds for
+  this run only on its own axis, like the translation picker before: it is used by the
+  Translate button, the hotkey and speech, the transcript header marks each overridden
+  axis `(this session)`, and it ends when that axis's default changes in Settings or the
+  file, when its profile disappears, or when the default is picked again. Entries hidden
+  with "Show in lists" are left out (except the one in effect); an entry lacking a
+  required option is marked `⚠ <keys>` and can still be picked. A turned-off axis
+  (`show_dictionary`, `enable_text_to_speech`) keeps its section with "(off)". The ⚠ next
+  to the button now covers the providers in effect on every turned-on axis.
 - (+003) **Settings' "Test" names the dictionary lookup it makes**: `dictionary: OK (3.9 s):
   "hello" (en → ru): привет`. A miss read just "no entry", as if no word had been sent; it
   now says `no entry for "hello" (en → ru)` and that the provider's answers look unreliable,

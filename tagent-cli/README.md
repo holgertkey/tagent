@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+017
+# Tagent Text Translator v0.17.0+018
 
 A fast, lightweight text translation tool with unified GUI hotkeys, interactive terminal, and CLI interfaces. Translate selected text from any application with a simple Alt+A hotkey or use the command line for quick translations. Full support on Windows and Linux (X11 or XWayland); on pure Wayland and on macOS, the interactive terminal and CLI modes work.
 
@@ -45,7 +45,7 @@ A fast, lightweight text translation tool with unified GUI hotkeys, interactive 
 
 ### ⚡ **Performance & Usability**
 - Instant translations using Google Translate API
-- Configuration reloads automatically before each translation (hotkeys and the dictionary provider need a restart)
+- Configuration reloads automatically before each translation (hotkeys need a restart)
 - Interactive prompt with line editing, persistent input history and Tab-completion of commands
 - Optional automatic clipboard copying
 - Smart terminal window management
@@ -182,9 +182,11 @@ The words in brackets are synonyms in the source language, i.e. other words with
 - `/l`, `/lang` - Swap source and target languages
 - `/l <target>`, `/lang <target>` - Set target language (source=Auto)
 - `/l <source> <target>`, `/lang <source> <target>` - Set both languages
-- `/p`, `/provider` - List the translation providers (the active one is marked `*`)
+- `/p`, `/provider` - List the translation, dictionary and speech providers, numbered (the ones in use are marked `*`)
+- `/p <number>` - Switch to that entry of the list for this session (e.g. `/p 6`), whichever axis it is under
 - `/p <name>`, `/provider <name>` - Switch the translation provider for this session (a provider or profile name, e.g. `/p deepl`); `/save` keeps it
-- `/save` - Save the languages and the translation provider to the config file
+- `/p t|d|s <name>` - Switch the translation, dictionary or speech provider (`/p d ollama`; also `translation`, `dict`/`dictionary`, `speech`)
+- `/save` - Save the languages and the providers to the config file
 - `/config update` - Add the settings your config file lacks (see "After Upgrading Tagent")
 - `/clear`, `/cls` - Clear screen
 - `/exit`, `/quit`, `/q`, `/e` - Exit program
@@ -216,7 +218,7 @@ target_language = "ru"
 show_dictionary = true
 # Detect and correct spelling errors, show a correction notice
 spell_check = true
-# Dictionary backend, independent of translate_provider (google; restart required)
+# Dictionary backend, independent of translate_provider (google)
 dictionary_provider = "google"
 
 [interface]
@@ -276,9 +278,11 @@ A mistake in the file (a syntax error, or e.g. `copy_to_clipboard = "yes"`) is r
 with its line and column: at startup Tagent exits with the message; while running it prints
 a warning once and keeps the previous settings until the file is fixed.
 
-`/save` updates only `source_language`, `target_language` and `translate_provider` in the
-file, in place: your comments, the key order and everything else stay as they are. It
-writes the languages as codes, so a file from an older version that has names
+`/save` updates only `source_language`, `target_language` and the three provider keys
+(`translate_provider`, `dictionary_provider`, `speech_provider`) in the file, in place:
+your comments, the key order and everything else stay as they are. A provider key the
+file lacks is added only if you switched away from the default. It writes the languages
+as codes, so a file from an older version that has names
 (`target_language = "Russian"`) gets codes on its first `/save`.
 
 The languages are language codes. The generated file lists the ones Tagent knows by
@@ -741,7 +745,7 @@ The binary lands at `target/release/tagent-cli` (`target/release/tagent-cli.exe`
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
-**Current Version**: v0.17.0+017
+**Current Version**: v0.17.0+018
 
 ## Contributing
 
@@ -764,4 +768,4 @@ For issues, feature requests, or questions:
 
 ---
 
-**Tagent Text Translator v0.17.0+017** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+018** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
