@@ -41,8 +41,9 @@ Prebuilt `tagent-cli` and `tagent-gui` binaries for Windows and Linux, plus a `.
 [GitHub Release](https://github.com/holgertkey/tagent/releases).
 
 Plans and design notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
-[`docs/providers-dev-plan.md`](docs/providers-dev-plan.md) (provider roadmap) and
-[`docs/tagent-gui-dev-plan.md`](docs/tagent-gui-dev-plan.md).
+[`docs/providers-dev-plan.md`](docs/providers-dev-plan.md) (provider roadmap),
+[`docs/tagent-gui-dev-plan.md`](docs/tagent-gui-dev-plan.md) and
+[`docs/user-docs-plan.md`](docs/user-docs-plan.md) (the planned user book).
 
 See each crate's `CHANGELOG.md` (linked above) for version history and [LICENSE](LICENSE)
 for license terms (MIT).
