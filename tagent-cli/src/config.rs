@@ -1164,7 +1164,10 @@ pub(crate) const HELP_OPTIONS: &[(&str, &str)] = &[
     ("-h, --help", "Show this help message"),
     ("-c, --config", "Show current configuration"),
     ("-v, --version", "Show version information"),
-    ("-s, --speech", "Speak the following text using text-to-speech"),
+    (
+        "-s, --speech",
+        "Speak the following text using text-to-speech",
+    ),
     (
         "-l, --lang",
         "Set languages: -l <target> or -l <source> <target>",
