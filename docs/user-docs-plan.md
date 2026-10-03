@@ -13,8 +13,8 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0 and D1
-are done.
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D2 are
+done.
 
 ---
 
@@ -251,6 +251,17 @@ Each step is one commit, unless noted otherwise:
   `tagent-cli/README.md` into the book, edited for the new structure (no copy-paste
   duplicates).
 - The README isn't shortened yet (D6), so for one step the material exists twice.
+- **Done** (2026-10-03):
+  - The `cli/` pages, "First translation (tagent-cli)", the hand-written part of the
+    `tagent-cli.toml` reference (location, syntax, reload, errors, how the app writes
+    it), "Command-line options", "Upgrading", and the `tagent-cli` part of
+    "Troubleshooting: Platforms". D4 adds the generated template listing to the
+    `tagent-cli.toml` page; D5 adds the rest of troubleshooting.
+  - The `/p` and `/l` examples are real output (prompt-only run without `DISPLAY`).
+  - Found while writing, left for a code change: the template says a relative
+    `history_file` is relative to "the program directory" (it is the working
+    directory), and `--help` says hotkey results are "copied to clipboard automatically"
+    (only with `copy_to_clipboard = true`) after selecting text "anywhere in Windows".
 
 ### D3 — tagent-gui pages
 
@@ -262,6 +273,10 @@ Each step is one commit, unless noted otherwise:
     D-Bus `Activate`, then `import -window "Tagent"` under X11. This is what this project
     already uses; don't drive the GUI with `xdotool` keypresses. A screenshot that needs
     a click (an open menu) is taken by hand.
+- **Also in D3** (no step had them): "Introduction", "Install" (both apps: downloads,
+  `cargo install` with the Linux build packages, the `.deb`, building from source) and
+  "First translation (tagent-gui)". Install and building from source exist only in the
+  READMEs today, and D6 shortens them.
 - **Done when:** every Settings tab and the provider menu have a page section.
 
 ### D4 — Reference pages and their checks
@@ -281,6 +296,8 @@ Each step is one commit, unless noted otherwise:
   - 401/403/429 and quota errors;
   - a small model answering `{}`;
   - a broken custom prompt showing only as "no dictionary".
+  - "Translation failed" in general: network, firewall, the service unavailable (from
+    `tagent-cli/README.md`).
 
 ### D6 — Shorten the READMEs
 
