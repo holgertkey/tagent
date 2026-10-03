@@ -10,6 +10,9 @@ Where the rest lives:
 - **The provider architecture** (shared with `tagent-gui`): [`providers-dev-plan.md`](providers-dev-plan.md).
 - **`tagent-gui`** (an independent application with its own plan):
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+- **The user book** (`docs/user`): every stage that changes what users see lists its
+  "Book" edits next to its changelog entry and makes them in the same commit. See "User
+  documentation" in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Stage C — Config file upgrades (done, 2026-09-29: `0.17.0+005`–`+008`)
 

@@ -13,9 +13,9 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D6 are
-done, D7 is in place and deploys on the first
-merge into `main` (D3 still lacks the screenshots that need clicks).
+**Status:** steps done (2026-10-03). The proposals of UD-Q1–Q6 were accepted on
+2026-10-03 (UD-Q2 revised during D7). Open: the screenshots that need clicks (D3), and
+the first deployment, which happens with the first merge into `main`.
 
 ---
 
@@ -396,6 +396,15 @@ Each step is one commit, unless noted otherwise:
   - "Adding a New Translation Provider" gains "add its page under Providers".
 - The dev plans' stage templates gain a "Book" item next to "Changelog".
 - `tagent-gui`'s README cadence note is revised accordingly (UD-Q3).
+- **Done** (2026-10-03):
+  - `ARCHITECTURE.md` has a "User documentation" section: layout, local preview, the
+    same-commit rule and where each kind of change goes, the generated pages and how to
+    regenerate them, the completeness checks, CI and publishing, screenshots. Not
+    `CLAUDE.md`, which is gitignored (the user's call); its local copy got a pointer
+    and a "User book" step in each "Adding a New … Provider" procedure.
+  - The three dev plans name the "Book" item next to the changelog (`providers-dev-plan.md`'s
+    stage conventions; the "Where the rest lives" lists of the two app plans).
+  - The `tagent-gui` README cadence note now sends per-change detail to the book.
 
 ## Done when
 

@@ -1557,6 +1557,78 @@ Stage 7 above. Two halves, both needed:
   playback at Stage 10 (2026-09-18), both via `tagent-gui`'s own independent
   modules (`dictionary.rs`, `speech.rs`).
 
+## User documentation: the book in `docs/user`
+
+The user book (for people who use `tagent-cli` and `tagent-gui`, not for developers) is an
+[mdBook](https://rust-lang.github.io/mdBook/) in `docs/user`, published at
+<https://holgertkey.github.io/tagent/>. Its plan and the decisions behind it are in
+[`user-docs-plan.md`](user-docs-plan.md). Developer documentation stays here, in the dev
+plans and in the `tagent` rustdoc.
+
+**Layout.** `docs/user/book.toml`; pages in `docs/user/src/`, listed in `SUMMARY.md`
+(`create-missing = false`, so a listed page without a file fails the build);
+screenshots in `src/images/`; the build output `docs/user/book/` is gitignored. The book
+is organized by the user's tasks: Getting started, `tagent-cli`, `tagent-gui`, Providers
+(shared by both apps, each example shown as `tagent-cli.toml` and as the `tagent-gui`
+Settings path), Reference, Troubleshooting.
+
+**Viewing it locally.** `mdbook build docs/user`, or `mdbook serve docs/user` for a live
+preview. `serve` needs mdBook's default features: `cargo install mdbook --vers "^0.5"
+--locked` (CI installs it without them, see below).
+
+**The rule: a user-visible change edits the book in the same commit**, next to its
+changelog entry. Documentation-only edits bump no version. Where things go:
+
+- a new or changed interactive command → `cli/interactive-commands.md`; a command-line
+  option → `reference/command-line.md` (both checked, see below);
+- a new `tagent-gui.json` key → `reference/tagent-gui-json.md` (checked) and the
+  Settings page;
+- a new provider kind → its own page under `providers/`, a row in "How providers work"'s
+  table, and a recipe if it needs setup (a recipe says whether it was run with Tagent,
+  and takes endpoints and model names from the service's own documentation);
+- a new error users can hit → `troubleshooting/`, quoting the real message.
+
+**Generated pages.** Three reference pages are written from the code by `tagent-cli`'s
+test-only module `tagent-cli/src/user_docs.rs` into `docs/user/src/reference/generated/`
+and pulled into their pages with `{{#include}}`:
+
+- `tagent-cli.toml`: the template (`config::render_config`) with target `en` and a
+  placeholder history path, so it doesn't depend on the machine;
+- `provider-options.md`: every kind's options from `tagent`'s registry (`OptionSpec`s,
+  `TransportDefaults`, the built-in prompts);
+- `languages.md`: `tagent::languages::LANGUAGES`.
+
+A test fails when a committed file differs from what the generator produces; regenerate
+with
+
+```bash
+TAGENT_UPDATE_USER_DOCS=1 cargo test -p tagent-cli user_docs
+```
+
+and commit the result. So a change to the template, a provider's options or the language
+table changes the book in the same commit by construction.
+
+**Completeness checks.** The same module fails when an entry of `SLASH_COMMANDS` isn't
+named as code (`` `/cmd` `` or `` `/cmd <args>` ``) on `cli/interactive-commands.md`, or a
+flag of `HELP_OPTIONS` (the list `--help` prints) on `reference/command-line.md`;
+`tagent-gui/src/config.rs`'s `user_docs_tests` does the same for every key of a default
+`tagent-gui.json` on `reference/tagent-gui-json.md`. The tests read `../docs/user` at run
+time and skip when it is absent (a crates.io copy), so packaging never depends on it.
+
+**CI and publishing.** `ci.yml` builds the book on Linux (mdBook 0.5 cached as
+`~/.cargo/bin/mdbook`), so a broken `SUMMARY.md` or a missing include fails CI.
+`.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main` that
+touches `docs/user/**` (or the workflow): the site follows `main`, which can be ahead of
+the latest release, and the introduction says so. `tagent-cli` and `tagent-gui` name the
+book as `homepage` and `documentation` in their `Cargo.toml`, and their READMEs are short
+introductions that link to it.
+
+**Screenshots** are PNGs in `src/images/`, light theme, default window size. Take them
+without simulated input: launch `tagent-gui --foreground` with an isolated
+`XDG_CONFIG_HOME` (`start_minimized: false`, hotkeys off) and `WAYLAND_DISPLAY` unset for
+the X11 backend, then `import -window <id>`. A screenshot that needs clicks is taken by
+hand.
+
 ## `build.rs`: version sync
 
 `tagent-cli/build.rs` runs on every `cargo build` of the `tagent-cli` package (it does

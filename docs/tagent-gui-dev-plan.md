@@ -9,6 +9,11 @@ Where the rest lives:
   [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), section "tagent-gui: Slint desktop GUI".
 - **What changed and when**: [`tagent-gui/CHANGELOG.md`](../tagent-gui/CHANGELOG.md).
 - **The provider architecture** (shared with `tagent-cli`): [`providers-dev-plan.md`](providers-dev-plan.md).
+- **The user book** (`docs/user`): every stage that changes what users see lists its
+  "Book" edits next to its changelog entry and makes them in the same commit (the GUI
+  pages, Settings tab by tab, and `reference/tagent-gui-json.md`). The README is a short
+  introduction now and rarely changes. See "User documentation" in
+  [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Per-stage working notes (step-by-step build plans, verification logs, same-day follow-up
 narratives) were condensed out of this document on 2026-09-26.

@@ -123,6 +123,9 @@ universality is built at the level of **capabilities**, and "any text server" is
   in its `tagent = { path = ..., version = ... }` dependency.
 - **Changelogs:** add an entry to each affected crate's own `CHANGELOG.md`
   (`tagent/`, `tagent-cli/`, `tagent-gui/`).
+- **Book:** a user-visible change edits the user book (`docs/user`) in the same commit;
+  a new provider kind gets its page under Providers. See "User documentation" in
+  [`ARCHITECTURE.md`](ARCHITECTURE.md).
 - **Docs:** `cargo doc -p tagent` has to stay free of `missing_docs` and broken-link
   warnings. Update the "Adding a New … Provider" sections in `CLAUDE.md` and
   `docs/ARCHITECTURE.md` when the procedure changes.
