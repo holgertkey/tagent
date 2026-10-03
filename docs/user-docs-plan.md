@@ -13,8 +13,8 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0 is
-done.
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0 and D1
+are done.
 
 ---
 
@@ -236,6 +236,13 @@ Each step is one commit, unless noted otherwise:
   - A recipe that hasn't been run says so.
 - **Done when:** a user can set up DeepL or a local Ollama from the book alone, in both
   apps.
+- **Done** (2026-10-03):
+  - The Ollama recipe was run as written against a local Ollama (`tagent-cli`, with
+    `qwen2.5:3b`: a phrase and a dictionary lookup).
+  - LM Studio, OpenAI and OpenRouter take their URLs from each service's documentation
+    (linked) and say they are untested.
+  - The OpenAI recipe names `gpt-5.4-mini` from OpenAI's model list, with a note that
+    model names change.
 
 ### D2 — tagent-cli pages
 
