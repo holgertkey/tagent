@@ -24,7 +24,8 @@ mod upgrade;
 ///
 /// The config file is located at:
 /// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.toml`
-/// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
+/// - **Linux**: `~/.config/tagent-cli/tagent-cli.toml`
+/// - **macOS**: `~/Library/Application Support/tagent-cli/tagent-cli.toml`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Language code of the source language (e.g. `"en"`), or `"auto"` for
@@ -873,7 +874,7 @@ save_translation_history = false
 
 # History file path
 # File where translation history will be saved
-# Path can be absolute or relative to the program directory
+# Use an absolute path: a relative one is taken from the folder tagent-cli is started in
 # File will be created automatically if it doesn't exist
 # On Windows, write backslashes doubled ("C:\\Users\\...") or use single quotes
 history_file = ""
@@ -1157,9 +1158,30 @@ fn commented_out(lines: &[String]) -> String {
         .collect()
 }
 
+/// The command-line options `--help` lists, as (flags, description). The user book's
+/// "Command-line options" page must name every flag (a test checks it).
+pub(crate) const HELP_OPTIONS: &[(&str, &str)] = &[
+    ("-h, --help", "Show this help message"),
+    ("-c, --config", "Show current configuration"),
+    ("-v, --version", "Show version information"),
+    ("-s, --speech", "Speak the following text using text-to-speech"),
+    (
+        "-l, --lang",
+        "Set languages: -l <target> or -l <source> <target>",
+    ),
+    (
+        "--print-default-config",
+        "Print a new config file with every setting and its default",
+    ),
+    (
+        "--update-config",
+        "Add the settings your config file lacks (backup: .bak)",
+    ),
+];
+
 /// A complete, commented `tagent-cli.toml` holding `config`'s values: the template, with
 /// every value replaced and the provider profiles appended.
-fn render_config(config: &Config) -> String {
+pub(crate) fn render_config(config: &Config) -> String {
     let mut doc: DocumentMut = config_template()
         .parse()
         .expect("the config template is valid TOML");
@@ -1580,7 +1602,8 @@ impl ConfigManager {
     /// Returns the platform-default path for `tagent-cli.toml`, creating parent directories as needed.
     ///
     /// - **Windows**: `%APPDATA%\tagent-cli\tagent-cli.toml`
-    /// - **Linux/macOS**: `~/.config/tagent-cli/tagent-cli.toml`
+    /// - **Linux**: `~/.config/tagent-cli/tagent-cli.toml`
+    /// - **macOS**: `~/Library/Application Support/tagent-cli/tagent-cli.toml`
     pub fn get_default_config_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
@@ -1601,7 +1624,8 @@ impl ConfigManager {
     /// the user to read; this file stores rustyline's input-line history instead.
     ///
     /// - **Windows**: `%APPDATA%\tagent-cli\interactive_history.txt`
-    /// - **Linux/macOS**: `~/.config/tagent-cli/interactive_history.txt`
+    /// - **Linux**: `~/.config/tagent-cli/interactive_history.txt`
+    /// - **macOS**: `~/Library/Application Support/tagent-cli/interactive_history.txt`
     pub fn get_default_interactive_history_path() -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?
@@ -1822,15 +1846,14 @@ impl ConfigManager {
         println!();
 
         println!("OPTIONS:");
-        println!("  -h, --help     Show this help message");
-        println!("  -c, --config   Show current configuration");
-        println!("  -v, --version  Show version information");
-        println!("  -s, --speech   Speak the following text using text-to-speech");
-        println!("  -l, --lang     Set languages: -l <target> or -l <source> <target>");
-        println!("  --print-default-config");
-        println!("                 Print a new config file with every setting and its default");
-        println!("  --update-config");
-        println!("                 Add the settings your config file lacks (backup: .bak)");
+        for (flags, description) in HELP_OPTIONS {
+            if flags.len() < 15 {
+                println!("  {flags:<15}{description}");
+            } else {
+                println!("  {flags}");
+                println!("  {:<15}{description}", "");
+            }
+        }
         println!();
 
         println!("SUPPORTED LANGUAGES (name or code, e.g. -l German or -l de):");
@@ -1868,9 +1891,9 @@ impl ConfigManager {
         println!();
 
         println!("2. GUI Hotkeys (Any Application):");
-        println!("   - Select text anywhere in Windows");
+        println!("   - Select text in any application");
         println!("   - Press configured hotkey (default: Alt+A)");
-        println!("   - Result copied to clipboard automatically");
+        println!("   - Result copied to clipboard if copy_to_clipboard = true");
         println!("   - Configure hotkeys in tagent-cli.toml [hotkeys] section");
         println!();
 

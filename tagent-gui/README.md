@@ -131,7 +131,8 @@ tray work, but the global hotkeys and the selection popup are stubs.
 
 Settings live in a plain, pretty-printed JSON file that is meant to be hand-editable:
 
-- Linux/macOS: `~/.config/tagent-gui/tagent-gui.json`
+- Linux: `~/.config/tagent-gui/tagent-gui.json`
+- macOS: `~/Library/Application Support/tagent-gui/tagent-gui.json`
 - Windows: `%APPDATA%\tagent-gui\tagent-gui.json`
 
 A missing file is created with defaults on first run. Changes are live-reloaded (checked

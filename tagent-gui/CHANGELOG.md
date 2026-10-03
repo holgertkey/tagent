@@ -20,6 +20,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-03
 
 ### Added
+- (+005) **A test keeps the user book's `tagent-gui.json` page complete**: it fails when a
+  key of the default settings isn't named on `docs/user/src/reference/tagent-gui-json.md`
+  (skipped in a copy without `docs/user`, such as the crates.io package).
 - (+001) **The OpenAI-compatible provider can serve dictionary lookups too** (OpenAI, Ollama,
   LM Studio, ...), from `tagent`'s new `openai` dictionary provider: offered in the
   Settings > Providers dictionary picker, and one profile can serve translation and

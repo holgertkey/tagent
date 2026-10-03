@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use tagent::providers::ProviderAxis;
 
 /// Slash-commands offered for Tab-completion at the interactive prompt.
-const SLASH_COMMANDS: &[&str] = &[
+pub(crate) const SLASH_COMMANDS: &[&str] = &[
     "/help",
     "/h",
     "/?",

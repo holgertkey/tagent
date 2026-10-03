@@ -13,7 +13,7 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D3 are
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D4 are
 done (D3 still lacks the screenshots that need clicks).
 
 ---
@@ -258,10 +258,8 @@ Each step is one commit, unless noted otherwise:
     "Troubleshooting: Platforms". D4 adds the generated template listing to the
     `tagent-cli.toml` page; D5 adds the rest of troubleshooting.
   - The `/p` and `/l` examples are real output (prompt-only run without `DISPLAY`).
-  - Found while writing, left for a code change: the template says a relative
-    `history_file` is relative to "the program directory" (it is the working
-    directory), and `--help` says hotkey results are "copied to clipboard automatically"
-    (only with `copy_to_clipboard = true`) after selecting text "anywhere in Windows".
+  - Found while writing, fixed in D4 (`tagent-cli` 0.17.0+019): the template's
+    `history_file` comment and two `--help` lines.
 
 ### D3 — tagent-gui pages
 
@@ -298,6 +296,24 @@ Each step is one commit, unless noted otherwise:
   `tagent-gui.json` and file-location pages.
 - **Version bumps:** `tagent-cli` and `tagent-gui` get a `+BUILD` each, since this step
   adds test code.
+- **Done** (2026-10-03; `tagent-cli` 0.17.0+019, `tagent-gui` 0.15.0+005):
+  - `tagent-cli/src/user_docs.rs` (test-only) generates `reference/generated/`
+    `tagent-cli.toml` (target `en`, history path `<data folder>/...`),
+    `provider-options.md` (per kind: its jobs, options with required/secret/default from
+    the descriptor's `TransportDefaults`, the built-in prompts) and `languages.md`; the
+    pages pull them in with `{{#include}}`. A stale file fails with the command to
+    regenerate: `TAGENT_UPDATE_USER_DOCS=1 cargo test -p tagent-cli user_docs`.
+  - Checks that every `SLASH_COMMANDS` entry and every `--help` flag (`HELP_OPTIONS`, the
+    list `--help` now prints from) appears as code on its page; a `tagent-gui` test does
+    the same for every key of a default `tagent-gui.json`.
+  - The tests read `../docs/user` at run time and skip when it's absent (a crates.io
+    copy), so packaging is unaffected. Each check was seen failing on a broken page.
+  - Found and fixed in the same build: on macOS the config folder is
+    `~/Library/Application Support` (`dirs` 5), not `~/.config` as the READMEs and code
+    comments said; the template's `history_file` comment ("relative to the program
+    directory"; it is the working directory); `--help`'s hotkey lines ("copied to
+    clipboard automatically", "anywhere in Windows"). The prompt's input history is
+    `interactive_history.txt` in the config folder.
 
 ### D5 — Troubleshooting
 
@@ -334,7 +350,8 @@ Each step is one commit, unless noted otherwise:
 
 ### D8 — Process
 
-- `CLAUDE.md`: a "User documentation" note. It covers:
+- `ARCHITECTURE.md`: a "User documentation" section (decided 2026-10-03: not `CLAUDE.md`,
+  which is gitignored, so its rules wouldn't reach the repository). It covers:
   - where the book lives;
   - "a user-visible change edits the book in the same commit" (UD-Q3);
   - how to regenerate the reference pages;

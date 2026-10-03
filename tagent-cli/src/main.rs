@@ -4,6 +4,8 @@ mod interactive;
 mod platform;
 mod speech;
 mod translator;
+#[cfg(test)]
+mod user_docs;
 
 use cli::CliHandler;
 use config::ConfigManager;

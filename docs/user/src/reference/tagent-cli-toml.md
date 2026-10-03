@@ -2,7 +2,8 @@
 
 `tagent-cli` keeps its settings in one [TOML](https://toml.io) file, `tagent-cli.toml`:
 
-- Linux, macOS: `~/.config/tagent-cli/tagent-cli.toml`
+- Linux: `~/.config/tagent-cli/tagent-cli.toml`
+- macOS: `~/Library/Application Support/tagent-cli/tagent-cli.toml`
 - Windows: `%APPDATA%\tagent-cli\tagent-cli.toml`
 
 It is created with every setting at its default on first start, each with a comment that
@@ -84,3 +85,13 @@ API keys.
 
 Versions before 0.17.0 used `tagent-cli.conf` (INI). It is no longer read: copy your
 settings into `tagent-cli.toml` by hand.
+
+## The full file
+
+What a new `tagent-cli.toml` contains, with English as the target language. In a real
+file, `target_language` is your system language and `history_file` is a full path in
+your data folder (see [File locations](file-locations.md)).
+
+```toml
+{{#include generated/tagent-cli.toml}}
+```

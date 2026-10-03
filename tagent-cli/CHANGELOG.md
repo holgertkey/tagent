@@ -15,6 +15,14 @@ before 2026-10-02 have one header per build.
 ## [0.17.0] - 2026-10-03
 
 ### Added
+- (+019) **Tests keep the user book (`docs/user`) in step with the code.** They generate
+  three of its reference pages and fail when a committed copy is stale: the `tagent-cli.toml`
+  template (target language `en`, a placeholder history path), every provider kind's options
+  from `tagent`'s registry (with the built-in prompts), and the language table. Two more
+  fail when an interactive command (`SLASH_COMMANDS`) or a `--help` option isn't named on
+  its book page. `TAGENT_UPDATE_USER_DOCS=1 cargo test -p tagent-cli user_docs` rewrites the
+  generated pages; a copy without `docs/user` (crates.io) skips the checks. `--help` prints
+  its options from one list (`HELP_OPTIONS`) the test shares; the output is unchanged.
 - (+018) **`/p` switches the dictionary and speech providers too.** `/p` now lists all three
   axes, numbered continuously:
   ```
@@ -315,6 +323,13 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+019) **Wrong guidance about the history file and the hotkey.** The config template
+  said a relative `history_file` is taken from "the program directory"; it is the folder
+  `tagent-cli` is started in, and the comment now says so and recommends an absolute path.
+  `--help` said a hotkey translation is "copied to clipboard automatically" (only with
+  `copy_to_clipboard = true`) after selecting text "anywhere in Windows" (any application,
+  Linux included). The README and code comments gave `~/.config/tagent-cli/` as the config
+  folder on macOS, where it is `~/Library/Application Support/tagent-cli/`.
 - (0.16.0+005) **A bare `/s` or `/speech` is no longer translated as text**: it used to fall through to
   translation of the literal string `/s`.
 - (0.16.0+003) **"Auto" can no longer become the target language**: `/l auto`, `/l <src> auto`,

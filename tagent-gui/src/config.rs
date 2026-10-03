@@ -605,7 +605,8 @@ impl GuiConfig {
 /// Returns the platform-default path for `tagent-gui.json` (not created here).
 ///
 /// - **Windows**: `%APPDATA%\tagent-gui\tagent-gui.json`
-/// - **Linux/macOS**: `~/.config/tagent-gui/tagent-gui.json`
+/// - **Linux**: `~/.config/tagent-gui/tagent-gui.json`
+/// - **macOS**: `~/Library/Application Support/tagent-gui/tagent-gui.json`
 pub fn config_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -1875,5 +1876,33 @@ mod tests {
         let mut manager = GuiConfigManager::new_for_test(path.clone());
         manager.update(GuiConfig::default()).unwrap();
         assert_eq!(mode(&path), 0o600);
+    }
+}
+
+/// Keeps the user book's `tagent-gui.json` page (`docs/user`) naming every setting. The
+/// book lives outside this package, so a copy built from crates.io skips the check.
+#[cfg(test)]
+mod user_docs_tests {
+    use super::*;
+
+    #[test]
+    fn every_setting_is_on_the_user_book_page() {
+        let page = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../docs/user/src/reference/tagent-gui-json.md");
+        let Ok(page) = std::fs::read_to_string(&page) else {
+            eprintln!("{} not found; user book check skipped", page.display());
+            return;
+        };
+        let value = serde_json::to_value(GuiConfig::default()).unwrap();
+        let missing: Vec<&String> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|key| !page.contains(&format!("`{key}`")))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "docs/user/src/reference/tagent-gui-json.md doesn't name {missing:?}"
+        );
     }
 }
