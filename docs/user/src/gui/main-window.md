@@ -26,11 +26,14 @@ notice and errors each get their own color.
 
 The transcript's header names the providers in use for each job.
 
-- **🔊** next to the phrase reads it aloud, in its source language (detected if
-  `Auto`); next to the translation, it reads the translation. For a dictionary entry,
-  only the main translation is read. While one plays, its button shows **⏹**: click it to
-  stop, or press **Esc** in any application (Windows, and Linux with X11 or XWayland,
-  while the hotkeys are active). Only one plays at a time.
+- **The prompt is the speak button.** Click `[🔊 Auto]:` before a phrase to hear it, in
+  its source language (detected if `Auto`); click `[🔊 Russian]:` before the translation
+  to hear the translation. For a dictionary entry, only the main translation is read.
+  With the prompt turned off (Settings > View), a block starts with just 🔊. The prompt
+  is tinted while it plays; click it again to stop, or press **Esc** in any application
+  (Windows, and Linux with X11 or XWayland, while the hotkeys are active). Only one entry
+  plays at a time: the others can't be clicked meanwhile. With text-to-speech off
+  (Settings > General), the 🔊 disappears from the prompts.
 - **Right-click** an entry's phrase or translation to copy it as plain text, without
   the prompt. A brief flash of its border confirms the copy. With "Show menu on
   right-click" (Settings > General), right-click opens a **Copy** menu instead.

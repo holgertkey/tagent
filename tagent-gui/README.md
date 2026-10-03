@@ -15,12 +15,16 @@ version: its own interface, settings and versions. They share only the `tagent` 
 
 ## Features
 
-- **Selection hotkeys** (Windows, Linux with X11 or XWayland): translate into a popup (Alt+A), or read aloud (Alt+S).
-- **Main window** with language pickers, a highlighted transcript, 🔊 on every result, copy by right-click.
+- **Selection hotkeys**: translate the selection into a popup next to the cursor and the transcript (Alt+A), or read it aloud (Alt+S); Esc stops speech from any application.
+- **Main window** with language pickers, a transcript highlighted by role (parts of speech, synonyms, notices, errors), a click on a result's `[🔊 English]:` prompt to hear it, and copy by right-click.
 - **Dictionary** for single words, with synonyms and spelling correction.
 - **Providers**: Google by default (no setup), DeepL, or a local or cloud language model (Ollama, LM Studio, OpenAI, ...), separately for translation, the dictionary and speech; switch them from the window for a session.
 - **Settings dialog**: themes and color schemes, fonts, the popup's look, hotkeys, provider profiles with a Test button.
-- **System tray**: starts minimized; closing the window hides it.
+- **System tray**: starts minimized; closing the window hides it; Quit is in the tray menu.
+
+Windows and Linux. On Linux the hotkeys, the popup and the clipboard features need X11 or
+XWayland; on a pure Wayland session and on macOS, the window, dictionary, speech and tray
+work, but those don't yet. There is no translation history (`tagent-cli` has one).
 
 ## Install
 

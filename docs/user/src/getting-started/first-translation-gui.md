@@ -33,7 +33,7 @@ The hotkeys need Windows, or Linux with X11 or XWayland. On macOS, use the windo
 
 Pick the languages at the top of the window, type text in the box at the bottom, and
 press **Enter** (Shift+Enter starts a new line). A single word gets a dictionary entry
-instead of a plain translation. The 🔊 buttons read a result aloud.
+instead of a plain translation. Click the `[🔊 …]:` prompt before a phrase or a translation to hear it.
 
 ![The main window at first start](../images/gui-main-window.png)
 

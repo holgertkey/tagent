@@ -38,7 +38,7 @@ Colors are `"#RRGGBB"`, or `""` for the theme's color.
 |-----|---------|---------|----------|
 | `show_dictionary` | `true` | A dictionary entry for a single word | General |
 | `spell_check` | `true` | Look misspelled words up under their correct spelling | General |
-| `enable_text_to_speech` | `true` | The 🔊 buttons and the speech hotkey | General |
+| `enable_text_to_speech` | `true` | Speaking: the 🔊 in the transcript's prompts and the speech hotkey | General |
 | `show_context_menu` | `false` | Right-click opens a Copy menu instead of copying | General |
 | `translate_hotkey` | `"Alt+A"` | The translate hotkey; restart required | Hotkeys & Tray |
 | `speech_hotkey` | `"Alt+S"` | The speech hotkey; restart required | Hotkeys & Tray |

@@ -40,12 +40,12 @@ stays.
 ## The speech hotkey
 
 Select text and press Alt+S: the text is read aloud in the window's source language
-(detected if `Auto`), with no translation. A `[Speech]:` entry with its own 🔊 button
-appears in the transcript, so you can replay it.
+(detected if `Auto`), with no translation. A `[🔊 Speech]:` entry appears in the
+transcript; click its prompt to replay it.
 
 **Esc** stops whatever is playing, from any application. It works wherever the hotkeys
 do, and only while they are active: with an unusable translate hotkey, Esc is off too.
-The ⏹ button in the transcript always works.
+Clicking the playing entry's prompt in the transcript always stops it.
 
 ## Choosing a hotkey
 

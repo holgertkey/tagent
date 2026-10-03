@@ -12,7 +12,7 @@ It comes as two separate applications. Pick the one that fits how you work, or u
 | Ways to translate | Global hotkey, an interactive prompt, the command line | Global hotkey, a text box |
 | Runs | In a terminal window | In the system tray |
 | Settings | A commented text file, `tagent-cli.toml` | A Settings dialog (and a JSON file) |
-| Extra | One-shot use in scripts, translation history | Colors, fonts and themes; a 🔊 button on every result |
+| Extra | One-shot use in scripts, translation history | Colors, fonts and themes; click any result to hear it |
 
 The two don't share settings: each has its own file, and changing one doesn't affect the
 other. They do share how translation works underneath, so everything under

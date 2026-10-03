@@ -116,6 +116,13 @@ starts in the tray, nothing appears. See
 As in `tagent-cli`: the hotkey copies the selection, then translates the clipboard. If
 the copy didn't happen, the previous clipboard content gets translated.
 
+### It freezes when I switch the keyboard layout (Windows)
+
+On some machines with an NVIDIA graphics driver, a keyboard-layout switcher that
+broadcasts its switch to all windows can freeze `tagent-gui`. `tagent-gui` avoids the
+driver by default; if it still happens, start it with the environment variable
+`SLINT_BACKEND=winit-software`.
+
 ### Copying does nothing (macOS)
 
 Right-click copying and the 📋 button need the clipboard, which isn't implemented on
