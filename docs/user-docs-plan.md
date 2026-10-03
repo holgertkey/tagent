@@ -13,7 +13,7 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D4 are
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D5 are
 done (D3 still lacks the screenshots that need clicks).
 
 ---
@@ -327,6 +327,16 @@ Each step is one commit, unless noted otherwise:
   - a broken custom prompt showing only as "no dictionary".
   - "Translation failed" in general: network, firewall, the service unavailable (from
     `tagent-cli/README.md`).
+- **Done** (2026-10-03):
+  - "Troubleshooting: Providers" quotes the real messages, taken from `tagent-cli` runs
+    against an isolated config (unknown provider, missing `api_key`, an `endpoint`
+    without a scheme, a stopped server, an unknown model, a rejected DeepL key), plus
+    rate limits, quota, `response_format`/`temperature` rejections, and a checklist for
+    "the dictionary is silent". "Platforms" gained a summary table, `tagent-cli`'s
+    configuration errors, and a `tagent-gui` section.
+  - Seen while doing it: in CLI mode a failed translation prints twice, as
+    `Translation failed: …` and again as `Error: Network("…")` (the `Debug` form `main`
+    returns). Left for a code change.
 
 ### D6 — Shorten the READMEs
 
