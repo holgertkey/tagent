@@ -1,3 +1,6 @@
 /target
 /.debug
 CLAUDE.md
+
+# User book build output (mdbook build docs/user)
+/docs/user/book/

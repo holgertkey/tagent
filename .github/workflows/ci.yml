@@ -83,6 +83,21 @@ jobs:
           cargo doc -p tagent --no-deps --locked
           cargo doc -p tagent --no-deps --locked --all-features
 
+      # The user book (docs/user, mdBook). The cache above doesn't cover ~/.cargo/bin,
+      # so the mdbook binary gets its own; install it only on a cache miss.
+      - name: Cache mdBook
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdbook
+          key: ${{ runner.os }}-mdbook-0.5
+
+      - name: User book
+        if: runner.os == 'Linux'
+        run: |
+          command -v mdbook || cargo install mdbook --no-default-features --features search --vers "^0.5" --locked
+          mdbook build docs/user
+
       - name: Release notes script tests
         if: runner.os == 'Linux'
         run: .github/scripts/test-release-notes.sh

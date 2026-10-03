@@ -13,7 +13,8 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** proposed (2026-10-03); questions UD-Q1–Q6 are open.
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0 is
+done.
 
 ---
 
@@ -74,7 +75,7 @@ One user book, written in Markdown in this repository and published as a website
 
 ## Questions to settle
 
-Each has a proposal; none is decided yet.
+Each was settled by its proposal on 2026-10-03; the alternatives are kept for the record.
 
 - **UD-Q1. Tool?**
   - **Proposed:** [mdBook](https://rust-lang.github.io/mdBook/) (0.5.x).
@@ -214,6 +215,13 @@ Each step is one commit, unless noted otherwise:
 - `ci.yml`: install mdBook (cached), run `mdbook build docs/user`.
 - **Done when:** CI builds the empty book; `mdbook serve docs/user` shows the navigation
   locally.
+- **Done** (2026-10-03):
+  - Every page exists as a one-line stub, so D1–D5 only fill pages.
+  - `create-missing = false`: a page listed in `SUMMARY.md` but missing on disk fails the
+    build instead of being created silently.
+  - CI caches `~/.cargo/bin/mdbook` on its own (the cargo cache doesn't cover
+    `~/.cargo/bin`).
+  - `mdbook serve` needs mdBook's default features; the CI install leaves them out.
 
 ### D1 — Providers (first, highest value)
 

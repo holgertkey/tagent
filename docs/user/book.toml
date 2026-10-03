@@ -1,0 +1,15 @@
+[book]
+title = "Tagent User Guide"
+authors = ["holgertkey"]
+description = "User guide for tagent-cli and tagent-gui, the Tagent text translators."
+language = "en"
+src = "src"
+
+[build]
+# A page listed in SUMMARY.md but missing on disk is an error, not a silently created
+# stub, so the CI build catches it.
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/holgertkey/tagent"
+edit-url-template = "https://github.com/holgertkey/tagent/edit/main/docs/user/{path}"
