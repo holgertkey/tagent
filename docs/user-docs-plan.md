@@ -13,8 +13,8 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D2 are
-done.
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D3 are
+done (D3 still lacks the screenshots that need clicks).
 
 ---
 
@@ -278,6 +278,19 @@ Each step is one commit, unless noted otherwise:
   "First translation (tagent-gui)". Install and building from source exist only in the
   READMEs today, and D6 shortens them.
 - **Done when:** every Settings tab and the provider menu have a page section.
+- **Done** (2026-10-03):
+  - The `gui/` pages, "Introduction", "Install" and "First translation (tagent-gui)".
+    Written from `app.slint` and the code, not from `tagent-gui/README.md`, which lags
+    (it still lists five languages and the providers on the General tab).
+  - Screenshot `images/gui-main-window.png` (600×567): a non-interactive launch with an
+    isolated `XDG_CONFIG_HOME` (`theme: light`, `start_minimized: false`, hotkeys off),
+    `WAYLAND_DISPLAY` unset for the X11 backend, `import -window`. Its transcript is
+    empty, since filling it needs input.
+  - **Open, by hand:** a main window with a phrase and a dictionary entry (to replace the
+    empty one), the popup (`gui-popup.png`, for "Hotkeys and the popup"), Settings >
+    General and Settings > Providers (`gui-settings-general.png`,
+    `gui-settings-providers.png`, for "Settings"), and the provider menu open. The pages
+    have no image references for them yet.
 
 ### D4 — Reference pages and their checks
 
