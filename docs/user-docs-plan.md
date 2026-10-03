@@ -13,9 +13,8 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** steps done (2026-10-03). The proposals of UD-Q1–Q6 were accepted on
-2026-10-03 (UD-Q2 revised during D7). Open: the screenshots that need clicks (D3), and
-the first deployment, which happens with the first merge into `main`.
+**Status:** steps D0–D8 done (2026-10-03). The proposals of UD-Q1–Q6 were accepted on
+2026-10-03 (UD-Q2 revised during D7). The open items are collected in D9.
 
 ---
 
@@ -405,6 +404,70 @@ Each step is one commit, unless noted otherwise:
   - The three dev plans name the "Book" item next to the changelog (`providers-dev-plan.md`'s
     stage conventions; the "Where the rest lives" lists of the two app plans).
   - The `tagent-gui` README cadence note now sends per-change detail to the book.
+
+### D9 — Open items (follow-ups)
+
+Collected 2026-10-03, when D0–D8 were done. Each item is independent; take them in any
+order. Items that change code follow the usual rules (`+BUILD` bump, changelog entry,
+book edit in the same commit, a regression test for a fix).
+
+**Verify after the first merge into `main`** (no code):
+- **The first deployment.** `pages.yml` runs for the first time; check the run on the
+  Actions tab, then the site at <https://holgertkey.github.io/tagent/>: navigation,
+  search, the light and dark themes, the screenshot, the generated pages (template,
+  provider options with the prompts, languages).
+- **CI's new steps on `main`.** The book build (`ci.yml`, with the mdBook cache) and the
+  `user_docs` tests have run only locally on Linux. Check them on `main`, Windows
+  included: the generated-page tests normalize `\r\n`, and the template has no
+  OS-specific parts, but neither was seen on Windows.
+- **The README links** to the book (`tagent-cli`, `tagent-gui`, workspace) once the
+  site is up.
+
+**Verify at the next release** (no code):
+- **crates.io pages** of `tagent-cli` and `tagent-gui`: the short READMEs render, the
+  relative links (`CHANGELOG.md`, `../LICENSE`) resolve, and `homepage`/`documentation`
+  point to the book.
+- **`tagent-gui/README.md` and the book promise the `.deb` and `--install-desktop`**,
+  which the last release (`v0.16.0`, `tagent-gui` 0.14.0) doesn't have yet; the next
+  release closes that gap. Until then the introduction's "Which version this guide
+  describes" covers it.
+
+**Screenshots** (by hand, they need clicks; D3):
+- the main window with a phrase and a dictionary entry, replacing the empty
+  `images/gui-main-window.png`;
+- the popup (`gui-popup.png`, for "Hotkeys and the popup");
+- Settings > General and Settings > Providers (`gui-settings-general.png`,
+  `gui-settings-providers.png`, for "Settings");
+- the provider menu open (for "The main window", "Switching providers").
+
+Light theme, default window size, PNG kept small. Add the image references to the pages
+in the same commit.
+
+**Recipes not run with Tagent yet** (D1):
+- LM Studio, OpenAI and OpenRouter take their values from each service's documentation
+  and say they are untested. Run each once (OpenAI and OpenRouter need an account and
+  cost a few tokens), then drop the "Not tested" note or correct the recipe.
+- The OpenAI recipe names `gpt-5.4-mini`; model names change often, so recheck it
+  against OpenAI's model list when the recipe is touched.
+
+**Code issues found while writing the book** (each its own fix, with a test):
+- **`tagent-cli`: a failed translation in CLI mode prints twice**, as
+  `Translation failed: …` and then `Error: Network("…")` (the `Debug` form of the error
+  `main` returns). Print it once. Found in D5.
+- **`tagent-gui`: first start without a tray is a trap** (stock GNOME has none): the app
+  starts minimized (`start_minimized: true`), the hotkeys don't show the window, and only
+  `pkill` quits it. The book documents the workaround ("Tray and startup: Without a
+  tray"). A fix (e.g. show the window when no tray host is registered) belongs in
+  [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md); move it there as a stage when it is
+  picked up. Found in D3.
+- **Stale macOS path in the historical record**: `providers-dev-plan.md` (Stage F3 notes)
+  still gives `~/.config/tagent-cli/` for macOS. Leave it as the record of that stage,
+  or add a one-line correction note; the READMEs, code comments and the book are already
+  right (D4).
+
+**Optional, revisit with a reason** (out of scope until then):
+- automated link checking (`mdbook-linkcheck`; see "Keeping it in sync", point 4);
+- a "Help" button in `tagent-gui` that opens the book (see "Out of scope").
 
 ## Done when
 
