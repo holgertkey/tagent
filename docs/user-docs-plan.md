@@ -13,7 +13,7 @@ Where the rest lives:
   [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md),
   [`providers-dev-plan.md`](providers-dev-plan.md).
 
-**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D5 are
+**Status:** in progress. The proposals of UD-Q1–Q6 were accepted on 2026-10-03; D0–D6 are
 done (D3 still lacks the screenshots that need clicks).
 
 ---
@@ -344,6 +344,18 @@ Each step is one commit, unless noted otherwise:
   README.
 - **Checks:** `cargo build -p tagent-cli` (the `build.rs` markers) and the release
   workflow's "docs in sync" check still pass.
+- **Done** (2026-10-03):
+  - `tagent-cli/README.md` 771 → 59 lines, `tagent-gui/README.md` 177 → 56: what it is,
+    one line per feature, install, a quick start, links to the book (deep links for
+    Install, First translation, Without a tray), the changelog, issues and the license.
+    `tagent-cli`'s three `build.rs` lines are kept; `cargo build -p tagent-cli` leaves the
+    file unchanged.
+  - The book's URL is `https://holgertkey.github.io/tagent/` (GitHub Pages' address for
+    the repository); the links work once D7 deploys.
+  - Moved into the book first: seeing `tagent-gui`'s messages on Windows (Troubleshooting:
+    Platforms). Dropped as developer material: the dependency list, "Architecture" and
+    "Contributing" of `tagent-cli/README.md` (`ARCHITECTURE.md` covers them).
+  - The workspace `README.md` points users to the book.
 
 ### D7 — Publish
 

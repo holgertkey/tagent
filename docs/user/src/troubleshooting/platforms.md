@@ -79,6 +79,19 @@ fatal: that part of the file is ignored until you fix the name.
 file when started from a terminal on Linux or macOS, and to the terminal with
 `--foreground`. See [File locations](../reference/file-locations.md).
 
+On Windows, `tagent-gui` has no console window, and its messages go to the standard
+error output: start it from a terminal to see them. `cmd` and PowerShell don't wait for a
+window program, so its output mixes with the prompt; to keep it in order:
+
+```powershell
+.\tagent-gui.exe | Out-Host        # PowerShell: waits for the app
+.\tagent-gui.exe 2> tagent-gui.log # or into a file
+```
+
+```bat
+start /wait tagent-gui.exe
+```
+
 ### No tray icon, no window
 
 Some Linux desktops have no tray: GNOME needs an extension for it. Since `tagent-gui`

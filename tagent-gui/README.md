@@ -1,178 +1,56 @@
 # tagent-gui
 
-A [Slint](https://slint.dev/) desktop GUI translator with a global "translate my
-selection" hotkey, a system-tray icon, dictionary lookups and text-to-speech, built
-directly on the [`tagent`](https://github.com/holgertkey/tagent/tree/main/tagent)
-library (Google Translate by default).
+A desktop translator: select text in any application and press **Alt+A**, and the
+translation pops up next to the mouse cursor. It lives in the system tray, keeps a
+transcript of your translations, looks single words up in a dictionary, and reads text
+aloud. Built with [Slint](https://slint.dev/) on the
+[`tagent`](https://github.com/holgertkey/tagent/tree/main/tagent) library.
 
-`tagent-gui` is a fully independent application from
-[`tagent-cli`](https://github.com/holgertkey/tagent/tree/main/tagent-cli) — its own
-interface, its own configuration file, its own feature set, and its own versioning and
-[CHANGELOG.md](CHANGELOG.md). The only thing the two share is the `tagent` library
-underneath. It is not held to feature parity with `tagent-cli`.
+📖 **[User guide](https://holgertkey.github.io/tagent/)**: installation, usage, providers, settings reference and
+troubleshooting.
 
-## Install and run
+`tagent-gui` is independent of
+[`tagent-cli`](https://github.com/holgertkey/tagent/tree/main/tagent-cli), the terminal
+version: its own interface, settings and versions. They share only the `tagent` library.
 
-```bash
-cargo install tagent-gui        # from crates.io
-tagent-gui
-```
+## Features
 
-or, from a checkout of the repository:
+- **Selection hotkeys** (Windows, Linux with X11 or XWayland): translate into a popup (Alt+A), or read aloud (Alt+S).
+- **Main window** with language pickers, a highlighted transcript, 🔊 on every result, copy by right-click.
+- **Dictionary** for single words, with synonyms and spelling correction.
+- **Providers**: Google by default (no setup), DeepL, or a local or cloud language model (Ollama, LM Studio, OpenAI, ...), separately for translation, the dictionary and speech; switch them from the window for a session.
+- **Settings dialog**: themes and color schemes, fonts, the popup's look, hotkeys, provider profiles with a Test button.
+- **System tray**: starts minimized; closing the window hides it.
 
-```bash
-cargo run -p tagent-gui
-```
+## Install
 
-On Linux and macOS, starting it from a terminal doesn't hold that terminal: the app moves
-itself to the background and the prompt comes back at once. Its diagnostics (config
-warnings, "Global hotkeys disabled", speech errors) go to a log file,
-`~/.local/share/tagent-gui/tagent-gui.log` on Linux and
-`~/Library/Application Support/tagent-gui/tagent-gui.log` on macOS. To keep the app
-attached, with its output in the terminal (e.g. while debugging), pass `--foreground`
-(or `-f`):
+- **Download** from the [latest release](https://github.com/holgertkey/tagent/releases/latest):
+  a `.zip` for Windows, a `.tar.gz` or a `.deb` for Linux
+  (`sudo apt install ./tagent-gui_<version>-1_amd64.deb`).
+- **Or with Cargo**: `cargo install tagent-gui` (on Linux, first
+  `sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev` or your
+  system's equivalent), then `tagent-gui --install-desktop` for a menu entry.
 
-```bash
-tagent-gui --foreground
-cargo run -p tagent-gui -- --foreground
-```
+More in [Install](https://holgertkey.github.io/tagent/getting-started/install.html).
 
-On Windows the app has no console window of its own, so starting it from Explorer or a
-shortcut shows only the GUI. Its diagnostics (config warnings, "Global hotkeys disabled",
-speech errors) go to `stderr`, and they still appear if you start it from a terminal:
+## Quick start
 
-```powershell
-cargo run -p tagent-gui                 # output stays in the terminal, in order
-.\tagent-gui.exe | Out-Host             # PowerShell: waits for the app, keeps the output in order
-.\tagent-gui.exe 2> gui.log             # or capture it in a file
-```
+1. Start `tagent-gui`. It goes to the system tray; click the icon to show the window.
+2. Select text anywhere and press **Alt+A**.
+3. Or type in the window and press Enter.
+4. ⚙ opens Settings.
 
-```bat
-start /wait tagent-gui.exe
-```
+No tray on your desktop? See [Tray and startup](https://holgertkey.github.io/tagent/gui/tray-and-startup.html#without-a-tray).
 
-Plain `.\tagent-gui.exe` also prints to the terminal, but `cmd` and PowerShell don't wait
-for a GUI program, so the prompt returns at once and the output interleaves with it.
+## More
 
-Building on Linux needs the X11, XTest, ALSA and fontconfig development packages, e.g.
-on Debian/Ubuntu:
-
-```bash
-sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev
-```
-
-The "translate the current selection" hotkey simulates Ctrl+C in the source application
-through the X server's XTest extension, so it needs no extra programs, but it does need
-X11 or XWayland.
-
-By default the app starts minimized to the tray; click the tray icon (or use the hotkey)
-to bring it up. Set `start_minimized` to `false` in `tagent-gui.json`, or untick it in
-Settings > "Hotkeys & Tray", to open the window at launch.
-
-## What it does
-
-- **Translate.** Pick a source and target language, type text, press Enter (or click
-  Translate); Shift+Enter inserts a newline. The ⇄ button swaps the languages (disabled
-  while the source is Auto), and 📋 pulls the clipboard contents into the input box. The
-  language list is fixed at English/Russian/Spanish/French/German, plus Auto as a source
-  language.
-- **Transcript.** Results accumulate in a view-only transcript with highlighting: the
-  `[Language]:` prompt, parts of speech, synonyms, the spelling-correction notice and
-  errors each get their own color, derived from the background. Right-click a block to
-  copy it as plain text (a brief border flash confirms it); with `show_context_menu` on,
-  right-click opens a "Copy" menu instead.
-- **Dictionary.** A single word gets a dictionary entry instead of a plain translation
-  (definitions grouped by part of speech, with a notice when the provider silently
-  corrected a misspelling). Toggle with `show_dictionary` / `spell_check`.
-- **Text-to-speech.** Every transcript row has 🔊 buttons for the phrase and for the
-  translation. Only one plays at a time; the playing button turns into ⏹ and a second
-  click stops it. Toggle with `enable_text_to_speech`.
-- **Global hotkeys** (Linux and Windows):
-  - `Alt+A` copies whatever you have selected in any application and translates it into
-    the transcript, and shows the result in a small always-on-top popup next to the
-    mouse cursor, highlighted like the transcript. The popup hides itself after
-    `popup_auto_hide_seconds` (default 3) unless the cursor rests on it. Right-click the
-    phrase or the translation to copy that line; drag it with the left button to move it;
-    with `remember_popup_position` on, it reappears where you dropped it. With
-    `show_popup` off, the hotkey translates into the transcript only.
-  - `Alt+S` speaks the current selection aloud, and adds a row with a replay button to
-    the transcript. `Esc` stops whatever is speaking, from any application.
-  - Both are configurable (see below) and take effect after a restart.
-- **System tray.** A tray icon with "Show Tagent", "Settings…" and "Quit". Closing the
-  main window hides it to the tray; "Quit" in the tray menu is the only way to exit.
-  The hotkeys keep working while the window and tray are hidden — on a desktop without a
-  tray host, that is the way back in.
-- **Settings** (the ⚙ button, or "Settings…" in the tray menu):
-  - *General* — translate, dictionary and speech providers (each an independent
-    choice), the dictionary/spell-check/text-to-speech switches, the right-click menu
-    switch, and "Reset to Defaults".
-  - *View* — theme (`Auto`/`Light`/`Dark`, applied live), color scheme, fonts, sizes and
-    colors of the transcript, the prompt color, spacing.
-  - *Hotkeys & Tray* — the two hotkeys (with a "Record" button that validates them
-    live), the switch for the speech hotkey, start minimized, and remembering the window's
-    size and position.
-  - *Popup* — whether the popup is shown at all, its font, colors (including the prompt),
-    what it shows (prompt, phrase), auto-hide delay, size limits and border, and whether
-    it remembers where you dragged it.
-  - *About*.
-
-## Platforms
-
-| | Linux | Windows | macOS |
-|---|---|---|---|
-| Translate, dictionary, text-to-speech, tray, Settings | ✅ | ✅ | ✅ |
-| Global hotkeys and selection popup | ✅ X11 / XWayland | ✅ | not implemented |
-
-On Linux the hotkeys use X11 key grabbing, so they need X11 or XWayland; on a pure Wayland
-session everything else still works. On macOS the window, dictionary, text-to-speech and
-tray work, but the global hotkeys and the selection popup are stubs.
-
-## Configuration
-
-Settings live in a plain, pretty-printed JSON file that is meant to be hand-editable:
-
-- Linux: `~/.config/tagent-gui/tagent-gui.json`
-- macOS: `~/Library/Application Support/tagent-gui/tagent-gui.json`
-- Windows: `%APPDATA%\tagent-gui\tagent-gui.json`
-
-A missing file is created with defaults on first run. Changes are live-reloaded (checked
-before each translation), except for the hotkeys, `start_minimized` and the tray, which
-are read at startup. A file that is present but invalid is left untouched: the app logs
-a warning and keeps using its last valid settings. It does not read `tagent-cli`'s
-`tagent-cli.toml`.
-
-The main keys:
-
-| Key | Default | |
-|---|---|---|
-| `translate_provider` / `dictionary_provider` / `speech_provider` | `"google"` | Three independent backends |
-| `theme` | `"Auto"` | `Auto`, `Light` or `Dark` |
-| `translate_hotkey` / `speech_hotkey` | `"Alt+A"` / `"Alt+S"` | `F1`–`F12`, `Modifier+Key`, or a double press like `Ctrl+Ctrl` |
-| `enable_speech_hotkey` | `true` | |
-| `show_dictionary` / `spell_check` | `true` | |
-| `enable_text_to_speech` | `true` | Shows the 🔊 buttons |
-| `show_context_menu` | `false` | Right-click opens a "Copy" menu instead of copying at once |
-| `show_popup` | `true` | Show the popup on the translate hotkey |
-| `popup_auto_hide_seconds` | `3` | `0` means the default, not "never" |
-| `remember_popup_position` | `false` | |
-| `start_minimized` | `true` | |
-| `remember_window_geometry` | `true` | |
-
-The provider dropdowns are filled from the `tagent` library, so a new backend appears in
-Settings as soon as the library offers it. The file also accepts any provider name by
-hand, and a bad or missing hotkey only disables that hotkey.
-
-## Notes
-
-- `Auto` theme follows the system setting. On Linux, a fresh window may briefly flash
-  light before settling into dark; this is an upstream Slint/winit limitation
-  ([`slint-ui/slint#4392`](https://github.com/slint-ui/slint/issues/4392)). Pick `Light`
-  or `Dark` explicitly to avoid it.
-- No translation history logging yet (`tagent-cli` has one).
-
-## Status
+- [User guide](https://holgertkey.github.io/tagent/): every feature, the `tagent-gui.json` reference, troubleshooting.
+- [CHANGELOG.md](CHANGELOG.md): the version history.
+- Issues and suggestions: [GitHub issues](https://github.com/holgertkey/tagent/issues).
 
 Early (`0.x`): usable day to day, but settings and behavior may still change between
-releases. See [CHANGELOG.md](CHANGELOG.md) for the version history and the
-[architecture notes](https://github.com/holgertkey/tagent/blob/main/docs/ARCHITECTURE.md)
-for how it works.
+releases.
+
+## License
+
+MIT, see [LICENSE](../LICENSE).
