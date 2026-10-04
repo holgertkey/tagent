@@ -32,6 +32,9 @@ without the portal (Sway, Hyprland) and sessions without XWayland (no
   `tagent-cli --install-desktop` and start it again. If you declined the desktop's
   dialog, or want other keys, set them in the system settings (GNOME: Settings > Apps >
   Tagent CLI). Select the text with the mouse: the hotkey reads the mouse selection.
+- **`tagent-gui` runs with the same keys** (Wayland): the application started first gets
+  them, and the other stays deaf to them even after the first quits. Give one of them
+  other keys in GNOME Settings > Apps, then restart it.
 - **macOS, or Wayland without the portal or XWayland:** global hotkeys aren't
   available; use the prompt or the command line.
 - **Another application holds the combination.** On Linux, `tagent-cli` warns at start
@@ -127,6 +130,9 @@ starts in the tray, nothing appears. See
   entry is missing: run `tagent-gui --install-desktop` and restart. If you declined the
   desktop's dialog, or want other keys, set them in the system settings (GNOME:
   Settings > Apps > Tagent). Settings > Hotkeys & Tray shows what is bound.
+- **`tagent-cli` runs with the same keys** (Wayland): the application started first gets
+  them, and the other stays deaf to them even after the first quits. Give one of them
+  other keys in GNOME Settings > Apps, then restart it.
 - **macOS:** not available; use the window.
 - **A restart is needed** after changing a hotkey: Quit from the tray menu and start
   again.

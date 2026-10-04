@@ -89,5 +89,9 @@ can't watch the keyboard of other apps, so the desktop delivers the hotkeys inst
 - **What is translated or spoken** is the text selected with the mouse (the "primary
   selection"); nothing is copied and the clipboard stays as it was. Select the text
   first; Ctrl+A in an app doesn't always count as a mouse selection.
+- **`tagent-cli` uses the same default keys.** On GNOME, when both run with the same
+  keys, the one started first gets them, and the other doesn't respond to them, even
+  after the first one quits. Give one of them other keys (for `tagent-gui`: Settings >
+  Apps > Tagent > Global Shortcuts), then restart it.
 - A desktop without the portal (Sway, Hyprland and other wlroots-based ones) falls back
   to the X11 way, which only sees keys while an X11 (XWayland) window is focused.

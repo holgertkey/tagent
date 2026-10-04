@@ -99,6 +99,9 @@ hotkeys instead, through its "Global Shortcuts" portal:
   have no effect (a note at start says so when the setting is on). The translation
   appears at the prompt as usual.
 - **Esc** doesn't stop speech; press the speech hotkey again, or Ctrl+C in the terminal.
-- `tagent-gui` uses the same default keys. If both run, give one of them other keys.
+- **`tagent-gui` uses the same default keys.** On GNOME, when both run with the same
+  keys, the one started first gets them, and the other doesn't respond to them, even
+  after the first one quits. Give one of them other keys (for `tagent-cli`: GNOME
+  Settings > Apps > Tagent CLI > Global Shortcuts), then restart it.
 - A desktop without the portal (Sway, Hyprland and other wlroots-based ones) falls back
   to the X11 way, which only sees keys while an X11 (XWayland) window is focused.

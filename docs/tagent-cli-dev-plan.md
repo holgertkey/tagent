@@ -640,11 +640,17 @@ interactive and hotkey outputs of the same translation look different.
   the header; an independent decision there.
 - Labels in CLI mode.
 
-## Stage W — Global hotkey on Wayland (implemented 2026-10-04: `0.17.0+020`; live check open)
+## Stage W — Global hotkey on Wayland (done, 2026-10-04: `0.17.0+020`)
 
-Landed W1–W5 together as `0.17.0+020` (one `+BUILD`, not one per step). The live check
-(the W0 questions and the manual list under "Tests and verification") is still open. Where
-the implementation differs from the plan:
+Landed W1–W5 together as `0.17.0+020` (one `+BUILD`, not one per step). Verified live by
+the maintainer on GNOME 50 (2026-10-04): the consent dialog once, both hotkeys from native
+Wayland apps with the mouse selection, no remote desktop dialog, the speech hotkey and
+Ctrl+C stopping speech. W0 wasn't run as a separate spike; its questions were answered by
+that check. The conflict question, reported by the maintainer afterwards: with `tagent-cli`
+and `tagent-gui` both running on the same keys, **the app started first gets them, and the
+other stays deaf to them even after the first one quits** (until it gets other keys in
+GNOME Settings and restarts). Neither app can tell: its own bind looks successful. The
+book says so on both hotkey pages and in Troubleshooting; the defaults stay the same. Where the implementation differs from the plan:
 
 - **`ashpd` with `async-io`**, not `tokio`: Cargo unifies features across the workspace,
   `tagent-gui` needs `async-io`, and `ashpd` refuses both (`compile_error!`), which broke

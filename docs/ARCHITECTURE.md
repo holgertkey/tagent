@@ -1648,6 +1648,11 @@ item 8 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
 ### Known gaps in `tagent-gui`
 
+- **Wayland, both apps on the same keys** (observed 2026-10-04): with `tagent-gui` and
+  `tagent-cli` running and bound to the same triggers, GNOME delivers them to the app
+  started first, and the other gets nothing, even after the first quits (until it is
+  given other keys in GNOME Settings and restarted). Each app's own `BindShortcuts`
+  answer looks successful, so neither can warn; documented in the user book.
 - **Wayland** (Stage W above): the popup can't open next to the cursor; Esc stops speech
   only while a Tagent window is focused; a desktop without the GlobalShortcuts portal
   (wlroots: Sway, Hyprland, niri) gets the X11 fallback only; apps that don't publish a
