@@ -365,6 +365,10 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+007) **The hotkeys bound on Wayland are shown in English**: Settings > Hotkeys & Tray
+  and the transcript header showed the desktop's own description, which GNOME localizes
+  ("Нажмите <Alt>a" on a Russian system). The key is now taken out of it and written the
+  way Tagent writes hotkeys (`Alt+A`).
 - (0.14.0+034) **Windows redraw glitches caused by the software renderer**. It redraws only what changed
   since its last frame and isn't told when Windows discards a window's contents, so:
   translating the same phrase with the hotkey again left the popup invisible; the main

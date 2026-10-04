@@ -5805,7 +5805,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.15.0+006"
+version = "0.15.0+007"
 dependencies = [
  "arboard",
  "ashpd",

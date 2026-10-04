@@ -104,7 +104,7 @@ fn status_from(shortcuts: &[Shortcut], register_error: Option<&str>) -> DesktopH
         shortcuts
             .iter()
             .find(|shortcut| shortcut.id() == id)
-            .map(|shortcut| shortcut.trigger_description().trim().to_string())
+            .map(|shortcut| display_trigger(shortcut.trigger_description()))
             .filter(|trigger| !trigger.is_empty())
     };
     let translate = trigger(TRANSLATE_ID);
@@ -116,6 +116,77 @@ fn status_from(shortcuts: &[Shortcut], register_error: Option<&str>) -> DesktopH
         speech,
         problem,
     }
+}
+
+/// A portal `trigger_description` in the app's own hotkey notation (`Alt+A`), in English.
+///
+/// The description is meant for display, and GNOME localizes it around a GTK accelerator
+/// ("Press <Alt>a", "Нажмите <Alt>a"), which would put the system language into an
+/// otherwise English UI. Every accelerator-looking word is converted
+/// ([`accelerator_to_hotkey`]) and the rest dropped; a description with none is shown
+/// as it is.
+fn display_trigger(description: &str) -> String {
+    let keys: Vec<String> = description
+        .split_whitespace()
+        .filter_map(accelerator_to_hotkey)
+        .collect();
+    if keys.is_empty() {
+        description.trim().to_string()
+    } else {
+        keys.join(", ")
+    }
+}
+
+/// A GTK accelerator (`<Control><Shift>t`, `<Alt>a`, `F9`) as the app's hotkey notation
+/// (`Ctrl+Shift+T`, `Alt+A`, `F9`), or `None` for a word that isn't one. Without a
+/// modifier, only a single character, an F-key or a known key name counts, so a
+/// localized "Press" isn't taken for a key.
+fn accelerator_to_hotkey(word: &str) -> Option<String> {
+    let word = word.trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '"' | '\'' | '«' | '»' | '“' | '”' | '„' | ',' | '.' | ':' | '(' | ')'
+        )
+    });
+    let mut parts = Vec::new();
+    let mut rest = word;
+    while let Some(after) = rest.strip_prefix('<') {
+        let end = after.find('>')?;
+        parts.push(
+            match after[..end].to_ascii_lowercase().as_str() {
+                "control" | "ctrl" | "primary" => "Ctrl",
+                "alt" | "mod1" => "Alt",
+                "shift" => "Shift",
+                "super" | "meta" | "hyper" | "mod4" => "Super",
+                _ => return None,
+            }
+            .to_string(),
+        );
+        rest = &after[end + 1..];
+    }
+    let key = match rest {
+        "space" => "Space".to_string(),
+        "Return" | "KP_Enter" => "Enter".to_string(),
+        "Tab" => "Tab".to_string(),
+        "Escape" => "Esc".to_string(),
+        "BackSpace" => "Backspace".to_string(),
+        "Delete" | "Insert" | "Home" | "End" | "Left" | "Right" | "Up" | "Down" => rest.to_string(),
+        "Page_Up" | "Prior" => "PageUp".to_string(),
+        "Page_Down" | "Next" => "PageDown".to_string(),
+        key if key.len() == 1 && key.chars().all(|ch| ch.is_ascii_alphanumeric()) => {
+            key.to_ascii_uppercase()
+        }
+        key if key.len() >= 2
+            && key.starts_with('F')
+            && key[1..].chars().all(|ch| ch.is_ascii_digit()) =>
+        {
+            key.to_string()
+        }
+        key if !parts.is_empty() && !key.is_empty() && !key.contains(['<', '>']) => key.to_string(),
+        _ => return None,
+    };
+    parts.push(key);
+    Some(parts.join("+"))
 }
 
 /// A problem line for the transcript; mentions the desktop entry when registering the
@@ -301,6 +372,28 @@ mod tests {
             assert_eq!(keysym_name(vk).as_deref(), Some(name));
         }
         assert_eq!(keysym_name(0xFFFF), None);
+    }
+
+    #[test]
+    fn trigger_descriptions_lose_their_localized_words() {
+        assert_eq!(display_trigger("Нажмите <Alt>a"), "Alt+A");
+        assert_eq!(display_trigger("Press <Alt>s"), "Alt+S");
+        assert_eq!(display_trigger("Press <Control><Shift>t"), "Ctrl+Shift+T");
+        assert_eq!(display_trigger("Drücken Sie <Super>space"), "Super+Space");
+        assert_eq!(display_trigger("«<Primary>Return» drücken"), "Ctrl+Enter");
+    }
+
+    #[test]
+    fn bare_keys_count_only_when_they_look_like_keys() {
+        assert_eq!(display_trigger("Press F9"), "F9");
+        assert_eq!(display_trigger("Нажмите F12"), "F12");
+        assert_eq!(display_trigger("Press Page_Up"), "PageUp");
+    }
+
+    #[test]
+    fn a_description_without_an_accelerator_is_kept() {
+        assert_eq!(display_trigger("  Unassigned "), "Unassigned");
+        assert_eq!(display_trigger(""), "");
     }
 
     #[test]

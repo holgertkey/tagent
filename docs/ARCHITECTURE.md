@@ -1547,7 +1547,10 @@ at a remembered position. Follow-ups: Roadmap item 7 in
   session must stay alive (dropping it unbinds), so `run` never returns while it works.
 - **`on_desktop_hotkeys`**: `KeyboardHook::spawn`'s sixth callback (all three platforms
   take it; only the portal calls it) with `platform::DesktopHotkeys { translate, speech,
-  problem }`: the trigger descriptions GNOME reports, or why the hotkeys are off (the
+  problem }`: the triggers GNOME reports, or why the hotkeys are off. GNOME's
+  `trigger_description` is localized around a GTK accelerator ("Нажмите <Alt>a"), so
+  `display_trigger` keeps only the accelerator words, in the app's notation (`Alt+A`;
+  0.15.0+007) (the
   hint to run `--install-desktop` when `Register` failed). `main.rs`'s
   `apply_desktop_hotkeys` shows the triggers in the transcript header, pushes a
   `[Hotkey]` info row per new problem, and keeps the status in the `DESKTOP_HOTKEYS`
