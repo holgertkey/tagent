@@ -38,6 +38,16 @@ the app detaches and the prompt returns at once. Its messages go to a log file (
 [File locations](../reference/file-locations.md)). `tagent-gui --foreground` (or `-f`)
 keeps it attached, with its messages in the terminal.
 
+**Only one copy runs.** Starting `tagent-gui` again (from the menu, a terminal, or a
+second autostart entry) brings up the running copy's window, as "Show Tagent" in the tray
+does, and the new start ends there. From a terminal it says so:
+
+```
+tagent-gui is already running (pid 12345); showed its window.
+```
+
+Each user of a computer has their own copy.
+
 ## Starting with the system
 
 Tagent doesn't add itself to autostart. Use your desktop's own setting:

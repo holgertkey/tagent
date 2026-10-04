@@ -23,6 +23,7 @@ settings file's full path; `history_file` can move the history anywhere.
 | Log, `tagent-gui.log` | `~/.local/share/tagent-gui/` | `~/Library/Application Support/tagent-gui/` | — |
 | Menu entry, after `--install-desktop` | `~/.local/share/applications/io.github.holgertkey.TagentGui.desktop` | — | — |
 | Icon, after `--install-desktop` | `~/.local/share/icons/hicolor/512x512/apps/io.github.holgertkey.TagentGui.png` | — | — |
+| While running: `io.github.holgertkey.TagentGui.sock`, how a second start finds it | `$XDG_RUNTIME_DIR` (e.g. `/run/user/1000/`) | `~/Library/Application Support/tagent-gui/` | a named pipe, no file |
 
 The log is written when the app was started from a terminal and moved itself to the
 background (Linux, macOS); with `--foreground`, messages go to the terminal instead. On

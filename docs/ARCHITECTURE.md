@@ -1579,6 +1579,41 @@ at a remembered position. Follow-ups: Roadmap item 7 in
   `org.gnome.settings-daemon.global-shortcuts applications` (and its
   `/org/gnome/settings-daemon/global-shortcuts/<APP_ID>/` path) and restart.
 
+### Single instance (`tagent-gui` 0.15.0+009)
+
+`tagent-gui/src/single_instance.rs`: one copy per user; a second start makes the running
+copy show its window and exits. Plan: "Planned stage — Single instance" in
+[`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+
+- **Socket** (crate `interprocess` 2, sync, no features): `socket_name()` (pure core
+  `socket_name_from`, tested) is a file socket `$XDG_RUNTIME_DIR/io.github.holgertkey.TagentGui.sock`
+  on Linux (the data dir's `tagent-gui/` without it, and on macOS) and a named pipe
+  `io.github.holgertkey.TagentGui.<USERNAME>` on Windows. Never the Linux abstract namespace
+  (what `GenericNamespaced` maps to there): shared by all users of the machine, no
+  permissions, squattable. Windows pipe names are machine-wide, hence the user name.
+- **Protocol**: one line each way, 2 s timeouts on both sides (`set_recv_timeout`/
+  `set_send_timeout`, `ConnectWaitMode::Timeout` on connect): `show` → `ok <pid>`, anything
+  else → `error unknown request` (`reply_for`/`parse_reply`, tested). The server calls
+  `on_show` *before* replying, so the asking start knows it was handed on (a test once
+  raced on this).
+- **`main()`**: `exit_if_already_running` asks before `detach::detach_from_terminal()` on
+  Unix (so the message reaches the terminal; after `attach_parent` on Windows): `Shown(pid)`
+  → print, exit 0; `NoAnswer` → error, exit 1. The process that keeps running then
+  `claim_single_instance`s right after `session::init()`, before any window: `claim` binds
+  (`ListenerOptions::create_sync`); on `AddrInUse` (Unix) or `PermissionDenied` (Windows:
+  `FILE_FLAG_FIRST_PIPE_INSTANCE` on an existing pipe) it asks; nobody answering on a file
+  socket = a crash leftover, removed and bound again once. `try_overwrite(true)` would
+  delete a live copy's socket, so it stays off. Any other failure (`Unavailable`) only
+  warns: the app runs without the guard rather than not at all. Once the tray exists,
+  `serve` runs the accept loop on a thread; each `show` invokes the tray's own
+  `show_requested` on the event loop (`show_window_restoring_geometry`). `interprocess`
+  removes the socket file when the listener is dropped (`reclaim_name`, default on).
+- **Development**: `cargo run -p tagent-gui` while another copy runs only shows that copy
+  (its pid is printed). Under the Bash tool (no terminal) the app doesn't detach, so a
+  test start blocks; run it in the background.
+- Not done: `--replace`, passing text to translate, raising an already visible window
+  that is behind others (`show()` maps a hidden window; a visible one stays where it is).
+
 ### Known gaps in `tagent-gui`
 
 - **Wayland** (Stage W above): the popup can't open next to the cursor; Esc stops speech

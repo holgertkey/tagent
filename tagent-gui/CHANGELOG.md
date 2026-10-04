@@ -20,6 +20,15 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-04
 
 ### Added
+- (+009) **Only one copy runs per user.** Starting `tagent-gui` again (the menu entry, a
+  terminal) shows the running copy's window, as the tray's "Show Tagent" does, and the
+  new start exits; from a terminal it prints `tagent-gui is already running (pid …);
+  showed its window.` A second copy used to start next to the first: without hotkeys on
+  X11, with undefined hotkey delivery on Wayland, a second tray icon, and both rewriting
+  `tagent-gui.json`. The copies talk over a local socket, per user
+  (`$XDG_RUNTIME_DIR/io.github.holgertkey.TagentGui.sock` on Linux, a named pipe on
+  Windows); one left by a crashed copy is reclaimed, and a copy that holds it but
+  doesn't answer within 2 seconds is reported (exit code 1) instead of starting a second.
 - (+006) **Global hotkeys on Wayland** (GNOME 50 and other desktops with the
   GlobalShortcuts portal): `translate_hotkey` and `speech_hotkey` are registered through
   `xdg-desktop-portal` instead of X11 key grabs, which on a Wayland session only saw keys

@@ -343,7 +343,10 @@ round-trip and lowercasing, saving drops deleted names.
 
 ### Planned stage — Single instance
 
-**Status:** planned 2026-10-04, not started. Version: `0.15.0+NNN` (0.15.0 is unreleased).
+**Status:** implemented in 0.15.0+009 (2026-10-04). Checked on Linux (GNOME 50,
+Wayland): a second start (also with `--foreground`) shows the running copy and exits 0;
+after `kill -9` the stale socket file is reclaimed. Open: starting from the menu entry
+twice, Windows. Once those pass, condense this section into a row of "Shipped stages".
 
 **Why.** Nothing stops a second `tagent-gui` from starting, and a second copy only causes
 trouble, mostly silently:

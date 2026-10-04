@@ -98,6 +98,18 @@ window program, so its output mixes with the prompt; to keep it in order:
 start /wait tagent-gui.exe
 ```
 
+### "tagent-gui is already running"
+
+Only one copy runs per user; starting it again shows the running copy's window. If no
+window appears, the running copy may be hidden in a tray your desktop doesn't show (see
+below): quit it with `pkill tagent-gui` (Linux, macOS) or the Task Manager (Windows), then
+start again.
+
+"tagent-gui seems to be running but doesn't answer" means a copy holds the name but
+didn't respond within 2 seconds, usually because it hangs. Kill it as above and start
+again. A copy that crashed doesn't cause this: its leftovers are cleaned up at the next
+start.
+
 ### No tray icon, no window
 
 Some Linux desktops have no tray: GNOME needs an extension for it. Since `tagent-gui`

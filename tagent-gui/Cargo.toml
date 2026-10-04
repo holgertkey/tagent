@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.15.0+008"
+version = "0.15.0+009"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -49,6 +49,9 @@ tokio = { version = "1", features = ["full"] }
 rodio = { version = "0.21", features = ["symphonia-mp3"] }
 # The system's preferred languages, for the default `target_language`.
 sys-locale = "0.3"
+# Single instance: a second start asks the running copy over a local socket to show its
+# window (`single_instance.rs`).
+interprocess = "2"
 
 [dev-dependencies]
 tempfile = "3"

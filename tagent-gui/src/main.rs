@@ -22,6 +22,7 @@ mod popup_position;
 mod provider_form;
 mod provider_menu;
 mod session_provider;
+mod single_instance;
 mod speech;
 mod styled;
 
@@ -2366,6 +2367,59 @@ fn apply_window_geometry(
     }
 }
 
+/// Exits when another copy of this user's `tagent-gui` answers on `socket`: code 0 after
+/// it showed its window, 1 when it doesn't answer. Returns when none runs.
+fn exit_if_already_running(socket: Option<&single_instance::SocketName>) {
+    let Some(socket) = socket else {
+        return;
+    };
+    match single_instance::ask(socket) {
+        single_instance::Asked::Shown(pid) => {
+            println!("tagent-gui is already running (pid {pid}); showed its window.");
+            std::process::exit(0);
+        }
+        single_instance::Asked::NoAnswer(why) => {
+            exit_unresponsive(socket, &why);
+        }
+        single_instance::Asked::NotRunning => {}
+    }
+}
+
+fn exit_unresponsive(socket: &single_instance::SocketName, why: &str) -> ! {
+    eprintln!(
+        "tagent-gui seems to be running but doesn't answer ({why}, on {socket}). \
+         Quit or kill it, then start again."
+    );
+    std::process::exit(1);
+}
+
+/// Claims the single-instance socket for this process; exits like
+/// [`exit_if_already_running`] when another copy got there first. `None` (with a warning)
+/// when the socket can't be used: the app then runs without the guard rather than not
+/// at all.
+fn claim_single_instance(
+    socket: Option<&single_instance::SocketName>,
+) -> Option<interprocess::local_socket::Listener> {
+    let Some(socket) = socket else {
+        eprintln!(
+            "Warning: no place for the single-instance socket; a second start won't be detected."
+        );
+        return None;
+    };
+    match single_instance::claim(socket) {
+        single_instance::Claim::First(listener) => Some(listener),
+        single_instance::Claim::Running(pid) => {
+            println!("tagent-gui is already running (pid {pid}); showed its window.");
+            std::process::exit(0);
+        }
+        single_instance::Claim::Unresponsive(why) => exit_unresponsive(socket, &why),
+        single_instance::Claim::Unavailable(why) => {
+            eprintln!("Warning: {why}; a second start won't be detected.");
+            None
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Linux: `--install-desktop`/`--uninstall-desktop` are one-shot commands, run before
     // detaching so their output lands in the terminal.
@@ -2376,16 +2430,26 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             std::process::exit(desktop_entry::run(command));
         }
     }
+    // One copy per user: a second start shows the running copy's window and exits (see
+    // `single_instance`). Asked before detaching, so the message reaches the terminal
+    // (on Windows after attaching to it).
+    let instance_socket = single_instance::socket_name();
+    #[cfg(unix)]
+    exit_if_already_running(instance_socket.as_ref());
     // Linux/macOS: give the terminal back (see the module doc comment); must come before
     // any thread is spawned.
     #[cfg(unix)]
     detach::detach_from_terminal();
     #[cfg(target_os = "windows")]
     platform::windows::console::attach_parent();
+    #[cfg(target_os = "windows")]
+    exit_if_already_running(instance_socket.as_ref());
     // Linux: detect X11/Wayland, and on Wayland run the windows on XWayland (see the
     // function's doc comment). Before Slint starts and before any thread is spawned.
     #[cfg(target_os = "linux")]
     platform::linux::session::init();
+    // Hold the name from here on, before any window: a start racing this one finds it.
+    let instance_listener = claim_single_instance(instance_socket.as_ref());
 
     let window = AppWindow::new()?;
     // Linux: a stable window class (`WM_CLASS` on X11, app id on Wayland) that the
@@ -2545,6 +2609,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // the icon exists for as long as this binding does, and disappears when
     // `main()` returns.
     let tray = TrayIcon::new()?;
+
+    // A second start asks this copy to show its window: the tray's "Show Tagent".
+    if let Some(listener) = instance_listener {
+        let tray_weak = tray.as_weak();
+        single_instance::serve(listener, move || {
+            eprintln!("Another start asked to show the window.");
+            let tray_weak = tray_weak.clone();
+            slint::invoke_from_event_loop(move || {
+                if let Some(tray) = tray_weak.upgrade() {
+                    tray.invoke_show_requested();
+                }
+            })
+            .ok();
+        });
+    }
 
     let weak_for_tray_show = window.as_weak();
     let config_manager_for_tray_show = config_manager.clone();
