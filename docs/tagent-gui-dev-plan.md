@@ -125,6 +125,7 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 | 12 | `DictionaryProvider` (`tagent` 0.18.0) | 2026-09-20 | dictionary split into its own axis; `#[non_exhaustive]` entry types |
 | 13 | Styled transcript | 2026-09-22 | view-only `StyledText`, semantic highlighting, right-click copy |
 | — | Multi-line provider options | 2026-10-01 | `TextEdit` for `OptionSpec::multiline`, pre-filled default, Reset, `{to}` ⚠ (0.14.0+036) |
+| W | Wayland hotkeys (GNOME 50) | 2026-10-04 | GlobalShortcuts portal (`ashpd`, `async-io`), app id `io.github.holgertkey.TagentGui`, PRIMARY over XWayland, windows on XWayland, popup in a corner, speech hotkey stops speech (0.15.0+006) |
 
 Later iterations `0.14.0+003`–`+019` (2026-09-22…25) built on Stage 13: prompt colors,
 optional right-click menu, popup copy and drag, popup highlighting, terminal detach, a
@@ -157,8 +158,13 @@ Candidates, not yet scheduled; the order is a suggestion.
 6. **Slint upgrade** once [slint-ui/slint#13624](https://github.com/slint-ui/slint/issues/13624)
    (empty tray menu after a slow start) is fixed upstream. Bump `slint` and `slint-build`
    together and drop the known-gap entry.
-7. **Global hotkeys on Wayland (GNOME 50)**: next, planned in detail
-   [below](#planned-stage-w--global-hotkeys-on-wayland-gnome-50).
+7. ~~**Global hotkeys on Wayland (GNOME 50).**~~ Done in 0.15.0+006 (2026-10-04, Stage W):
+   see "Wayland: hotkeys through the portal" in `docs/ARCHITECTURE.md`. Follow-ups, not
+   scheduled: `tagent-cli` on Wayland (broken the same way; same design, duplicated per
+   Q3, with its own app id and desktop entry); a "Change…" button through
+   `ConfigureShortcuts` once the host portal has version 2; the popup's corner on the
+   primary monitor rather than the bounding box. Not planned: wlroots compositors (no
+   GlobalShortcuts backend), the popup next to the cursor on Wayland.
 
 ### Planned stage — Provider profiles tab
 
@@ -332,230 +338,6 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
-
-### Planned stage W — Global hotkeys on Wayland (GNOME 50)
-
-**Status:** implemented in 0.15.0+006 (2026-10-04), steps 1–7 at once. Checked live by
-the maintainer on GNOME 50: the consent dialog appeared and was confirmed, `Alt+A` and
-`Alt+S` work from native Wayland apps, the binding landed in gsettings under the new app
-id. Still open from the manual list below: no dialog on a second start, the speech
-toggle, the Settings line, the popup at the corner and at a remembered position, a
-`[Hotkey]` row without the desktop entry. Once those pass, condense this section into a
-row of "Shipped stages".
-
-Differences from the plan as written:
-- Spike 0b wasn't run side by side: XWayland was taken directly (0c's `remove_var`),
-  and it works; the maintainer's Mutter has `xwayland-native-scaling` on, so text is
-  sharp.
-- `KeyboardHook::spawn` gained a sixth parameter, `on_desktop_hotkeys`, on all three
-  platforms (the plan wanted the signature unchanged): the bound triggers and problems
-  have to reach the UI somehow, and a callback is simpler than a polled global.
-- `ashpd` uses its `async-io` feature, not `tokio`: with `tokio`, feature unification
-  switched the `zbus` that Slint's tray uses to Tokio, and the app panicked at startup
-  ("there is no reactor running").
-
-**Why.** Ubuntu 26.04 (GNOME Shell 50.1, Mutter 50.1) has no Xorg session any more
-(`/usr/share/xsessions/` is gone; only Wayland sessions are left), so the X11 assumptions
-of Stages 4–6 no longer hold on the maintainer's machine:
-- `XGrabKey` + `rdev` (`platform/linux/keyboard.rs`, `xgrab.rs`) see keys only while an
-  XWayland window has focus. `Alt+A`/`Alt+S` do nothing from any native Wayland app, and
-  nothing is logged (the grab itself succeeds, `DISPLAY=:0` is set).
-- The simulated Ctrl+C (XTest, `clipboard.rs`) reaches only XWayland clients, so even a
-  delivered hotkey would copy nothing from a Wayland app.
-- The global Esc that stops speech rides the same `rdev` stream: gone too.
-- Slint/winit now runs natively on Wayland (`WAYLAND_DISPLAY` is set; no `tagent-gui`
-  window in `xwininfo -root -tree`), where a toplevel can't place itself, can't stay
-  above other windows, and can't read the global cursor position. The popup's placement,
-  drag, always-on-top and geometry restore depend on all three.
-
-**What the platform offers** (checked on this machine, 2026-10-04):
-- `org.freedesktop.portal.GlobalShortcuts`, interface version 1
-  (`xdg-desktop-portal` 1.21.1, `xdg-desktop-portal-gnome` 50.0). Version 1 has
-  `CreateSession`, `BindShortcuts`, `ListShortcuts` and the `Activated`/`Deactivated`/
-  `ShortcutsChanged` signals; `ConfigureShortcuts` (version 2) is **not** available.
-- `org.freedesktop.host.portal.Registry.Register(s app_id, a{sv})`, version 1. Since
-  `xdg-desktop-portal` 1.20 a non-sandboxed app must call it before any other portal call
-  on the same D-Bus connection; since 1.21.0 `GlobalShortcuts.CreateSession` rejects an
-  empty app id ("An app id is required"). `xdg-desktop-portal-gnome` additionally
-  discards a bind request whose app id isn't reverse-DNS **and** backed by an installed
-  `.desktop` file ("invalid app_id"; `Register` itself fails with "App info not found"
-  when the file is missing). Our app id today is `tagent-gui`: not reverse-DNS.
-- On the first `BindShortcuts`, GNOME shows a consent dialog where the user accepts or
-  changes the proposed triggers; the result persists per app id (gsettings
-  `org.gnome.settings-daemon.global-shortcuts applications`, empty today) and can later be
-  changed in GNOME Settings. The `preferred_trigger` we send is only a suggestion.
-- No data-control protocol: the compositor advertises only `wl_data_device_manager` and
-  `zwp_primary_selection_device_manager_v1`, so an unfocused native Wayland client can't
-  read the selection. The XWayland bridge can: an unfocused `xclip -o -selection
-  clipboard` returns exactly what `wl-paste -n` returns. Whether **PRIMARY** (the mouse
-  selection) is mirrored as promptly is to be confirmed (step 0).
-
-**Goal.** On GNOME Wayland: `translate_hotkey` and `speech_hotkey` work from any app,
-translate/speak the current mouse selection, and the popup still appears on top at a
-sensible place. Windows, macOS and X11 sessions keep today's behavior unchanged.
-
-**Behavior.**
-- **Session detection** (once, at startup, before anything touches `WAYLAND_DISPLAY`):
-  Wayland when `XDG_SESSION_TYPE=wayland` or `WAYLAND_DISPLAY` is set; cached in
-  `platform::linux::session()` and used by the hotkey, selection and popup code.
-- **Hotkeys on Wayland** go through the GlobalShortcuts portal, two shortcuts with ids
-  `translate` and `speech` (the latter only when `enable_speech_hotkey` is on and it
-  parses), descriptions "Translate the selection" / "Speak the selection", preferred
-  triggers converted from `translate_hotkey`/`speech_hotkey` (`Alt+A` → `ALT+a`,
-  `Ctrl+Shift+T` → `CTRL+SHIFT+t`, `Win+T` → `LOGO+t`, `F9` → `F9`; per the XDG shortcuts
-  spec: `CTRL`/`ALT`/`SHIFT`/`LOGO`, `+`, an xkb keysym name). A double-press hotkey
-  (`Ctrl+Ctrl`) has no trigger form: it isn't sent as a preference (GNOME's dialog then
-  asks the user for one) and the log says so. `Activated` for `translate`/`speech` calls
-  the same `on_translate_trigger`/`on_speech_trigger` as today.
-- **Fallback chain on Wayland**: portal available and `Register` succeeds → portal. No
-  GlobalShortcuts portal (wlroots compositors, older GNOME) → today's X11 path with a log
-  line that hotkeys only work from XWayland windows. `Register` fails because the desktop
-  entry is missing → no hotkeys, plus one transcript info row: `[Hotkey]: global hotkeys
-  need the desktop entry: run "tagent-gui --install-desktop" once` (the `.deb` installs
-  it system-wide, so packaged installs never see this).
-- **Selection on Wayland**: the hotkeys read PRIMARY (what is selected with the mouse) via
-  `arboard`'s `GetExtLinux::clipboard(LinuxClipboardKind::Primary)` over XWayland, no key
-  simulation. Empty PRIMARY → the same "nothing selected" handling as today's empty
-  clipboard. X11 sessions keep the XTest Ctrl+C path. The 📋 button is unaffected (it
-  copies inside `tagent-gui`'s own window).
-- **Stopping speech** on Wayland: Esc can't be observed globally (binding it through the
-  portal would take Esc away from every other app). Instead, pressing the speech hotkey
-  while something is speaking stops it; Esc still works while a `tagent-gui` window has
-  focus. The toggle applies on every platform (decided 2026-10-04: one behavior, simpler
-  to document); the global Esc stays where it works (X11, Windows).
-- **Windows on Wayland** (decided by spike 0b; leaning XWayland): the whole app runs on
-  XWayland (winit's X11 backend), so the popup keeps positioning, always-on-top, drag and
-  the desktop clamp, and the main window keeps its geometry restore. What can't come
-  back: the global cursor position is stale while the pointer is over Wayland windows,
-  so on Wayland the popup opens at the remembered position (`remember_popup_position`)
-  or, without one, at a fixed spot (proposed: the top-right corner of the desktop, 16 px
-  inset, via `virtual_screen_bounds`), never "next to the cursor". Focus restore after
-  the popup hides is left to the compositor (`foreground_window()` sees only X11
-  windows).
-- **Settings > Hotkeys & Tray on Wayland**: the two hotkey fields show the trigger GNOME
-  actually bound (`trigger_description` from `BindShortcuts`/`ListShortcuts`, updated on
-  `ShortcutsChanged`), read-only, with a note: "Change in GNOME Settings > Apps >
-  tagent-gui". "Record" and the text fields are disabled there: with portal v1 the value
-  in `tagent-gui.json` only seeds the first bind. The enable checkboxes and the "Esc"
-  note keep working. Unchanged on X11/Windows.
-- **App id** (prerequisite, decided 2026-10-04): `tagent-gui` →
-  `io.github.holgertkey.TagentGui` (D-Bus naming: no hyphens in elements). It becomes the
-  window's app id, the `.desktop` file name, `StartupWMClass` and the icon name. The
-  binary, the config directory and the log stay `tagent-gui`. An already installed
-  `~/.local/share/applications/tagent-gui.desktop` is not migrated (no-migration-shim
-  preference): a pure rename, and the changelog tells the user to run
-  `--uninstall-desktop` with the old build (or delete the two files) and
-  `--install-desktop` with the new one.
-
-**Implementation steps.**
-
-0. **Spikes** (throwaway code in `.debug/TESTS`, results recorded here before step 1):
-   - **0a. PRIMARY over XWayland.** Select a word with the mouse (no Ctrl+C) in Firefox,
-     GNOME Text Editor, Ptyxis/GNOME Terminal, a Chromium/Electron app and LibreOffice,
-     then read it from an unfocused process with `xclip -o -selection primary` and with
-     a 10-line `arboard` program using `LinuxClipboardKind::Primary`. Pass: the current
-     selection, every time, within ~100 ms. If an app doesn't set PRIMARY, note it as a
-     known gap. If the bridge doesn't carry PRIMARY at all, stop and rethink (fallback
-     candidates, both worse: `wl-paste --primary`, which briefly maps its own surface to
-     get focus; the RemoteDesktop portal to send Ctrl+C, which asks for permission on
-     every session).
-     *Partly done 2026-10-04:* the bridge carries PRIMARY. A mouse selection in Firefox
-     and in GNOME Text Editor (both native Wayland) read back exactly from an unfocused
-     shell with `xclip -o -selection primary`, identical to `wl-paste -n --primary`.
-     Still open: the terminal, a Chromium/Electron app, LibreOffice, the latency, and the
-     `arboard` read.
-   - **0b. XWayland vs native for Slint.** Run `tagent-gui` both ways (native: today's
-     default; XWayland: `WAYLAND_DISPLAY` removed before Slint starts) and compare: popup
-     appears on top of a focused Wayland app without taking its focus; `set_position`
-     honored; drag works; main window geometry restore; the tray; the theme follows
-     GNOME; text sharp at the maintainer's scaling factor; Ctrl+V with the Russian
-     layout. XWayland wins unless it is blurry or loses something native keeps.
-   - **0c. Forcing X11.** Preferred: `std::env::remove_var("WAYLAND_DISPLAY")` at the top
-     of `main()` in the process that runs Slint (after `detach.rs` re-spawned it, before
-     any thread starts; edition 2021, so not `unsafe`), after `session()` has cached the
-     session type. Rejected unless that fails: `BackendSelector::with_winit_event_loop_builder`
-     (`unstable-winit-030`, an unstable API tied to winit 0.30), and building Slint with
-     only `backend-winit-x11` (no way back to native at runtime). Child processes don't
-     need the variable (none of them is a Wayland client).
-   - **0d. Portal round trip.** A minimal `ashpd` program: `register_host_app`,
-     `create_session`, `bind_shortcuts` with `ALT+a`, print `Activated`. Check: the
-     consent dialog appears once, not on every launch; the shortcut fires from a native
-     Wayland app; the key doesn't also reach that app; what happens when the dialog is
-     declined; whether `Deactivated` matters to us (it shouldn't).
-1. **App id rename** (`desktop_entry.rs`: `APP_ID`; `main.rs`: `set_xdg_app_id`;
-   `assets/linux/`: the `.desktop` file renamed, `Icon=`/`StartupWMClass=`, the test that
-   keeps it identical to the generated one; `Cargo.toml` `[package.metadata.deb]` asset
-   paths; `release.yml`, which copies `tagent-gui.desktop` into the Linux archive). Its
-   own `+BUILD`, verified with the dock icon on GNOME before going on.
-2. **Session detection and X11 backend** (per 0b/0c): `platform/linux/mod.rs`
-   `session() -> Session { X11, Wayland }` (pure core `session_from(xdg_session_type,
-   wayland_display, display)`, tested), the env change in `main()`, the popup's Wayland
-   placement (`popup_position::default_wayland_position(bounds, size)`, pure, tested).
-3. **Portal hotkeys** in a new `platform/linux/portal.rs`, behind the unchanged
-   `KeyboardHook::spawn(...)` signature, so `main.rs` changes only for the info row and
-   the Settings fields:
-   - `ashpd` as a Linux-only dependency (`[target.'cfg(target_os = "linux")'.dependencies]`,
-     `ashpd = { version = "0.13", default-features = false, features = ["tokio",
-     "global_shortcuts"] }`; `register_host_app` is in the crate root), so the Windows
-     check (`cargo check --target x86_64-pc-windows-gnu -p tagent-gui`) is unaffected.
-   - One thread with its own current-thread Tokio runtime (as `spawn_translation` does)
-     that owns the portal proxy and the `Session` for the whole process (dropping either
-     closes the session and the shortcuts with it): `register_host_app(APP_ID)` first,
-     then `create_session`, `bind_shortcuts`, then loop over `receive_activated()` and
-     `receive_shortcuts_changed()`.
-   - Pure, tested: `to_portal_trigger(&HotkeyType) -> Option<String>` (keysym names from
-     the existing keycode table: letters lowercase, digits, `F1`–`F12`, `space`,
-     `Return`, `Tab`, `Escape`, arrows, ...; `None` for a double press), and the choice
-     portal / X11 fallback / none from (session, portal present, register result).
-   - The bound triggers go to the UI (a small `Mutex<BoundTriggers>` plus
-     `invoke_from_event_loop` to refresh Settings if open).
-4. **Selection source**: `ClipboardManager::get_selected_text()` (`get_text_with_copy` on
-   X11, PRIMARY on Wayland); the two hotkey paths in `main.rs` call it. Windows/macOS get
-   the same method name (same body as their `get_text_with_copy`), as the platform
-   modules require.
-5. **Speech toggle** (every platform, see Behavior): in `on_speech_trigger`, if speech is
-   playing, `speech::request_stop` and return before reading the selection. The
-   `is_speech_processing` guard stays.
-6. **Settings > Hotkeys & Tray**: `hotkeys-from-desktop` (bool) and the two bound
-   trigger strings on the dialog; the fields read-only with the note when it's set.
-   Grep `app.slint` callback names before adding any.
-7. **Docs** (same commits as the code): `tagent-gui/CHANGELOG.md` (Added: Wayland
-   hotkeys; Changed: app id, popup placement on Wayland, speech hotkey stops speech);
-   the user book (`gui/hotkeys-and-popup.md`, `gui/settings.md` Hotkeys & Tray,
-   `getting-started/install.md` for `--install-desktop` and the consent dialog,
-   `troubleshooting/platforms.md`, `reference/file-locations.md` for the renamed
-   `.desktop`/icon); `docs/ARCHITECTURE.md` (platform table, "Linux desktop integration",
-   the tagent-gui hotkey mechanics, known gaps); CLAUDE.md (the tagent-gui bullets on
-   hotkeys, popup and desktop integration); this section condensed into a row of
-   "Shipped stages".
-
-**Not in this stage.**
-- `tagent-cli` on Wayland: broken the same way (its hotkeys and auto-copy are X11 too).
-  A follow-up for `tagent-cli-dev-plan.md` can reuse this design, but as duplicated code
-  (Q3: platform code isn't shared), and it would need its own app id and desktop entry.
-- `ConfigureShortcuts` (portal version 2): a "Change…" button that opens GNOME's dialog
-  from Settings, once the host has version 2.
-- wlroots compositors (Sway, Hyprland, niri): no GlobalShortcuts backend in
-  `xdg-desktop-portal-wlr`; they get the X11 fallback only.
-- KDE Plasma: its portal implements GlobalShortcuts too and should work through the same
-  code, but isn't tested here.
-- Popup next to the cursor on Wayland.
-
-**Tests and verification.**
-- Unit: `session_from` (each env combination), `to_portal_trigger` (every key class,
-  modifiers order, `Win` → `LOGO`, double press → `None`), the backend choice,
-  `default_wayland_position` (single and multi-monitor bounds, popup larger than the
-  inset), the renamed desktop entry (generated = shipped file).
-- `cargo test -p tagent-gui`, `cargo clippy --workspace -- -D warnings`,
-  `cargo check --target x86_64-pc-windows-gnu -p tagent-gui`.
-- Manual (maintainer; no `xdotool`, see "Testing boundary"): with a dev build the portal
-  needs an installed desktop entry, so first `cargo run -p tagent-gui -- --install-desktop`
-  (it points `Exec=` at the debug binary; reinstall the release one afterwards). Then:
-  the consent dialog on the first start only; `Alt+A`/`Alt+S` from Firefox, Text Editor
-  and the terminal; the popup on top, at the fixed spot and at a remembered position;
-  the speech hotkey stops speech; Settings shows the bound triggers; after changing one in
-  GNOME Settings, Settings shows the new one (`ShortcutsChanged`) and it works; without the
-  desktop entry the info row appears; Windows build unchanged (CI).
 
 ## Deliberately not done (revisit only with a new reason)
 

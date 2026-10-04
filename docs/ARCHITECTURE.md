@@ -1513,8 +1513,11 @@ Stage 7 above. Two halves, both needed:
 
 On a Wayland session no client sees another client's keys or selection, and a native
 Wayland toplevel can't place itself, stay on top or read the pointer. GNOME 50 (Ubuntu
-26.04) dropped the Xorg session, so this became the normal case. Plan and checks:
-"Planned stage W" in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+26.04) dropped the Xorg session, so this became the normal case. Verified live on
+GNOME 50 (2026-10-04): the consent dialog once, then never again; both hotkeys from
+native Wayland apps; the speech toggle; the Settings line; the popup in the corner and
+at a remembered position. Follow-ups: Roadmap item 7 in
+[`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
 - **Session** (`platform/linux/session.rs`): `session()` = `X11`/`Wayland`/`Headless` from
   `XDG_SESSION_TYPE`, then `WAYLAND_DISPLAY`/`DISPLAY` (pure `session_from`, tested),
@@ -1538,7 +1541,8 @@ Wayland toplevel can't place itself, stay on top or read the pointer. GNOME 50 (
   `preferred_trigger` from `to_portal_trigger` (XDG shortcuts spec: `CTRL`/`ALT`/`SHIFT`/
   `LOGO` + an xkb keysym name, `Alt+A` → `ALT+a`; a double press has none). GNOME shows a
   consent dialog on the first bind and stores the result per app id (gsettings
-  `org.gnome.settings-daemon.global-shortcuts applications`); later binds don't ask. The
+  `org.gnome.settings-daemon.global-shortcuts applications`); later binds don't ask
+  (checked). The
   loop then calls the same trigger callbacks as X11 and reports `ShortcutsChanged`. The
   session must stay alive (dropping it unbinds), so `run` never returns while it works.
 - **`on_desktop_hotkeys`**: `KeyboardHook::spawn`'s sixth callback (all three platforms
