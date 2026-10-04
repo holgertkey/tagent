@@ -392,11 +392,11 @@ export component AppWindow inherits Window {
     callback translate-requested(string, string, string);
     callback swap-requested();
     callback settings-requested();
-    callback copy-requested();
+    // The 📋 button: put the clipboard's text into the input box.
+    callback paste-requested();
     // Stage 13: right-click "Copy" on one transcript block -- index into
     // transcript-entries, then true for the phrase block / false for the
-    // translation block. Deliberately not named copy-requested (above),
-    // which is the unrelated 📋 "paste clipboard into input" button.
+    // translation block.
     callback copy-block-requested(int, bool);
     // Whether right-click opens the "Copy" context menu (`ContextMenuArea` below)
     // or copies the block immediately with no menu at all -- `show_context_menu` in
@@ -799,7 +799,7 @@ export component AppWindow inherits Window {
 
                 Button {
                     text: "📋";
-                    clicked => { copy-requested(); }
+                    clicked => { paste-requested(); }
                 }
 
                 Button {

@@ -889,26 +889,21 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   stub, every method `Err`, matching `tagent-cli`'s own macOS posture). `set_text`
   is currently unused (`#[allow(dead_code)]`, kept for API parity and future use,
   e.g. copying a translation result back to the clipboard) — clipboard support
-  only wires up reading. A "📋" button in the input row (`copy-requested`
-  callback) calls `ClipboardManager::get_text_with_copy()` on a background
-  `std::thread::spawn` (both platforms' `copy_selected_text` block for real
-  wall-clock time — up to ~250ms on Linux, ~900ms on Windows — so this must not
-  run on Slint's own event loop thread), then applies the result via
+  only wires up reading. A "📋" button in the input row (`paste-requested`
+  callback; `copy-requested` until 0.15.0+008) calls `ClipboardManager::get_text()` on a
+  background `std::thread::spawn` (a clipboard read waits for the owning app, so not on
+  Slint's own event loop thread), then applies the result via
   `slint::invoke_from_event_loop`, mirroring `on_translate_requested`'s existing
   thread-hop pattern exactly. On success it replaces `input-text`; on failure
-  (e.g. the Wayland guard, or no XTest extension) it pushes a `TranscriptEntry {
+  it pushes a `TranscriptEntry {
   phrase: "[Clipboard]", ... }` through the existing `push_transcript_entry`
-  error-display convention, rather than inventing a new one. **Known limitation,
-  inherent to a button-triggered (as opposed to global-hotkey-triggered)
-  design**: clicking "📋" necessarily gives `tagent-gui`'s own window input focus
-  first, so the simulated Ctrl+C inside `copy_selected_text` targets `tagent-gui`
-  itself, not whatever window/selection was active immediately before the click.
-  In practice the button behaves as "pull whatever the system clipboard already
-  holds into the input box" (useful on its own, e.g. after a manual Ctrl+C
-  elsewhere) rather than "grab the current selection with no prior Ctrl+C
-  needed" — that stronger capability now exists via the Stage 5 global hotkey
-  below, which doesn't require a focus change to fire. Not a bug in the button
-  itself; documented here so it isn't mistaken for one.
+  error-display convention, rather than inventing a new one. **Why no simulated
+  Ctrl+C** (until 0.15.0+008 it called `get_text_with_copy()`): clicking "📋" gives
+  `tagent-gui`'s own window focus first, so the Ctrl+C reached `tagent-gui` itself and
+  copied nothing from the app with the selection; the button was a "paste from
+  clipboard" either way. On a Wayland session (windows on XWayland, Stage W) each XTest
+  keystroke also went through the RemoteDesktop portal, and GNOME asked for remote
+  desktop access on every click. Grabbing a selection is the global hotkey's job.
 - **Global hotkey** (`tagent-gui/src/platform/{linux,windows,macos}/{keyboard,keycodes}.rs`
   + `xgrab.rs` on Linux, Stage 5, shipped 2026-09-13): default `Alt+A`, configured
   via the `translate_hotkey` field in `tagent-gui.json` — hand-editable, and (Stage

@@ -365,6 +365,11 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+008) **The 📋 button no longer makes GNOME ask for remote desktop access** on Wayland.
+  It simulated Ctrl+C before reading the clipboard, which on a Wayland session goes
+  through the remote desktop portal. The button now only reads the clipboard, on every
+  platform. It never copied anything from other apps anyway: the click had already
+  focused Tagent's window.
 - (+007) **The hotkeys bound on Wayland are shown in English**: Settings > Hotkeys & Tray
   and the transcript header showed the desktop's own description, which GNOME localizes
   ("Нажмите <Alt>a" on a Russian system). The key is now taken out of it and written the

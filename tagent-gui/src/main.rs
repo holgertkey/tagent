@@ -2672,10 +2672,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let weak = window.as_weak();
-    window.on_copy_requested(move || {
+    window.on_paste_requested(move || {
         let weak = weak.clone();
+        // Only reads the clipboard. It used to simulate Ctrl+C first, but the click has
+        // already focused this window, so that copied nothing from other apps, and on
+        // Wayland (windows on XWayland) every simulated key made GNOME ask for remote
+        // desktop access. Off the UI thread all the same: a clipboard read waits for the
+        // owning app to answer.
         std::thread::spawn(move || {
-            let result = ClipboardManager::new().get_text_with_copy();
+            let result = ClipboardManager::new().get_text();
 
             slint::invoke_from_event_loop(move || {
                 if let Some(window) = weak.upgrade() {
