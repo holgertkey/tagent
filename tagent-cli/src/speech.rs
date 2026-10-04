@@ -1,5 +1,5 @@
 use crate::config::{Config, ConfigManager};
-use crate::platform::keycodes;
+use crate::platform::{keycodes, signals};
 use colored::Colorize;
 use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::error::Error;
@@ -41,6 +41,15 @@ impl SpeechManager {
         }
 
         let chunks = provider.split_for_speech(text);
+        // A Ctrl+C from before this playback isn't meant for it.
+        signals::take_interrupted();
+        // Ctrl+C in the terminal stops playback too (Linux; see `signals::take_interrupted`).
+        let should_stop = || {
+            if signals::take_interrupted() {
+                stop_flag.store(true, Ordering::Relaxed);
+            }
+            stop_flag.load(Ordering::Relaxed)
+        };
 
         // Create audio output stream once for all chunks
         let builder = OutputStreamBuilder::from_default_device()
@@ -59,7 +68,7 @@ impl SpeechManager {
         // Play each chunk sequentially
         for chunk in chunks.iter() {
             // Check if speech should be stopped
-            if stop_flag.load(Ordering::Relaxed) {
+            if should_stop() {
                 sink.stop();
                 return Ok(());
             }
@@ -81,7 +90,7 @@ impl SpeechManager {
 
         // Wait for all playback to finish or stop flag
         while !sink.empty() {
-            if stop_flag.load(Ordering::Relaxed) {
+            if should_stop() {
                 sink.stop();
                 return Ok(());
             }
@@ -159,7 +168,7 @@ impl SpeechManager {
             Ok(_) => {
                 let was_cancelled = stop_flag.load(Ordering::Relaxed);
                 if was_cancelled {
-                    println!("Speech cancelled by user (Esc)");
+                    println!("Speech cancelled by user");
                 }
                 Ok(was_cancelled)
             }

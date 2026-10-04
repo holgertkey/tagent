@@ -45,7 +45,9 @@ with the language pair. Type text and press Enter:
 
 While it runs, **select text in any other application and press Alt+A**: the translation
 appears in the terminal. **Alt+S** reads the selected text aloud. The hotkeys need
-Windows, or Linux with X11 or XWayland; see [Modes](../cli/modes.md).
+Windows or Linux; on a Wayland desktop such as GNOME, run `tagent-cli --install-desktop`
+once first and confirm the keys in the dialog that appears at the next start (see
+[Hotkeys: On Wayland](../cli/hotkeys.md#on-wayland)).
 
 Type `/h` for the list of commands, `/q` to quit.
 

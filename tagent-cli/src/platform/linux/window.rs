@@ -23,7 +23,15 @@ unsafe impl Sync for WindowManager {}
 impl WindowManager {
     /// Open a new X11 display connection and locate the terminal window, either by
     /// this process's PID (`_NET_WM_PID`) or by falling back to the currently focused window.
+    ///
+    /// Always fails on a Wayland session: the terminal emulator is a Wayland window that
+    /// Xlib can't see, and the `_NET_ACTIVE_WINDOW` fallback would pick whatever XWayland
+    /// window was last active (another app's), which the hotkey would then raise and
+    /// iconify.
     pub fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
+        if super::session::session() == super::session::Session::Wayland {
+            return Err("on Wayland the terminal window can't be raised or hidden".into());
+        }
         unsafe {
             let display = xlib::XOpenDisplay(std::ptr::null());
             if display.is_null() {

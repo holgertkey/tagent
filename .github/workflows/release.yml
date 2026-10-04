@@ -107,13 +107,19 @@ jobs:
         with:
           tool: cargo-deb
 
-      # tagent-gui's archive also carries the launcher entry and icon (the same files
-      # `tagent-gui --install-desktop` writes, with `Exec=tagent-gui` found on PATH), and
-      # its `.deb` installs them system-wide ([package.metadata.deb] in its Cargo.toml).
+      # Both Linux archives also carry the launcher entry and icon (the same files
+      # `--install-desktop` writes, with `Exec=` the bare name found on PATH; the Wayland
+      # hotkeys need the entry). tagent-gui's `.deb` installs them system-wide
+      # ([package.metadata.deb] in its Cargo.toml).
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          tar -czf "tagent-cli-${CLI_VERSION}-linux-x86_64.tar.gz" -C target/release tagent-cli
+          stage=$(mktemp -d)
+          cp target/release/tagent-cli "$stage/"
+          cp tagent-cli/assets/linux/io.github.holgertkey.TagentCli.desktop "$stage/"
+          cp tagent-cli/assets/icons/tagent-cli.png "$stage/io.github.holgertkey.TagentCli.png"
+          tar -czf "tagent-cli-${CLI_VERSION}-linux-x86_64.tar.gz" -C "$stage" \
+            tagent-cli io.github.holgertkey.TagentCli.desktop io.github.holgertkey.TagentCli.png
           stage=$(mktemp -d)
           cp target/release/tagent-gui "$stage/"
           cp tagent-gui/assets/linux/io.github.holgertkey.TagentGui.desktop "$stage/"

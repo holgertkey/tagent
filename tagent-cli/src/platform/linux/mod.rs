@@ -4,6 +4,10 @@ pub mod clipboard;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Global hotkeys on Wayland through the GlobalShortcuts portal.
+pub mod portal;
+/// The desktop session type (X11 or Wayland), detected once.
+pub mod session;
 /// Process signal handling (Ctrl+C) and X11 threading initialization.
 pub mod signals;
 /// Terminal window title set/restore via xterm escape sequences.

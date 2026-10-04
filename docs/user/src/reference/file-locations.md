@@ -11,6 +11,8 @@ reinstalling and each user has their own.
 | Backup made by `--update-config`, `tagent-cli.toml.bak` | same folder | same folder | same folder |
 | The prompt's input history, `interactive_history.txt` | same folder | same folder | same folder |
 | History, `translation_history.txt` (when turned on) | `~/.local/share/tagent-cli/` | `~/Library/Application Support/tagent-cli/` | `%APPDATA%\tagent-cli\` |
+| Menu entry, after `--install-desktop` | `~/.local/share/applications/io.github.holgertkey.TagentCli.desktop` | — | — |
+| Icon, after `--install-desktop` | `~/.local/share/icons/hicolor/512x512/apps/io.github.holgertkey.TagentCli.png` | — | — |
 
 `%APPDATA%` is usually `C:\Users\<you>\AppData\Roaming`. `/h` and `/config` show the
 settings file's full path; `history_file` can move the history anywhere.

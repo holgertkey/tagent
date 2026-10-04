@@ -5806,21 +5806,24 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.17.0+019"
+version = "0.17.0+020"
 dependencies = [
  "arboard",
+ "ashpd",
  "async-trait",
  "chrono",
  "clipboard-win",
  "colored",
  "ctrlc",
  "dirs",
+ "futures-util",
  "rdev",
  "rodio",
  "rustyline",
  "serde",
  "sys-locale",
  "tagent",
+ "tempfile",
  "tokio",
  "toml_edit 0.25.4+spec-1.1.0",
  "windows 0.52.0",

@@ -8,10 +8,15 @@
 | The prompt | `/s <text>`; `/s` alone repeats the last phrase, `/ss` its translation |
 | The command line | `tagent-cli -s "Hello world"` |
 
-**Esc** stops playback on Windows, and on Linux in unified mode with X11 or XWayland,
-where `tagent-cli` watches the keyboard. On macOS, on pure Wayland, and in a one-shot
-`tagent-cli -s` on Linux, Esc does nothing: wait for the end, or press Ctrl+C to stop a
-one-shot `tagent-cli -s`.
+To stop playback:
+
+- **The speech hotkey again**, while hotkey speech plays (Windows, Linux).
+- **Esc**, on Windows and on Linux with X11 in unified mode, where `tagent-cli` watches
+  the keyboard.
+- **Ctrl+C in the terminal**, on Linux (all modes, Wayland included): at the prompt it
+  stops any playback, hotkey speech too, and otherwise just gives a new prompt line.
+
+On macOS nothing stops it yet: wait for the end.
 
 ## Which language
 

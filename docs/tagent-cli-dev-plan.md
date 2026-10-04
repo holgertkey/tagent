@@ -639,3 +639,192 @@ interactive and hotkey outputs of the same translation look different.
 - `tagent-gui`: its transcript has its own `[Language]:` prompt and a provider picker in
   the header; an independent decision there.
 - Labels in CLI mode.
+
+## Stage W — Global hotkey on Wayland (implemented 2026-10-04: `0.17.0+020`; live check open)
+
+Landed W1–W5 together as `0.17.0+020` (one `+BUILD`, not one per step). The live check
+(the W0 questions and the manual list under "Tests and verification") is still open. Where
+the implementation differs from the plan:
+
+- **`ashpd` with `async-io`**, not `tokio`: Cargo unifies features across the workspace,
+  `tagent-gui` needs `async-io`, and `ashpd` refuses both (`compile_error!`), which broke
+  `cargo clippy --workspace`. `portal::listen` still runs on `tagent-cli`'s Tokio runtime.
+- **`/config` doesn't show the bound keys**: they are printed once when the bind completes
+  (and on every change in GNOME Settings). Left out to keep the platform layer out of the
+  config display; add it if the one line turns out to be too easy to miss.
+- **Ctrl+C stops speech on Linux only**: Windows disables Ctrl+C in the console
+  (`SetConsoleCtrlHandler(None, true)`) and has Esc; macOS has no handler.
+  `signals::take_interrupted()` exists on all three (`false` there).
+- **The `show_terminal_on_translate` note** comes from `Translator::new_with_config` (before
+  the banner), replacing the old "Window management unavailable ... hotkeys disabled"
+  lines, which were wrong about the hotkeys.
+
+### Problem
+
+Ubuntu 26.04 (GNOME 50) has no Xorg session any more, and `tagent-cli`'s Linux platform
+layer is X11 throughout. On a Wayland session (`DISPLAY` is still set, for XWayland):
+
+- **Hotkeys** (`platform/linux/keyboard.rs`: `XGrabKey` + `rdev`) see keys only while an
+  XWayland window has focus: `Alt+A`/`Alt+S` do nothing from a native Wayland app, and
+  nothing says so (the grab succeeds).
+- **Copying the selection** (`clipboard.rs`, XTest Ctrl+C) reaches only XWayland apps. Worse,
+  on GNOME 50 every XTest keystroke goes through the RemoteDesktop portal and pops up "Remote
+  desktop — allow access" (seen in `tagent-gui` before 0.15.0+008).
+- **Esc stops speech** through the same `rdev` stream (`keycodes::set_key_state`, polled by
+  `SpeechManager::speak_with_esc_monitor`): gone, from other apps and from the terminal alike.
+- **Terminal show/hide** (`window.rs`, `show_terminal_on_translate`,
+  `auto_hide_terminal_seconds`): the terminal emulator is a Wayland window, invisible to
+  Xlib. `WindowManager::new` falls back to `_NET_ACTIVE_WINDOW`, which on Wayland is whatever
+  XWayland window was last active, e.g. `tagent-gui`'s, so the hotkey would raise and later
+  iconify **another app's window**.
+
+`tagent-gui` solved the same problems in its Stage W (0.15.0+006, see "Wayland: hotkeys
+through the portal" in `ARCHITECTURE.md`); this stage brings the design to `tagent-cli`,
+duplicated rather than shared (platform code isn't shared between the apps, see Q3 in
+`tagent-gui-dev-plan.md`).
+
+### Decisions
+
+Accepted by the maintainer on 2026-10-04 (the app id and desktop entry, terminal
+show/hide off on Wayland, stopping speech), with the icon decided as below.
+
+- **Session detection** once at startup, `platform::linux::session` (`X11` / `Wayland` /
+  `Headless` from `XDG_SESSION_TYPE`, then `WAYLAND_DISPLAY`/`DISPLAY`), copied from
+  `tagent-gui`. Everything below asks it instead of reading the variables. Unlike
+  `tagent-gui`, nothing to do with `WAYLAND_DISPLAY`: `tagent-cli` has no windows.
+- **Hotkeys through the GlobalShortcuts portal** (`ashpd`, `global_shortcuts`): the same
+  sequence as `tagent-gui` (`register_host_app(APP_ID)` → `create_session` → subscribe to
+  `Activated`/`ShortcutsChanged` → `bind_shortcuts` with ids `translate`/`speech` and
+  `preferred_trigger` from `to_portal_trigger`), run as a task on the existing Tokio runtime
+  inside `KeyboardHook::start`, which keeps its signature (`ashpd` ended up with
+  `async-io`, see above); the trigger callbacks are the existing
+  `trigger_translation`/`trigger_speech`. No portal (wlroots) → today's X11 path with a
+  warning; a failed `Register` (no desktop entry) → hotkeys off, with a hint.
+- **App id `io.github.holgertkey.TagentCli` and a desktop entry.** The portal
+  needs a reverse-DNS id backed by an installed `.desktop` file. Proposed: `tagent-cli
+  --install-desktop` / `--uninstall-desktop` (ported from `tagent-gui`'s `desktop_entry.rs`),
+  writing `~/.local/share/applications/io.github.holgertkey.TagentCli.desktop` with
+  `Terminal=true` (GNOME opens it in the default terminal), `Name=Tagent CLI`, and an icon.
+  **The icon is `tagent-gui`'s in black and white** (maintainer, 2026-10-04): the same
+  family, told apart at a glance in the dock and in Settings > Apps. A dark charcoal
+  version with the letter kept white (`convert tray.png -colorspace Gray -channel RGB
+  -level 25%,100% +channel`), not a plain grayscale one: mid-gray reads as "disabled" in a
+  dock. Generated once and committed as `tagent-cli/assets/icons/tagent-cli.png` (no build
+  step); `tagent-gui/assets/icons/tray.png` stays the source if the icon ever changes. The
+  Windows `.exe` gets the same icon (maintainer, 2026-10-04): `assets/icons/tagent-cli.ico`
+  (16–256 px, made from the same PNG) replaces `taa_256.ico` in `build.rs`. **Visible in the menu**, not
+  `NoDisplay=true`: GNOME Settings > Apps, where the user changes the bound keys, lists only
+  visible apps. The release archive ships the entry and icon next to the binary, as
+  `tagent-gui`'s does (no `.deb` for `tagent-cli` in this stage).
+- **What was bound is shown in English**: the banner's hotkey lines name the triggers
+  GNOME bound (its `trigger_description` with the localized words dropped, `Alt+A`; the
+  `display_trigger` logic from `tagent-gui` 0.15.0+007), printed when the bind completes,
+  plus one line saying they are changed in GNOME Settings. A problem prints one line.
+  `/config` shows them too.
+- **Selection from PRIMARY**: `ClipboardManager::get_selected_text()` (all platforms; X11 and
+  Windows = `get_text_with_copy()`), read through `arboard` over XWayland on Wayland, no
+  keystroke simulated, clipboard untouched. Used by `translate_clipboard` and
+  `speak_clipboard` (the hotkey paths only; `copy_to_clipboard` writing the result keeps
+  working, via XWayland). **No XTest call may run on a Wayland session** (it brings up the
+  RemoteDesktop dialog): `copy_selected_text` returns an error there instead.
+- **Terminal show/hide off on Wayland.** `WindowManager` is not created on a
+  Wayland session (`Translator` already handles `None`), so nothing is raised or iconified;
+  with `show_terminal_on_translate = true` the banner says once that it has no effect on
+  Wayland. Rejected: finding the terminal another way (no protocol lets a client raise
+  another app's window; the portal's `activation_token` would have to be used by the
+  terminal's own surface). A desktop notification with the translation, as a substitute
+  for the terminal coming forward, is a possible follow-up (see Out of scope).
+- **Stopping speech** without a global Esc:
+  - pressing the speech hotkey again while it speaks stops it (all platforms, like
+    `tagent-gui` 0.15.0+006; today a second press is ignored);
+  - **Ctrl+C in the terminal** stops whatever is speaking (all platforms): at the prompt it
+    already only reprints the prompt (`ReadlineError::Interrupted`), and during `/s` the
+    `ctrlc` handler's flag (`signals::was_interrupted`, unused today) is free. Esc keeps
+    working where it does (X11, Windows).
+- **The same default hotkeys as `tagent-gui`** (`Alt+A`, `Alt+S`): GNOME keeps bindings per
+  app, and whether it lets two apps bind the same trigger (or shows a conflict in its
+  dialog) is checked in W0. If it doesn't, the docs say to pick different keys; the
+  defaults stay.
+
+### Steps
+
+#### W0 — Spike (throwaway, `.debug/TESTS`)
+
+- From a process started in a terminal (Ptyxis), `register_host_app` + bind `ALT+a`, with an
+  installed `Terminal=true` entry: the consent dialog appears once; `Activated` arrives from
+  native Wayland apps; the key doesn't reach the focused app.
+- The same trigger already bound by `tagent-gui` (running): does GNOME bind it for both, deliver
+  to both, or show a conflict?
+- `arboard` `LinuxClipboardKind::Primary` read and `set_text` from a terminal process with no
+  X11 window of its own: PRIMARY reads; a written CLIPBOARD reaches a Wayland app's paste.
+- Result recorded here before W1.
+
+#### W1 — Session, desktop entry, app id (one `+BUILD`)
+
+- `platform/linux/session.rs` (copied, with its tests).
+- `desktop_entry.rs` in `tagent-cli` (Linux only): `APP_ID`, `--install-desktop` /
+  `--uninstall-desktop` dispatched in `main.rs` next to `cli::ConfigFileCommand` (before
+  `CliHandler::new()`), `Terminal=true`, the icon PNG under `assets/icons/`; a shipped copy
+  `assets/linux/io.github.holgertkey.TagentCli.desktop` kept identical by a test;
+  `release.yml` puts both into the Linux archive.
+- `--help` lists the two flags.
+
+#### W2 — Hotkeys through the portal (one `+BUILD`)
+
+- `platform/linux/portal.rs` (copied from `tagent-gui`: `to_portal_trigger`, `display_trigger`,
+  `problem_text`, `run`, with their tests), adapted to async on the caller's runtime.
+- `keyboard.rs` `start()`: `Session::Wayland` → portal; `NoPortal` → `start_x11` with a
+  warning; X11 → unchanged. The bound triggers / problem printed through the same
+  printer the hotkey output uses (so the prompt is redrawn).
+- Banner and `/config`: hotkey lines from what the desktop bound, when known.
+
+#### W3 — Selection, no XTest on Wayland, no terminal management on Wayland (one `+BUILD`)
+
+- `ClipboardManager::get_selected_text()` on all three platforms; the two hotkey paths use it.
+- `copy_selected_text` errors on a Wayland session.
+- `Translator::new_with_config`: no `WindowManager` on Wayland; the banner notice for
+  `show_terminal_on_translate`.
+
+#### W4 — Stopping speech (one `+BUILD`)
+
+- `trigger_speech`: if speaking, set the stop flag and return (with a "Speech stopped" line).
+- Ctrl+C: the `ReadlineError::Interrupted` branch also stops a hotkey speech; the Esc monitor
+  in `speak_with_esc_monitor` also watches `signals::was_interrupted()` (reset before and after
+  playback, on all three platforms' `signals`).
+
+#### W5 — Documentation (same commits as the code)
+
+- `tagent-cli/CHANGELOG.md` per `+BUILD`.
+- User book: `cli/hotkeys.md` (an "On Wayland" section: dialog, desktop entry, GNOME
+  Settings, mouse selection, terminal not raised), `cli/speech.md` (hotkey again, Ctrl+C),
+  `cli/modes.md` if it names X11, `troubleshooting/platforms.md` (the table's `tagent-cli`
+  row, "The hotkey does nothing", "Esc doesn't stop it"), `reference/command-line.md` (the
+  two flags), `reference/file-locations.md` (the entry and icon), `getting-started/install.md`
+  (the archive's new files), `introduction.md` (platforms).
+- `docs/ARCHITECTURE.md`: the platform matrix (no longer "X11/XWayland only"), a `tagent-cli`
+  subsection pointing at `tagent-gui`'s "Wayland" section for the shared design and listing
+  the differences (Tokio feature, no windows, terminal management off, Ctrl+C).
+- `CLAUDE.md`: Project Overview ("full features require X11 or XWayland"), Platform API
+  Integration, the hotkey Limitations, Exit Handling / speech.
+- `tagent-cli/README.md` if it states the X11 requirement.
+- This plan: the stage marked done, with what the implementation settled differently.
+
+### Tests and verification
+
+- Unit: `session_from`, `to_portal_trigger`, `display_trigger`, the desktop entry (generated =
+  shipped), `copy_selected_text` refusing on Wayland, the speech toggle's state handling.
+- `cargo test -p tagent-cli`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --target x86_64-pc-windows-gnu -p tagent-cli`, the user-docs test.
+- Manual (maintainer; no `xdotool`): `--install-desktop`; first start shows the dialog, the
+  second doesn't; `Alt+A` from Firefox prints the translation at the prompt; `Alt+S` speaks,
+  `Alt+S` again stops; Ctrl+C stops `/s`; no "Remote desktop" dialog anywhere; with
+  `tagent-gui` running at the same time (W0's answer); X11 path untouched (CI, and Windows).
+
+### Out of scope
+
+- A desktop notification with the translation on Wayland, in place of the terminal coming
+  forward (`org.freedesktop.portal.Notification` or `org.freedesktop.Notifications`); a
+  candidate follow-up once this lands.
+- wlroots compositors (no GlobalShortcuts backend: X11 fallback only), KDE untested.
+- `ConfigureShortcuts` (portal version 2) for changing keys from `tagent-cli`.
+- A `.deb` for `tagent-cli`.

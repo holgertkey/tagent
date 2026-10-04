@@ -1,4 +1,6 @@
 use super::keycodes::normalize_vk_code;
+use super::portal;
+use super::session::{session, Session};
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
@@ -243,38 +245,27 @@ impl KeyboardHook {
 
     /// Start listening for the configured hotkeys and block until `should_exit` is set.
     ///
-    /// Behavior depends on the detected display server: full X11/XWayland grabbing when
-    /// `DISPLAY` is set, a disabled-hotkeys fallback (interactive/CLI mode still works) on
-    /// pure Wayland or when no display server is detected at all.
+    /// Behavior depends on the session (see [`super::session`]): on X11, `XGrabKey`
+    /// grabbing plus the passive `rdev` stream; on Wayland, the GlobalShortcuts portal (see
+    /// [`super::portal`]), falling back to the X11 path (keys from XWayland windows only)
+    /// on a desktop without it; nothing without a display server (interactive/CLI mode
+    /// still works).
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Check display server
-        let has_x11 = std::env::var("DISPLAY").is_ok();
-        let has_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
-
-        if !has_x11 && !has_wayland {
-            eprintln!("No display server detected. Hotkeys disabled, use interactive mode.");
-            self.wait_for_exit().await;
-            return Ok(());
+        match session() {
+            Session::Headless => {
+                eprintln!("No display server detected. Hotkeys disabled, use interactive mode.");
+                self.wait_for_exit().await;
+                Ok(())
+            }
+            Session::X11 => self.start_x11().await,
+            Session::Wayland => self.start_wayland().await,
         }
-
-        if has_wayland && !has_x11 {
-            // Pure Wayland without XWayland
-            eprintln!(
-                "Wayland detected without X11. Global hotkeys not yet supported on pure Wayland."
-            );
-            eprintln!("Use interactive mode for translations.");
-            self.wait_for_exit().await;
-            return Ok(());
-        }
-
-        // X11 available (either native X11 or XWayland) - use rdev
-        self.start_x11().await
     }
 
-    async fn start_x11(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Parse hotkeys from config
+    /// The configured translate and speech hotkeys, each `None` (with a warning) when
+    /// turned off or unusable.
+    fn configured_hotkeys(&self) -> (Option<HotkeyType>, Option<HotkeyType>) {
         let config = self.config_manager.get_config();
-
         let translate_hotkey = match HotkeyParser::parse(&config.translate_hotkey) {
             Ok(hotkey) => match HotkeyParser::validate_hotkey(&hotkey) {
                 Ok(_) => Some(hotkey),
@@ -320,6 +311,70 @@ impl KeyboardHook {
         } else {
             None
         };
+        (translate_hotkey, speech_hotkey)
+    }
+
+    /// The Wayland path: the hotkeys come from the portal and call the same triggers as
+    /// the X11 path. No Escape there (the portal can't observe keys): the speech hotkey
+    /// pressed again, or Ctrl+C in the terminal, stops speech.
+    async fn start_wayland(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let (translate_hotkey, speech_hotkey) = self.configured_hotkeys();
+        let is_processing = Arc::new(Mutex::new(false));
+        let is_speaking = Arc::new(Mutex::new(false));
+        let should_stop_speech = Arc::new(AtomicBool::new(false));
+        let translator = self.translator.clone();
+        let config_manager = self.config_manager.clone();
+        let result = portal::listen(
+            translate_hotkey.as_ref(),
+            speech_hotkey.as_ref(),
+            || Self::trigger_translation(&translator, &is_processing),
+            || {
+                Self::trigger_speech(
+                    &translator,
+                    &config_manager,
+                    &is_speaking,
+                    &should_stop_speech,
+                )
+            },
+            |status| Self::report_desktop_hotkeys(&translator, &status),
+            &self.should_exit,
+        )
+        .await;
+        match result {
+            Ok(()) => Ok(()),
+            Err(portal::NoPortal(err)) => {
+                eprintln!(
+                    "No GlobalShortcuts portal ({err}). Falling back to X11 key grabs, which \
+                     only see keys while an XWayland window has focus."
+                );
+                self.start_x11().await
+            }
+        }
+    }
+
+    /// Prints what the desktop bound (or why the hotkeys are off) at the prompt.
+    fn report_desktop_hotkeys(translator: &Translator, status: &portal::DesktopHotkeys) {
+        if let Some(problem) = &status.problem {
+            translator.emit_line(problem);
+            return;
+        }
+        let mut bound = Vec::new();
+        if let Some(trigger) = &status.translate {
+            bound.push(format!("translation {trigger}"));
+        }
+        if let Some(trigger) = &status.speech {
+            bound.push(format!("speech {trigger}"));
+        }
+        translator.emit_line(format!(
+            "Hotkeys bound by the desktop: {}. Change them in the system settings \
+             (GNOME: Settings > Apps > Tagent CLI).",
+            bound.join(", ")
+        ));
+    }
+
+    async fn start_x11(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let config = self.config_manager.get_config();
+        let (translate_hotkey, speech_hotkey) = self.configured_hotkeys();
 
         // Grab hotkeys via X11 to prevent them from reaching other applications.
         // _xgrab lives until the end of the event loop; Drop releases all grabs.
@@ -516,6 +571,10 @@ impl KeyboardHook {
     ) {
         if let Ok(mut speaking) = is_speaking.lock() {
             if *speaking {
+                // Pressed again while speaking: stop (the only global way on Wayland,
+                // where Esc can't be observed).
+                should_stop_speech.store(true, Ordering::Relaxed);
+                translator.emit_line("Speech stopped (speech hotkey)");
                 return;
             }
             *speaking = true;
@@ -575,9 +634,7 @@ async fn speak_clipboard(
     use crate::platform::ClipboardManager;
     use std::io::{self, Write};
 
-    let clipboard = ClipboardManager::new();
-    clipboard.copy_selected_text()?;
-    let text = clipboard.get_text()?;
+    let text = ClipboardManager::new().get_selected_text()?;
 
     if let Err(e) = config_manager.check_and_reload() {
         eprintln!("Config reload error: {}", e);

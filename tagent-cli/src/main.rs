@@ -1,5 +1,7 @@
 mod cli;
 mod config;
+#[cfg(target_os = "linux")]
+mod desktop_entry;
 mod interactive;
 mod platform;
 mod speech;
@@ -26,6 +28,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Commands about the config file itself run before the file is loaded
     if let Some(command) = cli::ConfigFileCommand::from_args(&args) {
         std::process::exit(command.run());
+    }
+    // Linux: `--install-desktop`/`--uninstall-desktop`, the entry the Wayland hotkeys need.
+    #[cfg(target_os = "linux")]
+    if let Some(command) = desktop_entry::command_from_args(&args[1..]) {
+        std::process::exit(desktop_entry::run(command));
     }
 
     // If arguments are provided, run in CLI mode

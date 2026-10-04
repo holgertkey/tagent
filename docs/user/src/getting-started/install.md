@@ -8,7 +8,7 @@ ready-made programs for 64-bit Windows and Linux:
 | File | Contains |
 |------|----------|
 | `tagent-cli-<version>-windows-x86_64.zip` | `tagent-cli.exe` |
-| `tagent-cli-<version>-linux-x86_64.tar.gz` | `tagent-cli` |
+| `tagent-cli-<version>-linux-x86_64.tar.gz` | `tagent-cli`, its menu entry (`io.github.holgertkey.TagentCli.desktop`) and icon |
 | `tagent-gui-<version>-windows-x86_64.zip` | `tagent-gui.exe` |
 | `tagent-gui-<version>-linux-x86_64.tar.gz` | `tagent-gui`, its menu entry (`io.github.holgertkey.TagentGui.desktop`) and icon |
 | `tagent-gui_<version>-1_amd64.deb` | `tagent-gui` as a package for Debian, Ubuntu and their relatives |
@@ -30,6 +30,10 @@ tar -xzf tagent-cli-<version>-linux-x86_64.tar.gz
 ```
 
 The programs need the X11 and ALSA libraries, which desktop systems have.
+
+On a Wayland desktop (GNOME, KDE), the global hotkeys of `tagent-cli` need its menu
+entry: run `tagent-cli --install-desktop` once (it adds "Tagent CLI", which opens in a
+terminal, and its icon for your user).
 
 For `tagent-gui`, the `.deb` is the easy way: it installs the program, a menu entry and
 the icon.

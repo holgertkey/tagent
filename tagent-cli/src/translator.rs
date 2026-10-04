@@ -127,13 +127,14 @@ impl Translator {
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let window_manager = match WindowManager::new() {
             Ok(wm) => Some(Arc::new(wm)),
-            Err(_) => {
-                eprintln!(
-                    "Window management unavailable (show/hide terminal and hotkeys disabled)."
-                );
-                eprintln!(
-                    "This is expected on Wayland or when running outside a graphical terminal."
-                );
+            Err(e) => {
+                // Only worth a word when the user asked for it; the hotkeys work either way.
+                if config_manager.get_config().show_terminal_on_translate {
+                    eprintln!(
+                        "Note: show_terminal_on_translate has no effect: {e} \
+                         (the translation still appears at the prompt)."
+                    );
+                }
                 None
             }
         };
@@ -244,7 +245,7 @@ impl Translator {
     }
 
     /// Like [`emit`](Self::emit) but appends a trailing newline, mirroring `println!`.
-    fn emit_line(&self, msg: impl AsRef<str>) {
+    pub(crate) fn emit_line(&self, msg: impl AsRef<str>) {
         self.emit(&format!("{}\n", msg.as_ref()));
     }
 
@@ -300,7 +301,7 @@ impl Translator {
             }
         }
 
-        let original_text = match self.clipboard.get_text_with_copy() {
+        let original_text = match self.clipboard.get_selected_text() {
             Ok(text) => {
                 if text.trim().is_empty() {
                     self.emit_line("No selected text or clipboard is empty");

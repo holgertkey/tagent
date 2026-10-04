@@ -44,18 +44,19 @@ tagent-cli -l en "Guten Morgen" > out.txt
 
 ## What works where
 
-| | Windows | Linux, X11 or XWayland | Linux, pure Wayland | macOS |
+| | Windows | Linux, X11 | Linux, Wayland (GNOME, KDE) | macOS |
 |---|:---:|:---:|:---:|:---:|
 | Interactive prompt, CLI mode | ✅ | ✅ | ✅ | ✅ |
 | Text-to-speech | ✅ | ✅ | ✅ | ✅ |
-| Global hotkeys, copying the selection | ✅ | ✅ | | |
+| Global hotkeys | ✅ | ✅ | ✅ (through the desktop) | |
 | Showing and hiding the terminal | ✅ | ✅ | | |
-| `copy_to_clipboard` | ✅ | ✅ | | |
+| `copy_to_clipboard` | ✅ | ✅ | ✅ | |
 
-- Most Linux desktops with Wayland (GNOME, KDE) also run XWayland, and with it
-  everything works as on X11.
-- On a pure Wayland session (no `DISPLAY`), `tagent-cli` starts with the prompt only and
-  says so: Wayland doesn't let applications watch global keys or manage other windows.
+- On Wayland the hotkeys come from the desktop's Global Shortcuts portal and need the
+  menu entry (`tagent-cli --install-desktop`); they translate the mouse selection, and
+  the terminal isn't brought forward. See [Hotkeys: On Wayland](hotkeys.md#on-wayland).
+- Without the portal (Sway, Hyprland) or without XWayland (no `DISPLAY`), there are no
+  global hotkeys; the prompt and the command line work.
 - On macOS, the hotkeys, clipboard and window handling aren't implemented yet.
 
 See [Troubleshooting: Platforms](../troubleshooting/platforms.md).

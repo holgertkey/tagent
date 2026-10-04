@@ -27,11 +27,10 @@ the dictionary and speech each have their own provider setting, so they can be m
 
 ## Platforms
 
-Both applications run on Windows and Linux. On Linux, `tagent-cli`'s global hotkey
-needs an X11 session (or an XWayland window in focus); `tagent-gui`'s hotkeys also work
-on Wayland desktops with the Global Shortcuts portal, such as GNOME. On macOS, translation, the dictionary and speech work, but the global hotkeys
-and the clipboard features don't yet. See
-[Troubleshooting: Platforms](troubleshooting/platforms.md).
+Both applications run on Windows and Linux, with the global hotkeys on X11 and on
+Wayland desktops with the Global Shortcuts portal, such as GNOME. On macOS, translation,
+the dictionary and speech work, but the global hotkeys and the clipboard features don't
+yet. See [Troubleshooting: Platforms](troubleshooting/platforms.md).
 
 ## Which version this guide describes
 

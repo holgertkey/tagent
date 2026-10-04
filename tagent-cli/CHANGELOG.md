@@ -12,9 +12,25 @@ before 2026-10-02 have one header per build.
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-10-03
+## [0.17.0] - 2026-10-04
 
 ### Added
+- (+020) **Global hotkeys on Wayland** (GNOME 50 and other desktops with the Global Shortcuts
+  portal): `translate_hotkey` and `speech_hotkey` are registered through `xdg-desktop-portal`
+  instead of X11 key grabs, which on a Wayland session only saw keys while an XWayland window
+  had focus. The first start shows the desktop's dialog to confirm (or change) the keys, and
+  `tagent-cli` prints what is bound (`Hotkeys bound by the desktop: translation Alt+A, speech
+  Alt+S.`, in English whatever the system language); afterwards they are changed in the
+  system settings (GNOME: Settings > Apps > Tagent CLI). On Wayland the hotkeys read the text
+  selected with the mouse (the PRIMARY selection): no Ctrl+C is simulated (which on GNOME
+  asked for remote desktop access) and the clipboard is left alone. A desktop without the
+  portal falls back to the X11 key grabs.
+- (+020) **`--install-desktop` / `--uninstall-desktop`** (Linux): add or remove a "Tagent CLI"
+  menu entry (opens in a terminal) and its icon for the user,
+  `io.github.holgertkey.TagentCli`; the Wayland hotkeys need it, and without it `tagent-cli`
+  says so at start. The Linux release archive ships the same entry and icon.
+- (+020) **Ctrl+C in the terminal stops speech** (Linux, any mode, Wayland included): hotkey
+  speech, `/s`, `/ss` and `tagent-cli -s`. Esc can't be observed on Wayland.
 - (+019) **Tests keep the user book (`docs/user`) in step with the code.** They generate
   three of its reference pages and fail when a committed copy is stale: the `tagent-cli.toml`
   template (target language `en`, a placeholder history path), every provider kind's options
@@ -187,6 +203,16 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+020) **Pressing the speech hotkey while it speaks stops it** (Windows, Linux); it was
+  ignored ("Already speaking"). On Wayland it is the global way to stop.
+- (+020) **On Wayland the terminal isn't raised or hidden**: `show_terminal_on_translate` and
+  `auto_hide_terminal_seconds` have no effect there, and a note at start says so when the
+  first is on. Wayland lets no application raise another one's window, and the X11 fallback
+  `tagent-cli` used could pick another application's XWayland window (e.g. `tagent-gui`'s),
+  raise it and then iconify it. The note replaces the misleading "Window management
+  unavailable (show/hide terminal and hotkeys disabled)" lines.
+- (+020) **A new icon**: `tagent-gui`'s, in dark gray, for the `.exe` on Windows
+  (`assets/icons/tagent-cli.ico`, replacing `taa_256.ico`) and the Linux menu entry.
 - (+018) **`dictionary_provider` no longer needs a restart**: a change from `/p d`, or an
   edit of the file, is used by the next lookup, from the prompt and the hotkey. A value that
   can't be built keeps the working dictionary provider and is reported once; a dictionary

@@ -6,7 +6,7 @@ What works where, in short:
 |---|:---:|:---:|:---:|:---:|
 | Translation, dictionary, speech | ✅ | ✅ | ✅ | ✅ |
 | `tagent-gui`: global hotkeys, the popup | ✅ | ✅ | ✅ (see below) | |
-| `tagent-cli`: global hotkey | ✅ | ✅ | only in XWayland windows | |
+| `tagent-cli`: global hotkeys | ✅ | ✅ | ✅ (see below) | |
 | Clipboard features | ✅ | ✅ | ✅ | |
 | `tagent-cli`: showing and hiding the terminal | ✅ | ✅ | | |
 | `tagent-gui`: tray icon | ✅ | ✅ (needs a tray) | ✅ (needs a tray) | ✅ |
@@ -16,9 +16,10 @@ their selection, or place its windows. `tagent-gui` gets its hotkeys from the de
 instead (the Global Shortcuts portal, on GNOME and KDE), translates the text selected
 with the mouse, and runs its windows through XWayland; the popup then opens in a corner
 or where you last dragged it, not next to the cursor, and Esc stops speech only in its
-own window. See [On Wayland](../gui/hotkeys-and-popup.md#on-wayland). `tagent-cli` still
-uses X11 key grabs, which on Wayland see keys only while an XWayland window is focused.
-Desktops without the portal (Sway, Hyprland) and sessions without XWayland (no
+own window. See [On Wayland](../gui/hotkeys-and-popup.md#on-wayland). `tagent-cli` does
+the same for its hotkeys (and needs `tagent-cli --install-desktop` once), but can't bring
+the terminal forward; see [Hotkeys: On Wayland](../cli/hotkeys.md#on-wayland). Desktops
+without the portal (Sway, Hyprland) and sessions without XWayland (no
 `DISPLAY` variable) have no global hotkeys.
 
 **macOS:** the global hotkeys and the clipboard features aren't implemented yet.
@@ -27,9 +28,12 @@ Desktops without the portal (Sway, Hyprland) and sessions without XWayland (no
 
 ### The hotkey does nothing
 
-- **Linux on pure Wayland, and macOS:** global hotkeys aren't available; `tagent-cli`
-  says so at start. Use the prompt or the command line. Most Wayland desktops also run
-  XWayland, and there the hotkeys work.
+- **Wayland:** `tagent-cli` prints why at start. Usually the menu entry is missing: run
+  `tagent-cli --install-desktop` and start it again. If you declined the desktop's
+  dialog, or want other keys, set them in the system settings (GNOME: Settings > Apps >
+  Tagent CLI). Select the text with the mouse: the hotkey reads the mouse selection.
+- **macOS, or Wayland without the portal or XWayland:** global hotkeys aren't
+  available; use the prompt or the command line.
 - **Another application holds the combination.** On Linux, `tagent-cli` warns at start
   when it can't reserve the hotkey. Pick a different one in `tagent-cli.toml`.
 - **You changed the hotkey without restarting.** Hotkeys are read at start only.
@@ -52,8 +56,9 @@ still holds what you copied earlier, and that gets translated.
 
 ### Speech plays, but Esc doesn't stop it
 
-Esc works on Windows, and on Linux only in unified mode with X11 or XWayland. It
-doesn't work on macOS or pure Wayland. A one-shot `tagent-cli -s` stops with Ctrl+C.
+Esc works on Windows, and on Linux only in unified mode with X11. On Wayland, press the
+speech hotkey again, or Ctrl+C in the terminal (Linux, any mode). On macOS nothing stops
+it yet.
 
 ### No sound
 

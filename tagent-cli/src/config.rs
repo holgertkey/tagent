@@ -1180,6 +1180,14 @@ pub(crate) const HELP_OPTIONS: &[(&str, &str)] = &[
         "--update-config",
         "Add the settings your config file lacks (backup: .bak)",
     ),
+    (
+        "--install-desktop",
+        "Linux: add the menu entry and icon the Wayland hotkeys need",
+    ),
+    (
+        "--uninstall-desktop",
+        "Linux: remove what --install-desktop added",
+    ),
 ];
 
 /// A complete, commented `tagent-cli.toml` holding `config`'s values: the template, with

@@ -428,20 +428,51 @@ one platform will fail to compile on the others.
 | Capability | Linux | Windows | macOS |
 |---|---|---|---|
 | Clipboard get/set | ✅ `arboard` | ✅ `clipboard-win` | ❌ stub, always errors |
-| Auto-copy selection (simulated Ctrl+C) | ✅ XTest, by hardware keycode (X11/XWayland only) | ✅ `SendInput` | ❌ stub, always errors |
-| Global hotkeys | ✅ `rdev` + `XGrabKey` (X11/XWayland only) | ✅ `WH_KEYBOARD_LL` hook | ❌ stub, prints a notice and idles |
-| Show/hide/focus terminal window | ✅ Xlib | ✅ Win32 (`GetConsoleWindow` etc.) | ❌ stub, all no-ops |
-| Pure Wayland (no XWayland) | ⚠️ interactive/CLI only — clipboard auto-copy and hotkeys are disabled with an explanatory message | n/a | n/a |
+| Auto-copy selection | ✅ X11: XTest Ctrl+C, by hardware keycode; Wayland: the PRIMARY selection over XWayland, never XTest | ✅ `SendInput` | ❌ stub, always errors |
+| Global hotkeys | ✅ X11: `rdev` + `XGrabKey`; Wayland: the GlobalShortcuts portal | ✅ `WH_KEYBOARD_LL` hook | ❌ stub, prints a notice and idles |
+| Show/hide/focus terminal window | ✅ Xlib on X11; off on Wayland | ✅ Win32 (`GetConsoleWindow` etc.) | ❌ stub, all no-ops |
+| Wayland without the portal or without XWayland | ⚠️ X11 fallback (keys from XWayland windows only), or interactive/CLI only | n/a | n/a |
 
-This matrix is `tagent-cli`'s. "X11/XWayland" means: on a Wayland session (GNOME 50 has
-no Xorg session any more) the grab and the simulated Ctrl+C reach only XWayland windows,
-so the hotkey does nothing from a native Wayland app. `tagent-gui` solved this with the
-GlobalShortcuts portal (see "Wayland: hotkeys through the portal" under `tagent-gui`
-below); `tagent-cli` hasn't yet. **macOS is a separate, larger gap**: it is essentially a no-op skeleton
+This matrix is `tagent-cli`'s; see "`tagent-cli` on Wayland" below. **macOS is a separate, larger gap**: it is essentially a no-op skeleton
 across clipboard, keyboard hook, and window management, with zero macOS-specific crate
 dependencies (no `[target.'cfg(target_os = "macos")'.dependencies]` section exists in
 `tagent-cli/Cargo.toml` at all). It compiles and runs, but only interactive/CLI mode
 actually works — anyone picking up macOS support starts from these three stub files.
+
+### `tagent-cli` on Wayland (0.17.0+020)
+
+The same design as `tagent-gui`'s Stage W ("Wayland: hotkeys through the portal" under
+`tagent-gui` below), duplicated per app (platform code isn't shared): `platform/linux/
+session.rs` (without `init`: no windows to move to XWayland), `portal.rs`, and
+`desktop_entry.rs` (app id `io.github.holgertkey.TagentCli`, `Terminal=true`, visible in the
+menu because GNOME Settings > Apps, where the keys are changed, lists only visible apps;
+`--install-desktop`/`--uninstall-desktop` dispatched in `main.rs` right after
+`ConfigFileCommand`, first argument only). Differences:
+
+- **Runtime**: `portal::listen` is async and runs inside `KeyboardHook::start` on the app's
+  own Tokio runtime, with a 100 ms tick checking `should_exit`. `ashpd` still uses
+  `async-io`, not `tokio`: Cargo unifies features across the workspace, `tagent-gui` needs
+  `async-io`, and `ashpd` refuses both (`compile_error!`), which breaks every
+  `--workspace` build. `start` dispatches on
+  `session()`: X11 → `start_x11`, Wayland → `start_wayland` (portal, `NoPortal` → `start_x11`
+  with a warning), headless → wait. `configured_hotkeys()` is the parse/validate shared by
+  both paths. What was bound is printed through `Translator::emit_line` (the rustyline
+  external printer) by `report_desktop_hotkeys`.
+- **No XTest on Wayland**: `ClipboardManager::copy_selected_text` refuses on a Wayland
+  session (GNOME routes XTest through the RemoteDesktop portal, which asks for access on
+  every keystroke); `get_selected_text` reads PRIMARY there, used by `translate_clipboard`
+  and `speak_clipboard`.
+- **No terminal management on Wayland**: `WindowManager::new` fails on a Wayland session.
+  Its `_NET_ACTIVE_WINDOW` fallback (for a terminal whose window has no `_NET_WM_PID` of
+  ours) would otherwise pick whatever XWayland window was last active, e.g. `tagent-gui`'s,
+  and raise and iconify it. `Translator::new_with_config` prints one note, only when
+  `show_terminal_on_translate` is on.
+- **Stopping speech**: no Escape from the portal. The speech hotkey pressed again stops it
+  (Windows and Linux), and Ctrl+C does on Linux: the `ctrlc` handler's flag is read with
+  `signals::take_interrupted()` (swap to `false`; Windows/macOS return `false`) by
+  `SpeechManager::speak_text_with_cancel`, which takes it once before playback so a stale
+  press doesn't stop the next one. At the prompt the same Ctrl+C still only reprints the
+  line (rustyline's `Interrupted`).
 
 ### Linux specifics: `xgrab.rs`
 
@@ -1785,7 +1816,11 @@ and:
    `CARGO_PKG_VERSION=0.0.0 rustc --edition 2021 --test tagent-cli/build.rs` (Cargo doesn't
    run a build script's tests).
 3. On Windows only, when the `binary-resources` feature is active, embeds the app icon
-   (`assets/icons/taa_256.ico`, inside the `tagent-cli/` package itself) and version resource
+   (`assets/icons/tagent-cli.ico`, inside the `tagent-cli/` package itself; since
+   0.17.0+020 `tagent-gui`'s icon in dark gray, made with ImageMagick from
+   `tagent-gui/assets/icons/tray.png`: `convert tray.png -colorspace Gray -channel RGB
+   -level 25%,100% +channel tagent-cli.png`, then `-define
+   icon:auto-resize=256,128,64,48,32,24,16` for the `.ico`) and version resource
    via `winres`.
 
 There is no GUI-specific version sync step: an earlier Tauri-based `tagent-gui`

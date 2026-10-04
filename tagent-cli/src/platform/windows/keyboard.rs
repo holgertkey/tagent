@@ -762,7 +762,11 @@ unsafe fn trigger_speech() {
     if let Some(is_speaking) = IS_SPEAKING.get() {
         if let Ok(mut speaking) = is_speaking.lock() {
             if *speaking {
-                println!("Already speaking, ignoring request");
+                // Pressed again while speaking: stop, like Esc (same behavior as Linux).
+                if let Some(stop_flag) = SHOULD_STOP_SPEECH.get() {
+                    stop_flag.store(true, Ordering::Relaxed);
+                }
+                println!("Speech stopped (speech hotkey)");
                 return;
             }
             *speaking = true;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Tagent CLI
+GenericName=Translator
+Comment=Cross-platform text translator: global hotkey, interactive terminal, and CLI modes using Google Translate
+Exec=tagent-cli
+Icon=io.github.holgertkey.TagentCli
+Terminal=true
+Categories=Utility;
+Keywords=translate;translation;dictionary;terminal;

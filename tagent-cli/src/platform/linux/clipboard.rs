@@ -1,4 +1,4 @@
-use arboard::Clipboard;
+use arboard::{Clipboard, GetExtLinux, LinuxClipboardKind};
 use std::error::Error;
 use std::os::raw::{c_char, c_uint, c_ulong};
 use std::sync::Mutex;
@@ -110,10 +110,15 @@ impl ClipboardManager {
     /// active the target app gets Ctrl plus that layout's character on the C key
     /// (e.g. Ctrl+Cyrillic_es), exactly as when the user presses Ctrl+C by hand.
     pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
-            // Pure Wayland without XWayland: auto-copy not supported
+        let pure_wayland =
+            std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err();
+        if pure_wayland || super::session::session() == super::session::Session::Wayland {
+            // On a Wayland session XTest reaches only XWayland apps, and on GNOME every
+            // simulated key goes through the RemoteDesktop portal, which asks the user for
+            // remote desktop access. Never simulate keys there; the hotkeys read the
+            // mouse selection instead (`get_selected_text`).
             return Err(
-                "Auto-copy not supported on Wayland. Copy text manually before pressing hotkey."
+                "Auto-copy not supported on Wayland. Select the text with the mouse, or copy it manually."
                     .into(),
             );
         }
@@ -208,6 +213,30 @@ impl ClipboardManager {
     pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.copy_selected_text()?;
         self.get_text()
+    }
+
+    /// The text currently selected in whatever app has it, for the global hotkeys.
+    ///
+    /// On X11, [`Self::get_text_with_copy`]. On a Wayland session the simulated Ctrl+C
+    /// would only reach XWayland apps (and ask for remote desktop access), so this reads
+    /// the PRIMARY selection (what is selected with the mouse) instead, through XWayland:
+    /// GNOME mirrors a Wayland app's PRIMARY there, readable without focus. No key
+    /// simulation, and the clipboard is left alone.
+    pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+        if super::session::session() != super::session::Session::Wayland {
+            return self.get_text_with_copy();
+        }
+        Self::with_clipboard(|clipboard| {
+            match clipboard
+                .get()
+                .clipboard(LinuxClipboardKind::Primary)
+                .text()
+            {
+                // Nothing selected: the same as an empty selection on X11.
+                Err(arboard::Error::ContentNotAvailable) => Ok(String::new()),
+                result => result,
+            }
+        })
     }
 }
 

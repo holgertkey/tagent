@@ -32,4 +32,10 @@ impl ClipboardManager {
         self.copy_selected_text()?;
         self.get_text()
     }
+
+    /// The text currently selected in whatever app has it, for the global hotkeys: the
+    /// same as [`Self::get_text_with_copy`] here (Linux reads PRIMARY on Wayland).
+    pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+        self.get_text_with_copy()
+    }
 }

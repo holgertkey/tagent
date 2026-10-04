@@ -28,8 +28,9 @@ pub fn setup() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-/// Check if Ctrl+C was received
-#[allow(dead_code)]
-pub fn was_interrupted() -> bool {
-    CTRL_C_RECEIVED.load(Ordering::Relaxed)
+/// Whether Ctrl+C was pressed since the last call; clears the flag. Speech polls it, so
+/// Ctrl+C in the terminal stops playback: on Wayland Esc can't be observed. A press while
+/// nothing plays leaves the flag set, so speech takes it once before it starts.
+pub fn take_interrupted() -> bool {
+    CTRL_C_RECEIVED.swap(false, Ordering::Relaxed)
 }
