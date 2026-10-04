@@ -405,8 +405,8 @@ sensible place. Windows, macOS and X11 sessions keep today's behavior unchanged.
 - **Stopping speech** on Wayland: Esc can't be observed globally (binding it through the
   portal would take Esc away from every other app). Instead, pressing the speech hotkey
   while something is speaking stops it; Esc still works while a `tagent-gui` window has
-  focus. *Decision for the maintainer:* the toggle on every platform (one behavior, simpler
-  to document) or on Wayland only. Proposed: every platform.
+  focus. The toggle applies on every platform (decided 2026-10-04: one behavior, simpler
+  to document); the global Esc stays where it works (X11, Windows).
 - **Windows on Wayland** (decided by spike 0b; leaning XWayland): the whole app runs on
   XWayland (winit's X11 backend), so the popup keeps positioning, always-on-top, drag and
   the desktop clamp, and the main window keeps its geometry restore. What can't come
@@ -422,13 +422,12 @@ sensible place. Windows, macOS and X11 sessions keep today's behavior unchanged.
   tagent-gui". "Record" and the text fields are disabled there: with portal v1 the value
   in `tagent-gui.json` only seeds the first bind. The enable checkboxes and the "Esc"
   note keep working. Unchanged on X11/Windows.
-- **App id** (prerequisite): `tagent-gui` → a reverse-DNS id, proposed
+- **App id** (prerequisite, decided 2026-10-04): `tagent-gui` →
   `io.github.holgertkey.TagentGui` (D-Bus naming: no hyphens in elements). It becomes the
   window's app id, the `.desktop` file name, `StartupWMClass` and the icon name. The
-  binary, the config directory and the log stay `tagent-gui`. *Decision for the
-  maintainer:* the exact id, and what happens to an already installed
-  `~/.local/share/applications/tagent-gui.desktop`. Proposed, following the
-  no-migration-shim preference: a pure rename, the changelog tells the user to run
+  binary, the config directory and the log stay `tagent-gui`. An already installed
+  `~/.local/share/applications/tagent-gui.desktop` is not migrated (no-migration-shim
+  preference): a pure rename, and the changelog tells the user to run
   `--uninstall-desktop` with the old build (or delete the two files) and
   `--install-desktop` with the new one.
 
@@ -444,6 +443,11 @@ sensible place. Windows, macOS and X11 sessions keep today's behavior unchanged.
      candidates, both worse: `wl-paste --primary`, which briefly maps its own surface to
      get focus; the RemoteDesktop portal to send Ctrl+C, which asks for permission on
      every session).
+     *Partly done 2026-10-04:* the bridge carries PRIMARY. A mouse selection in Firefox
+     and in GNOME Text Editor (both native Wayland) read back exactly from an unfocused
+     shell with `xclip -o -selection primary`, identical to `wl-paste -n --primary`.
+     Still open: the terminal, a Chromium/Electron app, LibreOffice, the latency, and the
+     `arboard` read.
    - **0b. XWayland vs native for Slint.** Run `tagent-gui` both ways (native: today's
      default; XWayland: `WAYLAND_DISPLAY` removed before Slint starts) and compare: popup
      appears on top of a focused Wayland app without taking its focus; `set_position`
@@ -493,7 +497,7 @@ sensible place. Windows, macOS and X11 sessions keep today's behavior unchanged.
    X11, PRIMARY on Wayland); the two hotkey paths in `main.rs` call it. Windows/macOS get
    the same method name (same body as their `get_text_with_copy`), as the platform
    modules require.
-5. **Speech toggle** (per the decision above): in `on_speech_trigger`, if speech is
+5. **Speech toggle** (every platform, see Behavior): in `on_speech_trigger`, if speech is
    playing, `speech::request_stop` and return before reading the selection. The
    `is_speech_processing` guard stays.
 6. **Settings > Hotkeys & Tray**: `hotkeys-from-desktop` (bool) and the two bound
