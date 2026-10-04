@@ -1582,8 +1582,9 @@ at a remembered position. Follow-ups: Roadmap item 7 in
 ### Single instance (`tagent-gui` 0.15.0+009)
 
 `tagent-gui/src/single_instance.rs`: one copy per user; a second start makes the running
-copy show its window and exits. Plan: "Planned stage — Single instance" in
-[`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+copy show its window and exits. Verified live on Linux (terminal, `--foreground`, the
+menu entry twice, `kill -9` then start) and on Windows (2026-10-04). Follow-ups: Roadmap
+item 8 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
 - **Socket** (crate `interprocess` 2, sync, no features): `socket_name()` (pure core
   `socket_name_from`, tested) is a file socket `$XDG_RUNTIME_DIR/io.github.holgertkey.TagentGui.sock`

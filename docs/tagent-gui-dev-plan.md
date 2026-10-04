@@ -126,6 +126,7 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 | 13 | Styled transcript | 2026-09-22 | view-only `StyledText`, semantic highlighting, right-click copy |
 | — | Multi-line provider options | 2026-10-01 | `TextEdit` for `OptionSpec::multiline`, pre-filled default, Reset, `{to}` ⚠ (0.14.0+036) |
 | W | Wayland hotkeys (GNOME 50) | 2026-10-04 | GlobalShortcuts portal (`ashpd`, `async-io`), app id `io.github.holgertkey.TagentGui`, PRIMARY over XWayland, windows on XWayland, popup in a corner, speech hotkey stops speech (0.15.0+006) |
+| — | Single instance | 2026-10-04 | a second start shows the running copy over a per-user local socket (`interprocess`), stale socket reclaimed, a silent holder reported (0.15.0+009) |
 
 Later iterations `0.14.0+003`–`+019` (2026-09-22…25) built on Stage 13: prompt colors,
 optional right-click menu, popup copy and drag, popup highlighting, terminal detach, a
@@ -165,8 +166,10 @@ Candidates, not yet scheduled; the order is a suggestion.
    `ConfigureShortcuts` once the host portal has version 2; the popup's corner on the
    primary monitor rather than the bounding box. Not planned: wlroots compositors (no
    GlobalShortcuts backend), the popup next to the cursor on Wayland.
-8. **Single instance**: next, planned in detail
-   [below](#planned-stage--single-instance).
+8. ~~**Single instance.**~~ Done in 0.15.0+009 (2026-10-04): see "Single instance" in
+   `docs/ARCHITECTURE.md`. Follow-ups, not scheduled: `--replace` (quit the running copy
+   and start); passing text to translate (`tagent-gui "text"`); raising a visible window
+   that is behind others; a D-Bus `Activate` (`DBusActivatable=true`) for GNOME.
 
 ### Planned stage — Provider profiles tab
 
@@ -340,113 +343,6 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
-
-### Planned stage — Single instance
-
-**Status:** implemented in 0.15.0+009 (2026-10-04). Checked on Linux (GNOME 50,
-Wayland): a second start (also with `--foreground`) shows the running copy and exits 0;
-after `kill -9` the stale socket file is reclaimed. Open: starting from the menu entry
-twice, Windows. Once those pass, condense this section into a row of "Shipped stages".
-
-**Why.** Nothing stops a second `tagent-gui` from starting, and a second copy only causes
-trouble, mostly silently:
-- **Hotkeys**: on X11 its `XGrabKey` fails with `BadAccess` and it runs without hotkeys
-  (a log warning only). On Wayland both open a GlobalShortcuts session under the same
-  app id; which one GNOME delivers a shortcut to (one, or both: two translations, two
-  popups) is undefined.
-- **Config**: both rewrite all of `tagent-gui.json` (Settings OK, window geometry, popup
-  position); the last writer wins and drops the other's change.
-- Two tray icons; both append to `tagent-gui.log`.
-- How it happens: a click on the menu entry while the app sits in the tray. The user
-  expects the existing window to come up.
-
-**Goal.** One running copy per user. Starting it again shows the running copy's window
-(as the tray's "Show Tagent" does) and exits.
-
-**Behavior.**
-- A second start (menu entry, terminal, `cargo run`) asks the running copy to show its
-  window and exits with code 0. From a terminal it prints `tagent-gui is already running
-  (pid 12345); showed its window.` (to stdout, before detaching, so the prompt shows it).
-  The running copy logs `Another start asked to show the window.`
-- `--install-desktop` / `--uninstall-desktop` are unaffected (handled before the check).
-- **Per user, not per machine**: another user's `tagent-gui` on the same machine (fast
-  user switching, a second graphical session) doesn't count.
-- **A hung or crashed first copy** must not lock the user out: a stale socket is
-  reclaimed; a copy that accepts the connection but doesn't answer within 2 s is
-  reported (`tagent-gui seems to be running (pid …) but doesn't answer; quit it or
-  kill it, then start again.`, exit code 1) rather than starting a second copy next to
-  it.
-- **Development**: `cargo run -p tagent-gui` while an installed copy runs only shows
-  that copy's window, with its pid in the message so you know what to quit. No
-  `--replace` in this stage.
-
-**Mechanism: a local socket** (crate [`interprocess`](https://docs.rs/interprocess) 2.x,
-default features only: sync, no Tokio; `local_socket::{ListenerOptions, ConnectOptions,
-Stream}`):
-- **Name, per platform**, all per user:
-  - Linux: a file socket `$XDG_RUNTIME_DIR/io.github.holgertkey.TagentGui.sock`
-    (`GenericFilePath`; the directory is the user's own, mode `0700`), falling back to
-    the data dir (`~/.local/share/tagent-gui/`) without `XDG_RUNTIME_DIR`. Not the abstract
-    namespace (`interprocess`'s namespaced default on Linux): it is shared by every user
-    on the machine and has no permissions, so another user's copy would count as ours
-    and anyone could squat the name.
-  - macOS: a file socket in the data dir (`~/Library/Application Support/tagent-gui/`).
-  - Windows: a named pipe `io.github.holgertkey.TagentGui.<USERNAME>` (`GenericNamespaced`,
-    i.e. `\\.\pipe\...`): pipes are machine-wide, so the user name goes into it.
-- **Claim** (`single_instance::claim(name) -> Claim { First(Listener) | Running(pid) |
-  Unresponsive(pid?) }`): bind the listener (`ListenerOptions::new().name(..)
-  .try_overwrite(false).create_sync()`). On `AddrInUse`: connect; a connection that
-  answers → `Running`; one that connects but times out → `Unresponsive`; no connection
-  (Unix: a socket file left by a crash) → remove the file and bind again, once.
-  `try_overwrite(true)` is not used: it would delete a live copy's socket.
-- **Protocol** (one line each way, UTF-8, `\n`-terminated, 2 s `set_recv_timeout` /
-  `set_send_timeout` on both sides): the client sends `show`; the server answers
-  `ok <pid>`. Unknown requests get `error unknown request` and change nothing, so a newer
-  client against an older server fails visibly instead of hanging. Pure, tested:
-  `parse_request`, `format_reply`, `parse_reply`.
-- **Where in `main()`**: the check runs **before** `detach::detach_from_terminal()` (so
-  the message reaches the terminal), right after the desktop-entry flags. The detached
-  child claims again (the parent's `Listener` dies with it; claiming in the child is
-  what holds the name). Order in the child: claim right after `session::init()` and
-  before `AppWindow::new()`, so a racing third start already sees it; the accept thread
-  starts once the window and tray exist and hands each `show` to the event loop
-  (`slint::invoke_from_event_loop` → `show_window_restoring_geometry`, the tray's own
-  path, `main.rs`). Connections arriving before that wait in the listen backlog.
-- The accept thread lives for the process; nothing to clean up on exit except, on
-  Unix, the socket file (`Drop` of a guard in `main()`; a crash leaves it, which the
-  claim handles).
-
-**Implementation steps.**
-1. Read `interprocess`'s documentation for the exact 2.x API (name construction:
-   `to_fs_name::<GenericFilePath>()`, `to_ns_name::<GenericNamespaced>()`; the error
-   kind on a taken name on Windows; `set_recv_timeout` on `Stream`), then add it to
-   `tagent-gui/Cargo.toml` (all platforms) and check the Windows build.
-2. `tagent-gui/src/single_instance.rs`: `socket_name()` (pure core taking the runtime
-   dir / data dir / user name, tested), `claim`, `ask_to_show` (client), `serve(listener,
-   on_show)` (the accept thread), the protocol functions, the Unix socket-file guard.
-3. `main.rs`: the pre-detach check (print + exit), the claim in the child, `serve` after
-   the tray is wired.
-4. Version and docs: `+BUILD`; `tagent-gui/CHANGELOG.md` (Added); user book
-   (`gui/tray-and-startup.md`: starting again shows the window; `reference/command-line.md`;
-   `reference/file-locations.md`: the socket; `troubleshooting/platforms.md`: "it says
-   it's already running" / "doesn't answer"); `docs/ARCHITECTURE.md` (a "Single
-   instance" subsection under `tagent-gui`); CLAUDE.md (a `tagent-gui` bullet); this
-   section condensed once verified.
-
-**Tests and verification.**
-- Unit: `socket_name` per platform input, the protocol functions (`show`, unknown
-  request, `ok <pid>`, malformed replies).
-- Integration (real sockets, a unique name per test under a temp dir): a second claim
-  gets `Running(own pid)` and the first copy's `on_show` fires once; a stale socket file
-  is reclaimed; a listener that never answers gives `Unresponsive` within the timeout.
-- Manual (maintainer): start from the menu twice (window comes up, one tray icon);
-  start from a terminal while running (message, prompt returns); `cargo run` while the
-  installed copy runs; kill -9 the copy and start again (stale socket reclaimed);
-  Windows: start twice (CI covers the build; the live check is manual).
-
-**Not in this stage.** `--replace` (quit the running copy and start); passing more than
-"show" (e.g. text to translate from the command line: `tagent-gui "text"`); a D-Bus
-`Activate` (`DBusActivatable=true` in the desktop entry) for GNOME.
 
 ## Deliberately not done (revisit only with a new reason)
 
