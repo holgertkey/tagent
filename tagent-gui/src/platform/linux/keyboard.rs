@@ -1,6 +1,9 @@
 use super::keycodes::normalize_vk_code;
+use super::portal;
+use super::session::{session, Session};
 use super::xgrab::XGrabManager;
 use crate::config::HotkeyType;
+use crate::platform::DesktopHotkeys;
 use std::collections::HashMap;
 
 /// Encapsulates hotkey detection state for one configured hotkey. `run_x11`
@@ -252,40 +255,68 @@ impl KeyboardHook {
     /// it's cheap to always watch for, and lets Escape cancel a speech
     /// started some other way (e.g. a transcript speaker button) too.
     ///
-    /// Behavior depends on the detected display server: full X11/XWayland
-    /// grabbing when `DISPLAY` is set, a disabled-hotkeys no-op on pure
-    /// Wayland or when no display server is detected at all.
+    /// Behavior depends on the session (see [`super::session`]): on X11, `XGrabKey`
+    /// grabbing plus the passive `rdev` stream; on Wayland, the GlobalShortcuts portal
+    /// (see [`super::portal`]), which reports what it bound through
+    /// `on_desktop_hotkeys` and can't observe Escape; on a Wayland desktop without that
+    /// portal, the X11 path as a fallback (it only sees keys while an XWayland window
+    /// has focus); nothing without a display server.
     pub fn spawn(
         translate_hotkey: HotkeyType,
         speech_hotkey: Option<HotkeyType>,
         on_translate_trigger: impl Fn() + Send + Sync + 'static,
         on_speech_trigger: impl Fn() + Send + Sync + 'static,
         on_escape: impl Fn() + Send + Sync + 'static,
+        on_desktop_hotkeys: impl Fn(DesktopHotkeys) + Send + Sync + 'static,
     ) {
-        let has_x11 = std::env::var("DISPLAY").is_ok();
-        let has_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
-
-        if !has_x11 && !has_wayland {
-            eprintln!("No display server detected. Global hotkeys disabled.");
-            return;
+        let has_x11 = std::env::var_os("DISPLAY").is_some();
+        match session() {
+            Session::Headless => {
+                eprintln!("No display server detected. Global hotkeys disabled.");
+            }
+            Session::X11 => {
+                std::thread::spawn(move || {
+                    Self::run_x11(
+                        translate_hotkey,
+                        speech_hotkey,
+                        on_translate_trigger,
+                        on_speech_trigger,
+                        on_escape,
+                    )
+                });
+            }
+            Session::Wayland => {
+                std::thread::spawn(move || {
+                    let result = portal::run(
+                        &translate_hotkey,
+                        speech_hotkey.as_ref(),
+                        &on_translate_trigger,
+                        &on_speech_trigger,
+                        &on_desktop_hotkeys,
+                    );
+                    let Err(portal::NoPortal(err)) = result else {
+                        return;
+                    };
+                    if !has_x11 {
+                        eprintln!(
+                            "No GlobalShortcuts portal ({err}) and no XWayland. Global hotkeys disabled."
+                        );
+                        return;
+                    }
+                    eprintln!(
+                        "No GlobalShortcuts portal ({err}). Falling back to X11 key grabs, \
+                         which only see keys while an XWayland window has focus."
+                    );
+                    Self::run_x11(
+                        translate_hotkey,
+                        speech_hotkey,
+                        on_translate_trigger,
+                        on_speech_trigger,
+                        on_escape,
+                    )
+                });
+            }
         }
-
-        if has_wayland && !has_x11 {
-            eprintln!(
-                "Wayland detected without X11. Global hotkeys not yet supported on pure Wayland."
-            );
-            return;
-        }
-
-        std::thread::spawn(move || {
-            Self::run_x11(
-                translate_hotkey,
-                speech_hotkey,
-                on_translate_trigger,
-                on_speech_trigger,
-                on_escape,
-            )
-        });
     }
 
     fn run_x11(

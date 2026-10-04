@@ -775,7 +775,15 @@ fn show_popup(
                 None => (saved.x, saved.y),
             })
         }
-        None => platform::window::cursor_position().map(|(x, y)| (x + 16, y + 16)),
+        None if platform::window::cursor_follows_other_apps() => {
+            platform::window::cursor_position().map(|(x, y)| (x + 16, y + 16))
+        }
+        // Wayland (Stage W): the pointer position is stale over other apps, so a fixed
+        // corner instead of a misleading "next to the cursor".
+        None => platform::window::virtual_screen_bounds().map(|bounds| {
+            let size = popup.window().size();
+            popup_position::corner_position((size.width as i32, size.height as i32), bounds)
+        }),
     };
     if let Some((x, y)) = target {
         popup
@@ -928,6 +936,35 @@ fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
     } else {
         text.to_string()
     }
+}
+
+thread_local! {
+    /// What the desktop last reported about the global hotkeys (Stage W, Wayland only),
+    /// for the Settings dialog; `None` where `tagent-gui` registers them itself.
+    /// UI-thread-only, like this file's other `thread_local!`s.
+    static DESKTOP_HOTKEYS: RefCell<Option<platform::DesktopHotkeys>> =
+        const { RefCell::new(None) };
+}
+
+/// Applies a report from `KeyboardHook::spawn`'s `on_desktop_hotkeys` (the portal's
+/// bind result or a later change): the transcript header names the triggers the
+/// desktop actually bound, a problem gets one info row (repeated only when it changes),
+/// and Settings shows the triggers the next time it opens.
+fn apply_desktop_hotkeys(window: &AppWindow, status: platform::DesktopHotkeys) {
+    window.set_active_translate_hotkey(status.translate.clone().unwrap_or_default().into());
+    window.set_active_speech_hotkey(status.speech.clone().unwrap_or_default().into());
+    let previous_problem = DESKTOP_HOTKEYS.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .and_then(|previous| previous.problem.clone())
+    });
+    if let Some(problem) = &status.problem {
+        eprintln!("Warning: {problem}");
+        if previous_problem.as_ref() != Some(problem) {
+            push_transcript_entry(window, info_transcript_entry("[Hotkey]", problem.clone()));
+        }
+    }
+    DESKTOP_HOTKEYS.with(|cell| *cell.borrow_mut() = Some(status));
 }
 
 /// Builds a [`TranscriptEntry`] for a message that isn't a real translation (a
@@ -1419,6 +1456,16 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_speech_hotkey(config.speech_hotkey.clone().into());
     dialog.set_speech_hotkey_error(hotkey_validation_error(&config.speech_hotkey).into());
     dialog.set_enable_speech_hotkey(config.enable_speech_hotkey);
+    DESKTOP_HOTKEYS.with(|cell| match cell.borrow().as_ref() {
+        Some(desktop) => {
+            dialog.set_desktop_hotkeys(true);
+            dialog.set_desktop_translate_trigger(
+                desktop.translate.clone().unwrap_or_default().into(),
+            );
+            dialog.set_desktop_speech_trigger(desktop.speech.clone().unwrap_or_default().into());
+        }
+        None => dialog.set_desktop_hotkeys(false),
+    });
     dialog.set_popup_auto_hide_seconds(config.popup_auto_hide_seconds.min(60) as i32);
     dialog.set_remember_popup_position(config.remember_popup_position);
 
@@ -2335,6 +2382,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     detach::detach_from_terminal();
     #[cfg(target_os = "windows")]
     platform::windows::console::attach_parent();
+    // Linux: detect X11/Wayland, and on Wayland run the windows on XWayland (see the
+    // function's doc comment). Before Slint starts and before any thread is spawned.
+    #[cfg(target_os = "linux")]
+    platform::linux::session::init();
 
     let window = AppWindow::new()?;
     // Linux: a stable window class (`WM_CLASS` on X11, app id on Wayland) that the
@@ -3564,11 +3615,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return;
                     };
 
-                    // Deliberately a no-op, not a stop -- Esc is the only way to cancel
-                    // this hotkey's speech (design decision 3, Stage 10 follow-up plan).
-                    // Reuses the exact same "is anything currently speaking" signal the
-                    // transcript buttons themselves check.
+                    // Pressed again while something speaks (hotkey- or button-started):
+                    // stop it (Stage W). On Wayland it's the only global way to stop,
+                    // since Esc can't be observed there; elsewhere Esc still works too.
                     if window.get_speaking_entry_index() != -1 {
+                        speech::request_stop(&speech_stop_flag);
                         is_speech_processing.store(false, Ordering::SeqCst);
                         return;
                     }
@@ -3602,7 +3653,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let config_manager2 = config_manager.clone();
                     let speech_stop_flag2 = speech_stop_flag.clone();
                     std::thread::spawn(move || {
-                        match ClipboardManager::new().get_text_with_copy() {
+                        match ClipboardManager::new().get_selected_text() {
                             Ok(text) if !text.trim().is_empty() => {
                                 slint::invoke_from_event_loop(move || {
                                     let Some(window) = weak2.upgrade() else {
@@ -3702,6 +3753,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 speech::request_stop(&speech_stop_flag_for_escape);
             };
 
+            let weak_for_desktop_hotkeys = window.as_weak();
+            let on_desktop_hotkeys = move |status: platform::DesktopHotkeys| {
+                // Runs on the portal's thread; the UI work happens on the event loop.
+                let weak = weak_for_desktop_hotkeys.clone();
+                slint::invoke_from_event_loop(move || {
+                    if let Some(window) = weak.upgrade() {
+                        apply_desktop_hotkeys(&window, status);
+                    }
+                })
+                .ok();
+            };
+
             KeyboardHook::spawn(
                 hotkey,
                 speech_hotkey,
@@ -3781,7 +3844,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let is_processing2 = is_processing.clone();
                     let popup_weak2 = popup_weak.clone();
                     std::thread::spawn(move || {
-                        match ClipboardManager::new().get_text_with_copy() {
+                        match ClipboardManager::new().get_selected_text() {
                             Ok(text) if !text.trim().is_empty() => {
                                 spawn_translation(
                                     weak2,
@@ -3838,6 +3901,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 },
                 on_speech_trigger,
                 on_escape,
+                on_desktop_hotkeys,
             );
         }
         Err(e) => {

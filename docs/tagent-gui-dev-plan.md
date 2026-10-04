@@ -335,8 +335,24 @@ round-trip and lowercasing, saving drops deleted names.
 
 ### Planned stage W — Global hotkeys on Wayland (GNOME 50)
 
-**Status:** planned 2026-10-04, not started. Version: the first code change goes on
-`0.15.0+NNN` (0.15.0 is unreleased; the latest tag is `v0.16.0` of `tagent-cli`).
+**Status:** implemented in 0.15.0+006 (2026-10-04), steps 1–7 at once. Checked live by
+the maintainer on GNOME 50: the consent dialog appeared and was confirmed, `Alt+A` and
+`Alt+S` work from native Wayland apps, the binding landed in gsettings under the new app
+id. Still open from the manual list below: no dialog on a second start, the speech
+toggle, the Settings line, the popup at the corner and at a remembered position, a
+`[Hotkey]` row without the desktop entry. Once those pass, condense this section into a
+row of "Shipped stages".
+
+Differences from the plan as written:
+- Spike 0b wasn't run side by side: XWayland was taken directly (0c's `remove_var`),
+  and it works; the maintainer's Mutter has `xwayland-native-scaling` on, so text is
+  sharp.
+- `KeyboardHook::spawn` gained a sixth parameter, `on_desktop_hotkeys`, on all three
+  platforms (the plan wanted the signature unchanged): the bound triggers and problems
+  have to reach the UI somehow, and a callback is simpler than a polled global.
+- `ashpd` uses its `async-io` feature, not `tokio`: with `tokio`, feature unification
+  switched the `zbus` that Slint's tray uses to Tokio, and the app panicked at startup
+  ("there is no reactor running").
 
 **Why.** Ubuntu 26.04 (GNOME Shell 50.1, Mutter 50.1) has no Xorg session any more
 (`/usr/share/xsessions/` is gone; only Wayland sessions are left), so the X11 assumptions

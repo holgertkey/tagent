@@ -1602,6 +1602,12 @@ export component SettingsDialog inherits Dialog {
     in property <string> speech-hotkey-error: "";
     callback speech-hotkey-edited(string);
     in-out property <bool> enable-speech-hotkey: true;
+    // Stage W: on a Wayland session the desktop owns the global hotkeys (the
+    // GlobalShortcuts portal): the two fields above only suggested them the first
+    // time, so they're read-only and the bound triggers are shown instead.
+    in property <bool> desktop-hotkeys: false;
+    in property <string> desktop-translate-trigger: "";
+    in property <string> desktop-speech-trigger: "";
 
     // Stage 8 follow-up: "Record" button -- press-the-actual-keys capture,
     // as an addition next to the plain text field above, not a replacement.
@@ -1922,6 +1928,7 @@ export component SettingsDialog inherits Dialog {
                         spacing: 8px;
                         LineEdit {
                             visible: !is-recording-translate;
+                            enabled: !desktop-hotkeys;
                             text <=> translate-hotkey;
                             edited(text) => { translate-hotkey-edited(text); }
                         }
@@ -1946,6 +1953,7 @@ export component SettingsDialog inherits Dialog {
                             }
                         }
                         Button {
+                            enabled: !desktop-hotkeys;
                             text: is-recording-translate ? "Cancel" : "Record";
                             clicked => {
                                 is-recording-translate = !is-recording-translate;
@@ -1968,6 +1976,7 @@ export component SettingsDialog inherits Dialog {
                         spacing: 8px;
                         LineEdit {
                             visible: !is-recording-speech;
+                            enabled: !desktop-hotkeys;
                             text <=> speech-hotkey;
                             edited(text) => { speech-hotkey-edited(text); }
                         }
@@ -1992,6 +2001,7 @@ export component SettingsDialog inherits Dialog {
                             }
                         }
                         Button {
+                            enabled: !desktop-hotkeys;
                             text: is-recording-speech ? "Cancel" : "Record";
                             clicked => {
                                 is-recording-speech = !is-recording-speech;
@@ -2009,6 +2019,14 @@ export component SettingsDialog inherits Dialog {
                         visible: speech-hotkey-error != "";
                     }
                     CheckBox { text: "Enable speech hotkey"; checked <=> enable-speech-hotkey; }
+                    if desktop-hotkeys: Text {
+                        text: "The desktop manages the global hotkeys here. Bound now: translate "
+                            + (desktop-translate-trigger != "" ? desktop-translate-trigger : "(none)")
+                            + ", speech "
+                            + (desktop-speech-trigger != "" ? desktop-speech-trigger : "(none)")
+                            + ". Change them in the system settings (GNOME: Settings > Apps > Tagent). The values above were only suggested the first time.";
+                        wrap: word-wrap;
+                    }
 
                     CheckBox { text: "Start minimized to tray"; checked <=> start-minimized; }
                     CheckBox {
@@ -2017,7 +2035,8 @@ export component SettingsDialog inherits Dialog {
                     }
 
                     Text {
-                        text: "The global hotkeys take effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts. Pressing Esc while the speech hotkey (or a transcript speaker button) is playing stops it, even if Tagent isn't the focused window.";
+                        text: "The global hotkeys take effect only after restarting Tagent. \"Start minimized\"/\"Remember window size and position\" apply the next time the window is shown or the app restarts. Pressing the speech hotkey again while something is speaking stops it"
+                            + (desktop-hotkeys ? "; Esc does too while a Tagent window is focused." : ", and so does Esc, even if Tagent isn't the focused window.");
                         wrap: word-wrap;
                     }
                 }

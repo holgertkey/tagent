@@ -11,6 +11,12 @@ use std::error::Error;
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle(());
 
+/// Whether [`cursor_position`] follows the pointer over other apps' windows too.
+/// Moot: [`cursor_position`] is a stub returning `None`.
+pub fn cursor_follows_other_apps() -> bool {
+    true
+}
+
 /// Always `None` on macOS: not yet implemented.
 pub fn cursor_position() -> Option<(i32, i32)> {
     None

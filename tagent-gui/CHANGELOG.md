@@ -17,9 +17,20 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 
 ## [Unreleased]
 
-## [0.15.0] - 2026-10-03
+## [0.15.0] - 2026-10-04
 
 ### Added
+- (+006) **Global hotkeys on Wayland** (GNOME 50 and other desktops with the
+  GlobalShortcuts portal): `translate_hotkey` and `speech_hotkey` are registered through
+  `xdg-desktop-portal` instead of X11 key grabs, which on a Wayland session only saw keys
+  while an XWayland window had focus. The first start shows the desktop's dialog to
+  confirm (or change) the keys; afterwards they are changed in the system settings
+  (GNOME: Settings > Apps > Tagent), and Settings > Hotkeys & Tray shows what is bound.
+  The hotkeys translate or speak the text selected with the mouse (the PRIMARY
+  selection), so no Ctrl+C is simulated and the clipboard is left alone. The portal
+  needs the desktop entry: installed by the `.deb`, otherwise run
+  `tagent-gui --install-desktop` once; without it the transcript says so. A double-press
+  hotkey (`Ctrl+Ctrl`) can't be proposed to the portal: the dialog then asks for a key.
 - (+005) **A test keeps the user book's `tagent-gui.json` page complete**: it fails when a
   key of the default settings isn't named on `docs/user/src/reference/tagent-gui-json.md`
   (skipped in a copy without `docs/user`, such as the crates.io package).
@@ -201,6 +212,21 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+006) **The app id is now `io.github.holgertkey.TagentGui`** (was `tagent-gui`): the
+  GlobalShortcuts portal accepts only a reverse-DNS id with a matching desktop entry. The
+  desktop entry and icon are renamed with it (`io.github.holgertkey.TagentGui.desktop`,
+  `.png`). Not migrated: if you installed the old entry with `--install-desktop`, run
+  `tagent-gui --uninstall-desktop` with the previous build (or delete
+  `~/.local/share/applications/tagent-gui.desktop` and
+  `~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png`), then
+  `tagent-gui --install-desktop` with this one.
+- (+006) **Pressing the speech hotkey while something is speaking stops it** (it was
+  ignored), on every platform. On Wayland it is the only global way to stop: Esc can't be
+  observed there and works only while a Tagent window is focused.
+- (+006) **On a Wayland session the windows run on XWayland**, so the popup can still
+  place itself and stay on top. The pointer position is unknown over other apps there,
+  so the popup opens at its remembered position or, without one, in the top-right corner
+  of the screen, not next to the cursor.
 - (+004) **The main window's provider picker is now a menu for all three axes.** The
   button next to ⚙ names the translation provider in effect (`ollama ▾`) and opens one
   menu with a Translation, a Dictionary and a Speech section, the provider in effect

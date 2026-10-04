@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.15.0+005"
+version = "0.15.0+006"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -23,12 +23,12 @@ depends = "$auto"
 extended-description = """\
 A desktop text translator: a global hotkey translates the current selection into a \
 popup next to the cursor, with a system-tray icon, dictionary lookups for single words \
-and text-to-speech. Uses Google Translate by default. Needs an X11 or XWayland session \
-for the global hotkeys."""
+and text-to-speech. Uses Google Translate by default. The global hotkeys work on X11 and \
+on Wayland desktops with the Global Shortcuts portal, such as GNOME."""
 assets = [
     ["target/release/tagent-gui", "usr/bin/", "755"],
-    ["assets/linux/tagent-gui.desktop", "usr/share/applications/", "644"],
-    ["assets/icons/tray.png", "usr/share/icons/hicolor/512x512/apps/tagent-gui.png", "644"],
+    ["assets/linux/io.github.holgertkey.TagentGui.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/tray.png", "usr/share/icons/hicolor/512x512/apps/io.github.holgertkey.TagentGui.png", "644"],
     ["README.md", "usr/share/doc/tagent-gui/", "644"],
     ["CHANGELOG.md", "usr/share/doc/tagent-gui/", "644"],
 ]
@@ -79,6 +79,11 @@ libc = "0.2"
 arboard = "3.4"
 rdev = "0.5"
 x11 = { version = "2.21", features = ["xlib", "xtest"] }
+# Global hotkeys on Wayland through the GlobalShortcuts portal (`platform/linux/portal.rs`).
+# `async-io`, not `tokio`: zbus is shared with Slint's tray, and its `tokio` feature would make
+# every zbus call in the process require a Tokio runtime (the tray panicked on the main thread).
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts"] }
+futures-util = "0.3"
 
 # Windows-only build dependencies
 [target.'cfg(target_os = "windows")'.build-dependencies]

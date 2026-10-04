@@ -37,3 +37,18 @@ added back and isn't counted as new.
 Version 0.17.0 replaced the INI file `tagent-cli.conf` with `tagent-cli.toml`. The old
 file is no longer read; the new one starts with defaults. Copy your settings over by
 hand, using [tagent-cli.toml](../reference/tagent-cli-toml.md) as the guide.
+
+## tagent-gui: the menu entry from 0.14 and older (Linux)
+
+`tagent-gui` 0.15 renamed its menu entry and icon to `io.github.holgertkey.TagentGui`
+(the Wayland hotkeys need a name of that form). An entry installed earlier with
+`--install-desktop` stays behind, so the app may show up twice in the menu. Remove the
+old files and install the new ones:
+
+```bash
+rm ~/.local/share/applications/tagent-gui.desktop \
+   ~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png
+tagent-gui --install-desktop
+```
+
+The `.deb` replaces its own files when upgraded.

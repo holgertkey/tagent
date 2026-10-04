@@ -55,9 +55,44 @@ pub fn clamp_to_bounds(
     (x, y)
 }
 
+/// How far (px) [`corner_position`] keeps the popup from the right edge.
+const CORNER_INSET_X: i32 = 16;
+/// How far (px) [`corner_position`] keeps the popup from the top edge: clear of a
+/// desktop's top bar (GNOME's is about 32 px).
+const CORNER_INSET_Y: i32 = 48;
+
+/// Where the popup opens when the pointer position isn't known (a Wayland session, see
+/// `platform::window::cursor_follows_other_apps`) and no position is remembered: the
+/// top-right corner of `bounds`, inset, kept inside `bounds`.
+pub fn corner_position(size: (i32, i32), bounds: (i32, i32, i32, i32)) -> (i32, i32) {
+    let (bounds_x, bounds_y, bounds_width, _) = bounds;
+    clamp_to_bounds(
+        (
+            bounds_x + bounds_width - size.0 - CORNER_INSET_X,
+            bounds_y + CORNER_INSET_Y,
+        ),
+        size,
+        bounds,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corner_position_is_top_right_inset() {
+        assert_eq!(corner_position((300, 100), SCREEN), (1920 - 300 - 16, 48));
+        assert_eq!(
+            corner_position((300, 100), (-1920, 0, 3840, 1080)),
+            (1920 - 300 - 16, 48)
+        );
+    }
+
+    #[test]
+    fn corner_position_keeps_a_large_popup_on_screen() {
+        assert_eq!(corner_position((2000, 1200), SCREEN), (0, 0));
+    }
 
     const SCREEN: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
 

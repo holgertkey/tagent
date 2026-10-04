@@ -6,8 +6,8 @@
 //! the dock falls back to a generic icon. `main.rs` pins the window class to [`APP_ID`]
 //! with `slint::set_xdg_app_id`, and [`install`] writes the matching files:
 //!
-//! - `~/.local/share/applications/tagent-gui.desktop`
-//! - `~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png`
+//! - `~/.local/share/applications/io.github.holgertkey.TagentGui.desktop`
+//! - `~/.local/share/icons/hicolor/512x512/apps/io.github.holgertkey.TagentGui.png`
 //!
 //! (`$XDG_DATA_HOME` instead of `~/.local/share` when set.) Installing is explicit,
 //! through [`INSTALL_FLAG`], never automatic on startup: a `cargo run` from `target/debug`
@@ -16,14 +16,18 @@
 //!
 //! Release packages (the Linux archive and the `.deb`, see `release.yml` and
 //! `[package.metadata.deb]` in `Cargo.toml`) ship the same entry as a static file,
-//! `assets/linux/tagent-gui.desktop`, with `Exec=tagent-gui` (found on `PATH`); a test
+//! `assets/linux/io.github.holgertkey.TagentGui.desktop`, with `Exec=tagent-gui` (found on `PATH`); a test
 //! keeps it identical to what [`install`] writes.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
 /// The app id: window class (`WM_CLASS`/Wayland app id), `.desktop` file name, icon name.
-pub const APP_ID: &str = "tagent-gui";
+///
+/// Reverse-DNS because the GlobalShortcuts portal requires it (see
+/// `platform::linux::portal`): `xdg-desktop-portal-gnome` rejects a bind request from an
+/// app whose id isn't reverse-DNS and backed by an installed `.desktop` file of that name.
+pub const APP_ID: &str = "io.github.holgertkey.TagentGui";
 /// Command-line flag that installs the `.desktop` file and icon, then exits.
 pub const INSTALL_FLAG: &str = "--install-desktop";
 /// Command-line flag that removes what [`INSTALL_FLAG`] installed, then exits.
@@ -220,8 +224,8 @@ mod tests {
         let lines: Vec<&str> = contents.lines().collect();
         assert_eq!(lines[0], "[Desktop Entry]");
         assert!(lines.contains(&"Exec=/opt/tagent/tagent-gui"));
-        assert!(lines.contains(&"Icon=tagent-gui"));
-        assert!(lines.contains(&"StartupWMClass=tagent-gui"));
+        assert!(lines.contains(&"Icon=io.github.holgertkey.TagentGui"));
+        assert!(lines.contains(&"StartupWMClass=io.github.holgertkey.TagentGui"));
         assert!(lines.contains(&"Type=Application"));
         assert!(lines.contains(&"Terminal=false"));
     }
@@ -229,9 +233,9 @@ mod tests {
     #[test]
     fn packaged_desktop_file_matches_the_generated_one() {
         assert_eq!(
-            include_str!("../assets/linux/tagent-gui.desktop"),
+            include_str!("../assets/linux/io.github.holgertkey.TagentGui.desktop"),
             desktop_file_contents(Path::new("tagent-gui")),
-            "assets/linux/tagent-gui.desktop is out of date: regenerate it from \
+            "assets/linux/io.github.holgertkey.TagentGui.desktop is out of date: regenerate it from \
              desktop_file_contents(\"tagent-gui\")"
         );
     }
@@ -260,11 +264,13 @@ mod tests {
         let paths = install(dir.path(), Path::new("/usr/bin/tagent-gui")).unwrap();
         assert_eq!(
             paths.desktop_file,
-            dir.path().join("applications/tagent-gui.desktop")
+            dir.path()
+                .join("applications/io.github.holgertkey.TagentGui.desktop")
         );
         assert_eq!(
             paths.icon,
-            dir.path().join("icons/hicolor/512x512/apps/tagent-gui.png")
+            dir.path()
+                .join("icons/hicolor/512x512/apps/io.github.holgertkey.TagentGui.png")
         );
         assert_eq!(std::fs::read(&paths.icon).unwrap(), ICON_PNG);
         let desktop = std::fs::read_to_string(&paths.desktop_file).unwrap();

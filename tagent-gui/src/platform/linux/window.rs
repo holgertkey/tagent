@@ -23,6 +23,15 @@ use x11::xlib;
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle(c_ulong);
 
+/// Whether [`cursor_position`] follows the pointer over other apps' windows too. Not on
+/// a Wayland session: XWayland learns the pointer position only while it is over an
+/// XWayland window, so over a native Wayland app the value is stale. Dragging the popup
+/// still works (the pointer is over the popup then); placing it next to the pointer
+/// doesn't.
+pub fn cursor_follows_other_apps() -> bool {
+    super::session::session() != super::session::Session::Wayland
+}
+
 /// Returns the current mouse cursor position, in physical screen coordinates,
 /// or `None` if the X11 display can't be opened or the query fails.
 pub fn cursor_position() -> Option<(i32, i32)> {

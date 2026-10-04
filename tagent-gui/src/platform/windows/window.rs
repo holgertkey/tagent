@@ -19,6 +19,12 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle(HWND);
 
+/// Whether [`cursor_position`] follows the pointer over other apps' windows too.
+/// Always: `GetCursorPos` is global.
+pub fn cursor_follows_other_apps() -> bool {
+    true
+}
+
 /// Returns the current mouse cursor position, in physical screen coordinates,
 /// or `None` if the query fails.
 pub fn cursor_position() -> Option<(i32, i32)> {

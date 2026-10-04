@@ -4,6 +4,10 @@ pub mod clipboard;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Global hotkeys on Wayland through the GlobalShortcuts portal.
+pub mod portal;
+/// The desktop session type (X11 or Wayland), detected once at startup.
+pub mod session;
 /// Cursor position and foreground-window focus save/restore, for the Stage 6 popup.
 pub mod window;
 /// X11 key grabbing (`XGrabKey`) so hotkeys are consumed rather than just observed.

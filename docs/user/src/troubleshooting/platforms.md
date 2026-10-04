@@ -2,18 +2,24 @@
 
 What works where, in short:
 
-| | Windows | Linux, X11 or XWayland | Linux, pure Wayland | macOS |
+| | Windows | Linux, X11 | Linux, Wayland (GNOME) | macOS |
 |---|:---:|:---:|:---:|:---:|
 | Translation, dictionary, speech | ✅ | ✅ | ✅ | ✅ |
-| Global hotkeys, the `tagent-gui` popup | ✅ | ✅ | | |
-| Clipboard features | ✅ | ✅ | | |
+| `tagent-gui`: global hotkeys, the popup | ✅ | ✅ | ✅ (see below) | |
+| `tagent-cli`: global hotkey | ✅ | ✅ | only in XWayland windows | |
+| Clipboard features | ✅ | ✅ | ✅ | |
 | `tagent-cli`: showing and hiding the terminal | ✅ | ✅ | | |
 | `tagent-gui`: tray icon | ✅ | ✅ (needs a tray) | ✅ (needs a tray) | ✅ |
 
-**Wayland:** most Wayland desktops (GNOME, KDE) also run XWayland, and with it
-everything works as on X11. On a session without it (no `DISPLAY` variable), Wayland
-doesn't let applications watch global keys, copy another application's selection, or
-manage its windows.
+**Wayland:** Wayland doesn't let an application watch other applications' keys, copy
+their selection, or place its windows. `tagent-gui` gets its hotkeys from the desktop
+instead (the Global Shortcuts portal, on GNOME and KDE), translates the text selected
+with the mouse, and runs its windows through XWayland; the popup then opens in a corner
+or where you last dragged it, not next to the cursor, and Esc stops speech only in its
+own window. See [On Wayland](../gui/hotkeys-and-popup.md#on-wayland). `tagent-cli` still
+uses X11 key grabs, which on Wayland see keys only while an XWayland window is focused.
+Desktops without the portal (Sway, Hyprland) and sessions without XWayland (no
+`DISPLAY` variable) have no global hotkeys.
 
 **macOS:** the global hotkeys and the clipboard features aren't implemented yet.
 
@@ -100,7 +106,11 @@ starts in the tray, nothing appears. See
 
 ### The hotkeys do nothing
 
-- **Pure Wayland, macOS:** not available; use the window.
+- **Wayland:** the transcript has a `[Hotkey]` line with the reason. Usually the menu
+  entry is missing: run `tagent-gui --install-desktop` and restart. If you declined the
+  desktop's dialog, or want other keys, set them in the system settings (GNOME:
+  Settings > Apps > Tagent). Settings > Hotkeys & Tray shows what is bound.
+- **macOS:** not available; use the window.
 - **A restart is needed** after changing a hotkey: Quit from the tray menu and start
   again.
 - **An unusable translate hotkey turns off everything global**: both hotkeys and Esc. The
@@ -114,7 +124,9 @@ starts in the tray, nothing appears. See
 ### The hotkey translates something I didn't select
 
 As in `tagent-cli`: the hotkey copies the selection, then translates the clipboard. If
-the copy didn't happen, the previous clipboard content gets translated.
+the copy didn't happen, the previous clipboard content gets translated. On Wayland the
+hotkey reads the mouse selection instead: select the text with the mouse first (some
+applications don't publish a selection made with the keyboard).
 
 ### It freezes when I switch the keyboard layout (Windows)
 

@@ -1,4 +1,4 @@
-use arboard::Clipboard;
+use arboard::{Clipboard, GetExtLinux, LinuxClipboardKind};
 use std::error::Error;
 use std::os::raw::{c_char, c_uint, c_ulong};
 use std::sync::Mutex;
@@ -208,6 +208,30 @@ impl ClipboardManager {
     pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.copy_selected_text()?;
         self.get_text()
+    }
+
+    /// The text currently selected in whatever app has it, for the global hotkeys.
+    ///
+    /// On X11, [`Self::get_text_with_copy`]. On a Wayland session the simulated Ctrl+C
+    /// would only reach XWayland apps, so this reads the PRIMARY selection (what is
+    /// selected with the mouse) instead, through XWayland: GNOME mirrors a Wayland app's
+    /// PRIMARY there, readable without focus. No key simulation, and the clipboard is left
+    /// alone.
+    pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+        if super::session::session() != super::session::Session::Wayland {
+            return self.get_text_with_copy();
+        }
+        Self::with_clipboard(|clipboard| {
+            match clipboard
+                .get()
+                .clipboard(LinuxClipboardKind::Primary)
+                .text()
+            {
+                // Nothing selected: same as an empty selection on X11.
+                Err(arboard::Error::ContentNotAvailable) => Ok(String::new()),
+                result => result,
+            }
+        })
     }
 }
 

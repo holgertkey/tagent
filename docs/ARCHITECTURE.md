@@ -433,8 +433,11 @@ one platform will fail to compile on the others.
 | Show/hide/focus terminal window | ✅ Xlib | ✅ Win32 (`GetConsoleWindow` etc.) | ❌ stub, all no-ops |
 | Pure Wayland (no XWayland) | ⚠️ interactive/CLI only — clipboard auto-copy and hotkeys are disabled with an explanatory message | n/a | n/a |
 
-The Linux "X11 full-featured / pure-Wayland degraded" split described in `CLAUDE.md` is
-still accurate. **macOS is a separate, larger gap**: it is essentially a no-op skeleton
+This matrix is `tagent-cli`'s. "X11/XWayland" means: on a Wayland session (GNOME 50 has
+no Xorg session any more) the grab and the simulated Ctrl+C reach only XWayland windows,
+so the hotkey does nothing from a native Wayland app. `tagent-gui` solved this with the
+GlobalShortcuts portal (see "Wayland: hotkeys through the portal" under `tagent-gui`
+below); `tagent-cli` hasn't yet. **macOS is a separate, larger gap**: it is essentially a no-op skeleton
 across clipboard, keyboard hook, and window management, with zero macOS-specific crate
 dependencies (no `[target.'cfg(target_os = "macos")'.dependencies]` section exists in
 `tagent-cli/Cargo.toml` at all). It compiles and runs, but only interactive/CLI mode
@@ -1455,19 +1458,25 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
 `tagent-gui/src/desktop_entry.rs` (Linux only) fixes the generic dock icon described under
 Stage 7 above. Two halves, both needed:
 
-- **Stable window class.** `main()` calls `slint::set_xdg_app_id("tagent-gui")`. It must
+- **App id** (since 0.15.0+006): `io.github.holgertkey.TagentGui` (`desktop_entry::APP_ID`), the
+  window class, the `.desktop` file name and the icon name at once. It was `tagent-gui`
+  until the Wayland hotkeys (below) needed a reverse-DNS id with a matching installed
+  `.desktop` file. The binary, config dir and log keep the name `tagent-gui`. No
+  migration of an entry installed under the old name (the user book's "Upgrading" page
+  says what to delete).
+- **Stable window class.** `main()` calls `slint::set_xdg_app_id(APP_ID)`. It must
   come *after* the first component (`AppWindow::new()`): before that there is no Slint
   platform and the call fails with `NoPlatform`. It still takes effect because the winit
   backend creates the native window lazily, on the first `show()`, and reads the id then
   (`WindowAttributesExtX11::with_name` / its Wayland twin). On X11 this gives
-  `WM_CLASS = "", "tagent-gui"` (Slint passes an empty instance); winit's default would
+  `WM_CLASS = "", "<APP_ID>"` (Slint passes an empty instance); winit's default would
   have been the executable's file name for both parts, so a renamed or symlinked binary
   used to change the class. Verified with `xprop WM_CLASS` on both the normal and a
   renamed binary.
 - **Launcher entry.** `tagent-gui --install-desktop` writes
-  `$XDG_DATA_HOME/applications/tagent-gui.desktop` (`Exec=` = `std::env::current_exe()`,
-  quoted/escaped per the Desktop Entry spec when needed, `Icon=tagent-gui`,
-  `StartupWMClass=tagent-gui`) and `$XDG_DATA_HOME/icons/hicolor/512x512/apps/tagent-gui.png`
+  `$XDG_DATA_HOME/applications/<APP_ID>.desktop` (`Exec=` = `std::env::current_exe()`,
+  quoted/escaped per the Desktop Entry spec when needed, `Icon=<APP_ID>`,
+  `StartupWMClass=<APP_ID>`) and `$XDG_DATA_HOME/icons/hicolor/512x512/apps/<APP_ID>.png`
   (`tray.png`, embedded with `include_bytes!`, so a `cargo install`ed binary needs no files
   next to it). Files with unchanged contents aren't rewritten. `--uninstall-desktop`
   removes both. The flags are handled first thing in `main()`, before terminal detach, so
@@ -1481,16 +1490,16 @@ Stage 7 above. Two halves, both needed:
   the thing to check after changing any of this). Windows and macOS don't need any of
   this (Windows embeds the icon in the `.exe`, see Stage 7).
 - **Release packages** (0.14.0+024). The same entry lives as a static file,
-  `tagent-gui/assets/linux/tagent-gui.desktop`, with `Exec=tagent-gui` (a bare name found
+  `tagent-gui/assets/linux/io.github.holgertkey.TagentGui.desktop`, with `Exec=tagent-gui` (a bare name found
   on `PATH`, since the install location isn't known in advance);
   `packaged_desktop_file_matches_the_generated_one` asserts it equals
   `desktop_file_contents("tagent-gui")`, so editing one without the other fails the tests.
-  `release.yml`'s Linux build puts it and `tray.png` (renamed `tagent-gui.png`) into
+  `release.yml`'s Linux build puts it and `tray.png` (renamed `<APP_ID>.png`) into
   `tagent-gui-<version>-linux-x86_64.tar.gz` next to the binary, then runs
   `cargo deb -p tagent-gui --no-build --locked` (`cargo-deb` from `taiki-e/install-action`)
   for `tagent-gui_<version>-1_amd64.deb`. `[package.metadata.deb]` in `tagent-gui/Cargo.toml`
   lists the assets explicitly (binary → `usr/bin/`, entry → `usr/share/applications/`, icon →
-  `usr/share/icons/hicolor/512x512/apps/tagent-gui.png`, README/CHANGELOG →
+  `usr/share/icons/hicolor/512x512/apps/<APP_ID>.png`, README/CHANGELOG →
   `usr/share/doc/tagent-gui/`); `depends = "$auto"` has `dpkg-shlibdeps` compute the library
   dependencies. Two consequences: the package needs the glibc of the runner it was built on
   (`ubuntu-latest`, i.e. 24.04; older Ubuntu won't install it, same as the archive's binary
@@ -1500,7 +1509,82 @@ Stage 7 above. Two halves, both needed:
   `cargo install cargo-deb`, `cargo build --release -p tagent-gui`,
   `cargo deb -p tagent-gui --no-build` (output in `target/debian/`).
 
+### Wayland: hotkeys through the portal (`tagent-gui` 0.15.0+006, Stage W)
+
+On a Wayland session no client sees another client's keys or selection, and a native
+Wayland toplevel can't place itself, stay on top or read the pointer. GNOME 50 (Ubuntu
+26.04) dropped the Xorg session, so this became the normal case. Plan and checks:
+"Planned stage W" in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+
+- **Session** (`platform/linux/session.rs`): `session()` = `X11`/`Wayland`/`Headless` from
+  `XDG_SESSION_TYPE`, then `WAYLAND_DISPLAY`/`DISPLAY` (pure `session_from`, tested),
+  cached in a `OnceLock`. `init()` (in `main()` right after detaching, before Slint and
+  before any thread) caches it and, on Wayland with `DISPLAY` set, removes
+  `WAYLAND_DISPLAY` from the environment: winit picks Wayland whenever it's set, and
+  without it Slint opens its windows on XWayland. That keeps `set_position`, always-on-top,
+  the popup drag (the pointer is over our own X11 window then) and the geometry restore.
+  Code that used to look at `WAYLAND_DISPLAY` must ask `session()` instead.
+  (`BackendSelector::with_winit_event_loop_builder` would do the same without touching
+  the environment, but is behind Slint's `unstable-winit-030`.)
+- **Hotkeys** (`platform/linux/portal.rs`): `KeyboardHook::spawn` runs `portal::run` on its
+  thread on Wayland, the X11 path on X11. `run` owns a current-thread Tokio runtime and,
+  in order: `ashpd::register_host_app(APP_ID)` (`org.freedesktop.host.portal.Registry`;
+  `xdg-desktop-portal` ≥ 1.20 wants it before any other portal call of a non-sandboxed
+  app, ≥ 1.21 rejects `CreateSession` without an app id, and `xdg-desktop-portal-gnome`
+  wants the id reverse-DNS and backed by an installed `.desktop` file), `GlobalShortcuts::new`
+  (failure = no portal → `Err(NoPortal)` → the caller falls back to the X11 path, which
+  works only for XWayland windows), `create_session`, subscriptions to `Activated` and
+  `ShortcutsChanged`, then `bind_shortcuts` with ids `translate`/`speech` and
+  `preferred_trigger` from `to_portal_trigger` (XDG shortcuts spec: `CTRL`/`ALT`/`SHIFT`/
+  `LOGO` + an xkb keysym name, `Alt+A` → `ALT+a`; a double press has none). GNOME shows a
+  consent dialog on the first bind and stores the result per app id (gsettings
+  `org.gnome.settings-daemon.global-shortcuts applications`); later binds don't ask. The
+  loop then calls the same trigger callbacks as X11 and reports `ShortcutsChanged`. The
+  session must stay alive (dropping it unbinds), so `run` never returns while it works.
+- **`on_desktop_hotkeys`**: `KeyboardHook::spawn`'s sixth callback (all three platforms
+  take it; only the portal calls it) with `platform::DesktopHotkeys { translate, speech,
+  problem }`: the trigger descriptions GNOME reports, or why the hotkeys are off (the
+  hint to run `--install-desktop` when `Register` failed). `main.rs`'s
+  `apply_desktop_hotkeys` shows the triggers in the transcript header, pushes a
+  `[Hotkey]` info row per new problem, and keeps the status in the `DESKTOP_HOTKEYS`
+  thread-local, from which Settings > Hotkeys & Tray seeds `desktop-hotkeys`/
+  `desktop-*-trigger` (fields and Record disabled, the bound keys in a line below).
+  Portal version 1 (GNOME 50) has no `ConfigureShortcuts`, so changing a key happens in
+  GNOME Settings; `translate_hotkey`/`speech_hotkey` only seed the first bind.
+- **`ashpd` with `async-io`, not `tokio`**: Slint's tray (`ksni`) uses `zbus` too, and
+  `ashpd`'s `tokio` feature switches `zbus` to Tokio for the whole process (feature
+  unification): the tray then panicked on the main thread with "there is no reactor
+  running". With `async-io`, `zbus` runs its own executor and `portal.rs`'s Tokio
+  runtime just drives the futures.
+- **Selection**: `ClipboardManager::get_selected_text()` (all platforms; the hotkey paths
+  call it): on Wayland it reads PRIMARY through `arboard` (X11 backend, i.e. XWayland),
+  which Mutter keeps in sync with the Wayland apps' primary selection and serves to an
+  unfocused client (checked with Firefox and GNOME Text Editor). Elsewhere it is
+  `get_text_with_copy()`. Nothing is simulated, the clipboard is untouched. The compositor
+  has no data-control protocol, so a native Wayland client couldn't do this unfocused.
+- **Speech stop**: the global Esc rides the `rdev` stream, which doesn't exist on the
+  portal path. Pressing the speech hotkey while something speaks stops it (all platforms;
+  `on_speech_trigger` calls `speech::request_stop`).
+- **Popup placement**: `platform::window::cursor_follows_other_apps()` is false on
+  Wayland (XWayland's pointer position is stale over Wayland windows), and `show_popup`
+  then uses the remembered position or `popup_position::corner_position` (top-right of
+  `virtual_screen_bounds`, inset 16/48 px) instead of the cursor. Focus restore after the
+  popup hides sees only X11 windows (`_NET_ACTIVE_WINDOW`), so it's left to the
+  compositor.
+- **Testing a dev build**: the portal needs the desktop entry, so
+  `cargo run -p tagent-gui -- --install-desktop` first (it points `Exec=` at the debug
+  binary). To see the consent dialog again: remove the app from
+  `org.gnome.settings-daemon.global-shortcuts applications` (and its
+  `/org/gnome/settings-daemon/global-shortcuts/<APP_ID>/` path) and restart.
+
 ### Known gaps in `tagent-gui`
+
+- **Wayland** (Stage W above): the popup can't open next to the cursor; Esc stops speech
+  only while a Tagent window is focused; a desktop without the GlobalShortcuts portal
+  (wlroots: Sway, Hyprland, niri) gets the X11 fallback only; apps that don't publish a
+  PRIMARY selection give the hotkeys nothing to translate. The top-right corner is the
+  bounding box's, which on a multi-monitor layout of unequal sizes may be off-screen
+  (clamped back into the box, not onto a monitor).
 
 - **Empty tray menu after a slow start (Linux, GNOME)** — known, left as is
   (2026-09-24). Occasionally the tray icon shows but right-click opens nothing,

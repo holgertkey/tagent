@@ -46,7 +46,7 @@ Tagent doesn't add itself to autostart. Use your desktop's own setting:
   `shell:startup`).
 - **Linux:** add `tagent-gui` in your desktop's startup applications (GNOME Tweaks >
   Startup Applications, KDE System Settings > Autostart), or copy its menu entry:
-  `cp /usr/share/applications/tagent-gui.desktop ~/.config/autostart/` (from the `.deb`;
+  `cp /usr/share/applications/io.github.holgertkey.TagentGui.desktop ~/.config/autostart/` (from the `.deb`;
   `~/.local/share/applications/` after `--install-desktop`).
 
 ## The menu entry (Linux)

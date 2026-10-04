@@ -58,6 +58,9 @@ or `Dark` to avoid it.
   **Record** and press it (Esc cancels). An error below the field explains what's wrong
   with it. See [Hotkeys and the popup](hotkeys-and-popup.md#choosing-a-hotkey).
 - **Enable speech hotkey**.
+- On Wayland the desktop owns the hotkeys: the fields and Record are off, and a line
+  below them names the keys that are bound. See
+  [On Wayland](hotkeys-and-popup.md#on-wayland).
 - **Start minimized to tray**, **Remember window size and position**: see
   [Tray and startup](tray-and-startup.md).
 

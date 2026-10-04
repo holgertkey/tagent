@@ -30,8 +30,9 @@ The transcript's header names the providers in use for each job.
   its source language (detected if `Auto`); click `[🔊 Russian]:` before the translation
   to hear the translation. For a dictionary entry, only the main translation is read.
   With the prompt turned off (Settings > View), a block starts with just 🔊. The prompt
-  is tinted while it plays; click it again to stop, or press **Esc** in any application
-  (Windows, and Linux with X11 or XWayland, while the hotkeys are active). Only one entry
+  is tinted while it plays; click it again to stop, or press the speech hotkey again,
+  or **Esc** in any application (Windows and Linux with X11; on Wayland only in Tagent's
+  window; while the hotkeys are active). Only one entry
   plays at a time: the others can't be clicked meanwhile. With text-to-speech off
   (Settings > General), the 🔊 disappears from the prompts.
 - **Right-click** an entry's phrase or translation to copy it as plain text, without

@@ -21,8 +21,8 @@ settings file's full path; `history_file` can move the history anywhere.
 |------|-------|-------|---------|
 | Settings, `tagent-gui.json` | `~/.config/tagent-gui/` | `~/Library/Application Support/tagent-gui/` | `%APPDATA%\tagent-gui\` |
 | Log, `tagent-gui.log` | `~/.local/share/tagent-gui/` | `~/Library/Application Support/tagent-gui/` | — |
-| Menu entry, after `--install-desktop` | `~/.local/share/applications/tagent-gui.desktop` | — | — |
-| Icon, after `--install-desktop` | `~/.local/share/icons/hicolor/512x512/apps/tagent-gui.png` | — | — |
+| Menu entry, after `--install-desktop` | `~/.local/share/applications/io.github.holgertkey.TagentGui.desktop` | — | — |
+| Icon, after `--install-desktop` | `~/.local/share/icons/hicolor/512x512/apps/io.github.holgertkey.TagentGui.png` | — | — |
 
 The log is written when the app was started from a terminal and moved itself to the
 background (Linux, macOS); with `--foreground`, messages go to the terminal instead. On

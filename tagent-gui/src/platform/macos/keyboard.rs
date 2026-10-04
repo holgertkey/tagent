@@ -1,4 +1,5 @@
 use crate::config::HotkeyType;
+use crate::platform::DesktopHotkeys;
 
 /// Global hotkey listener for macOS. Currently a stub: hotkeys are not detected.
 pub struct KeyboardHook;
@@ -13,6 +14,7 @@ impl KeyboardHook {
         _on_translate_trigger: impl Fn() + Send + Sync + 'static,
         _on_speech_trigger: impl Fn() + Send + Sync + 'static,
         _on_escape: impl Fn() + Send + Sync + 'static,
+        _on_desktop_hotkeys: impl Fn(DesktopHotkeys) + Send + Sync + 'static,
     ) {
         eprintln!("Global hotkeys not yet implemented for macOS.");
     }

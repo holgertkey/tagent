@@ -17,6 +17,21 @@ pub mod macos;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+/// What the desktop reports about the global hotkeys when it, not `tagent-gui`, owns
+/// them: today only on a Wayland session, through the GlobalShortcuts portal (see
+/// `linux::portal`). `KeyboardHook::spawn` passes it to its `on_desktop_hotkeys`
+/// callback; X11 and Windows never call that, since there the configured hotkeys are
+/// exactly what is registered.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DesktopHotkeys {
+    /// The trigger the desktop bound for `translate_hotkey`, as it describes it.
+    pub translate: Option<String>,
+    /// The trigger the desktop bound for `speech_hotkey`.
+    pub speech: Option<String>,
+    /// Why the hotkeys don't work, for the transcript.
+    pub problem: Option<String>,
+}
+
 #[cfg(target_os = "linux")]
 pub use self::linux::clipboard::ClipboardManager;
 #[cfg(target_os = "linux")]

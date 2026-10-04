@@ -1,5 +1,6 @@
 use super::keycodes::normalize_vk_code;
 use crate::config::HotkeyType;
+use crate::platform::DesktopHotkeys;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -357,6 +358,8 @@ impl KeyboardHook {
         on_translate_trigger: impl Fn() + Send + Sync + 'static,
         on_speech_trigger: impl Fn() + Send + Sync + 'static,
         on_escape: impl Fn() + Send + Sync + 'static,
+        // Never called: the hotkeys registered here are exactly the configured ones.
+        _on_desktop_hotkeys: impl Fn(DesktopHotkeys) + Send + Sync + 'static,
     ) {
         if ON_TRANSLATE_TRIGGER
             .set(Box::new(on_translate_trigger))

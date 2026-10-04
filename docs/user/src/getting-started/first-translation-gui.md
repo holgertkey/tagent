@@ -21,13 +21,16 @@ again. See [Tray and startup](../gui/tray-and-startup.md#without-a-tray).
 ## Translate a selection
 
 Select text in any application and press **Alt+A**. The translation appears in a small
-popup next to the mouse cursor, and is added to the main window's transcript. The popup
+popup next to the mouse cursor (on Wayland: in a corner, or where you last dragged it), and is added to the main window's transcript. The popup
 hides itself after a few seconds.
 
-**Alt+S** reads the selected text aloud; **Esc** stops it (Windows, and Linux with X11
-or XWayland).
+**Alt+S** reads the selected text aloud; pressing it again stops it, and so does **Esc**
+(Windows and Linux with X11).
 
-The hotkeys need Windows, or Linux with X11 or XWayland. On macOS, use the window.
+The hotkeys need Windows or Linux. On a Wayland desktop such as GNOME, the first start
+asks you to confirm them in a system dialog, and they need the menu entry (installed by
+the `.deb`, otherwise run `tagent-gui --install-desktop` once); see
+[On Wayland](../gui/hotkeys-and-popup.md#on-wayland). On macOS, use the window.
 
 ## Translate in the window
 

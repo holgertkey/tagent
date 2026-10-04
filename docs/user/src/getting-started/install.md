@@ -10,7 +10,7 @@ ready-made programs for 64-bit Windows and Linux:
 | `tagent-cli-<version>-windows-x86_64.zip` | `tagent-cli.exe` |
 | `tagent-cli-<version>-linux-x86_64.tar.gz` | `tagent-cli` |
 | `tagent-gui-<version>-windows-x86_64.zip` | `tagent-gui.exe` |
-| `tagent-gui-<version>-linux-x86_64.tar.gz` | `tagent-gui`, its menu entry (`tagent-gui.desktop`) and icon |
+| `tagent-gui-<version>-linux-x86_64.tar.gz` | `tagent-gui`, its menu entry (`io.github.holgertkey.TagentGui.desktop`) and icon |
 | `tagent-gui_<version>-1_amd64.deb` | `tagent-gui` as a package for Debian, Ubuntu and their relatives |
 
 The two applications have their own version numbers.
@@ -40,7 +40,8 @@ sudo apt install ./tagent-gui_<version>-1_amd64.deb
 
 Without the `.deb`, `tagent-gui --install-desktop` adds the menu entry and the icon for
 your user (in `~/.local/share`), pointing at the program you ran; on GNOME, this also
-makes the dock show the right icon. `tagent-gui --uninstall-desktop` removes them.
+makes the dock show the right icon, and on Wayland it is what lets the global hotkeys
+work. `tagent-gui --uninstall-desktop` removes them.
 
 There are no ready-made programs for macOS: install with Cargo (below).
 

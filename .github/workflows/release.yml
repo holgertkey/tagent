@@ -116,10 +116,10 @@ jobs:
           tar -czf "tagent-cli-${CLI_VERSION}-linux-x86_64.tar.gz" -C target/release tagent-cli
           stage=$(mktemp -d)
           cp target/release/tagent-gui "$stage/"
-          cp tagent-gui/assets/linux/tagent-gui.desktop "$stage/"
-          cp tagent-gui/assets/icons/tray.png "$stage/tagent-gui.png"
+          cp tagent-gui/assets/linux/io.github.holgertkey.TagentGui.desktop "$stage/"
+          cp tagent-gui/assets/icons/tray.png "$stage/io.github.holgertkey.TagentGui.png"
           tar -czf "tagent-gui-${GUI_VERSION}-linux-x86_64.tar.gz" -C "$stage" \
-            tagent-gui tagent-gui.desktop tagent-gui.png
+            tagent-gui io.github.holgertkey.TagentGui.desktop io.github.holgertkey.TagentGui.png
           cargo deb -p tagent-gui --no-build --locked --output "tagent-gui_${GUI_VERSION}-1_amd64.deb"
 
       - name: Upload artifacts
