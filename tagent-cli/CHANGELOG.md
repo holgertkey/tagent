@@ -356,6 +356,10 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+023) **The menu showed a gear instead of the icon** after `--install-desktop` (GNOME): the
+  shell read the new menu entry before it noticed the new icon, and kept the gear until
+  the next session. The icon theme folder and the entry are now touched after writing, so
+  GNOME picks both up at once; running `--install-desktop` again repairs an existing gear.
 - (+021) **"Hotkeys bound by the desktop: …" was printed twice** at start on Wayland: GNOME
   answers the bind and then sends the same keys again as a change. Each status is now
   printed once; a real change in GNOME Settings still prints the new keys.

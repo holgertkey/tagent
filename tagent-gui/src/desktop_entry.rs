@@ -118,12 +118,38 @@ impl Paths {
 }
 
 /// Writes the `.desktop` file (launching `exe`) and the icon under `data_dir`, creating
-/// directories as needed. A file that already has the right contents is left untouched.
+/// directories as needed. A file that already has the right contents isn't rewritten.
+///
+/// The order and the touches make a running GNOME Shell pick both up without a new
+/// session. GTK rescans an icon theme only when the theme directory's mtime changes, and
+/// adding `512x512/apps/<id>.png` doesn't change `icons/hicolor`'s; a desktop entry the
+/// shell reads before that rescan gets the generic gear icon and keeps it. So: the icon
+/// first, then `icons/hicolor` touched, then the entry, touched too (and its directory) so
+/// the shell re-reads it even when its contents didn't change, which is also how running
+/// `--install-desktop` again repairs a gear icon. Touch failures are ignored: the files
+/// themselves are in place.
 pub fn install(data_dir: &Path, exe: &Path) -> io::Result<Paths> {
     let paths = Paths::under(data_dir);
     write_if_changed(&paths.icon, ICON_PNG)?;
+    touch(&theme_dir(data_dir));
     write_if_changed(&paths.desktop_file, desktop_file_contents(exe).as_bytes())?;
+    touch(&paths.desktop_file);
+    if let Some(applications) = paths.desktop_file.parent() {
+        touch(applications);
+    }
     Ok(paths)
+}
+
+/// The `hicolor` icon theme directory under `data_dir`, whose mtime GTK watches.
+fn theme_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("icons").join("hicolor")
+}
+
+/// Sets `path`'s (a file's or a directory's) modification time to now; best effort.
+fn touch(path: &Path) {
+    if let Ok(file) = std::fs::File::open(path) {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
 }
 
 /// Removes the files [`install`] writes under `data_dir`; returns the ones that existed.
@@ -291,6 +317,26 @@ mod tests {
             std::fs::metadata(&paths.icon).unwrap().modified().unwrap(),
             icon_mtime
         );
+    }
+
+    #[test]
+    fn install_touches_the_icon_theme_and_the_entry_so_gnome_rereads_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = install(dir.path(), Path::new("/usr/bin/x")).unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let applications = paths.desktop_file.parent().unwrap().to_path_buf();
+        for path in [&theme_dir(dir.path()), &paths.desktop_file, &applications] {
+            std::fs::File::open(path)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        }
+        // Same exe: nothing to rewrite, yet everything GNOME watches is touched.
+        install(dir.path(), Path::new("/usr/bin/x")).unwrap();
+        for path in [&theme_dir(dir.path()), &paths.desktop_file, &applications] {
+            let mtime = std::fs::metadata(path).unwrap().modified().unwrap();
+            assert!(mtime > old, "{} wasn't touched", path.display());
+        }
     }
 
     #[test]

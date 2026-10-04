@@ -1518,6 +1518,13 @@ Stage 7 above. Two halves, both needed:
   next to it). Files with unchanged contents aren't rewritten. `--uninstall-desktop`
   removes both. The flags are handled first thing in `main()`, before terminal detach, so
   their output reaches the terminal, and the process exits right after.
+- **Gear icon** (fixed 0.15.0+010 / `tagent-cli` 0.17.0+023): GTK rescans an icon theme only
+  when the theme directory's mtime changes, and writing `icons/hicolor/512x512/apps/<id>.png`
+  doesn't change `icons/hicolor`'s. GNOME Shell read the new entry, found no icon, and kept
+  the generic gear for the session. `install` now writes the icon, touches `icons/hicolor`,
+  writes the entry and touches it and `applications/` (even when unchanged, so a re-run
+  repairs a gear); `touch` is `File::set_modified`, best effort. Same in `tagent-cli`'s
+  `desktop_entry.rs`.
 - **Why explicit, not on every startup**: a `cargo run` from `target/debug` would point the
   launcher at a debug build and overwrite the installed binary's `Exec=`, and an app
   silently writing launcher entries is surprising. The cost: after moving the binary the

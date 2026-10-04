@@ -374,6 +374,10 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+010) **The menu showed a gear instead of the icon** after `--install-desktop` (GNOME): the
+  shell read the new menu entry before it noticed the new icon, and kept the gear until
+  the next session. The icon theme folder and the entry are now touched after writing, so
+  GNOME picks both up at once; running `--install-desktop` again repairs an existing gear.
 - (+008) **The 📋 button no longer makes GNOME ask for remote desktop access** on Wayland.
   It simulated Ctrl+C before reading the clipboard, which on a Wayland session goes
   through the remote desktop portal. The button now only reads the clipboard, on every

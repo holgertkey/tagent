@@ -106,6 +106,12 @@ window program, so its output mixes with the prompt; to keep it in order:
 start /wait tagent-gui.exe
 ```
 
+### A gear instead of the icon in the menu (Linux)
+
+GNOME didn't notice the icon `--install-desktop` added. Run `tagent-gui --install-desktop`
+(or `tagent-cli --install-desktop`) again: it nudges GNOME to re-read both. If the gear
+stays, log out and back in.
+
 ### "tagent-gui is already running"
 
 Only one copy runs per user; starting it again shows the running copy's window. If no
