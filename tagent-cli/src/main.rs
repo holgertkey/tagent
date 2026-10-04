@@ -17,6 +17,10 @@ use std::env;
 use std::sync::Arc;
 use translator::Translator;
 
+/// How long the banner waits for the desktop to answer the hotkey bind (Wayland), see
+/// `platform::wait_for_hotkey_banner`.
+const HOTKEY_BANNER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Set up platform-specific signal handling
@@ -70,15 +74,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    // Banner: language pair, providers and active hotkeys. After the translator is built,
-    // so it names the providers actually in use.
-    let config = config_manager.get_config();
-    ConfigManager::display_banner(&config, &translator.active_providers(&config));
-    if let Some(notice) = config_manager.new_settings_notice() {
-        println!("{notice}");
-        println!();
-    }
-
     // Create interactive mode with shared translator
     let interactive_mode =
         InteractiveMode::with_translator(translator.clone(), config_manager.clone());
@@ -86,12 +81,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get shared exit flag
     let should_exit = interactive_mode.get_exit_flag();
 
-    // Start keyboard hook in a separate thread
+    // Start keyboard hook in a separate thread. Before the banner: on Wayland the banner
+    // shows the hotkeys the desktop bound, so it waits for the portal's answer.
     let should_exit_clone = should_exit.clone();
     let config_manager_clone = config_manager.clone();
+    let translator_for_hook = translator.clone();
     let keyboard_task = tokio::spawn(async move {
         let mut keyboard_hook =
-            match KeyboardHook::new(translator, should_exit_clone, config_manager_clone) {
+            match KeyboardHook::new(translator_for_hook, should_exit_clone, config_manager_clone) {
                 Ok(hook) => hook,
                 Err(e) => {
                     println!("Failed to create keyboard hook: {}", e);
@@ -103,6 +100,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!("Keyboard hook error: {}", e);
         }
     });
+
+    // Banner: language pair, providers and active hotkeys. After the translator is built,
+    // so it names the providers actually in use, and (Wayland) after the desktop answered
+    // the hotkey bind: instant normally, on the first start once its consent dialog is
+    // closed, at most `HOTKEY_BANNER_TIMEOUT`.
+    let hotkeys = platform::wait_for_hotkey_banner(HOTKEY_BANNER_TIMEOUT).await;
+    let config = config_manager.get_config();
+    ConfigManager::display_banner(&config, &translator.active_providers(&config), &hotkeys);
+    if let Some(notice) = config_manager.new_settings_notice() {
+        println!("{notice}");
+        println!();
+    }
 
     // Start interactive mode in the main thread
     let interactive_result = interactive_mode.start().await;

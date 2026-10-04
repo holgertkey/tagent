@@ -590,6 +590,7 @@ impl InteractiveMode {
                     ConfigManager::display_banner(
                         &config,
                         &self.translator.active_providers(&config),
+                        &crate::platform::hotkey_banner(),
                     );
                     Ok(true)
                 }

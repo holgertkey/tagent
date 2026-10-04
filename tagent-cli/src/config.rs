@@ -1158,6 +1158,56 @@ fn commented_out(lines: &[String]) -> String {
         .collect()
 }
 
+/// The banner's "Active Hotkeys" block. On Wayland the desktop owns the hotkeys, so it
+/// shows what the desktop bound (and where to change it), or why the hotkeys are off;
+/// elsewhere, the configured hotkeys.
+pub(crate) fn hotkey_banner_lines(
+    config: &Config,
+    hotkeys: &crate::platform::HotkeyBanner,
+) -> Vec<String> {
+    use crate::platform::HotkeyBanner;
+    let speech_on = config.enable_speech_hotkey && config.enable_text_to_speech;
+    let configured = |header: &str| {
+        let mut lines = vec![header.to_string()];
+        lines.push(format!("  Translation: {}", config.translate_hotkey));
+        if speech_on {
+            lines.push(format!("  Speech: {}", config.speech_hotkey));
+        }
+        lines
+    };
+    match hotkeys {
+        HotkeyBanner::Configured => configured("Active Hotkeys:"),
+        HotkeyBanner::Waiting => configured("Active Hotkeys (waiting for the desktop):"),
+        HotkeyBanner::Desktop(desktop) => {
+            if let Some(problem) = &desktop.problem {
+                let reason = problem
+                    .strip_prefix("Global hotkeys are off: ")
+                    .unwrap_or(problem);
+                let mut chars = reason.chars();
+                let reason: String = chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect())
+                    .unwrap_or_default();
+                return vec!["Active Hotkeys: off".to_string(), format!("  {reason}")];
+            }
+            let mut lines = vec!["Active Hotkeys:".to_string()];
+            lines.push(format!(
+                "  Translation: {}",
+                desktop.translate.as_deref().unwrap_or("not bound")
+            ));
+            if speech_on {
+                lines.push(format!(
+                    "  Speech: {}",
+                    desktop.speech.as_deref().unwrap_or("not bound")
+                ));
+            }
+            lines.push("  Set by the desktop.".to_string());
+            lines.push("  Change: GNOME Settings > Apps > Tagent CLI".to_string());
+            lines
+        }
+    }
+}
+
 /// The command-line options `--help` lists, as (flags, description). The user book's
 /// "Command-line options" page must name every flag (a test checks it).
 pub(crate) const HELP_OPTIONS: &[(&str, &str)] = &[
@@ -1804,7 +1854,11 @@ impl ConfigManager {
     /// providers in use, active hotkeys and a command summary.
     ///
     /// Shown at startup and again after `/clear`.
-    pub fn display_banner(config: &Config, providers: &ActiveProviders) {
+    pub fn display_banner(
+        config: &Config,
+        providers: &ActiveProviders,
+        hotkeys: &crate::platform::HotkeyBanner,
+    ) {
         println!("Text Translator v{}", env!("CARGO_PKG_VERSION"));
         println!();
 
@@ -1819,10 +1873,8 @@ impl ConfigManager {
         }
         println!();
 
-        println!("Active Hotkeys:");
-        println!("  Translation: {}", config.translate_hotkey);
-        if config.enable_speech_hotkey && config.enable_text_to_speech {
-            println!("  Speech: {}", config.speech_hotkey);
+        for line in hotkey_banner_lines(config, hotkeys) {
+            println!("{line}");
         }
         println!();
 
@@ -2342,6 +2394,66 @@ impl HotkeyParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn banner_config() -> Config {
+        Config {
+            translate_hotkey: "Alt+A".to_string(),
+            speech_hotkey: "Alt+S".to_string(),
+            enable_speech_hotkey: true,
+            enable_text_to_speech: true,
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn hotkey_banner_shows_the_config_off_wayland_and_while_waiting() {
+        use crate::platform::HotkeyBanner;
+        let config = banner_config();
+        assert_eq!(
+            hotkey_banner_lines(&config, &HotkeyBanner::Configured),
+            ["Active Hotkeys:", "  Translation: Alt+A", "  Speech: Alt+S"]
+        );
+        assert_eq!(
+            hotkey_banner_lines(&config, &HotkeyBanner::Waiting)[0],
+            "Active Hotkeys (waiting for the desktop):"
+        );
+        let no_speech = Config {
+            enable_speech_hotkey: false,
+            ..banner_config()
+        };
+        assert_eq!(
+            hotkey_banner_lines(&no_speech, &HotkeyBanner::Configured),
+            ["Active Hotkeys:", "  Translation: Alt+A"]
+        );
+    }
+
+    #[test]
+    fn hotkey_banner_shows_what_the_desktop_bound() {
+        use crate::platform::{DesktopHotkeys, HotkeyBanner};
+        let bound = HotkeyBanner::Desktop(DesktopHotkeys {
+            translate: Some("Ctrl+Alt+T".into()),
+            speech: None,
+            problem: None,
+        });
+        assert_eq!(
+            hotkey_banner_lines(&banner_config(), &bound),
+            [
+                "Active Hotkeys:",
+                "  Translation: Ctrl+Alt+T",
+                "  Speech: not bound",
+                "  Set by the desktop.",
+                "  Change: GNOME Settings > Apps > Tagent CLI",
+            ]
+        );
+        let off = HotkeyBanner::Desktop(DesktopHotkeys {
+            problem: Some("Global hotkeys are off: the desktop bound no hotkeys.".into()),
+            ..DesktopHotkeys::default()
+        });
+        assert_eq!(
+            hotkey_banner_lines(&banner_config(), &off),
+            ["Active Hotkeys: off", "  The desktop bound no hotkeys."]
+        );
+    }
 
     #[test]
     fn language_pair_label_uses_codes_with_an_arrow() {

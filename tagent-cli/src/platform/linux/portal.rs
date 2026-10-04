@@ -31,6 +31,7 @@ use super::keycodes::{
 };
 use crate::config::HotkeyType;
 use crate::desktop_entry::APP_ID;
+use crate::platform::DesktopHotkeys;
 use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut, Shortcut};
 use futures_util::StreamExt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,16 +41,13 @@ const TRANSLATE_ID: &str = "translate";
 /// Portal shortcut id of `speech_hotkey`.
 const SPEECH_ID: &str = "speech";
 
-/// What the desktop reports about the hotkeys it owns: the bound triggers (in the app's
-/// notation, see [`display_trigger`]) or why they don't work.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DesktopHotkeys {
-    /// The trigger bound for `translate_hotkey`.
-    pub translate: Option<String>,
-    /// The trigger bound for `speech_hotkey`.
-    pub speech: Option<String>,
-    /// Why the hotkeys don't work.
-    pub problem: Option<String>,
+/// Whether `status` differs from the last one reported (then it becomes the last one).
+fn remember_if_new(last: &mut Option<DesktopHotkeys>, status: &DesktopHotkeys) -> bool {
+    if last.as_ref() == Some(status) {
+        return false;
+    }
+    *last = Some(status.clone());
+    true
 }
 
 /// The desktop has no GlobalShortcuts portal (e.g. a wlroots compositor); the caller
@@ -233,12 +231,22 @@ pub async fn listen(
     on_status: impl Fn(DesktopHotkeys),
     should_exit: &AtomicBool,
 ) -> Result<(), NoPortal> {
+    // GNOME answers a bind with `ShortcutsChanged` too, carrying the same keys: report
+    // each status once.
+    // A `Mutex`, not a `RefCell`: the future runs in a spawned (`Send`) task.
+    let last_status = std::sync::Mutex::new(None);
+    let report = |status: DesktopHotkeys| {
+        let is_new = remember_if_new(&mut last_status.lock().unwrap(), &status);
+        if is_new {
+            on_status(status);
+        }
+    };
     let result = bind_and_listen(
         translate_hotkey,
         speech_hotkey,
         on_translate,
         on_speech,
-        on_status,
+        report,
         should_exit,
     )
     .await;
@@ -431,6 +439,25 @@ mod tests {
     fn a_description_without_an_accelerator_is_kept() {
         assert_eq!(display_trigger("  Unassigned "), "Unassigned");
         assert_eq!(display_trigger(""), "");
+    }
+
+    #[test]
+    fn a_repeated_status_is_reported_once() {
+        let bound = DesktopHotkeys {
+            translate: Some("Alt+A".into()),
+            speech: Some("Alt+S".into()),
+            problem: None,
+        };
+        let mut last = None;
+        assert!(remember_if_new(&mut last, &bound));
+        // The `ShortcutsChanged` echo of the bind.
+        assert!(!remember_if_new(&mut last, &bound));
+        let changed = DesktopHotkeys {
+            translate: Some("Ctrl+Alt+T".into()),
+            ..bound.clone()
+        };
+        assert!(remember_if_new(&mut last, &changed));
+        assert!(!remember_if_new(&mut last, &changed));
     }
 
     #[test]

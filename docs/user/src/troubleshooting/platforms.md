@@ -28,7 +28,7 @@ without the portal (Sway, Hyprland) and sessions without XWayland (no
 
 ### The hotkey does nothing
 
-- **Wayland:** `tagent-cli` prints why at start. Usually the menu entry is missing: run
+- **Wayland:** the banner's "Active Hotkeys" says `off` and why. Usually the menu entry is missing: run
   `tagent-cli --install-desktop` and start it again. If you declined the desktop's
   dialog, or want other keys, set them in the system settings (GNOME: Settings > Apps >
   Tagent CLI). Select the text with the mouse: the hotkey reads the mouse selection.

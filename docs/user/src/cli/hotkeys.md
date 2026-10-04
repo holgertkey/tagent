@@ -87,11 +87,21 @@ hotkeys instead, through its "Global Shortcuts" portal:
   Without it, `tagent-cli` says that the hotkeys are off and why.
 - **The first start** shows the desktop's dialog with the two shortcuts and the keys from
   your settings. Confirm them, or pick other keys. A double press (`Ctrl+Ctrl`) can't be
-  suggested; the dialog then asks for a key. `tagent-cli` then prints what is bound:
-  `Hotkeys bound by the desktop: translation Alt+A, speech Alt+S.`
+  suggested; the dialog then asks for a key. The banner's "Active Hotkeys" then shows
+  the keys the desktop bound (it waits for the dialog to close, at most 30 seconds):
+
+  ```
+  Active Hotkeys:
+    Translation: Alt+A
+    Speech: Alt+S
+    Set by the desktop.
+    Change: GNOME Settings > Apps > Tagent CLI
+  ```
+
+  If the hotkeys can't work, it says `Active Hotkeys: off` and why.
 - **Afterwards the desktop owns them.** Change them in the system settings (GNOME:
   Settings > Apps > Tagent CLI); `translate_hotkey` and `speech_hotkey` only suggested
-  them the first time.
+  them the first time. A change while `tagent-cli` runs prints `Hotkeys changed: …`.
 - **What is translated or spoken** is the text selected with the mouse; nothing is
   copied, and the clipboard stays as it was.
 - **The terminal stays where it is**: Wayland doesn't let an application bring another

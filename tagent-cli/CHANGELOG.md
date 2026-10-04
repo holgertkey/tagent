@@ -203,6 +203,13 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+022) **On Wayland the banner's "Active Hotkeys" shows the keys the desktop bound**, with
+  "Set by the desktop." and where to change them (GNOME Settings > Apps > Tagent CLI), or
+  `Active Hotkeys: off` and why; the separate "Hotkeys bound by the desktop: …" line is
+  gone. The banner waits for the desktop's answer (instant normally; on the first start
+  until its dialog is closed, at most 30 seconds, then it shows the configured keys
+  "waiting for the desktop"). A later change in GNOME Settings prints one short line,
+  `Hotkeys changed: translation …, speech …`. `/clear` redraws the banner the same way.
 - (+020) **Pressing the speech hotkey while it speaks stops it** (Windows, Linux); it was
   ignored ("Already speaking"). On Wayland it is the global way to stop.
 - (+020) **On Wayland the terminal isn't raised or hidden**: `show_terminal_on_translate` and
@@ -349,6 +356,9 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+021) **"Hotkeys bound by the desktop: …" was printed twice** at start on Wayland: GNOME
+  answers the bind and then sends the same keys again as a change. Each status is now
+  printed once; a real change in GNOME Settings still prints the new keys.
 - (+019) **Wrong guidance about the history file and the hotkey.** The config template
   said a relative `history_file` is taken from "the program directory"; it is the folder
   `tagent-cli` is started in, and the comment now says so and recommends an absolute path.

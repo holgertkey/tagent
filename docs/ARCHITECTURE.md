@@ -456,8 +456,19 @@ menu because GNOME Settings > Apps, where the keys are changed, lists only visib
   `--workspace` build. `start` dispatches on
   `session()`: X11 → `start_x11`, Wayland → `start_wayland` (portal, `NoPortal` → `start_x11`
   with a warning), headless → wait. `configured_hotkeys()` is the parse/validate shared by
-  both paths. What was bound is printed through `Translator::emit_line` (the rustyline
-  external printer) by `report_desktop_hotkeys`.
+  both paths.
+- **The banner shows what the desktop bound** (0.17.0+022): `main.rs` spawns the keyboard
+  task *before* the banner and awaits `platform::wait_for_hotkey_banner(30 s)` (Windows/macOS:
+  `HotkeyBanner::Configured` at once). On Linux, `report_desktop_hotkeys` stores each
+  portal status in `BANNER_STATE` (`HotkeyBanner::Desktop`; the X11 fallback and "nothing
+  to bind" store `Configured`), and the wait returns as soon as one is there, or
+  `Waiting` at the timeout (the first start's consent dialog still open). It then sets
+  `BANNER_SHOWN`; from there a status prints one line through `Translator::emit_line`
+  (the rustyline external printer): `Hotkeys changed: …`, `Hotkeys set by the desktop: …`
+  (the first bind after a timeout) or the problem (`desktop_hotkeys_line`). The block itself
+  is `config::hotkey_banner_lines` (pure, tested). `portal::listen` drops a status equal to
+  the last one (`remember_if_new`): GNOME answers a bind and then echoes it as
+  `ShortcutsChanged`.
 - **No XTest on Wayland**: `ClipboardManager::copy_selected_text` refuses on a Wayland
   session (GNOME routes XTest through the RemoteDesktop portal, which asks for access on
   every keystroke); `get_selected_text` reads PRIMARY there, used by `translate_clipboard`

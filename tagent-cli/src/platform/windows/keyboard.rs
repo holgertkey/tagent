@@ -992,6 +992,19 @@ unsafe extern "system" fn keyboard_hook_proc(
     CallNextHookEx(HHOOK::default(), n_code, w_param, l_param)
 }
 
+/// What the banner's "Active Hotkeys" shows: always the configured hotkeys here (the
+/// desktop owns them only on Wayland).
+pub fn hotkey_banner() -> crate::platform::HotkeyBanner {
+    crate::platform::HotkeyBanner::Configured
+}
+
+/// [`hotkey_banner`], with nothing to wait for here.
+pub async fn wait_for_hotkey_banner(
+    _timeout: std::time::Duration,
+) -> crate::platform::HotkeyBanner {
+    hotkey_banner()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

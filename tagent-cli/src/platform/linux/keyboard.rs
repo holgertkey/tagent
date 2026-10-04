@@ -2,6 +2,7 @@ use super::keycodes::normalize_vk_code;
 use super::portal;
 use super::session::{session, Session};
 use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
+use crate::platform::{DesktopHotkeys, HotkeyBanner};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use std::collections::HashMap;
@@ -222,6 +223,51 @@ fn is_modifier_key(vk_code: u32) -> bool {
         || vk_code == super::keycodes::KEY_RWIN
 }
 
+/// What the Wayland path has settled for the banner's "Active Hotkeys": `None` until the
+/// portal answers (or the path turns out to need no answer). See [`hotkey_banner`].
+static BANNER_STATE: Mutex<Option<HotkeyBanner>> = Mutex::new(None);
+/// Set once the banner has been printed: from then on, a status from the portal is
+/// printed as a line of its own instead of waiting for the banner.
+static BANNER_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// What the banner's "Active Hotkeys" shows now: the configured hotkeys on X11 (or when
+/// the Wayland path fell back to X11), what the desktop bound on Wayland, `Waiting`
+/// while it hasn't answered.
+pub fn hotkey_banner() -> HotkeyBanner {
+    if session() != Session::Wayland {
+        return HotkeyBanner::Configured;
+    }
+    BANNER_STATE
+        .lock()
+        .ok()
+        .and_then(|state| state.clone())
+        .unwrap_or(HotkeyBanner::Waiting)
+}
+
+/// [`hotkey_banner`] once the desktop has answered, or after `timeout` (`Waiting` then).
+/// On the first start that answer waits for the user to close the desktop's consent
+/// dialog. Marks the banner as shown: later statuses print a line of their own.
+pub async fn wait_for_hotkey_banner(timeout: Duration) -> HotkeyBanner {
+    let deadline = Instant::now() + timeout;
+    let banner = loop {
+        let banner = hotkey_banner();
+        if banner != HotkeyBanner::Waiting || Instant::now() >= deadline {
+            break banner;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    BANNER_SHOWN.store(true, Ordering::SeqCst);
+    banner
+}
+
+/// Records what the banner should show; returns the previous value.
+fn set_banner_state(banner: HotkeyBanner) -> Option<HotkeyBanner> {
+    BANNER_STATE
+        .lock()
+        .ok()
+        .and_then(|mut state| state.replace(banner))
+}
+
 /// Global hotkey listener for Linux, driven by `rdev` key events and X11 key grabbing (see [`super::xgrab`]).
 pub struct KeyboardHook {
     translator: Translator,
@@ -319,6 +365,10 @@ impl KeyboardHook {
     /// pressed again, or Ctrl+C in the terminal, stops speech.
     async fn start_wayland(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let (translate_hotkey, speech_hotkey) = self.configured_hotkeys();
+        if translate_hotkey.is_none() && speech_hotkey.is_none() {
+            // Nothing to bind, so no answer to wait for; the banner shows the config.
+            set_banner_state(HotkeyBanner::Configured);
+        }
         let is_processing = Arc::new(Mutex::new(false));
         let is_speaking = Arc::new(Mutex::new(false));
         let should_stop_speech = Arc::new(AtomicBool::new(false));
@@ -343,6 +393,7 @@ impl KeyboardHook {
         match result {
             Ok(()) => Ok(()),
             Err(portal::NoPortal(err)) => {
+                set_banner_state(HotkeyBanner::Configured);
                 eprintln!(
                     "No GlobalShortcuts portal ({err}). Falling back to X11 key grabs, which \
                      only see keys while an XWayland window has focus."
@@ -352,24 +403,18 @@ impl KeyboardHook {
         }
     }
 
-    /// Prints what the desktop bound (or why the hotkeys are off) at the prompt.
-    fn report_desktop_hotkeys(translator: &Translator, status: &portal::DesktopHotkeys) {
-        if let Some(problem) = &status.problem {
-            translator.emit_line(problem);
-            return;
+    /// Records what the desktop bound (or why the hotkeys are off) for the banner; once the
+    /// banner is on screen, prints it as one line at the prompt instead.
+    fn report_desktop_hotkeys(translator: &Translator, status: &DesktopHotkeys) {
+        let previous = set_banner_state(HotkeyBanner::Desktop(status.clone()));
+        if !BANNER_SHOWN.load(Ordering::SeqCst) {
+            return; // the banner will show it
         }
-        let mut bound = Vec::new();
-        if let Some(trigger) = &status.translate {
-            bound.push(format!("translation {trigger}"));
-        }
-        if let Some(trigger) = &status.speech {
-            bound.push(format!("speech {trigger}"));
-        }
-        translator.emit_line(format!(
-            "Hotkeys bound by the desktop: {}. Change them in the system settings \
-             (GNOME: Settings > Apps > Tagent CLI).",
-            bound.join(", ")
-        ));
+        let had_keys = matches!(
+            previous,
+            Some(HotkeyBanner::Desktop(DesktopHotkeys { problem: None, .. }))
+        );
+        translator.emit_line(desktop_hotkeys_line(status, had_keys));
     }
 
     async fn start_x11(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -681,9 +726,56 @@ fn print_source_prompt(cfg: &crate::config::Config) {
     io::stdout().flush().ok();
 }
 
+/// The line printed for a desktop status that arrives after the banner: a change in the
+/// system settings (`had_keys`), the first bind after the banner gave up waiting, or a
+/// problem.
+fn desktop_hotkeys_line(status: &DesktopHotkeys, had_keys: bool) -> String {
+    if let Some(problem) = &status.problem {
+        return problem.clone();
+    }
+    let mut keys = Vec::new();
+    if let Some(trigger) = &status.translate {
+        keys.push(format!("translation {trigger}"));
+    }
+    if let Some(trigger) = &status.speech {
+        keys.push(format!("speech {trigger}"));
+    }
+    let what = if had_keys {
+        "Hotkeys changed"
+    } else {
+        "Hotkeys set by the desktop"
+    };
+    format!("{what}: {}", keys.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_late_desktop_status_is_one_short_line() {
+        let bound = DesktopHotkeys {
+            translate: Some("Ctrl+Alt+T".into()),
+            speech: Some("Alt+S".into()),
+            problem: None,
+        };
+        assert_eq!(
+            desktop_hotkeys_line(&bound, true),
+            "Hotkeys changed: translation Ctrl+Alt+T, speech Alt+S"
+        );
+        assert_eq!(
+            desktop_hotkeys_line(&bound, false),
+            "Hotkeys set by the desktop: translation Ctrl+Alt+T, speech Alt+S"
+        );
+        let off = DesktopHotkeys {
+            problem: Some("Global hotkeys are off: x.".into()),
+            ..DesktopHotkeys::default()
+        };
+        assert_eq!(
+            desktop_hotkeys_line(&off, true),
+            "Global hotkeys are off: x."
+        );
+    }
 
     #[test]
     fn test_hotkey_state_modifier_combo_detection() {
