@@ -27,7 +27,11 @@ pub fn install(window: &slint::Window) {
             modifiers.set(new.state());
             EventResult::Propagate
         }
-        WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => {
+        WindowEvent::KeyboardInput {
+            event,
+            is_synthetic: false,
+            ..
+        } => {
             let PhysicalKey::Code(code) = event.physical_key else {
                 return EventResult::Propagate;
             };
@@ -174,8 +178,14 @@ mod tests {
     #[test]
     fn without_the_shortcut_modifier_or_with_alt_nothing_changes() {
         let v = PhysicalKey::Code(KeyCode::KeyV);
-        assert_eq!(fallback_letter(&char_key("м"), v, ModifiersState::empty()), None);
-        assert_eq!(fallback_letter(&char_key("м"), v, ModifiersState::SHIFT), None);
+        assert_eq!(
+            fallback_letter(&char_key("м"), v, ModifiersState::empty()),
+            None
+        );
+        assert_eq!(
+            fallback_letter(&char_key("м"), v, ModifiersState::SHIFT),
+            None
+        );
         assert_eq!(
             fallback_letter(&char_key("м"), v, shortcut() | ModifiersState::ALT),
             None
@@ -185,7 +195,11 @@ mod tests {
     #[test]
     fn only_letter_keys_with_characters_are_remapped() {
         assert_eq!(
-            fallback_letter(&char_key("ж"), PhysicalKey::Code(KeyCode::Semicolon), shortcut()),
+            fallback_letter(
+                &char_key("ж"),
+                PhysicalKey::Code(KeyCode::Semicolon),
+                shortcut()
+            ),
             None
         );
         assert_eq!(
