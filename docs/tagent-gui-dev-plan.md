@@ -170,7 +170,7 @@ Candidates, not yet scheduled; the order is a suggestion.
    `docs/ARCHITECTURE.md`. Follow-ups, not scheduled: `--replace` (quit the running copy
    and start); passing text to translate (`tagent-gui "text"`); raising a visible window
    that is behind others; a D-Bus `Activate` (`DBusActivatable=true`) for GNOME.
-9. **Speak from the popup.** Planned 2026-10-05, next up; see
+9. **Speak from the popup.** Implemented in 0.15.0+012 (2026-10-05), manual check open; see
    [below](#planned-stage--speak-from-the-popup).
 
 ### Planned stage — Provider profiles tab
@@ -348,10 +348,15 @@ round-trip and lowercasing, saving drops deleted names.
 
 ### Planned stage — Speak from the popup
 
-**Status:** planned 2026-10-05 (decided with the maintainer the same day), not started.
-Target: one `tagent-gui` iteration, `0.15.0+012` (0.15.0 is unreleased, so no version
-question). Once shipped and checked, condense this section to a row of the "Shipped
-stages" table.
+**Status:** implemented in `0.15.0+012` (2026-10-05); the manual check below is open.
+Once it passes, condense this section to a row of the "Shipped stages" table.
+Deviations from the steps below: step 4 got a simpler `format_popup_line` (the
+`format_line` string with `SPEAKER_PREFIX` in the prompt; a test checks it against the
+stripped template); `styled::render_template` (2 arguments) was folded into
+`render_template_with_speaker`, its last caller being the popup; and
+`PromptSpeakButton` got a `right-clicked` callback, since its `TouchArea` swallowed the
+right button over the prompt (the popup routes it to copy; the transcript's prompts have
+the same gap, not fixed here).
 
 **Goal.** The popup's `[Lang]:` prompts become speak buttons, exactly like the
 transcript's since 0.14.0+041: `[🔊 English]:` before the phrase speaks it in the source

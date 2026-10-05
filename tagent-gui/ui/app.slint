@@ -210,6 +210,9 @@ component PromptSpeakButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <color> accent;
     callback clicked();
+    // A right-button release over the button: the button takes every press over the
+    // prompt, so a block whose right-click copies passes this on (the popup does).
+    callback right-clicked();
 
     border-radius: 3px;
     background: root.speaking ? root.accent.with-alpha(0.3)
@@ -220,6 +223,11 @@ component PromptSpeakButton inherits Rectangle {
         enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.up && event.button == PointerEventButton.right {
+                root.right-clicked();
+            }
+        }
     }
 }
 
@@ -384,6 +392,11 @@ export component AppWindow inherits Window {
     in-out property <int> speaking-entry-index: -1;
     in-out property <bool> speaking-is-phrase: true;
     callback speak-requested(int, bool);
+    // main.rs mirrors the pair above onto the popup, whose prompts speak the
+    // row it shows (0.15.0+012). `speaking-is-phrase` is always set before the
+    // index (start_speaking), so watching the index sees both.
+    callback speaking-state-changed();
+    changed speaking-entry-index => { speaking-state-changed(); }
     // The speaker glyph in each prompt follows tts-enabled: Rust re-renders
     // the transcript (restyle_transcript).
     callback transcript-restyle-requested();
@@ -960,6 +973,34 @@ export component TranslationPopup inherits Window {
     }
     // true = phrase, false = translation.
     callback popup-copy-requested(bool);
+    // Speaking from the popup (0.15.0+012): the prompts are speak buttons, like the
+    // transcript's. The popup has no speech path of its own: `entry-index` is the
+    // transcript row this popup shows (the hotkey pushes the same translation there),
+    // and a click asks main.rs to speak that row through AppWindow's
+    // `speak-requested`. -1 = no row (no speakers). `phrase-speaker`/
+    // `translation-speaker` say whether a side gets a speaker at all (text-to-speech
+    // on, something to speak, not an error); `phrase-prompt`/`translation-prompt`
+    // are the language names in the prompts, or "" with the prompt off, for the
+    // probes that size the buttons.
+    in property <int> entry-index: -1;
+    in property <bool> phrase-speaker: false;
+    in property <bool> translation-speaker: false;
+    in property <string> phrase-prompt: "";
+    in property <string> translation-prompt: "";
+    // AppWindow's `speaking-entry-index`/`speaking-is-phrase`, mirrored by main.rs
+    // on every change (globals and properties aren't shared between windows).
+    in property <int> speaking-entry-index: -1;
+    in property <bool> speaking-is-phrase: true;
+    // This popup's own row is speaking: the popup stays open meanwhile (see
+    // `hide-timer`), and the full countdown starts again once it stops.
+    out property <bool> own-row-speaking: entry-index != -1 && speaking-entry-index == entry-index;
+    changed own-row-speaking => {
+        if !own-row-speaking {
+            root.start-hide-timer();
+        }
+    }
+    // true = phrase, false = translation.
+    callback popup-speak-requested(bool);
     // Stage 13-style semantic highlighting: rendered `styled-text` values
     // `phrase-line`/`translation-line` actually bind to, built in Rust from the
     // same role-tagged templates the transcript's own entries use (prompt
@@ -1010,7 +1051,7 @@ export component TranslationPopup inherits Window {
     in-out property <int> auto-hide-seconds: 3;
     callback hide-requested();
 
-    // Dragging the popup by any point of its surface (it has no buttons, and its
+    // Dragging the popup by any point of its surface but its speak buttons (its
     // text isn't selectable, so nothing else competes for the press). The window
     // itself is moved from Rust (`wire_popup_drag` in main.rs) -- Slint can't
     // set a window's position from .slint -- and Rust follows the pointer using
@@ -1029,7 +1070,7 @@ export component TranslationPopup inherits Window {
             // drag the pointer is grabbed, and hover tracking over this
             // TouchArea is not reliable in that state (same grab that made
             // wheel-scrolling report "not hovering", see `scroll-event` below).
-            if (touch-area.has-hover || touch-area.pressed || drag-pressed) {
+            if (touch-area.has-hover || touch-area.pressed || drag-pressed || own-row-speaking) {
                 // Mirrors tagent-cli's `hide_terminal_and_restore` polling
                 // loop (`translator.rs`): once the initial delay has passed,
                 // keep re-checking every second for as long as the cursor
@@ -1191,6 +1232,39 @@ export component TranslationPopup inherits Window {
                                 root.drag-moved();
                             }
                         }
+
+                        // The prompt as rendered (main.rs's `format_popup_line`):
+                        // the speak button's size. Same shape as the transcript's.
+                        phrase-probe := Text {
+                            text: phrase-prompt != "" ? "[🔊\u{a0}" + phrase-prompt + "]:" : "🔊";
+                            font-family: popup-font;
+                            font-size: popup-size * 1px;
+                            visible: false;
+                        }
+
+                        // Declared after the TouchArea, so its left click wins over
+                        // the drag (accepted: the popup isn't dragged by its prompt).
+                        if phrase-speaker: PromptSpeakButton {
+                            x: 2px;
+                            y: 0px;
+                            width: phrase-probe.preferred-width + 4px;
+                            height: min(phrase-probe.preferred-height, parent.height);
+                            accent: popup-prompt-accent;
+                            speaking: own-row-speaking && speaking-is-phrase;
+                            enabled: speaking-entry-index == -1 || (own-row-speaking && speaking-is-phrase);
+                            clicked => {
+                                root.start-hide-timer();
+                                popup-speak-requested(true);
+                            }
+                            right-clicked => {
+                                if phrase-copy != "" {
+                                    root.start-hide-timer();
+                                    copy-flash-active = true;
+                                    copy-flash-is-phrase = true;
+                                    popup-copy-requested(true);
+                                }
+                            }
+                        }
                     }
 
                     Rectangle {
@@ -1236,6 +1310,36 @@ export component TranslationPopup inherits Window {
                             moved => {
                                 root.start-hide-timer();
                                 root.drag-moved();
+                            }
+                        }
+
+                        // See the phrase block's own probe and button above.
+                        translation-probe := Text {
+                            text: translation-prompt != "" ? "[🔊\u{a0}" + translation-prompt + "]:" : "🔊";
+                            font-family: popup-font;
+                            font-size: popup-size * 1px;
+                            visible: false;
+                        }
+
+                        if translation-speaker: PromptSpeakButton {
+                            x: 2px;
+                            y: 0px;
+                            width: translation-probe.preferred-width + 4px;
+                            height: min(translation-probe.preferred-height, parent.height);
+                            accent: popup-prompt-accent;
+                            speaking: own-row-speaking && !speaking-is-phrase;
+                            enabled: speaking-entry-index == -1 || (own-row-speaking && !speaking-is-phrase);
+                            clicked => {
+                                root.start-hide-timer();
+                                popup-speak-requested(false);
+                            }
+                            right-clicked => {
+                                if translation-copy != "" {
+                                    root.start-hide-timer();
+                                    copy-flash-active = true;
+                                    copy-flash-is-phrase = false;
+                                    popup-copy-requested(false);
+                                }
                             }
                         }
                     }

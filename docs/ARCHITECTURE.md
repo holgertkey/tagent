@@ -598,7 +598,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     through `styled::escape_markdown` before being placed in a template (backslash-escapes
     all ASCII punctuation, turns leading/trailing whitespace and blank lines into NBSP so
     Markdown doesn't reinterpret them) -- this is also what keeps a literal `color="@pos"`
-    embedded in hostile input from ever matching `render_template`'s naive
+    embedded in hostile input from ever matching `render_template_with_speaker`'s naive
     find-and-replace substitution of a role token for its actual hex color.
     `RoleColors::for_background` picks a light- or dark-background palette (both
     WCAG-AA-contrast-checked in tests) from the *resolved* `phrase-background`/
@@ -1400,6 +1400,30 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   window property re-set at every point that already reads config
   (`on_translate_requested`, the hotkey path, Settings save) plus once at
   startup; Settings checkbox on the General tab next to Stage 9's two.
+- **Speaking from the popup** (0.15.0+012): the popup's prompts are
+  `PromptSpeakButton`s too, with no speech path of their own. The popup knows
+  the transcript row it shows (`entry-index`): the hotkey's `on_done` runs
+  right before `push_transcript_entry`, so the row's index is the row count at
+  that moment, and rows are only ever appended (anything that clears or caps
+  the transcript must reset the popup's `entry-index` to -1).
+  `PopupSpeakers::for_entry` decides which sides get a button from that
+  `TranscriptEntry` (`*-speech` non-empty, not an error, `tts-enabled`);
+  `popup_templates` puts `SPEAKER_MARKER` only there, and `format_popup_line`
+  adds the same glyph to the plain lines the popup measures its width on. A
+  click calls `popup-speak-requested(is_phrase)` → `wire_popup_speak` →
+  `AppWindow::invoke_speak_requested(entry_index, is_phrase)`, so stopping, the
+  one-playback rule and the provider choice are the transcript's (a start
+  re-reads `enable_text_to_speech` first; a stop never needs it). The speaking
+  state is mirrored onto the popup: `changed speaking-entry-index` on
+  `AppWindow` fires `speaking-state-changed`, which copies
+  `speaking-is-phrase` and the index (`start_speaking` sets `is-phrase` first),
+  leaving `start_speaking` untouched. The popup's `own-row-speaking` keeps
+  `hide-timer` from hiding it, and its `changed` handler restarts the full
+  countdown when that playback ends; another row speaking doesn't hold the
+  popup. `PromptSpeakButton`'s `TouchArea` takes every press over the prompt,
+  so it has a `right-clicked` callback the popup routes to its right-click copy
+  (the transcript's prompts don't route it yet). The popup isn't dragged by its
+  speak buttons.
 - **Speech hotkey** (Stage 10 follow-up, shipped 2026-09-18): a second global
   hotkey (default `Alt+S`; `tagent-cli`'s default was `Alt+E` at the time and
   was changed to `Alt+S` too in `tagent-cli` `0.16.0+001`) that speaks the current selection directly, with

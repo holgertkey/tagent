@@ -717,6 +717,7 @@ fn show_popup(
     show_phrase: bool,
     auto_hide_seconds: u64,
     remembered_position: Option<config::PopupPosition>,
+    speakers: PopupSpeakers,
 ) {
     let Some(popup) = popup_weak.upgrade() else {
         return;
@@ -724,13 +725,50 @@ fn show_popup(
 
     POPUP_RESTORE_TARGET.with(|cell| cell.set(platform::window::foreground_window()));
 
-    popup.set_phrase_text(format_line(show_prompt, &outcome.from_lang, &outcome.phrase_raw).into());
+    // The plain lines are only measured (the popup's width), so they carry the
+    // speaker glyph exactly where the rendered prompt has it.
+    popup.set_phrase_text(
+        format_popup_line(
+            show_prompt,
+            &outcome.from_lang,
+            &outcome.phrase_raw,
+            speakers.phrase,
+        )
+        .into(),
+    );
     popup.set_translation_text(if outcome.is_error {
         outcome.translation_raw.clone().into()
     } else {
-        format_line(show_prompt, &outcome.to_lang, &outcome.translation_raw).into()
+        format_popup_line(
+            show_prompt,
+            &outcome.to_lang,
+            &outcome.translation_raw,
+            speakers.translation,
+        )
+        .into()
     });
     popup.set_show_phrase(show_phrase);
+
+    // Speaking from the popup (0.15.0+012): the row this popup shows, and which
+    // sides get a speak button. The speaking state itself is mirrored onto the popup
+    // on every change (`speaking-state-changed`, wired in main()), so it needs
+    // nothing here.
+    popup.set_entry_index(speakers.entry_index);
+    popup.set_phrase_speaker(speakers.phrase);
+    popup.set_translation_speaker(speakers.translation);
+    let prompt = |lang: &str| {
+        if show_prompt {
+            lang.to_string().into()
+        } else {
+            slint::SharedString::new()
+        }
+    };
+    popup.set_phrase_prompt(prompt(&outcome.from_lang));
+    popup.set_translation_prompt(if outcome.is_error {
+        slint::SharedString::new()
+    } else {
+        prompt(&outcome.to_lang)
+    });
 
     // Right-click copy (2026-09-22): plain, unprompted text -- exactly what
     // `TranslationOutcome` already carries, no extra derivation needed (unlike
@@ -741,7 +779,7 @@ fn show_popup(
     // Highlighting: the same role-tagged templates the transcript uses (prompt
     // prefix, and for a dictionary hit its part-of-speech/synonym/notice spans),
     // kept on the popup so `apply_popup_style` can re-render them on a restyle.
-    let (phrase_template, translation_template) = popup_templates(outcome, show_prompt);
+    let (phrase_template, translation_template) = popup_templates(outcome, show_prompt, speakers);
     popup.set_phrase_template(phrase_template.into());
     popup.set_translation_template(translation_template.into());
     restyle_popup(&popup);
@@ -794,6 +832,40 @@ fn show_popup(
 
     popup.set_auto_hide_seconds(auto_hide_seconds.min(i32::MAX as u64) as i32);
     popup.invoke_start_hide_timer();
+}
+
+/// What the popup can speak (0.15.0+012): the transcript row it shows and which of
+/// its sides get a speak button. See [`PopupSpeakers::for_entry`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PopupSpeakers {
+    /// Index of the popup's row in `transcript-entries`, or -1 for none.
+    entry_index: i32,
+    /// The phrase's prompt is a speak button.
+    phrase: bool,
+    /// The translation's prompt is a speak button.
+    translation: bool,
+}
+
+impl PopupSpeakers {
+    /// No row, no speakers.
+    const NONE: PopupSpeakers = PopupSpeakers {
+        entry_index: -1,
+        phrase: false,
+        translation: false,
+    };
+
+    /// The speakers for `entry`, about to become row `entry_index` of the transcript,
+    /// with text-to-speech `tts_enabled`: a side gets one when there is something to
+    /// speak, as in the transcript (an error row's translation never has).
+    fn for_entry(entry: &TranscriptEntry, entry_index: i32, tts_enabled: bool) -> PopupSpeakers {
+        PopupSpeakers {
+            entry_index,
+            phrase: tts_enabled && !entry.phrase_speech.is_empty(),
+            translation: tts_enabled
+                && !entry.translation_is_error
+                && !entry.translation_speech.is_empty(),
+        }
+    }
 }
 
 /// Where a popup drag started, and how far it has got. Lives from the button going
@@ -923,6 +995,54 @@ fn wire_popup_copy(popup: &TranslationPopup) {
     });
 }
 
+/// Wires speaking from the popup (0.15.0+012). The popup has no speech path of its
+/// own: a click on its prompt speaks the transcript row it shows through `window`'s
+/// `speak-requested`, so stopping, the one-playback-at-a-time rule and the provider
+/// choice are the transcript's; and `window`'s speaking state is mirrored onto the
+/// popup on every change, so both windows show the same playback.
+fn wire_popup_speak(
+    popup: &TranslationPopup,
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+) {
+    let window_weak = window.as_weak();
+    let popup_weak = popup.as_weak();
+    window.on_speaking_state_changed(move || {
+        let (Some(window), Some(popup)) = (window_weak.upgrade(), popup_weak.upgrade()) else {
+            return;
+        };
+        popup.set_speaking_is_phrase(window.get_speaking_is_phrase());
+        popup.set_speaking_entry_index(window.get_speaking_entry_index());
+    });
+
+    let window_weak = window.as_weak();
+    let popup_weak = popup.as_weak();
+    let config_manager = config_manager.clone();
+    popup.on_popup_speak_requested(move |is_phrase| {
+        let (Some(window), Some(popup)) = (window_weak.upgrade(), popup_weak.upgrade()) else {
+            return;
+        };
+        let index = popup.get_entry_index();
+        if index < 0 {
+            return;
+        }
+        // Starting needs text-to-speech still on (it may have been turned off since
+        // the popup was shown); stopping a playback never does.
+        if window.get_speaking_entry_index() == -1 {
+            let enabled = {
+                let mut manager = config_manager.lock().unwrap();
+                manager.check_and_reload();
+                manager.config().enable_text_to_speech
+            };
+            window.set_tts_enabled(enabled);
+            if !enabled {
+                return;
+            }
+        }
+        window.invoke_speak_requested(index, is_phrase);
+    });
+}
+
 /// Formats one transcript line, with or without its "[Auto]:"-style prompt.
 ///
 /// The prompt is baked directly into the string (rather than kept as a
@@ -936,6 +1056,18 @@ fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
         format!("[{lang}]: {text}")
     } else {
         text.to_string()
+    }
+}
+
+/// [`format_line`] for the popup, with [`styled::SPEAKER_PREFIX`] where its rendered
+/// template has the speaker glyph (`speaker`): `[🔊 Lang]: text`, or `🔊 text` with
+/// the prompt off. The popup measures its width on this plain line, so it must match
+/// what is rendered, glyph included.
+fn format_popup_line(show_prompt: bool, lang: &str, text: &str, speaker: bool) -> String {
+    match (speaker, show_prompt) {
+        (false, _) => format_line(show_prompt, lang, text),
+        (true, true) => format!("[{}{lang}]: {text}", styled::SPEAKER_PREFIX),
+        (true, false) => format!("{}{text}", styled::SPEAKER_PREFIX),
     }
 }
 
@@ -1771,6 +1903,11 @@ fn refresh_config_views(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfig
 /// `Send` — an `Rc<VecModel<_>>` captured in that closure wouldn't be, but
 /// `AppWindow::as_weak()` is, so entries are read back from the window itself
 /// instead of a separately shared model.
+///
+/// Rows are only ever appended, never removed or reordered: the popup refers to the
+/// row it shows by index (`PopupSpeakers::entry_index`, taken in the hotkey's
+/// `on_done` right before this push). Anything that clears or caps the transcript must
+/// reset the popup's `entry-index` to -1.
 fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
     let mut entries: Vec<TranscriptEntry> = window.get_transcript_entries().iter().collect();
     entries.push(entry);
@@ -1818,16 +1955,26 @@ struct TranslationOutcome {
 
 /// Builds the popup's (phrase, translation) templates for `outcome` under the popup's
 /// own `show_prompt` -- the same role-tagged templates the transcript uses, so a
-/// dictionary hit gets the same part-of-speech/synonym/notice highlighting there.
-fn popup_templates(outcome: &TranslationOutcome, show_prompt: bool) -> (String, String) {
+/// dictionary hit gets the same part-of-speech/synonym/notice highlighting there. A
+/// side with a speak button (`speakers`) gets the speaker marker in its prompt.
+fn popup_templates(
+    outcome: &TranslationOutcome,
+    show_prompt: bool,
+    speakers: PopupSpeakers,
+) -> (String, String) {
     (
-        styled::phrase_template(show_prompt, &outcome.from_lang, &outcome.phrase_raw, false),
+        styled::phrase_template(
+            show_prompt,
+            &outcome.from_lang,
+            &outcome.phrase_raw,
+            speakers.phrase,
+        ),
         styled::translation_template_from_body(
             show_prompt,
             &outcome.to_lang,
             &outcome.translation_body_template,
             outcome.is_error,
-            false,
+            speakers.translation,
         ),
     )
 }
@@ -1842,13 +1989,17 @@ fn restyle_popup(popup: &TranslationPopup) {
         popup.get_popup_background(),
         color_to_hex(popup.get_popup_prompt_accent()),
     );
-    popup.set_phrase_styled(styled::render_template(
+    // The templates carry the speaker marker only on a side that has a speak button
+    // (`popup_templates`), so rendering it as the glyph is always right here.
+    popup.set_phrase_styled(styled::render_template_with_speaker(
         &popup.get_phrase_template(),
         &colors,
+        true,
     ));
-    popup.set_translation_styled(styled::render_template(
+    popup.set_translation_styled(styled::render_template_with_speaker(
         &popup.get_translation_template(),
         &colors,
+        true,
     ));
 }
 
@@ -2645,6 +2796,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     wire_popup_drag(&popup, &config_manager);
     wire_popup_copy(&popup);
+    wire_popup_speak(&popup, &window, &config_manager);
 
     // Stage 7: persistent tray icon -- same "must stay alive for the rest of
     // main()" reasoning as `popup` above. Its own `.show()`/`.hide()` are
@@ -3975,6 +4127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let to_code = languages::name_to_code(&to_lang).to_string();
 
                     let weak2 = weak.clone();
+                    let weak_for_popup = weak.clone();
                     let is_processing2 = is_processing.clone();
                     let popup_weak2 = popup_weak.clone();
                     std::thread::spawn(move || {
@@ -3994,11 +4147,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         to_code,
                                         text,
                                     },
-                                    Some(Box::new(move |_entry: &TranscriptEntry, outcome: &TranslationOutcome| {
+                                    Some(Box::new(move |entry: &TranscriptEntry, outcome: &TranslationOutcome| {
                                         is_processing2.store(false, Ordering::SeqCst);
                                         if !show_popup_enabled {
                                             return;
                                         }
+                                        // `on_done` runs right before the entry is
+                                        // pushed, so its row index is the current
+                                        // row count (see push_transcript_entry).
+                                        let speakers = match weak_for_popup.upgrade() {
+                                            Some(window) => PopupSpeakers::for_entry(
+                                                entry,
+                                                window.get_transcript_entries().row_count() as i32,
+                                                window.get_tts_enabled(),
+                                            ),
+                                            None => PopupSpeakers::NONE,
+                                        };
                                         show_popup(
                                             &popup_weak2,
                                             outcome,
@@ -4006,6 +4170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             popup_show_phrase,
                                             popup_auto_hide_seconds,
                                             remembered_popup_position,
+                                            speakers,
                                         );
                                     })),
                                 );
@@ -4247,7 +4412,7 @@ mod tests {
     #[test]
     fn popup_translation_template_keeps_dictionary_highlighting() {
         let outcome = dictionary_outcome();
-        let (_, translation) = popup_templates(&outcome, false);
+        let (_, translation) = popup_templates(&outcome, false, PopupSpeakers::NONE);
         assert_eq!(translation, outcome.translation_body_template);
         assert!(translation.contains("color=\"@pos\""), "{translation}");
         assert!(translation.contains("color=\"@synonym\""), "{translation}");
@@ -4258,7 +4423,7 @@ mod tests {
     #[test]
     fn popup_templates_follow_popup_show_prompt() {
         let outcome = dictionary_outcome();
-        let (phrase, translation) = popup_templates(&outcome, true);
+        let (phrase, translation) = popup_templates(&outcome, true, PopupSpeakers::NONE);
         assert_eq!(
             phrase,
             styled::phrase_template(true, "English", "violent", false)
@@ -4268,6 +4433,193 @@ mod tests {
             &styled::escape_markdown("[Russian]:")
         )));
         assert!(translation.contains("color=\"@pos\""));
+    }
+
+    #[test]
+    fn popup_templates_mark_only_speakable_sides() {
+        let outcome = dictionary_outcome();
+        let both = PopupSpeakers {
+            entry_index: 0,
+            phrase: true,
+            translation: true,
+        };
+        let (phrase, translation) = popup_templates(&outcome, true, both);
+        assert_eq!(
+            phrase,
+            styled::phrase_template(true, "English", "violent", true)
+        );
+        assert!(
+            translation.contains(styled::SPEAKER_MARKER),
+            "{translation}"
+        );
+        assert!(translation.contains("color=\"@pos\""));
+
+        let phrase_only = PopupSpeakers {
+            translation: false,
+            ..both
+        };
+        let (phrase, translation) = popup_templates(&outcome, false, phrase_only);
+        assert!(phrase.starts_with(styled::SPEAKER_MARKER), "{phrase}");
+        assert!(
+            !translation.contains(styled::SPEAKER_MARKER),
+            "{translation}"
+        );
+
+        let message = "Error: boom";
+        let error = TranslationOutcome {
+            translation_raw: message.to_string(),
+            translation_body_template: styled::escape_markdown(message),
+            is_error: true,
+            ..dictionary_outcome()
+        };
+        let (_, translation) = popup_templates(&error, true, both);
+        assert!(
+            !translation.contains(styled::SPEAKER_MARKER),
+            "{translation}"
+        );
+    }
+
+    #[test]
+    fn format_popup_line_carries_the_speaker_where_the_template_does() {
+        assert_eq!(
+            format_popup_line(true, "English", "hello", false),
+            format_line(true, "English", "hello")
+        );
+        assert_eq!(format_popup_line(false, "English", "hello", false), "hello");
+        assert_eq!(
+            format_popup_line(true, "English", "hello", true),
+            "[🔊\u{a0}English]: hello"
+        );
+        assert_eq!(
+            format_popup_line(false, "English", "hello", true),
+            "🔊\u{a0}hello"
+        );
+
+        // The measured line is the rendered one, glyph included.
+        let colors = styled::RoleColors::default();
+        for show_prompt in [true, false] {
+            let template = styled::phrase_template(show_prompt, "English", "hello", true);
+            let rendered = styled::strip_template(
+                &template.replace(styled::SPEAKER_MARKER, styled::SPEAKER_PREFIX),
+            );
+            assert_eq!(
+                rendered,
+                format_popup_line(show_prompt, "English", "hello", true)
+            );
+            assert!(styled::render_template_checked(&template, &colors).is_ok());
+        }
+    }
+
+    #[test]
+    fn popup_speakers_follow_the_entry_and_tts() {
+        let mut entry = info_transcript_entry("hello", "привет");
+        entry.phrase_speech = "hello".into();
+        entry.translation_speech = "привет".into();
+        entry.translation_is_error = false;
+        assert_eq!(
+            PopupSpeakers::for_entry(&entry, 4, true),
+            PopupSpeakers {
+                entry_index: 4,
+                phrase: true,
+                translation: true,
+            }
+        );
+        assert_eq!(
+            PopupSpeakers::for_entry(&entry, 4, false),
+            PopupSpeakers {
+                entry_index: 4,
+                phrase: false,
+                translation: false,
+            }
+        );
+
+        entry.translation_is_error = true;
+        let speakers = PopupSpeakers::for_entry(&entry, 4, true);
+        assert!(speakers.phrase && !speakers.translation);
+
+        entry.translation_is_error = false;
+        entry.translation_speech = "".into();
+        assert!(!PopupSpeakers::for_entry(&entry, 4, true).translation);
+    }
+
+    /// The popup's prompt is a speak button for its own row, right-click still copies
+    /// over it, and the popup stays open while its row speaks, then counts down anew.
+    #[test]
+    fn popup_prompt_speaks_its_row_and_holds_the_popup_while_speaking() {
+        use slint::platform::{PointerEventButton, WindowEvent};
+
+        i_slint_backend_testing::init_no_event_loop();
+        let popup = TranslationPopup::new().unwrap();
+        popup.set_phrase_text("[🔊\u{a0}English]: hello".into());
+        popup.set_translation_text("[🔊\u{a0}Russian]: привет".into());
+        let colors = styled::RoleColors::default();
+        popup.set_phrase_styled(styled::render_template_with_speaker(
+            &styled::phrase_template(true, "English", "hello", true),
+            &colors,
+            true,
+        ));
+        popup.set_entry_index(3);
+        popup.set_phrase_speaker(true);
+        popup.set_translation_speaker(true);
+        popup.set_phrase_prompt("English".into());
+        popup.set_translation_prompt("Russian".into());
+        popup.set_phrase_copy("hello".into());
+        popup.show().unwrap();
+
+        let spoken = Rc::new(RefCell::new(Vec::new()));
+        let spoken_in = spoken.clone();
+        popup.on_popup_speak_requested(move |is_phrase| spoken_in.borrow_mut().push(is_phrase));
+        let copied = Rc::new(RefCell::new(Vec::new()));
+        let copied_in = copied.clone();
+        popup.on_popup_copy_requested(move |is_phrase| copied_in.borrow_mut().push(is_phrase));
+        let hidden = Rc::new(Cell::new(0));
+        let hidden_in = hidden.clone();
+        popup.on_hide_requested(move || hidden_in.set(hidden_in.get() + 1));
+
+        // Over the phrase's `[🔊 English]:` (content padding 8px, then the block).
+        let position = slint::LogicalPosition::new(16.0, 14.0);
+        let click = |button| {
+            popup
+                .window()
+                .dispatch_event(WindowEvent::PointerMoved { position });
+            popup
+                .window()
+                .dispatch_event(WindowEvent::PointerPressed { position, button });
+            popup
+                .window()
+                .dispatch_event(WindowEvent::PointerReleased { position, button });
+        };
+        click(PointerEventButton::Left);
+        assert_eq!(*spoken.borrow(), vec![true]);
+        click(PointerEventButton::Right);
+        assert_eq!(*copied.borrow(), vec![true]);
+        assert_eq!(spoken.borrow().len(), 1);
+
+        // Move the pointer off the popup, so hovering doesn't hold it.
+        popup.window().dispatch_event(WindowEvent::PointerExited);
+
+        popup.set_auto_hide_seconds(1);
+        popup.invoke_start_hide_timer();
+        popup.set_speaking_is_phrase(true);
+        popup.set_speaking_entry_index(3);
+        assert!(popup.get_own_row_speaking());
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(3500));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(hidden.get(), 0, "hidden while its row speaks");
+
+        // Another row speaking doesn't hold the popup.
+        popup.set_speaking_entry_index(-1);
+        slint::platform::update_timers_and_animations();
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(600));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(
+            hidden.get(),
+            0,
+            "the countdown starts anew when speech ends"
+        );
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(600));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(hidden.get(), 1);
     }
 
     #[test]
@@ -4281,7 +4633,7 @@ mod tests {
             translation_body_template: styled::escape_markdown(message),
             is_error: true,
         };
-        let (_, translation) = popup_templates(&outcome, true);
+        let (_, translation) = popup_templates(&outcome, true, PopupSpeakers::NONE);
         assert_eq!(
             translation,
             styled::span(styled::Role::Error, &styled::escape_markdown(message))

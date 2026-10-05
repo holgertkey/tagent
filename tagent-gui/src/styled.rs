@@ -14,7 +14,7 @@
 //! Every user- or provider-derived string that ends up in a template must first go
 //! through [`escape_markdown`] -- see that function's doc comment for exactly what it
 //! guarantees, which is what keeps a role token embedded in hostile input from ever
-//! reaching [`render_template`]'s substitution step.
+//! reaching [`render_template_with_speaker`]'s substitution step.
 
 use slint::{Color, StyledText, StyledTextFromMarkdownError};
 
@@ -65,7 +65,7 @@ impl Role {
 ///
 /// `text` must already be escaped -- this never escapes on its own, so a caller that
 /// forgets to escape first would let raw markdown/HTML through, or (worse) let a
-/// literal `color="@pos"` substring reach [`render_template`]'s naive substitution.
+/// literal `color="@pos"` substring reach [`render_template_with_speaker`]'s naive substitution.
 pub fn span(role: Role, escaped_text: &str) -> String {
     match role.token() {
         Some(token) => format!("<font color=\"@{token}\">{escaped_text}</font>"),
@@ -96,7 +96,7 @@ pub const BLANK_LINE: &str = "\u{a0}";
 /// - every ASCII punctuation character in what's left is backslash-escaped -- valid
 ///   CommonMark, and this is what keeps a literal `color="@pos"` (or a bare `<`, `#`,
 ///   backtick, ...) in user text from ever being interpreted as markup or as a
-///   [`render_template`] substitution target.
+///   [`render_template_with_speaker`] substitution target.
 ///
 /// Escaping is **not** idempotent -- escaping already-escaped text double-escapes it
 /// (every backslash this function inserts is itself ASCII punctuation, and gets a
@@ -160,7 +160,7 @@ pub const SPEAKER_MARKER: &str = "@speaker@";
 pub const SPEAKER_PREFIX: &str = "🔊\u{a0}";
 
 /// Best-effort plain-text fallback for a template that failed to render (see
-/// [`render_template`]) -- strips `<...>` tags and un-escapes backslash-escaped
+/// [`render_template_with_speaker`]) -- strips `<...>` tags and un-escapes backslash-escaped
 /// characters. Never fails; an ugly row beats a missing one.
 pub fn strip_template(template: &str) -> String {
     let mut out = String::with_capacity(template.len());
@@ -327,7 +327,7 @@ fn substitute_roles(template: &str, colors: &RoleColors) -> String {
 
 /// Renders `template` against `colors`, exposing a parse failure instead of silently
 /// falling back -- used by tests to assert that a template built from hostile input
-/// never takes [`render_template`]'s fallback path.
+/// never takes [`render_template_with_speaker`]'s fallback path.
 #[cfg(test)]
 pub fn render_template_checked(
     template: &str,
@@ -353,15 +353,11 @@ fn substitute_speaker(template: &str, speaker: bool) -> String {
 }
 
 /// Renders `template` against `colors` into a `styled-text` value ready to bind to a
-/// `StyledText` element. Never fails: a parse error (which should never happen for a
-/// template this module built itself, but a row must never simply vanish) logs once to
-/// stderr and falls back to [`strip_template`]'s plain-text rendering.
-pub fn render_template(template: &str, colors: &RoleColors) -> StyledText {
-    render_template_with_speaker(template, colors, false)
-}
-
-/// [`render_template`] for a transcript block, whose prompt shows the speaker glyph
-/// ([`SPEAKER_MARKER`]) while `speaker` (text-to-speech enabled) is on.
+/// `StyledText` element; a [`SPEAKER_MARKER`] becomes the speaker glyph while `speaker`
+/// (text-to-speech enabled) is on, and disappears otherwise. Never fails: a parse error
+/// (which should never happen for a template this module built itself, but a row must
+/// never simply vanish) logs once to stderr and falls back to [`strip_template`]'s
+/// plain-text rendering.
 pub fn render_template_with_speaker(
     template: &str,
     colors: &RoleColors,
@@ -405,7 +401,7 @@ pub fn phrase_template(show_prompt: bool, lang: &str, text: &str, speaker: bool)
 }
 
 /// One transcript row's rendered Stage 13 fields: the two templates (kept so they can
-/// be [`render_template`]-ed again after a restyle), the two rendered `styled-text`
+/// be [`render_template_with_speaker`]-ed again after a restyle), the two rendered `styled-text`
 /// values, and the two plain-text strings the right-click "Copy" menu items read.
 ///
 /// Built by [`entry_fields`] so every `TranscriptEntry { .. }` construction site in
@@ -548,7 +544,7 @@ mod tests {
         assert_eq!(twice, "a\\\\\\*b");
     }
 
-    // --- hostile input round-trips through render_template -----------------
+    // --- hostile input round-trips through render_template_with_speaker -----------------
 
     fn hostile_strings() -> Vec<&'static str> {
         vec![
@@ -621,7 +617,7 @@ mod tests {
         );
         for input in hostile_strings() {
             let template = phrase_template(false, "English", input, false);
-            let rendered = render_template(&template, &colors);
+            let rendered = render_template_with_speaker(&template, &colors, false);
             let expected = StyledText::from_plain_text(&literal_transform(input));
             assert_eq!(
                 rendered, expected,

@@ -34,7 +34,8 @@ The transcript's header names the providers in use for each job.
   or **Esc** in any application (Windows and Linux with X11; on Wayland only in Tagent's
   window; while the hotkeys are active). Only one entry
   plays at a time: the others can't be clicked meanwhile. With text-to-speech off
-  (Settings > General), the 🔊 disappears from the prompts.
+  (Settings > General), the 🔊 disappears from the prompts. The
+  [popup](hotkeys-and-popup.md#the-popup)'s prompts speak the same way.
 - **Right-click** an entry's phrase or translation to copy it as plain text, without
   the prompt. A brief flash of its border confirms the copy. With "Show menu on
   right-click" (Settings > General), right-click opens a **Copy** menu instead.

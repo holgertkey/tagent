@@ -27,9 +27,16 @@ restart** (Quit in the tray menu, then start again).
 
 - It **hides itself** after a few seconds (3 by default), but stays while the mouse
   rests on it.
+- **The prompt is the speak button**, as in the [transcript](main-window.md): click
+  `[🔊 English]:` to hear the phrase, `[🔊 Russian]:` to hear the translation (for a
+  dictionary entry, only the main translation), or just 🔊 with the prompt turned off.
+  Click it again to stop. The popup stays open while it reads and hides a few seconds
+  after it's done. The same entry in the main window shows it playing too, and only one
+  thing plays at a time. With text-to-speech off (Settings > General), the prompts are
+  plain text.
 - **Right-click** the phrase or the translation to copy that line. Its border flashes to
   confirm.
-- **Drag** it with the left mouse button to move it. With "Remember position after
+- **Drag** it with the left mouse button to move it (anywhere but on a 🔊 prompt). With "Remember position after
   dragging" on, later popups appear where you dropped this one instead of next to the
   cursor.
 - When it hides, the application you were in gets the keyboard focus back.

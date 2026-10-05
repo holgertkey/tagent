@@ -20,6 +20,16 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-05
 
 ### Added
+- (+012) **The popup's prompts speak, like the transcript's.** Click `[🔊 English]:`
+  before the phrase to hear it (in the detected language with `Auto`), or
+  `[🔊 Russian]:` before the translation to hear the translation (for a dictionary
+  entry, its main translation); with the popup's prompt off, a line starts with just 🔊.
+  It is the same playback as the transcript row of that translation: tinted in both
+  windows while it plays, a second click (or the speech hotkey, or Esc where it works)
+  stops it, and only one plays at a time. The popup stays open while its own translation
+  is being read and hides the usual number of seconds after it ends. Right-click copies
+  over the prompt too; the popup is dragged by the rest of its surface. With
+  text-to-speech off, the prompts stay plain.
 - (+009) **Only one copy runs per user.** Starting `tagent-gui` again (the menu entry, a
   terminal) shows the running copy's window, as the tray's "Show Tagent" does, and the
   new start exits; from a terminal it prints `tagent-gui is already running (pid …);
