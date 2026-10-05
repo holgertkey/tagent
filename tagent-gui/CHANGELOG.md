@@ -17,7 +17,7 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 
 ## [Unreleased]
 
-## [0.15.0] - 2026-10-04
+## [0.15.0] - 2026-10-05
 
 ### Added
 - (+009) **Only one copy runs per user.** Starting `tagent-gui` again (the menu entry, a
@@ -374,6 +374,14 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+011) **The main window kept its place only the first time it was shown.** Shown
+  again from the tray (or by starting `tagent-gui` again) in the same run, it opened in
+  the middle of the primary screen: hiding to the tray unmaps the window and the window
+  manager places it anew, and the saved position was applied only at the first show.
+  Now the window comes back with the size and position it was hidden with, every time,
+  also with "Remember window size and position" off (that setting now only decides
+  whether they are kept for the next start). A plain minimize is left to the desktop as
+  before.
 - (+010) **The menu showed a gear instead of the icon** after `--install-desktop` (GNOME): the
   shell read the new menu entry before it noticed the new icon, and kept the gear until
   the next session. The icon theme folder and the entry are now touched after writing, so

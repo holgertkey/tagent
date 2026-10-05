@@ -29,9 +29,10 @@ Closing the window still hides it, with no tray to bring it back, so quit with
 | Setting (Settings > Hotkeys & Tray) | Default | Effect |
 |-------------------------------------|---------|--------|
 | Start minimized to tray | on | Starts with the window hidden; off opens it |
-| Remember window size and position | on | Reopens the window where you left it |
+| Remember window size and position | on | Reopens the window where you left it at the next start |
 
-Both apply the next time the window is shown or the app starts.
+Both apply the next time the window is shown or the app starts. Within one run, the
+window always comes back from the tray where you hid it, whatever the second setting says.
 
 Starting `tagent-gui` from a terminal on Linux or macOS doesn't keep the terminal busy:
 the app detaches and the prompt returns at once. Its messages go to a log file (see

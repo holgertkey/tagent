@@ -2238,28 +2238,70 @@ fn current_window_geometry(window: &AppWindow) -> config::WindowGeometry {
     }
 }
 
-/// Captures `window`'s current position/size into `config_manager` and persists it,
-/// if [`config::GuiConfig::remember_window_geometry`] is enabled -- a no-op otherwise,
-/// so a geometry saved from before the setting was turned off is left on disk rather
-/// than overwritten with nothing. Called right before the window is hidden
-/// (`on_close_requested`) or the app quits (`tray.on_quit_requested`) -- the two
-/// points in `main()` that actually call this.
-fn save_window_geometry(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfigManager>>) {
+/// Captures `window`'s current position/size into `session_geometry` (always, so the
+/// next show in this run puts the window back there) and, if
+/// [`config::GuiConfig::remember_window_geometry`] is enabled, persists it to
+/// `config_manager` too -- otherwise the file is left alone, so a geometry saved from
+/// before the setting was turned off stays on disk rather than being overwritten.
+/// Called right before the window is hidden (`on_close_requested`) or the app quits
+/// (`tray.on_quit_requested`) -- the two points in `main()` that actually call this. A
+/// plain minimize calls neither: the window stays mapped, and the desktop keeps its
+/// place by itself.
+fn save_window_geometry(
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+    session_geometry: &Cell<Option<config::WindowGeometry>>,
+) {
+    let geometry = current_window_geometry(window);
+    session_geometry.set(Some(geometry));
     let mut manager = config_manager.lock().unwrap();
     if !manager.config().remember_window_geometry {
         return;
     }
-    let geometry = current_window_geometry(window);
     let mut new_config = manager.config().clone();
     new_config.window_geometry = Some(geometry);
     let _ = manager.update(new_config);
 }
 
-/// Shows `window` and, only the *first* time this is called in a given run (tracked
-/// via `geometry_restored`), restores its saved position/size from config -- if
+/// What [`show_window_restoring_geometry`] applies to the window it shows: a size and,
+/// when known, a position. `None` = leave the window as it is.
+///
+/// A window hidden earlier in this run (`session_geometry`) goes back exactly where it
+/// was, whatever `remember_window_geometry` says: hiding to the tray unmaps it, and the
+/// window manager (mutter, also under XWayland) places a re-mapped window anew, in the
+/// middle of the primary screen, so without this every show after the first lost its
+/// place. The first show of a run takes the saved geometry when the setting is on,
+/// otherwise [`DEFAULT_WINDOW_SIZE`] with no position (the initial-sizing race fix).
+fn geometry_to_apply(
+    first_show: bool,
+    session_geometry: Option<config::WindowGeometry>,
+    remember: bool,
+    saved_geometry: Option<config::WindowGeometry>,
+) -> Option<(slint::PhysicalSize, Option<slint::PhysicalPosition>)> {
+    let to_target = |geometry: config::WindowGeometry| {
+        (
+            slint::PhysicalSize::new(geometry.width, geometry.height),
+            Some(slint::PhysicalPosition::new(geometry.x, geometry.y)),
+        )
+    };
+    if let Some(geometry) = session_geometry {
+        return Some(to_target(geometry));
+    }
+    if !first_show {
+        return None;
+    }
+    Some(match saved_geometry.filter(|_| remember) {
+        Some(geometry) => to_target(geometry),
+        None => (DEFAULT_WINDOW_SIZE, None),
+    })
+}
+
+/// Shows `window` and puts it where [`geometry_to_apply`] says: on the *first* show of
+/// a run (tracked via `geometry_restored`) its saved position/size from config -- if
 /// `remember_window_geometry` is enabled and a geometry was actually saved by a
-/// previous run -- or otherwise re-asserts [`DEFAULT_WINDOW_SIZE`] explicitly. That
-/// same first-show gate also re-runs [`apply_style`] (see its doc comment), for the
+/// previous run -- or otherwise [`DEFAULT_WINDOW_SIZE`] re-asserted explicitly; on a
+/// later show, the geometry the window had when it was hidden (`session_geometry`).
+/// The first-show gate also re-runs [`apply_style`] (see its doc comment), for the
 /// same underlying reason: some window state doesn't settle to its real value until
 /// the window has an actual on-screen surface, so anything resolved at window
 /// *creation* time (well before `start_minimized` users ever hit their first real
@@ -2282,11 +2324,10 @@ fn save_window_geometry(window: &AppWindow, config_manager: &Arc<Mutex<GuiConfig
 /// comment already describes for position), re-asserting the intended size the same
 /// way corrects the race instead of leaving it to chance.
 ///
-/// Only the *first* show restores/re-asserts anything -- a later one (e.g.
-/// re-opening from the tray after hiding, in the same run) leaves the window exactly
-/// as the user last had it, since blindly re-applying a size every time would fight
-/// with a live resize/move that hasn't been captured back into `config_manager` yet
-/// (only `save_window_geometry`, called on hide/quit, does that).
+/// A later show (re-opening from the tray after hiding, in the same run) applies the
+/// geometry captured by `save_window_geometry` right before that hide, so it never
+/// fights a live resize/move: the window can't be moved while hidden. Leaving it to
+/// the window manager instead (as before 0.15.0+011) re-centered it every time.
 ///
 /// The immediate `set_size`/`set_position` call is followed by a second, deferred
 /// re-apply via `slint::Timer::single_shot`. This isn't defensive speculation: live
@@ -2305,20 +2346,18 @@ fn show_window_restoring_geometry(
     window: &AppWindow,
     config_manager: &Arc<Mutex<GuiConfigManager>>,
     geometry_restored: &Rc<Cell<bool>>,
+    session_geometry: &Cell<Option<config::WindowGeometry>>,
 ) {
     window.show().ok();
 
-    if geometry_restored.replace(true) {
-        return;
-    }
-
-    // Re-resolve Auto-theme-dependent colors now that the window has a real
-    // on-screen surface -- see `apply_style`'s doc comment for why a fixed
-    // delay from window *creation* isn't enough here. Immediate call plus a
-    // short deferred retry, the same settle-and-retry shape as the geometry
-    // re-apply below.
-    apply_style(window, config_manager.lock().unwrap().config());
-    {
+    let first_show = !geometry_restored.replace(true);
+    if first_show {
+        // Re-resolve Auto-theme-dependent colors now that the window has a real
+        // on-screen surface -- see `apply_style`'s doc comment for why a fixed
+        // delay from window *creation* isn't enough here. Immediate call plus a
+        // short deferred retry, the same settle-and-retry shape as the geometry
+        // re-apply below.
+        apply_style(window, config_manager.lock().unwrap().config());
         let weak_window = window.as_weak();
         let config_manager = config_manager.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
@@ -2328,22 +2367,18 @@ fn show_window_restoring_geometry(
         });
     }
 
-    let config = config_manager.lock().unwrap().config().clone();
-    let saved_geometry = config
-        .remember_window_geometry
-        .then_some(config.window_geometry)
-        .flatten();
-
-    let (target_size, target_position) = match saved_geometry {
-        Some(geometry) => (
-            slint::PhysicalSize::new(geometry.width, geometry.height),
-            Some(slint::PhysicalPosition::new(geometry.x, geometry.y)),
-        ),
-        // No saved geometry to restore (or the setting is off) -- still
-        // re-assert the default size, to correct the initial-sizing race
-        // described above rather than leave the window at whatever it raced
-        // into.
-        None => (DEFAULT_WINDOW_SIZE, None),
+    let target = {
+        let manager = config_manager.lock().unwrap();
+        let config = manager.config();
+        geometry_to_apply(
+            first_show,
+            session_geometry.get(),
+            config.remember_window_geometry,
+            config.window_geometry,
+        )
+    };
+    let Some((target_size, target_position)) = target else {
+        return;
     };
 
     apply_window_geometry(window, target_size, target_position);
@@ -2498,6 +2533,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // run -- see `show_window_restoring_geometry`'s doc comment for why this is
     // only ever done once, not on every show.
     let geometry_restored = Rc::new(Cell::new(false));
+    // Where the window was when last hidden in this run, regardless of
+    // `remember_window_geometry` -- see `geometry_to_apply`.
+    let session_geometry: Rc<Cell<Option<config::WindowGeometry>>> = Rc::new(Cell::new(None));
 
     // Stage 7: redirect the OS-level close button (and Alt+F4/Cmd+Q-equivalent)
     // to hide the window instead of quitting the app -- the tray's "Quit" item
@@ -2507,9 +2545,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // actually saves from.
     let weak_for_close = window.as_weak();
     let config_manager_for_close = config_manager.clone();
+    let session_geometry_for_close = session_geometry.clone();
     window.window().on_close_requested(move || {
         if let Some(window) = weak_for_close.upgrade() {
-            save_window_geometry(&window, &config_manager_for_close);
+            save_window_geometry(
+                &window,
+                &config_manager_for_close,
+                &session_geometry_for_close,
+            );
         }
         slint::CloseRequestResponse::HideWindow
     });
@@ -2628,12 +2671,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let weak_for_tray_show = window.as_weak();
     let config_manager_for_tray_show = config_manager.clone();
     let geometry_restored_for_tray_show = geometry_restored.clone();
+    let session_geometry_for_tray_show = session_geometry.clone();
     tray.on_show_requested(move || {
         if let Some(window) = weak_for_tray_show.upgrade() {
             show_window_restoring_geometry(
                 &window,
                 &config_manager_for_tray_show,
                 &geometry_restored_for_tray_show,
+                &session_geometry_for_tray_show,
             );
         }
     });
@@ -2659,6 +2704,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let weak_for_quit = window.as_weak();
     let config_manager_for_quit = config_manager.clone();
+    let session_geometry_for_quit = session_geometry.clone();
     tray.on_quit_requested(move || {
         // Only save if the window is actually visible right now -- an
         // already-hidden (or never-shown, if start_minimized and the window
@@ -2668,7 +2714,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // meaningful.
         if let Some(window) = weak_for_quit.upgrade() {
             if window.window().is_visible() {
-                save_window_geometry(&window, &config_manager_for_quit);
+                save_window_geometry(
+                    &window,
+                    &config_manager_for_quit,
+                    &session_geometry_for_quit,
+                );
             }
         }
         slint::quit_event_loop().ok();
@@ -4005,7 +4055,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // `tray`'s "Quit" item (`slint::quit_event_loop()`, wired above) ends it.
     let start_minimized = config_manager.lock().unwrap().config().start_minimized;
     if !start_minimized {
-        show_window_restoring_geometry(&window, &config_manager, &geometry_restored);
+        show_window_restoring_geometry(
+            &window,
+            &config_manager,
+            &geometry_restored,
+            &session_geometry,
+        );
     }
     slint::run_event_loop_until_quit()?;
     Ok(())
@@ -4014,6 +4069,63 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn geometry(x: i32, y: i32) -> config::WindowGeometry {
+        config::WindowGeometry {
+            x,
+            y,
+            width: 600,
+            height: 500,
+        }
+    }
+
+    fn target(g: config::WindowGeometry) -> (slint::PhysicalSize, Option<slint::PhysicalPosition>) {
+        (
+            slint::PhysicalSize::new(g.width, g.height),
+            Some(slint::PhysicalPosition::new(g.x, g.y)),
+        )
+    }
+
+    /// The first show of a run takes the saved geometry only with the setting on, and
+    /// re-asserts the default size otherwise.
+    #[test]
+    fn first_show_uses_saved_geometry_only_when_remembered() {
+        let saved = geometry(100, 200);
+        assert_eq!(
+            geometry_to_apply(true, None, true, Some(saved)),
+            Some(target(saved))
+        );
+        assert_eq!(
+            geometry_to_apply(true, None, false, Some(saved)),
+            Some((DEFAULT_WINDOW_SIZE, None))
+        );
+        assert_eq!(
+            geometry_to_apply(true, None, true, None),
+            Some((DEFAULT_WINDOW_SIZE, None))
+        );
+    }
+
+    /// Regression (0.15.0+011): a show after hiding to the tray must put the window back
+    /// where it was hidden, not leave it to the window manager (which re-centers it), and
+    /// that whether or not the geometry is remembered across runs.
+    #[test]
+    fn later_show_restores_the_geometry_it_was_hidden_with() {
+        let saved = geometry(100, 200);
+        let hidden_at = geometry(700, 50);
+        for remember in [true, false] {
+            assert_eq!(
+                geometry_to_apply(false, Some(hidden_at), remember, Some(saved)),
+                Some(target(hidden_at))
+            );
+        }
+        // A hide before the first show (can't happen today) still wins over the file.
+        assert_eq!(
+            geometry_to_apply(true, Some(hidden_at), true, Some(saved)),
+            Some(target(hidden_at))
+        );
+        // Nothing captured and not the first show: leave the window alone.
+        assert_eq!(geometry_to_apply(false, None, true, Some(saved)), None);
+    }
 
     /// "Auto" is a source-only choice: the target dropdown must not offer it, and
     /// must otherwise list exactly the source languages, in the same order.
