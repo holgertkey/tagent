@@ -52,6 +52,9 @@ new line. The label before the box shows the selected language pair, `[auto → 
 
 **📋** puts the clipboard's content into the box, ready to translate.
 
+**Ctrl+V**, **Ctrl+C**, **Ctrl+X**, **Ctrl+A** and **Ctrl+Z** work in any keyboard layout,
+Russian or Greek included: a key counts as the Latin letter at its place on a US keyboard.
+
 ## Switching providers
 
 The provider button's menu has a section for each job: Translation, Dictionary and

@@ -17,6 +17,7 @@ mod desktop_entry;
 #[cfg(unix)]
 mod detach;
 mod dictionary;
+mod latin_shortcuts;
 mod platform;
 mod popup_position;
 mod provider_form;
@@ -2693,6 +2694,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Err(err) = slint::set_xdg_app_id(desktop_entry::APP_ID) {
         eprintln!("Warning: cannot set the window class ({err}).");
     }
+    latin_shortcuts::install(window.window());
     init_language_models(&window);
     // Right after the first window: that's when winit registers for raw keyboard
     // input, which would otherwise hide every keystroke from the global hotkey hook
@@ -3062,6 +3064,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let recording_started_at_for_settings = recording_started_at.clone();
     window.on_settings_requested(move || {
         let dialog = SettingsDialog::new().unwrap();
+        latin_shortcuts::install(dialog.window());
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
 
         let recording_started_at_for_recording = recording_started_at_for_settings.clone();

@@ -397,6 +397,12 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+015) **Ctrl+V, Ctrl+C, Ctrl+X, Ctrl+A and Ctrl+Z did nothing in a non-Latin
+  keyboard layout.** With a Russian (Greek, Hebrew, ...) layout active, the input box and
+  the Settings fields ignored these shortcuts: Slint recognizes them by the character the
+  key types (`м`, not `v`). A key that types a non-Latin character while Ctrl is held now
+  counts as the Latin letter at its place on a US keyboard, as in browsers; Latin layouts
+  (Dvorak included) are unchanged.
 - (+011) **The main window kept its place only the first time it was shown.** Shown
   again from the tray (or by starting `tagent-gui` again) in the same run, it opened in
   the middle of the primary screen: hiding to the tray unmaps the window and the window
