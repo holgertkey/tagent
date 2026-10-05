@@ -555,6 +555,8 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_translation_color(resolve_color(&config.translation_color, default_fg));
     window.set_translation_background(resolve_color(&config.translation_background, default_bg));
 
+    window.set_input_size(config.input_size);
+
     // Prompt color (2026-09-22): one shared accent for the input box's own
     // "[auto → ru]:" label (app.slint's `prompt-accent`, read straight off this
     // property) and the transcript's `Role::Prompt` highlighting (read back
@@ -1593,6 +1595,7 @@ fn seed_dialog_fields(dialog: &SettingsDialog, config: &config::GuiConfig) {
     dialog.set_phrase_size(config.phrase_size);
     dialog.set_translation_font_index(font_index_for(&config.translation_font));
     dialog.set_translation_size(config.translation_size);
+    dialog.set_input_size(config.input_size);
     dialog.set_popup_font_index(font_index_for(&config.popup_font));
     dialog.set_popup_size(config.popup_size);
     dialog.set_popup_show_prompt(config.popup_show_prompt);
@@ -3623,6 +3626,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_translation_bg_green(),
                     dialog.get_translation_bg_blue(),
                 ),
+                input_size: dialog.get_input_size(),
                 prompt_color: color_field_hex(
                     dialog.get_prompt_color_use_default(),
                     dialog.get_prompt_color_red(),

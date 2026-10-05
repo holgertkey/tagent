@@ -59,6 +59,7 @@ Colors are `"#RRGGBB"`, or `""` for the theme's color.
 | `phrase_size`, `translation_size` | `13` | Font size in pixels | View |
 | `phrase_color`, `translation_color` | `""` | Text color | View |
 | `phrase_background`, `translation_background` | `""` | Background color of the lines | View |
+| `input_size` | `13` | Font size in pixels of the transcript's header, the input box's label and its text | View |
 | `block_spacing_px` | `20` | Gap between entries, in pixels | View |
 | `phrases_spacing_px` | `2` | Gap between a phrase and its translation, in pixels | View |
 

@@ -358,6 +358,10 @@ export component AppWindow inherits Window {
     in-out property <int> translation-size: 13;
     in-out property <color> translation-color: #000000;
     in-out property <color> translation-background: #00000000;
+    // Size of the rest of the window's text (`tagent-gui.json`'s input_size): the
+    // header, the input box's label and its text. The transcript's prompts are
+    // part of the phrase/translation lines, so they follow those sizes.
+    in-out property <int> input-size: 13;
 
     // Vertical gap (px) between one phrase/translation pair and the next.
     in-out property <int> block-spacing-px: 20;
@@ -553,7 +557,7 @@ export component AppWindow inherits Window {
                     Text {
                         text: header-text;
                         font-family: "monospace";
-                        font-size: 13px;
+                        font-size: input-size * 1px;
                         color: panel-foreground;
                         wrap: word-wrap;
                     }
@@ -770,7 +774,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: input-prompt;
                     font-family: "monospace";
-                    font-size: 13px;
+                    font-size: input-size * 1px;
                     color: prompt-accent;
                     vertical-alignment: center;
                 }
@@ -790,7 +794,7 @@ export component AppWindow inherits Window {
 
                         input-field := TextInput {
                             text <=> input-text;
-                            font-size: 13px;
+                            font-size: input-size * 1px;
                             color: field-foreground;
                             selection-background-color: selection-bg;
                             selection-foreground-color: selection-fg;
@@ -1609,6 +1613,7 @@ export component SettingsDialog inherits Dialog {
     in-out property <int> phrase-size: 13;
     in-out property <int> translation-font-index: 0;
     in-out property <int> translation-size: 13;
+    in-out property <int> input-size: 13;
 
     in-out property <bool> background-use-default <=> background-color-field.use-default;
     in-out property <float> background-red <=> background-color-field.red;
@@ -2026,6 +2031,13 @@ export component SettingsDialog inherits Dialog {
                         }
                         translation-text-color-field := ColorPickerField { label: "Text color:"; }
                         translation-bg-color-field := ColorPickerField { label: "Background:"; }
+
+                        Text { text: "Header & input"; font-weight: 700; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Size:"; vertical-alignment: center; }
+                            SpinBox { minimum: 8; maximum: 48; value <=> input-size; }
+                        }
                     }
                 }
             }

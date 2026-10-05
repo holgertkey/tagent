@@ -228,6 +228,13 @@ pub struct GuiConfig {
     /// Background color for the translation lines, as `"#RRGGBB"`, or `""` to follow the theme.
     #[serde(default = "default_style_color")]
     pub translation_background: String,
+    /// Font size (px) for the rest of the main window's text: the transcript
+    /// header, the input box's `[auto → ru]:` label and the text typed in the
+    /// input box. The transcript's own prompts follow
+    /// [`Self::phrase_size`]/[`Self::translation_size`] instead, being part of
+    /// those lines.
+    #[serde(default = "default_style_size")]
+    pub input_size: i32,
     /// Text color for the `[Language]:` prompt prefix shown before the phrase and
     /// translation text in the transcript and the input box (and, since Stage 13,
     /// the transcript's own highlighted prefix -- see `styled::Role::Prompt`), as
@@ -474,6 +481,7 @@ impl Default for GuiConfig {
             translation_size: default_style_size(),
             translation_color: default_style_color(),
             translation_background: default_style_color(),
+            input_size: default_style_size(),
             prompt_color: default_style_color(),
             popup_font: default_style_font(),
             popup_size: default_style_size(),
@@ -1396,6 +1404,7 @@ mod tests {
         assert_eq!(config.translation_size, 13);
         assert_eq!(config.translation_color, "");
         assert_eq!(config.translation_background, "");
+        assert_eq!(config.input_size, 13);
         assert_eq!(config.prompt_color, "");
         assert_eq!(config.block_spacing_px, 20);
         assert_eq!(config.phrases_spacing_px, 2);
@@ -1612,6 +1621,20 @@ mod tests {
         save_to_path(&path, &config).unwrap();
 
         assert_eq!(load_from_path(&path), config);
+    }
+
+    #[test]
+    fn input_size_round_trips_through_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_config_path(&dir);
+        let config = GuiConfig {
+            input_size: 20,
+            ..Default::default()
+        };
+
+        save_to_path(&path, &config).unwrap();
+
+        assert_eq!(load_from_path(&path).input_size, 20);
     }
 
     #[test]

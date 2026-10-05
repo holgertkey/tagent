@@ -45,6 +45,10 @@ The look of the main window. Everything applies at once.
 - **Background color**, **Prompt color**, and for the **Phrase** and **Translation**
   lines their font, size, text color and background. "Theme default" next to a color
   follows the theme.
+- **Header & input** size: the font size of the rest of the window's text: the header
+  at the top of the transcript, the input box's `[auto → ru]:` label and what you type.
+  The transcript's prompts are part of their lines, so they follow the Phrase and
+  Translation sizes.
 - **Blocks spacing**, **Phrases spacing**: the gaps between entries, and between a
   phrase and its translation.
 - **Show prompt**: the prompt before each line: the language pair before a phrase

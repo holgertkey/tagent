@@ -20,6 +20,12 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-05
 
 ### Added
+- (+014) **A font size for the header and the input box.** Settings > View >
+  "Header & input" (`input_size` in `tagent-gui.json`, default `13`, as before) sets the
+  size of the transcript's header, the input box's `[auto → ru]:` label and the text
+  typed in the input box, which were fixed at 13 px; the input box grows to fit a
+  larger size. The transcript's prompts keep following the Phrase and Translation
+  sizes.
 - (+012) **The popup's prompts speak, like the transcript's.** Click `[🔊 English]:`
   before the phrase to hear it (in the detected language with `Auto`), or
   `[🔊 Russian]:` before the translation to hear the translation (for a dictionary
