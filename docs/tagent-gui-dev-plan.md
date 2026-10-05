@@ -422,14 +422,31 @@ they are and are scaled along with everything else.
    child, which would then take it for the user's own and ignore the setting), and before
    `AppWindow::new()`: load the config, compute the factor, `std::env::set_var` (still
    single-threaded at that point, the same reasoning as `session::init`'s `remove_var`).
-4. **Window sizes in logical units.** `DEFAULT_WINDOW_SIZE` is a `PhysicalSize` (480×480),
-   so at 150 % the window would keep its physical size and the scaled content wouldn't
-   fit. Make the default a `LogicalSize` (or multiply by `window.scale_factor()`), and
-   handle the saved `window_geometry`: store `ui_scale` with it and ignore a saved size
-   taken at another scale (the position stays physical and is still used). Check the
-   initial-sizing race fix (deferred `set_size`) still holds with the logical size.
-   The popup and the Settings dialog size themselves from their layouts; check them by
-   screenshot.
+4. **Window sizes in logical units** (decided 2026-10-05). Today `DEFAULT_WINDOW_SIZE`
+   (480×480) and the saved `window_geometry` are physical pixels, so at 150 % the window
+   would keep its physical size and the scaled content wouldn't fit.
+   - `DEFAULT_WINDOW_SIZE` becomes a `slint::LogicalSize` (480×480 logical: 720×720
+     physical at 150 %, unchanged at 100 % on a 1.0 screen).
+   - The saved **size** is stored in logical units: `save_window_geometry` divides the
+     physical size by `window.scale_factor()`, `geometry_to_apply` restores it as a
+     `LogicalSize`. A changed `ui_scale` (or system scale) then scales the window in
+     proportion and keeps its shape; no `ui_scale` is stored with the geometry.
+   - The **position** stays physical (`x`/`y`, a place on the screen that shouldn't move
+     with the scale; the popup's `popup_position` is physical too).
+   - `session_geometry` (hide to tray → show, same run) stays as it is: the scale can't
+     change within a run, so physical values round-trip exactly.
+   - **Format change, no migration** (per the "no migration shims" preference): the size
+     fields are renamed `width`/`height` → `logical_width`/`logical_height` (`f32`), so an
+     old physical size is never read as logical (on a 2.0 screen an old 960×960 would
+     become 1920×1920). They are `Option`s with `#[serde(default)]` and `WindowGeometry`
+     doesn't deny unknown fields, so an old file still loads: its position is used, its
+     size is ignored once (the window opens at the default size), and the next save
+     writes the new fields. A changelog note says so.
+   - `apply_window_geometry` takes the size as a `slint::WindowSize` (logical) and the
+     position as before. Check that the initial-sizing race fix (the size re-asserted
+     after `show()` and again 150 ms later) still holds with a logical size.
+   - The popup and the Settings dialog size themselves from their layouts; check them by
+     screenshot.
 5. `config.rs`: `ui_scale: u32` (`#[serde(default)]`), normalization, round-trip tests.
    `app.slint` + `main.rs`: the View tab dropdown, staged like the other Settings values.
 6. Docs: user book (Settings > View page, the limitation, `SLINT_SCALE_FACTOR` taking
@@ -438,11 +455,14 @@ they are and are scaled along with everything else.
 
 **Tests.** `effective_factor` (100 → `None`, user env → `None`, `150` on `1.0` → `1.5`,
 `125` on `2.0` → `2.5`, `90` on `1.25` → `1.125`), `ui_scale` load/normalize (missing →
-100, `0`/`500`/`"abc"` → 100 + warning), the geometry rule (a saved size from another
-scale is dropped, the position kept), the Xft.dpi parser (`Xft.dpi:\t144` → `1.5`,
+100, `0`/`500`/`"abc"` → 100 + warning), the geometry (physical → logical on save at
+scale 1.5 and back; an old file with `width`/`height` loads, keeps the position and
+falls back to the default size; the new fields round-trip; `geometry_to_apply` returns
+the default as a logical size), the Xft.dpi parser (`Xft.dpi:\t144` → `1.5`,
 absent → `None`). By screenshot with an isolated `XDG_CONFIG_HOME`: `ui_scale` 100, 150
 and 200 on the main window, the Settings dialog and the popup (nothing clipped, window
-opens big enough); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
+opens big enough; a size saved at 100 % reopens 1.5× larger at 150 %, at the same
+position); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
 check on a 100 % and a 150 % display setting.
 
 ## Deliberately not done (revisit only with a new reason)
