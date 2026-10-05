@@ -22,7 +22,7 @@ have no `+BUILD`.
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-10-03
+## [0.19.0] - 2026-10-05
 
 ### Changed
 - (+003) **The OpenAI-compatible dictionary provider reads an answer made of several JSON
@@ -47,6 +47,9 @@ have no `+BUILD`.
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- (+006) **`languages::pair_label`**: the compact `source → target` label of a language
+  pair (`"auto → ru"`), moved here from `tagent-cli` so both applications show the pair the
+  same way.
 - (+005) **`providers::ProviderAxis`**: the three provider axes (`Translation`,
   `Dictionary`, `Speech`) as one type, with `ALL` (display order), `kinds()` (the axis's
   `*_PROVIDERS` list), `descriptors()` (its registry) and `label()` (`"translation"`, ...),

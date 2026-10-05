@@ -19,16 +19,18 @@ From top to bottom:
 ## The transcript
 
 Every translation is added to the transcript, newest at the bottom. Each entry shows
-your phrase and its translation, each with its language as a prompt (`[Auto]:`,
-`[Russian]:`); a single word shows a dictionary entry: the main translation, the parts of
-speech, and the synonyms in brackets. Parts of speech, synonyms, a spelling-correction
+your phrase and its translation, each behind a prompt, as in `tagent-cli`: the phrase's
+names the language pair (`[auto → ru]:`), the translation's the provider that made it
+(`[deepl]:`; for a dictionary entry the dictionary provider). So every entry still says
+which provider answered after you switch providers. A single word shows a dictionary
+entry: the main translation, the parts of speech, and the synonyms in brackets. Parts of speech, synonyms, a spelling-correction
 notice and errors each get their own color.
 
 The transcript's header names the providers in use for each job.
 
-- **The prompt is the speak button.** Click `[🔊 Auto]:` before a phrase to hear it, in
-  its source language (detected if `Auto`); click `[🔊 Russian]:` before the translation
-  to hear the translation. For a dictionary entry, only the main translation is read.
+- **The prompt is the speak button.** Click `[🔊 auto → ru]:` before a phrase to hear
+  it, in its source language (detected if `auto`); click `[🔊 deepl]:` before the
+  translation to hear the translation, in the target language. For a dictionary entry, only the main translation is read.
   With the prompt turned off (Settings > View), a block starts with just 🔊. The prompt
   is tinted while it plays; click it again to stop, or press the speech hotkey again,
   or **Esc** in any application (Windows and Linux with X11; on Wayland only in Tagent's
@@ -46,7 +48,7 @@ copy with right-click.
 ## The input box
 
 Type or paste text and press **Enter**, or click **Translate**. **Shift+Enter** starts a
-new line. Drag the bar above the box to make it taller.
+new line. The label before the box shows the selected language pair, `[auto → ru]:`. Drag the bar above the box to make it taller.
 
 **📋** puts the clipboard's content into the box, ready to translate.
 

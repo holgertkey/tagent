@@ -641,13 +641,27 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
       (`prompt-accent`-colored) on the copied `Rectangle`, reset by a `flash-timer := Timer`
       element. The menu path never touches this state, since the menu's own click-to-close is
       already visible feedback on its own.
-- **Configurable prompt color** (2026-09-22): the `[Language]:` prompt shown before phrase
+- **Prompt labels, as in `tagent-cli`** (0.15.0+013): the phrase's prompt is the language
+  pair as codes (`[auto → ru]:`, `tagent::languages::pair_label`, shared with
+  `tagent-cli` since `tagent` 0.19.0+006; the selected source, never the detected one), the
+  translation's the lowercased name of the provider that produced the body
+  (`translation_label`: the dictionary provider for a dictionary hit — the worker's result
+  carries a `dictionary_hit` flag — else the translation provider, also when a dictionary
+  miss falls back to the plain translation; error rows have no prompt).
+  `TranslationRequest` carries only codes; `TranslationOutcome` carries
+  `phrase_label`/`translation_label` for the popup; `format_line`, `styled::prefixed` and
+  friends take a `label`. The input box's label is `AppWindow::input-prompt`, set by
+  `refresh_input_prompt` on `languages-changed` (`changed source-language-index` /
+  `target-language-index`, so index changes from Rust — ⇄, a new default pair — count too),
+  so the pair's format lives only in `tagent`. Speech is unaffected: it reads the row's
+  `from_code`/`to_code`, never the prompt.
+- **Configurable prompt color** (2026-09-22): the `[label]:` prompt shown before phrase
   and translation text has its own color, independent of the phrase/translation text colors
   -- `prompt_color` (`tagent-gui.json`, Settings > View) for the main window, resolved in
   `apply_style` the same way `phrase_color`/`translation_color` are (an empty value falls
   back to `prompt-accent-theme-default`, `app.slint`'s own `Palette.color-scheme`-branching
   default, formerly hardcoded as `prompt-accent` before this feature). It drives two things:
-  the input box's own `[Lang]:` label (`prompt-accent`, read directly as a `color`) and, via
+  the input box's own `[auto → ru]:` label (`prompt-accent`, read directly as a `color`) and, via
   `color_to_hex` and `styled::RoleColors::new`'s `prompt` parameter, the transcript's
   `Role::Prompt` highlighting (Stage 13) -- which is why `RoleColors` changed from a `Copy`
   struct with two fixed light/dark presets to a `Clone`-only one carrying a resolved `String`:
@@ -866,7 +880,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   `selection-foreground`/`control-background`/`control-foreground`), which already
   resolve correctly for all three `color-scheme` values with no manual branching —
   Palette's role properties are *resolved* colors, not raw scheme flags, unlike
-  `color-scheme` itself. The one exception is the `"[Lang]:"` prompt highlight
+  `color-scheme` itself. The one exception is the `"[label]:"` prompt highlight
   (`prompt-accent`), a decorative color with no matching Palette role: it branches
   directly on `Palette.color-scheme == ColorScheme.light`, which means it can't
   distinguish "explicitly auto, system is light" from "explicitly dark" — an
@@ -1356,7 +1370,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   row gets two 🔊 speaker buttons — one for the phrase, one for the translation
   (hidden when `entry.translation-is-error` or the entry has no
   `translation-speech`, e.g. a failed translation). Since 0.14.0+041 the button is the block's
-  own `[Lang]:` prompt, rendered as `[🔊 Lang]:` (`🔊` alone with the prompt
+  own `[label]:` prompt, rendered as `[🔊 label]:` (`🔊` alone with the prompt
   off): the templates carry `styled::SPEAKER_MARKER`, which
   `render_template_with_speaker` turns into `SPEAKER_PREFIX` or drops,
   following `tts-enabled` (`changed tts-enabled` → `restyle_transcript`). A

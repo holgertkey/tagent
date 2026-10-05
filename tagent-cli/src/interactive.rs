@@ -369,7 +369,7 @@ impl InteractiveMode {
             let (source_code, target_code) = self.config_manager.get_language_codes();
 
             // Rebuilt every iteration, so both reflect `/l` and config-file edits.
-            let pair_label = config::language_pair_label(&source_code, &target_code);
+            let pair_label = tagent::languages::pair_label(&source_code, &target_code);
             terminal_title.set(&format!("Tagent — {}", pair_label));
             let prompt =
                 config::colorize(&format!("[{}]: ", pair_label), &config.source_prompt_color);

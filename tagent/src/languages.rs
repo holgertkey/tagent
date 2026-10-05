@@ -166,9 +166,29 @@ pub fn language_for_locales(
     })
 }
 
+/// A compact `source → target` label for a language pair, from codes as given (no
+/// lookup, `"auto"` stays `"auto"`).
+///
+/// Both applications use it for the prompt that shows the pair, so they look alike.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(tagent::languages::pair_label("auto", "ru"), "auto → ru");
+/// ```
+pub fn pair_label(source: &str, target: &str) -> String {
+    format!("{source} → {target}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pair_label_joins_codes_with_an_arrow() {
+        assert_eq!(pair_label("auto", "ru"), "auto → ru");
+        assert_eq!(pair_label("en", "pt-BR"), "en → pt-BR");
+    }
 
     #[test]
     fn language_code_accepts_codes_and_names_in_any_case() {

@@ -175,7 +175,7 @@ Candidates, not yet scheduled; the order is a suggestion.
    speak buttons sharing the transcript's playback; see "Speaking from the popup" in
    `docs/ARCHITECTURE.md`. Follow-up: right-click over a transcript prompt doesn't copy
    (the speak button takes the press; since 0.14.0+041).
-10. **CLI-style prompts.** Planned 2026-10-05, next up: the phrase prompt names the
+10. **CLI-style prompts.** Implemented 2026-10-05 (0.15.0+013), manual check open: the phrase prompt names the
     language pair (`[auto → ru]:`), the translation prompt the provider that answered
     (`[deepl]:`), the input box label the pair; see
     [below](#planned-stage--cli-style-prompts).
@@ -355,7 +355,7 @@ round-trip and lowercasing, saving drops deleted names.
 
 ### Planned stage — CLI-style prompts
 
-**Status:** planned 2026-10-05 (decided with the maintainer the same day), not started.
+**Status:** implemented 2026-10-05 (`tagent-gui` 0.15.0+013); the manual check is open.
 Target: one iteration of each crate touched: `tagent` `0.19.0+006`, `tagent-cli`
 `0.17.0+024`, `tagent-gui` `0.15.0+013` (all three versions are unreleased, so no version
 question). Once shipped and checked, condense this section to a row of the "Shipped

@@ -275,7 +275,7 @@ impl Translator {
         let (source_code, target_code) = self.config_manager.get_language_codes();
         let source_prompt = format!(
             "[{}]: ",
-            config::language_pair_label(&source_code, &target_code)
+            tagent::languages::pair_label(&source_code, &target_code)
         );
         config::print_colored(&source_prompt, &config.source_prompt_color);
         io::stdout().flush().ok();
@@ -355,7 +355,7 @@ impl Translator {
                     // Show the original text (source word)
                     let source_label = format!(
                         "[{}]: ",
-                        config::language_pair_label(&source_code, &target_code)
+                        tagent::languages::pair_label(&source_code, &target_code)
                     );
                     self.emit_line(format!(
                         "{}{}",
@@ -448,7 +448,7 @@ impl Translator {
         // Show the language pair with colored prompt, like the interactive prompt
         let source_label = format!(
             "[{}]: ",
-            config::language_pair_label(source_code, target_code)
+            tagent::languages::pair_label(source_code, target_code)
         );
         self.emit_line(format!(
             "{}{}",

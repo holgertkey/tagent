@@ -84,7 +84,7 @@ pub const BLANK_LINE: &str = "\u{a0}";
 /// Escapes `text` for safe embedding in a template.
 ///
 /// Every user- or provider-derived string (phrases, translations, dictionary
-/// words/synonyms, error text, the language name in a `[Lang]:` prompt) must go
+/// words/synonyms, error text, a `[label]:` prompt's label) must go
 /// through this before being placed in a template, whether or not it's then wrapped in
 /// a [`span`]. Guarantees, line by line (after normalizing `\r\n`/`\r` to `\n`):
 ///
@@ -146,7 +146,7 @@ fn escape_line(line: &str) -> String {
     result
 }
 
-/// Placeholder for the transcript's speaker glyph inside a `[Lang]:` prompt (or, with
+/// Placeholder for the transcript's speaker glyph inside a `[label]:` prompt (or, with
 /// the prompt off, at the start of the block) -- see [`render_template_with_speaker`],
 /// which turns it into [`SPEAKER_PREFIX`] or removes it. Templates keep the marker
 /// rather than the glyph so the glyph follows the live `enable_text_to_speech` setting
@@ -374,18 +374,19 @@ pub fn render_template_with_speaker(
     }
 }
 
-/// Builds an escaped `[Lang]:` prompt span (role [`Role::Prompt`]) followed by `body`,
+/// Builds an escaped `[label]:` prompt span (role [`Role::Prompt`]) followed by `body`,
 /// or just `body` when `show_prompt` is off -- mirrors `format_line`'s plain-text
-/// shape exactly (`"[{lang}]: {text}"`). With `speaker` (a transcript block that can
-/// be spoken), the prompt gets a [`SPEAKER_MARKER`] after its `[` (`[🔊 Lang]:`), or,
+/// shape exactly (`"[{label}]: {text}"`). The label is the language pair before a
+/// phrase (`auto → ru`) and the provider before a translation (`deepl`). With `speaker` (a transcript block that can
+/// be spoken), the prompt gets a [`SPEAKER_MARKER`] after its `[` (`[🔊 label]:`), or,
 /// with the prompt off, the block starts with one (`🔊 text`).
-fn prefixed(show_prompt: bool, lang: &str, body: &str, speaker: bool) -> String {
+fn prefixed(show_prompt: bool, label: &str, body: &str, speaker: bool) -> String {
     let marker = if speaker { SPEAKER_MARKER } else { "" };
     if show_prompt {
         let prefix = format!(
             "{}{marker}{}",
             escape_markdown("["),
-            escape_markdown(&format!("{lang}]:"))
+            escape_markdown(&format!("{label}]:"))
         );
         format!("{} {body}", span(Role::Prompt, &prefix))
     } else {
@@ -394,10 +395,10 @@ fn prefixed(show_prompt: bool, lang: &str, body: &str, speaker: bool) -> String 
 }
 
 /// Builds a phrase block's template: `text`, escaped, in the block's own default
-/// color, behind an optional [`Role::Prompt`]-highlighted `[Lang]:` prefix (with a
+/// color, behind an optional [`Role::Prompt`]-highlighted `[label]:` prefix (with a
 /// [`SPEAKER_MARKER`] when `speaker`, see [`prefixed`]).
-pub fn phrase_template(show_prompt: bool, lang: &str, text: &str, speaker: bool) -> String {
-    prefixed(show_prompt, lang, &escape_markdown(text), speaker)
+pub fn phrase_template(show_prompt: bool, label: &str, text: &str, speaker: bool) -> String {
+    prefixed(show_prompt, label, &escape_markdown(text), speaker)
 }
 
 /// One transcript row's rendered Stage 13 fields: the two templates (kept so they can
@@ -454,7 +455,7 @@ pub fn entry_fields(
 /// Builds a translation block's template from an already-built `body` template (e.g.
 /// a plain translation's [`escape_markdown`]-ed text, or a dictionary article's
 /// multi-line template from [`crate::dictionary::to_template`]) -- adds the optional
-/// `[Lang]:` prompt prefix, or (for `is_error`) wraps the whole thing in the `Error`
+/// `[label]:` prompt prefix, or (for `is_error`) wraps the whole thing in the `Error`
 /// role and skips the prefix, mirroring `spawn_translation`'s plain-text handling
 /// (an error message is never itself prompt-formatted). Unlike [`translation_template`],
 /// `body` is used as-is -- the caller is responsible for having already escaped/
@@ -463,7 +464,7 @@ pub fn entry_fields(
 /// an error row never gets a marker.
 pub fn translation_template_from_body(
     show_prompt: bool,
-    lang: &str,
+    label: &str,
     body: &str,
     is_error: bool,
     speaker: bool,
@@ -471,7 +472,7 @@ pub fn translation_template_from_body(
     if is_error {
         span(Role::Error, body)
     } else {
-        prefixed(show_prompt, lang, body, speaker)
+        prefixed(show_prompt, label, body, speaker)
     }
 }
 

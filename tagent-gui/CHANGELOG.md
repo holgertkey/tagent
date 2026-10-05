@@ -231,6 +231,13 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+013) **The prompts look like `tagent-cli`'s**: the phrase's names the language pair
+  (`[auto → ru]:`, was `[Auto]:`), the translation's the provider that made it
+  (`[deepl]:`, was `[Russian]:`), the dictionary provider for a dictionary entry. With
+  providers switched during a run, every entry still says which one answered. The
+  input box's label shows the pair too (`[auto → ru]:`). Same in the popup; the prompts
+  still speak (the phrase in the source language, the translation in the target one).
+  Uses `tagent::languages::pair_label` (`tagent` 0.19.0+006).
 - (+006) **The app id is now `io.github.holgertkey.TagentGui`** (was `tagent-gui`): the
   GlobalShortcuts portal accepts only a reverse-DNS id with a matching desktop entry. The
   desktop entry and icon are renamed with it (`io.github.holgertkey.TagentGui.desktop`,

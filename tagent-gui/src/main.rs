@@ -65,10 +65,30 @@ fn language_index(names: &[&str], code: &str) -> i32 {
 }
 
 /// Fills the main window's two language dropdowns; [`refresh_default_languages`] selects
-/// the configured pair.
+/// the configured pair. Also keeps the input box's label on the selected pair
+/// ([`refresh_input_prompt`]): `languages-changed` fires on every index change, the
+/// ones made from Rust included.
 fn init_language_models(window: &AppWindow) {
     window.set_source_languages(language_model(&source_languages()));
     window.set_target_languages(language_model(&target_languages()));
+    let weak = window.as_weak();
+    window.on_languages_changed(move || {
+        if let Some(window) = weak.upgrade() {
+            refresh_input_prompt(&window);
+        }
+    });
+    refresh_input_prompt(window);
+}
+
+/// Sets the input box's label to the selected pair, as `tagent-cli`'s prompt shows it:
+/// `[auto → ru]:`.
+fn refresh_input_prompt(window: &AppWindow) {
+    let (source, target) = selected_languages(window);
+    let pair = languages::pair_label(
+        languages::name_to_code(&source),
+        languages::name_to_code(&target),
+    );
+    window.set_input_prompt(format!("[{pair}]:").into());
 }
 
 /// The language names the main window's two dropdowns select.
@@ -536,7 +556,7 @@ fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.set_translation_background(resolve_color(&config.translation_background, default_bg));
 
     // Prompt color (2026-09-22): one shared accent for the input box's own
-    // "[Lang]:" label (app.slint's `prompt-accent`, read straight off this
+    // "[auto → ru]:" label (app.slint's `prompt-accent`, read straight off this
     // property) and the transcript's `Role::Prompt` highlighting (read back
     // as a hex string by `restyle_transcript`/`spawn_translation` below,
     // since `RoleColors::prompt` needs a markdown-embeddable string, not a
@@ -730,7 +750,7 @@ fn show_popup(
     popup.set_phrase_text(
         format_popup_line(
             show_prompt,
-            &outcome.from_lang,
+            &outcome.phrase_label,
             &outcome.phrase_raw,
             speakers.phrase,
         )
@@ -741,7 +761,7 @@ fn show_popup(
     } else {
         format_popup_line(
             show_prompt,
-            &outcome.to_lang,
+            &outcome.translation_label,
             &outcome.translation_raw,
             speakers.translation,
         )
@@ -763,11 +783,11 @@ fn show_popup(
             slint::SharedString::new()
         }
     };
-    popup.set_phrase_prompt(prompt(&outcome.from_lang));
+    popup.set_phrase_prompt(prompt(&outcome.phrase_label));
     popup.set_translation_prompt(if outcome.is_error {
         slint::SharedString::new()
     } else {
-        prompt(&outcome.to_lang)
+        prompt(&outcome.translation_label)
     });
 
     // Right-click copy (2026-09-22): plain, unprompted text -- exactly what
@@ -1043,7 +1063,9 @@ fn wire_popup_speak(
     });
 }
 
-/// Formats one transcript line, with or without its "[Auto]:"-style prompt.
+/// Formats one transcript line, with or without its `[label]:` prompt: the language
+/// pair before a phrase (`[auto → ru]:`), the provider before a translation
+/// (`[deepl]:`), as `tagent-cli` prints them.
 ///
 /// The prompt is baked directly into the string (rather than kept as a
 /// separately styled element) because Slint's plain `Text`/`TextInput` can't
@@ -1051,22 +1073,22 @@ fn wire_popup_speak(
 /// separately colored/sized prompt element made the text wrap flush under the
 /// prompt (hanging indent) instead of flush from the row's left margin like a
 /// normal paragraph, which didn't match the desired look.
-fn format_line(show_prompt: bool, lang: &str, text: &str) -> String {
+fn format_line(show_prompt: bool, label: &str, text: &str) -> String {
     if show_prompt {
-        format!("[{lang}]: {text}")
+        format!("[{label}]: {text}")
     } else {
         text.to_string()
     }
 }
 
 /// [`format_line`] for the popup, with [`styled::SPEAKER_PREFIX`] where its rendered
-/// template has the speaker glyph (`speaker`): `[🔊 Lang]: text`, or `🔊 text` with
+/// template has the speaker glyph (`speaker`): `[🔊 label]: text`, or `🔊 text` with
 /// the prompt off. The popup measures its width on this plain line, so it must match
 /// what is rendered, glyph included.
-fn format_popup_line(show_prompt: bool, lang: &str, text: &str, speaker: bool) -> String {
+fn format_popup_line(show_prompt: bool, label: &str, text: &str, speaker: bool) -> String {
     match (speaker, show_prompt) {
-        (false, _) => format_line(show_prompt, lang, text),
-        (true, true) => format!("[{}{lang}]: {text}", styled::SPEAKER_PREFIX),
+        (false, _) => format_line(show_prompt, label, text),
+        (true, true) => format!("[{}{label}]: {text}", styled::SPEAKER_PREFIX),
         (true, false) => format!("{}{text}", styled::SPEAKER_PREFIX),
     }
 }
@@ -1916,18 +1938,16 @@ fn push_transcript_entry(window: &AppWindow, entry: TranscriptEntry) {
 
 /// Everything [`spawn_translation`] needs, grouped into one struct rather than passed as
 /// separate arguments (clippy's `too_many_arguments` threshold is 7; this is naturally
-/// more than that once both the display names and the resolved provider codes are
-/// included). `from_lang`/`to_lang` are the human-readable names used for the
-/// transcript's "[Lang]:"-style prompt; `from_code`/`to_code` are their already-resolved
-/// provider codes.
+/// more than that once the providers, the switches and the language codes are included).
+/// `from_code`/`to_code` are the already-resolved provider codes; the phrase's prompt
+/// shows them as a pair ([`tagent::languages::pair_label`], `[auto → ru]:`), as
+/// `tagent-cli` does.
 struct TranslationRequest {
     translate_provider: config::ProviderChoice,
     dictionary_provider: config::ProviderChoice,
     show_prompt: bool,
     show_dictionary: bool,
     spell_check: bool,
-    from_lang: String,
-    to_lang: String,
     from_code: String,
     to_code: String,
     text: String,
@@ -1939,11 +1959,14 @@ struct TranslationRequest {
 /// independent `popup_show_prompt`/`popup_show_phrase` settings, rather than
 /// inheriting whatever the transcript's `show_prompt` baked into `TranscriptEntry`.
 struct TranslationOutcome {
-    from_lang: String,
-    to_lang: String,
+    /// The phrase's prompt label: the language pair (`auto → ru`).
+    phrase_label: String,
+    /// The translation's prompt label: the provider that produced it
+    /// ([`translation_label`]).
+    translation_label: String,
     phrase_raw: String,
     translation_raw: String,
-    /// `translation_raw`'s Stage 13 template *without* any `[Lang]:` prefix -- a
+    /// `translation_raw`'s Stage 13 template *without* any `[label]:` prefix -- a
     /// dictionary hit's role-tagged article (part-of-speech/synonym/notice spans), or
     /// the [`styled::escape_markdown`]-ed plain translation or error message. The
     /// popup wraps it with its own prefix via [`popup_templates`].
@@ -1951,6 +1974,19 @@ struct TranslationOutcome {
     /// `true` when `translation_raw` is already a formatted `"Error: ..."` message
     /// (never itself lang-prompt-formatted, same as the transcript's own handling).
     is_error: bool,
+}
+
+/// The translation prompt's label: the name of the provider that produced the shown
+/// body, lowercased like `tagent-cli`'s (a kind or a profile name) -- the dictionary
+/// provider for a dictionary hit, otherwise the translation provider (a dictionary miss
+/// falls back to its plain translation).
+fn translation_label(dictionary_hit: bool, translate: &str, dictionary: &str) -> String {
+    if dictionary_hit {
+        dictionary
+    } else {
+        translate
+    }
+    .to_lowercase()
 }
 
 /// Builds the popup's (phrase, translation) templates for `outcome` under the popup's
@@ -1965,13 +2001,13 @@ fn popup_templates(
     (
         styled::phrase_template(
             show_prompt,
-            &outcome.from_lang,
+            &outcome.phrase_label,
             &outcome.phrase_raw,
             speakers.phrase,
         ),
         styled::translation_template_from_body(
             show_prompt,
-            &outcome.to_lang,
+            &outcome.translation_label,
             &outcome.translation_body_template,
             outcome.is_error,
             speakers.translation,
@@ -2140,12 +2176,11 @@ fn spawn_translation(
         show_prompt,
         show_dictionary,
         spell_check,
-        from_lang,
-        to_lang,
         from_code,
         to_code,
         text,
     } = request;
+    let phrase_label = languages::pair_label(&from_code, &to_code);
 
     // Trimmed here (not left to each caller) so both the button/Enter path and the
     // hotkey path -- which passes the clipboard text untrimmed, see the hotkey
@@ -2166,7 +2201,12 @@ fn spawn_translation(
         // (Stage 10).
         let from_code_for_entry = from_code.clone();
         let to_code_for_entry = to_code.clone();
-        // (display_body, speech_text) -- speech_text is the raw *primary* translation
+        // The translation's prompt names the provider that answered; the choices
+        // themselves move into the async block.
+        let translate_name = translate_provider.name.clone();
+        let dictionary_name = dictionary_provider.name.clone();
+        // (display_body, speech_text, body_template, dictionary_hit) -- speech_text is
+        // the raw *primary* translation
         // only (Stage 10): for a plain translation the two are identical, but for a
         // Stage 9 dictionary hit display_body is the full formatted block while
         // speech_text is just its header line (dictionary::primary_line), so the
@@ -2235,7 +2275,7 @@ fn spawn_translation(
                         ));
                         let speech_text =
                             dictionary::primary_line(&entry, primary).unwrap_or_default();
-                        Ok((body, speech_text, template))
+                        Ok((body, speech_text, template, true))
                     }
                     // No dictionary entry (word not found / provider returned None) or a
                     // dictionary-lookup error: fall back to the plain translation already
@@ -2244,7 +2284,7 @@ fn spawn_translation(
                     // function needs to return.
                     _ => translate_result.map(|t| {
                         let template = styled::escape_markdown(&t);
-                        (t.clone(), t, template)
+                        (t.clone(), t, template, false)
                     }),
                 }
             } else {
@@ -2253,7 +2293,7 @@ fn spawn_translation(
                     .await
                     .map(|t| {
                         let template = styled::escape_markdown(&t);
-                        (t.clone(), t, template)
+                        (t.clone(), t, template, false)
                     })
             }
         });
@@ -2261,11 +2301,11 @@ fn spawn_translation(
         slint::invoke_from_event_loop(move || {
             // `translation_body_template` is the un-prefixed body (a dictionary
             // article's role-tagged template, or the escaped plain translation/error
-            // message) -- kept separately for the popup, which adds its own `[Lang]:`
+            // message) -- kept separately for the popup, which adds its own `[label]:`
             // prefix under its own `popup_show_prompt` setting.
             let (translation_raw, translation_speech, is_error, translation_body_template) =
                 match &result {
-                    Ok((body, speech_text, body_template)) => (
+                    Ok((body, speech_text, body_template, _)) => (
                         body.clone(),
                         speech_text.clone(),
                         false,
@@ -2277,17 +2317,20 @@ fn spawn_translation(
                         (message.clone(), message, true, body_template)
                     }
                 };
+            let dictionary_hit = matches!(&result, Ok((_, _, _, true)));
+            let translation_label =
+                translation_label(dictionary_hit, &translate_name, &dictionary_name);
             // The prompt is the block's speak button (app.slint), so it carries the
             // speaker glyph's marker wherever there's something to speak.
             let translation_full_template = styled::translation_template_from_body(
                 show_prompt,
-                &to_lang,
+                &translation_label,
                 &translation_body_template,
                 is_error,
                 !translation_speech.is_empty(),
             );
             let phrase_full_template =
-                styled::phrase_template(show_prompt, &from_lang, &text, !text.is_empty());
+                styled::phrase_template(show_prompt, &phrase_label, &text, !text.is_empty());
 
             // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived
             // from *that block's own* resolved background (decision 5); `prompt` is
@@ -2326,11 +2369,11 @@ fn spawn_translation(
             );
 
             let entry = TranscriptEntry {
-                phrase: format_line(show_prompt, &from_lang, &text).into(),
+                phrase: format_line(show_prompt, &phrase_label, &text).into(),
                 translation: if is_error {
                     translation_raw.clone().into()
                 } else {
-                    format_line(show_prompt, &to_lang, &translation_raw).into()
+                    format_line(show_prompt, &translation_label, &translation_raw).into()
                 },
                 phrase_speech: text.clone().into(),
                 translation_speech: if is_error {
@@ -2348,19 +2391,19 @@ fn spawn_translation(
                 phrase_copy: fields.phrase_copy.into(),
                 translation_copy: fields.translation_copy.into(),
                 phrase_prompt: if show_prompt {
-                    from_lang.clone().into()
+                    phrase_label.clone().into()
                 } else {
                     "".into()
                 },
                 translation_prompt: if show_prompt && !is_error {
-                    to_lang.clone().into()
+                    translation_label.clone().into()
                 } else {
                     "".into()
                 },
             };
             let outcome = TranslationOutcome {
-                from_lang: from_lang.clone(),
-                to_lang: to_lang.clone(),
+                phrase_label: phrase_label.clone(),
+                translation_label,
                 phrase_raw: text.clone(),
                 translation_raw,
                 translation_body_template,
@@ -2928,8 +2971,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 show_prompt,
                 show_dictionary,
                 spell_check,
-                from_lang: from_lang.to_string(),
-                to_lang: to_lang.to_string(),
                 from_code,
                 to_code,
                 text,
@@ -3947,8 +3988,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         return;
                                     };
                                     // Stage 13: "[Speech]" plays the same role a real
-                                    // language name does in `phrase_template`'s
-                                    // `[Lang]:` prompt, so it gets the same
+                                    // label does in `phrase_template`'s
+                                    // `[label]:` prompt, so it gets the same
                                     // `Role::Prompt` highlighting -- the produced
                                     // string is exactly `format!("[Speech]: {text}")`,
                                     // matching the plain `phrase` field below.
@@ -4141,8 +4182,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         show_prompt,
                                         show_dictionary,
                                         spell_check,
-                                        from_lang: from_lang.to_string(),
-                                        to_lang: to_lang.to_string(),
                                         from_code,
                                         to_code,
                                         text,
@@ -4369,6 +4408,36 @@ mod tests {
     }
 
     #[test]
+    fn input_prompt_shows_the_selected_pair() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+        init_language_models(&window);
+        let config = config::GuiConfig {
+            source_language: "auto".to_string(),
+            target_language: "ru".to_string(),
+            ..config::GuiConfig::default()
+        };
+        refresh_default_languages(&window, &config);
+        // `changed` handlers run with the timers.
+        slint::platform::update_timers_and_animations();
+        assert_eq!(window.get_input_prompt(), "[auto → ru]:");
+
+        // A dropdown pick and a swap (index changes from Rust, as ⇄ makes) follow.
+        window.set_source_language_index(language_index(&source_languages(), "en"));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(window.get_input_prompt(), "[en → ru]:");
+        let (source, target) = swapped_language_indices(
+            window.get_source_language_index(),
+            window.get_target_language_index(),
+        )
+        .unwrap();
+        window.set_source_language_index(source);
+        window.set_target_language_index(target);
+        slint::platform::update_timers_and_animations();
+        assert_eq!(window.get_input_prompt(), "[ru → en]:");
+    }
+
+    #[test]
     fn language_index_finds_codes_and_defaults_to_the_first_entry() {
         assert_eq!(language_index(&source_languages(), "auto"), 0);
         assert_eq!(language_index(&["English", "Russian"], "ru"), 1);
@@ -4393,8 +4462,8 @@ mod tests {
             Some("насильственный"),
         ));
         TranslationOutcome {
-            from_lang: "English".to_string(),
-            to_lang: "Russian".to_string(),
+            phrase_label: "en → ru".to_string(),
+            translation_label: "google".to_string(),
             phrase_raw: "violent".to_string(),
             translation_raw: dictionary::format_dictionary_entry(
                 &entry,
@@ -4426,11 +4495,11 @@ mod tests {
         let (phrase, translation) = popup_templates(&outcome, true, PopupSpeakers::NONE);
         assert_eq!(
             phrase,
-            styled::phrase_template(true, "English", "violent", false)
+            styled::phrase_template(true, "en → ru", "violent", false)
         );
         assert!(translation.starts_with(&styled::span(
             styled::Role::Prompt,
-            &styled::escape_markdown("[Russian]:")
+            &styled::escape_markdown("[google]:")
         )));
         assert!(translation.contains("color=\"@pos\""));
     }
@@ -4446,7 +4515,7 @@ mod tests {
         let (phrase, translation) = popup_templates(&outcome, true, both);
         assert_eq!(
             phrase,
-            styled::phrase_template(true, "English", "violent", true)
+            styled::phrase_template(true, "en → ru", "violent", true)
         );
         assert!(
             translation.contains(styled::SPEAKER_MARKER),
@@ -4477,6 +4546,27 @@ mod tests {
             !translation.contains(styled::SPEAKER_MARKER),
             "{translation}"
         );
+    }
+
+    #[test]
+    fn translation_label_names_the_provider_that_answered() {
+        // A dictionary hit shows the dictionary provider's article.
+        assert_eq!(translation_label(true, "deepl", "google"), "google");
+        // A plain translation, and a dictionary miss falling back to it.
+        assert_eq!(translation_label(false, "deepl", "google"), "deepl");
+        // Lowercased like tagent-cli's label, profile names included.
+        assert_eq!(translation_label(false, "Ollama", "google"), "ollama");
+        assert_eq!(translation_label(true, "google", "My-Dict"), "my-dict");
+    }
+
+    #[test]
+    fn format_line_puts_the_label_in_the_prompt() {
+        assert_eq!(
+            format_line(true, "auto → ru", "hello"),
+            "[auto → ru]: hello"
+        );
+        assert_eq!(format_line(true, "deepl", "привет"), "[deepl]: привет");
+        assert_eq!(format_line(false, "deepl", "привет"), "привет");
     }
 
     #[test]
@@ -4626,8 +4716,8 @@ mod tests {
     fn popup_error_template_is_error_role_without_prompt() {
         let message = "Error: boom";
         let outcome = TranslationOutcome {
-            from_lang: "English".to_string(),
-            to_lang: "Russian".to_string(),
+            phrase_label: "en → ru".to_string(),
+            translation_label: "google".to_string(),
             phrase_raw: "hi".to_string(),
             translation_raw: message.to_string(),
             translation_body_template: styled::escape_markdown(message),
@@ -4784,7 +4874,7 @@ mod tests {
     /// They used to be std `Button`s next to each block, and a `Button` can't be
     /// shorter than its style's minimum height, so a one-line block got a button
     /// taller than itself and the row grew around it. Now the button is the
-    /// `[🔊 Lang]:` prompt itself; toggling text-to-speech (glyph and button on/off)
+    /// `[🔊 label]:` prompt itself; toggling text-to-speech (glyph and button on/off)
     /// must leave the rows' height alone.
     #[test]
     fn speak_buttons_keep_one_line_rows_at_text_height() {

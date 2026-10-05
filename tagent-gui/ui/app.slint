@@ -98,8 +98,9 @@ export struct TranscriptEntry {
     translation-styled: styled-text,
     phrase-copy: string,
     translation-copy: string,
-    // The language name in each block's `[Lang]:` prompt, or "" when the
-    // block has no prompt. app.slint rebuilds the prompt from it to measure
+    // The label in each block's `[label]:` prompt -- the language pair before
+    // the phrase (`auto → ru`), the provider that answered before the translation
+    // (`deepl`) -- or "" when the block has no prompt. app.slint rebuilds the prompt from it to measure
     // the speak button laid over the prompt; the prompt itself, with the
     // speaker glyph, is part of `*-styled` (styled::SPEAKER_MARKER).
     phrase-prompt: string,
@@ -199,7 +200,7 @@ component ColorPickerField {
     }
 }
 
-// A transcript block's speak button: laid over the block's `[🔊 Lang]:`
+// A transcript block's speak button: laid over the block's `[🔊 label]:`
 // prompt (just `🔊` with the prompt off), which is part of the block's own
 // StyledText, so the text wraps under it as usual. Tinted while hovered and,
 // more strongly, while this block is speaking; a click while speaking stops
@@ -314,6 +315,14 @@ export component AppWindow inherits Window {
     in-out property <[string]> target-languages: [];
     in-out property <int> source-language-index: 0;
     in-out property <int> target-language-index: 0;
+    // The input box's label, `[auto → ru]:` (the pair as `tagent-cli`'s prompt shows
+    // it). Set by main.rs on `languages-changed`, so the pair's format lives in one
+    // place (`tagent::languages::pair_label`); the `changed` handlers also fire for
+    // index changes made from Rust (⇄, a new default pair).
+    in property <string> input-prompt: "";
+    callback languages-changed();
+    changed source-language-index => { languages-changed(); }
+    changed target-language-index => { languages-changed(); }
 
     // The provider menu next to ⚙ (set by main.rs's `refresh_config_views`):
     // one section per axis (translation, dictionary, speech), each with its
@@ -557,7 +566,7 @@ export component AppWindow inherits Window {
                         // translation's first line is entirely controlled by
                         // phrases-spacing-px, down to 0.
                         Rectangle {
-                            // The prompt is the block's speak button: `[🔊 Lang]:`
+                            // The prompt is the block's speak button: `[🔊 label]:`
                             // (just `🔊` with the prompt off) at the start of the text,
                             // with a PromptSpeakButton laid over it. A std Button next
                             // to the block was used before, but it can't be shorter
@@ -759,7 +768,7 @@ export component AppWindow inherits Window {
                 alignment: stretch;
 
                 Text {
-                    text: "[" + source-languages[source-language-index] + "]:";
+                    text: input-prompt;
                     font-family: "monospace";
                     font-size: 13px;
                     color: prompt-accent;
@@ -980,7 +989,7 @@ export component TranslationPopup inherits Window {
     // `speak-requested`. -1 = no row (no speakers). `phrase-speaker`/
     // `translation-speaker` say whether a side gets a speaker at all (text-to-speech
     // on, something to speak, not an error); `phrase-prompt`/`translation-prompt`
-    // are the language names in the prompts, or "" with the prompt off, for the
+    // are the prompts' labels (pair, provider), or "" with the prompt off, for the
     // probes that size the buttons.
     in property <int> entry-index: -1;
     in property <bool> phrase-speaker: false;

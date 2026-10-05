@@ -28,8 +28,8 @@ restart** (Quit in the tray menu, then start again).
 - It **hides itself** after a few seconds (3 by default), but stays while the mouse
   rests on it.
 - **The prompt is the speak button**, as in the [transcript](main-window.md): click
-  `[🔊 English]:` to hear the phrase, `[🔊 Russian]:` to hear the translation (for a
-  dictionary entry, only the main translation), or just 🔊 with the prompt turned off.
+  `[🔊 auto → ru]:` to hear the phrase, `[🔊 deepl]:` (the provider that answered) to
+  hear the translation (for a dictionary entry, only the main translation), or just 🔊 with the prompt turned off.
   Click it again to stop. The popup stays open while it reads and hides a few seconds
   after it's done. The same entry in the main window shows it playing too, and only one
   thing plays at a time. With text-to-speech off (Settings > General), the prompts are

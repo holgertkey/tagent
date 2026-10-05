@@ -1508,12 +1508,6 @@ pub fn language_pair_description(source: &str, target: &str) -> String {
     format!("{} -> {}", describe(source), describe(target))
 }
 
-/// Compact `source → target` label from language codes (e.g. `auto → ru`), used in
-/// the interactive prompt and the terminal window title.
-pub fn language_pair_label(source_code: &str, target_code: &str) -> String {
-    format!("{} → {}", source_code, target_code)
-}
-
 /// Whether a language code means auto-detection.
 fn is_auto(language: &str) -> bool {
     language.trim().eq_ignore_ascii_case("auto")
@@ -2453,11 +2447,6 @@ mod tests {
             hotkey_banner_lines(&banner_config(), &off),
             ["Active Hotkeys: off", "  The desktop bound no hotkeys."]
         );
-    }
-
-    #[test]
-    fn language_pair_label_uses_codes_with_an_arrow() {
-        assert_eq!(language_pair_label("auto", "ru"), "auto → ru");
     }
 
     /// `/l auto` and `-l auto`: an "auto" target is replaced, never kept.
