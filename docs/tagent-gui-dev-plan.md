@@ -175,6 +175,10 @@ Candidates, not yet scheduled; the order is a suggestion.
    speak buttons sharing the transcript's playback; see "Speaking from the popup" in
    `docs/ARCHITECTURE.md`. Follow-up: right-click over a transcript prompt doesn't copy
    (the speak button takes the press; since 0.14.0+041).
+10. **CLI-style prompts.** Planned 2026-10-05, next up: the phrase prompt names the
+    language pair (`[auto → ru]:`), the translation prompt the provider that answered
+    (`[deepl]:`), the input box label the pair; see
+    [below](#planned-stage--cli-style-prompts).
 
 ### Planned stage — Provider profiles tab
 
@@ -348,6 +352,119 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
+
+### Planned stage — CLI-style prompts
+
+**Status:** planned 2026-10-05 (decided with the maintainer the same day), not started.
+Target: one iteration of each crate touched: `tagent` `0.19.0+006`, `tagent-cli`
+`0.17.0+024`, `tagent-gui` `0.15.0+013` (all three versions are unreleased, so no version
+question). Once shipped and checked, condense this section to a row of the "Shipped
+stages" table.
+
+**Goal.** The prompts look like `tagent-cli`'s: the first one names the language pair,
+the second the provider that produced the answer.
+
+| | today | after |
+|---|---|---|
+| Phrase (transcript, popup) | `[🔊 Auto]: text` | `[🔊 auto → ru]: text` |
+| Translation | `[🔊 Russian]: перевод` | `[🔊 deepl]: перевод` |
+| Dictionary article | `[🔊 Russian]: статья` | `[🔊 google]: статья` (the dictionary provider) |
+| Input box label | `[Auto]:` | `[auto → ru]:` |
+
+Besides consistency, the second prompt records something the GUI doesn't show today:
+which provider answered a row. The provider menu switches providers per session, so the
+transcript can mix providers; each row keeps its own label afterwards.
+
+**Behavior (decided).**
+- **Phrase prompt** = the language pair as codes, `source → target`, exactly as
+  `tagent-cli` builds it (one shared helper, see step 1). The source is the code that was
+  selected (`auto`), not the detected one, again as in the CLI.
+- **Translation prompt** = the name of the provider in effect that produced the body,
+  lowercased (a kind or profile name, session pick included, as `tagent-cli`'s
+  `Translation::provider`):
+  - plain translation → the translation provider;
+  - dictionary hit → the **dictionary** provider (deliberately not `tagent-cli`'s
+    `[Word]:`: the dictionary axis is switchable per session in the GUI too, so its name
+    says more);
+  - a dictionary miss or lookup error that falls back to the plain translation → the
+    translation provider (it made what is shown);
+  - an error row → no prompt, as today.
+- **Input box label** = the same pair label as the phrase prompt (`[auto → ru]:`),
+  following the dropdowns, the ⇄ swap and a changed default pair at once.
+- **Speak buttons stay where they are**: the prompt is still the button (`[🔊 auto →
+  ru]:` speaks the phrase, `[🔊 deepl]:` the translation). Playback is unaffected: it
+  reads the row's `from_code`/`to_code`, never the prompt text. Accepted: the
+  translation's button no longer names the language it speaks; the pair is in the
+  phrase's prompt right above.
+- **Unchanged**: `[🔊 Speech]:` rows and the other one-off system rows
+  (`system_entry`), the "Show prompt" switches (Settings > View and > Popup) and what they
+  hide, the prompt colors (one `prompt_color` for both prompts; `tagent-cli`'s separate
+  source/target colors are not copied), right-click copy (plain text, never a prompt),
+  rows already in the transcript (their labels are baked in).
+- The popup changes together with the transcript (same labels, its own "Show prompt").
+
+**Implementation steps.**
+1. **`tagent`: `languages::pair_label(source, target) -> String`** (`"auto → ru"`), moved
+   from `tagent-cli`'s `config::language_pair_label` so both apps share the format (per
+   the "reuse `tagent`" rule). Doc comment with an `# Examples` block; its unit test moves
+   with it. `tagent` `0.19.0+005` → `+006`, `tagent/CHANGELOG.md` 0.19.0 "Added"
+   `(+006)`.
+2. **`tagent-cli`**: its 4 call sites (`interactive.rs`, `translator.rs`) use
+   `tagent::languages::pair_label`; the local function and its test go. No visible
+   change. `0.17.0+023` → `+024`, a "Changed" `(+024)` entry (internal: the label helper
+   moved to `tagent`).
+3. **`tagent-gui`, labels instead of language names** (`main.rs`):
+   - `TranslationRequest`: `from_lang`/`to_lang` (used only for prompts) are replaced by
+     `pair_label: String`, computed by both callers (button/Enter and the hotkey) from
+     `from_code`/`to_code` with `languages::pair_label`.
+   - A pure, tested `translation_label(dictionary_hit: bool, translate: &ProviderChoice,
+     dictionary: &ProviderChoice) -> String` (lowercased name of the provider that
+     produced the body). The worker's `Ok` tuple gains a `dictionary_hit` flag (set only
+     on the `Ok(Some(entry))` arm), so the label is picked on the UI thread next to the
+     templates.
+   - `TranslationOutcome`: `from_lang`/`to_lang` → `phrase_label`/`translation_label`.
+   - `format_line`, `format_popup_line`, `popup_templates`, `styled::phrase_template`,
+     `styled::translation_template_from_body`, `styled::prefixed`: the `lang` parameter
+     becomes `label` (rename and doc comments only; the shape `[{label}]: {text}` is the
+     same). `escape_markdown` still applies to it (a profile name is user input).
+   - `TranscriptEntry.phrase-prompt`/`translation-prompt` and the popup's
+     `phrase-prompt`/`translation-prompt` keep their names but now carry the labels; fix
+     their comments in `app.slint` ("the language name in each block's prompt" → "the
+     label"). The width probes (`[🔊\u{a0}` + prompt + `]:`) need no change.
+4. **Input box label** (`app.slint` + `main.rs`): `in property <string> input-prompt`
+   replaces the `"[" + source-languages[source-language-index] + "]:"` expression, so the
+   format lives only in `pair_label`. `AppWindow` gets `callback languages-changed()`
+   with `changed source-language-index => { languages-changed(); }` and the same for
+   `target-language-index` (grep: the callback name must be new); `main()` wires it to a
+   small `refresh_input_prompt(&window)` (`selected_languages` → `name_to_code` →
+   `pair_label` → `[…]:`), and calls it once after the models and the default pair are
+   set. The `changed` handlers also cover index changes made from Rust (⇄,
+   `refresh_default_languages`).
+5. **Version and docs** (one commit with steps 1–4): `tagent-gui` `0.15.0+012` → `+013`,
+   `tagent-gui/CHANGELOG.md` 0.15.0 "Changed" `(+013)`; the user book:
+   `docs/user/src/gui/main-window.md` (the prompts and the input label, the speak-button
+   bullet's examples), `gui/hotkeys-and-popup.md` (the popup's prompts, the `Speech`
+   paragraph's example stays), `gui/settings.md` ("Show prompt": the pair and provider
+   prompts; "Enable text-to-speech" example); `docs/ARCHITECTURE.md` ("tagent-gui: Slint
+   desktop GUI": the `[Lang]:` mentions at the input label, the prompt highlight and the
+   speak button); CLAUDE.md's `tagent-gui` bullets that say `[Lang]:`/`[Language]:`;
+   this section → "Shipped stages" row. `tagent-gui/README.md` stays (semver bumps only).
+
+**Tests and verification.**
+- `tagent`: `pair_label` unit test + doc test.
+- `tagent-gui` unit (pure): `translation_label` (hit → dictionary name, miss/fallback →
+  translation name, mixed case → lowercase); `format_line`/`format_popup_line` and
+  `popup_templates` with a pair label and a provider label (prompt on/off, speaker
+  on/off, error row without a prompt) — extend the existing tests rather than duplicate
+  them; `styled` tests that use `"English"` as `lang` keep passing with labels (escaping
+  of `→` and of a profile name with Markdown characters).
+- A Slint-level test in the style of the existing window tests: after setting the
+  language indices (and after ⇄), `get_input_prompt()` is `[auto → ru]:` /
+  `[ru → en]:`.
+- `cargo test`, `cargo clippy --workspace -- -D warnings`, `cargo doc -p tagent`.
+- Manual (screenshots): a translation, a dictionary hit, a dictionary miss, an error,
+  a session provider pick (label follows), prompts off, the popup via the hotkey, ⇄ and
+  a dropdown change updating the input label, a speak click on both prompts.
 
 ## Deliberately not done (revisit only with a new reason)
 
