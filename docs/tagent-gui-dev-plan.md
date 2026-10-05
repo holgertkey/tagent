@@ -178,6 +178,9 @@ Candidates, not yet scheduled; the order is a suggestion.
    (the speak button takes the press; since 0.14.0+041).
 10. ~~**CLI-style prompts.**~~ Done in 0.15.0+013 (2026-10-05): see "Prompt labels, as in
     `tagent-cli`" in `docs/ARCHITECTURE.md`.
+11. **Interface scale.** Planned 2026-10-05: one `ui_scale` setting (percent) that
+    scales the whole interface through `SLINT_SCALE_FACTOR`, restart-required; see
+    [below](#planned-stage--interface-scale).
 
 ### Planned stage — Provider profiles tab
 
@@ -351,6 +354,96 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
+
+### Planned stage — Interface scale
+
+**Status:** planned 2026-10-05 (decided with the maintainer the same day), not started.
+Target: `tagent-gui` `0.15.0+014` (0.15.0 is unreleased, so no version question); no
+`tagent` or `tagent-cli` change. Once shipped and checked, condense this section to a row
+of the "Shipped stages" table.
+
+**Goal.** Let the user make the whole interface bigger (or smaller): text, buttons,
+spacing, menus, the Settings dialog and the popup, all in proportion, so nothing gets
+clipped. Rarely used, but there should be a way. This is a zoom, not a font-size
+setting: the content sizes (`phrase_size`, `translation_size`, `popup_size`) stay as
+they are and are scaled along with everything else.
+
+**How Slint scales (checked in `i-slint-backend-winit` 1.17.1, 2026-10-05).**
+- `SLINT_SCALE_FACTOR` (documented under "Debugging techniques") maps logical `px` to
+  physical pixels for every window of the process, and the winit backend also scales the
+  windows' initial logical sizes with it (`winitwindowadapter.rs`, `overriding_scale_factor`).
+- It **replaces** the system scale factor, it doesn't multiply it: on a 2.0 HiDPI screen
+  `SLINT_SCALE_FACTOR=1.25` makes the interface *smaller*.
+- While it is set, the backend ignores winit's `ScaleFactorChanged` (`event_loop.rs`),
+  so moving a window to a monitor with another DPI no longer rescales it.
+- It is read when a window is created, so the setting needs a restart.
+- Rejected alternative: intercepting `ScaleFactorChanged` via `WinitWindowAccessor` and
+  dispatching `system × zoom` ourselves (would be live and keep per-monitor DPI). The
+  initial factor is dispatched directly from `winit_window.scale_factor()`, not through an
+  event, and window sizes would need fixing by hand: too fragile for a rarely used
+  setting ("simple over clever").
+
+**Behavior (decided).**
+- `ui_scale` in `tagent-gui.json`: an integer percent, default `100`, valid `75`–`200`;
+  an out-of-range or unparsable value falls back to `100` with a warning on load
+  (`GuiConfig` normalizes, like the languages).
+- Settings > View: an "Interface scale" dropdown `75% / 90% / 100% / 125% / 150% / 175% /
+  200%` (a hand-edited value outside the list is shown as-is and kept until another pick),
+  with a "takes effect after restart" note, as for the hotkeys. Not live-reloaded.
+  "Reset to Defaults" resets it to `100`.
+- `100` does nothing at all: no env var, Slint behaves exactly as today (including
+  per-monitor DPI changes).
+- A `SLINT_SCALE_FACTOR` the user set themselves wins; the setting is ignored then (one
+  line in the log).
+- Otherwise the app sets `SLINT_SCALE_FACTOR = system_scale × ui_scale / 100` before the
+  first window is created.
+- macOS: the dropdown is disabled with a note for now: the platform layer is a stub,
+  and guessing the Retina factor wrong would shrink the UI.
+- Accepted limitation (documented in the user book): with a scale other than 100 %, a
+  window moved to a monitor with a different DPI keeps its size and scale until restart.
+
+**Implementation steps.**
+1. **`platform::window::system_scale_factor() -> f64`** per OS (same names on all three,
+   as for the rest of `platform/`):
+   - Windows: `GetDpiForSystem() / 96.0` (needs the `Win32_UI_HiDpi` feature of the
+     `windows` crate). The process must be DPI-aware for this to be the real value; check
+     what Slint/winit already declare (manifest or `SetProcessDpiAwareness`).
+   - Linux (X11/XWayland, always X11 here since `session::init` drops `WAYLAND_DISPLAY`):
+     what winit uses, `Xft.dpi / 96.0` from the X resource database
+     (`XResourceManagerString` + parse, or `XrmGetResource`), else `1.0`. Honor
+     `WINIT_X11_SCALE_FACTOR` if set, since winit would too. No display → `1.0`.
+   - macOS: `1.0`, unused (the setting is disabled there).
+2. **Pure, tested `ui_scale::effective_factor(ui_scale, user_env, system) ->
+   Option<f64>`** (`tagent-gui/src/ui_scale.rs`): `None` for `100`, for a user-set
+   `SLINT_SCALE_FACTOR`, or for a non-positive system factor; else the product, rounded
+   to 3 decimals. Plus the clamp/validation used by `config.rs`.
+3. **Startup** (`main.rs`): right after `platform::linux::session::init()` and **after**
+   `detach::detach_from_terminal()` (a variable set before the re-spawn would reach the
+   child, which would then take it for the user's own and ignore the setting), and before
+   `AppWindow::new()`: load the config, compute the factor, `std::env::set_var` (still
+   single-threaded at that point, the same reasoning as `session::init`'s `remove_var`).
+4. **Window sizes in logical units.** `DEFAULT_WINDOW_SIZE` is a `PhysicalSize` (480×480),
+   so at 150 % the window would keep its physical size and the scaled content wouldn't
+   fit. Make the default a `LogicalSize` (or multiply by `window.scale_factor()`), and
+   handle the saved `window_geometry`: store `ui_scale` with it and ignore a saved size
+   taken at another scale (the position stays physical and is still used). Check the
+   initial-sizing race fix (deferred `set_size`) still holds with the logical size.
+   The popup and the Settings dialog size themselves from their layouts; check them by
+   screenshot.
+5. `config.rs`: `ui_scale: u32` (`#[serde(default)]`), normalization, round-trip tests.
+   `app.slint` + `main.rs`: the View tab dropdown, staged like the other Settings values.
+6. Docs: user book (Settings > View page, the limitation, `SLINT_SCALE_FACTOR` taking
+   precedence), changelog "Added", "tagent-gui: Slint desktop GUI" in
+   `docs/ARCHITECTURE.md` (why the env var, why restart-only, why not the event hook).
+
+**Tests.** `effective_factor` (100 → `None`, user env → `None`, `150` on `1.0` → `1.5`,
+`125` on `2.0` → `2.5`, `90` on `1.25` → `1.125`), `ui_scale` load/normalize (missing →
+100, `0`/`500`/`"abc"` → 100 + warning), the geometry rule (a saved size from another
+scale is dropped, the position kept), the Xft.dpi parser (`Xft.dpi:\t144` → `1.5`,
+absent → `None`). By screenshot with an isolated `XDG_CONFIG_HOME`: `ui_scale` 100, 150
+and 200 on the main window, the Settings dialog and the popup (nothing clipped, window
+opens big enough); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
+check on a 100 % and a 150 % display setting.
 
 ## Deliberately not done (revisit only with a new reason)
 
