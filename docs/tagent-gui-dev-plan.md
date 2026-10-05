@@ -170,6 +170,8 @@ Candidates, not yet scheduled; the order is a suggestion.
    `docs/ARCHITECTURE.md`. Follow-ups, not scheduled: `--replace` (quit the running copy
    and start); passing text to translate (`tagent-gui "text"`); raising a visible window
    that is behind others; a D-Bus `Activate` (`DBusActivatable=true`) for GNOME.
+9. **Speak from the popup.** Planned 2026-10-05, next up; see
+   [below](#planned-stage--speak-from-the-popup).
 
 ### Planned stage — Provider profiles tab
 
@@ -343,6 +345,147 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
+
+### Planned stage — Speak from the popup
+
+**Status:** planned 2026-10-05 (decided with the maintainer the same day), not started.
+Target: one `tagent-gui` iteration, `0.15.0+012` (0.15.0 is unreleased, so no version
+question). Once shipped and checked, condense this section to a row of the "Shipped
+stages" table.
+
+**Goal.** The popup's `[Lang]:` prompts become speak buttons, exactly like the
+transcript's since 0.14.0+041: `[🔊 English]:` before the phrase speaks it in the source
+language (detected if `Auto`), `[🔊 Russian]:` before the translation speaks the
+translation. Today hearing a hotkey translation means opening the main window from the
+tray and finding the row.
+
+**Behavior (decided).**
+- **Only the prompt is clickable**, as in the transcript; not the whole line. A
+  `PromptSpeakButton` (the existing component) is laid over the prompt; hover tint,
+  stronger tint while speaking, a click while it speaks stops it.
+- With the popup's prompt off (Settings > Popup "Show prompt"), a line starts with just
+  `🔊`, as a transcript block does.
+- **No speaker** (the prompt stays plain, not clickable) when `enable_text_to_speech` is
+  off, on the translation line of an error, and when there is nothing to speak. A
+  dictionary hit speaks only the primary translation (the entry's `translation_speech`,
+  same as the transcript). No new setting: `enable_text_to_speech` governs both windows.
+- **One playback app-wide, shared with the transcript**: the popup does not get its own
+  speech path. A click goes to the transcript row the popup shows (the hotkey pushes the
+  same translation into the transcript) through `AppWindow`'s existing
+  `speak-requested(index, is_phrase)`. So everything the transcript has applies as is:
+  a second click stops, other speakers are disabled while one plays (in both windows),
+  Esc (X11/Windows) and the speech hotkey stop it, `"auto"` is resolved lazily, the
+  provider in effect (session pick included) is used. A playback started in the
+  transcript for the same row shows as speaking in the popup too, and vice versa.
+- **The popup stays while its own row speaks**: the auto-hide doesn't close it then, and
+  once that playback ends (finished, stopped, or failed) the full
+  `popup_auto_hide_seconds` countdown starts again, so the popup doesn't vanish the
+  instant the audio stops. Speech of *another* row (a transcript button, the speech
+  hotkey) doesn't hold the popup.
+- **A new hotkey translation while the popup's row still speaks**: the popup shows the
+  new pair at once (as today); the old playback keeps going, the new speakers are
+  disabled until it ends (the transcript's rule), and the popup hides on its normal
+  timer, since its new row isn't the one speaking.
+- **Dragging**: a left press on the speaker no longer starts a drag (the button takes
+  it); everywhere else on the popup drag works as before. Accepted (same trade-off as the
+  transcript's click target), no click-vs-drag threshold.
+- **Right-click copy** is unchanged, also over the prompt (the button reacts only to the
+  left button; check that the right button still reaches the block's `TouchArea`).
+- **Focus**: clicking the popup may focus it on X11; the focus goes back to the source
+  app when the popup hides (`POPUP_RESTORE_TARGET`), as after a drag today. Check live.
+- Not in this stage: a 🔊 for the speech hotkey (it shows no popup), a "replay" key, a
+  click-anywhere-on-the-line target.
+
+**Implementation steps.**
+1. **Which row the popup shows.** `spawn_translation` calls `on_done` right before
+   `push_transcript_entry` on the UI thread, and transcript rows are never removed or
+   reordered (`push_transcript_entry` only appends), so the hotkey's `on_done` reads the
+   row's index as `window.get_transcript_entries().row_count()` at that moment. Pass a
+   `weak` window into the closure (it has `popup_weak2` today) and hand the index to
+   `show_popup`. Write that invariant down in `push_transcript_entry`'s doc comment, so a
+   future "clear transcript" / row cap knows the popup depends on it (it would then reset
+   the popup's index to -1).
+2. **`show_popup` arguments**: group what it needs into a `PopupContent` struct (it is at
+   6 arguments, the new ones would pass clippy's 7): `entry_index: i32`,
+   `phrase_speaker: bool` (`tts && !entry.phrase_speech.is_empty()`),
+   `translation_speaker: bool` (`tts && !is_error && !entry.translation_speech.is_empty()`),
+   computed in `on_done` from the `&TranscriptEntry` it already receives (rename
+   `_entry`) and `window.get_tts_enabled()`.
+3. **Templates with the speaker marker**: `popup_templates(outcome, show_prompt,
+   phrase_speaker, translation_speaker)` passes the flags on to
+   `styled::phrase_template`/`translation_template_from_body` (today hard-coded
+   `false`). `restyle_popup` renders with `render_template_with_speaker`, using the
+   popup's `phrase-speaker`/`translation-speaker` properties, so a theme change keeps the
+   glyph. The flags are decided when the popup is shown; a TTS toggle while it is visible
+   only takes effect on the next popup (it lives seconds; not worth a live path).
+4. **Width measurement**: `phrase-measure`/`translation-measure` measure `phrase-text`/
+   `translation-text` (plain `format_line` strings without the glyph), so the popup would
+   come out a glyph too narrow and wrap one line early. Build these plain strings from the
+   same rendered template instead (`styled::strip_template` of the template with the
+   marker substituted; a small pure helper, e.g. `styled::plain_with_speaker(template,
+   speaker)`), so text and measurement can't drift. Unit-test it against `format_line`
+   (no speaker: identical; speaker: `[🔊\u{a0}English]: hello` / `🔊\u{a0}hello`).
+5. **`app.slint`, `TranslationPopup`**:
+   - properties `in entry-index: int` (-1 = no row, no speakers), `in phrase-speaker`,
+     `in translation-speaker: bool`, `in phrase-prompt`, `in translation-prompt: string`
+     (the language name or "", as on `TranscriptEntry`, for the probe), and the mirrored
+     speech state `in speaking-entry-index: int` (-1), `in speaking-is-phrase: bool`;
+   - a derived `property <bool> own-row-speaking: entry-index != -1 &&
+     speaking-entry-index == entry-index`;
+   - in each block a `*-probe` `Text` (copied from the transcript: same string shape as
+     `SPEAKER_PREFIX`, `popup-font`/`popup-size`) and, declared after the block's
+     `TouchArea` so its left click wins, `if phrase-speaker: PromptSpeakButton { … }`
+     with `accent: popup-prompt-accent`, `speaking`/`enabled` as in the transcript but
+     against the mirrored properties, `clicked => { root.start-hide-timer();
+     popup-speak-requested(true); }`;
+   - `callback popup-speak-requested(bool)` (grep: the name must be new in the file);
+   - `hide-timer`: `own-row-speaking` joins `has-hover || pressed || drag-pressed` as
+     "keep open";
+   - `changed own-row-speaking => { if !own-row-speaking { root.start-hide-timer(); } }`
+     restarts the full countdown when the popup's playback ends (`changed` handlers are
+     available in slint 1.17, `app.slint` already uses them).
+6. **Mirroring the speech state into the popup**: `AppWindow` gets
+   `callback speaking-state-changed()` and `changed speaking-entry-index => {
+   speaking-state-changed(); }`; `main()` wires it to copy
+   `speaking-entry-index`/`speaking-is-phrase` onto the popup. This keeps
+   `start_speaking` and its end-of-playback hop unchanged (`speaking-is-phrase` is set
+   before the index, so the handler sees both). The same values are set in `show_popup`
+   too, for a popup shown mid-playback.
+7. **The click**: `wire_popup_speak(popup, window_weak)` next to
+   `wire_popup_copy`: `popup-speak-requested(is_phrase)` → if `entry-index != -1`,
+   `window.invoke_speak_requested(entry_index, is_phrase)`. `on_speak_requested` already
+   handles stop/ignore/empty text and re-reads the row, so the popup duplicates none of
+   it. Before invoking, re-read `enable_text_to_speech` (`check_and_reload`) and ignore
+   the click if it was turned off meanwhile, the way the speech hotkey refreshes
+   `tts_enabled`.
+8. **Version and docs** (one commit): `tagent-gui` `0.15.0+011` → `+012`;
+   `tagent-gui/CHANGELOG.md` 0.15.0 "Added" `(+012)`; the user book
+   `docs/user/src/gui/hotkeys-and-popup.md` ("The popup": the prompts speak, the popup
+   stays while speaking) and a cross-reference in `gui/main-window.md`'s speak-button
+   bullet; `docs/user/src/gui/settings.md` ("Enable text-to-speech" covers the popup too);
+   `docs/ARCHITECTURE.md` ("tagent-gui: Slint desktop GUI", popup and speech parts: the
+   row-index link and the mirrored state); CLAUDE.md's popup bullet ("purely
+   informational, no buttons" is no longer true); this section → "Shipped stages" row.
+
+**Tests and verification.**
+- Unit (pure): `popup_templates` with speaker flags (marker present only where speakable:
+  not on an error, not with TTS off; prompt on/off shapes), the plain-text helper of
+  step 4, and the existing `popup_templates_follow_popup_show_prompt` extended rather
+  than duplicated.
+- A Slint-level test in the style of the existing window tests in `main.rs` (they build
+  an `AppWindow` without showing it), if `TranslationPopup` can be built the same way:
+  `own-row-speaking` follows `entry-index`/`speaking-entry-index`; otherwise this is
+  covered by the manual check.
+- `cargo test -p tagent-gui`, `cargo clippy --workspace -- -D warnings`,
+  `cargo check --target x86_64-pc-windows-gnu -p tagent-gui`.
+- Manual (maintainer, real hotkey; X11 and Wayland): Alt+A on a sentence → click
+  `[🔊 Lang]:` on either line → it speaks, the popup stays to the end and hides
+  `popup_auto_hide_seconds` later; a second click stops; Esc (X11) and the speech hotkey
+  stop; the transcript row shows the same speaking state and its other buttons are
+  disabled; a single word (dictionary) speaks only the primary translation; an error
+  line has no speaker; TTS off → plain prompts; prompt off → bare 🔊; drag by the text
+  still works, right-click copy still works over the prompt; focus returns to the
+  source app after the popup hides; a long prompt line isn't wrapped one glyph early.
 
 ## Deliberately not done (revisit only with a new reason)
 
