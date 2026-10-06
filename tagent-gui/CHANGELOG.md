@@ -421,6 +421,13 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+023) **The main window stayed off-screen on Windows.** Quitting from the tray, or
+  closing the window from the taskbar, while it was minimized saved Windows' parking
+  spot for minimized windows (-32000, -32000) as its position, and every later start
+  opened it there: the tray and taskbar showed it, but it never appeared. A minimized
+  window's geometry is no longer saved, a saved position that is on no monitor is
+  ignored (the window manager places the window instead), and "Show" from the tray
+  restores a minimized window.
 - (+021) **The About tab's links did nothing on Wayland.** The browser was started without
   the Wayland display the app hides from itself to run on XWayland, and a browser that
   can't use X11 (Snap's Firefox) quietly failed to start. It now gets the display back.

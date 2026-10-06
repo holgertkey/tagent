@@ -2776,11 +2776,18 @@ fn current_window_geometry(window: &AppWindow) -> config::WindowGeometry {
 /// the app quits ([`quit_app`]). A
 /// plain minimize calls neither: the window stays mapped, and the desktop keeps its
 /// place by itself.
+///
+/// Nothing is captured while the window is minimized: Windows parks a minimized window
+/// at (-32000, -32000), and saving that (Quit from the tray, or the taskbar's "Close
+/// window", while minimized) restored the window off-screen on every later start.
 fn save_window_geometry(
     window: &AppWindow,
     config_manager: &Arc<Mutex<GuiConfigManager>>,
     session_geometry: &Cell<Option<config::WindowGeometry>>,
 ) {
+    if window.window().is_minimized() {
+        return;
+    }
     let geometry = current_window_geometry(window);
     session_geometry.set(Some(geometry));
     let mut manager = config_manager.lock().unwrap();
@@ -2904,6 +2911,10 @@ fn show_window_restoring_geometry(
     session_geometry: &Cell<Option<config::WindowGeometry>>,
 ) {
     window.show().ok();
+    // `show()` alone leaves a minimized (still visible) window minimized.
+    if window.window().is_minimized() {
+        window.window().set_minimized(false);
+    }
     focus_input(window);
     // Again once the window manager has mapped and activated the window, for the
     // same settle-and-retry reason as the geometry re-apply below.
@@ -2941,9 +2952,16 @@ fn show_window_restoring_geometry(
             config.window_geometry,
         )
     };
-    let Some((target_size, target_position)) = target else {
+    let Some((target_size, mut target_position)) = target else {
         return;
     };
+    // A position saved off every screen (a monitor unplugged since, or the (-32000,
+    // -32000) of a window minimized when it was saved) is left to the window manager.
+    if let Some(position) = target_position {
+        if !position_on_screen(position, target_size, &monitor_rects(window)) {
+            target_position = None;
+        }
+    }
 
     apply_window_geometry(window, target_size, target_position);
 
@@ -2964,6 +2982,47 @@ fn focus_input(window: &AppWindow) {
         .window()
         .with_winit_window(|winit_window| winit_window.focus_window());
     window.invoke_focus_input();
+}
+
+/// The desktop's monitors as `(x, y, width, height)` in physical pixels; empty when
+/// the platform doesn't tell (then [`position_on_screen`] accepts any position).
+fn monitor_rects(window: &AppWindow) -> Vec<(i32, i32, u32, u32)> {
+    use slint::winit_030::WinitWindowAccessor;
+    window
+        .window()
+        .with_winit_window(|winit_window| {
+            winit_window
+                .available_monitors()
+                .map(|monitor| {
+                    let (position, size) = (monitor.position(), monitor.size());
+                    (position.x, position.y, size.width, size.height)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Whether a window at `position` with `size` can be grabbed on one of `monitors`: the
+/// strip along its top edge (where the title bar is) overlaps a monitor, by at least
+/// `MIN_VISIBLE_PX` horizontally (a maximized window on Windows sits at (-8, -8), so
+/// vertically any overlap will do). An empty `monitors` (unknown) passes.
+fn position_on_screen(
+    position: slint::PhysicalPosition,
+    size: slint::PhysicalSize,
+    monitors: &[(i32, i32, u32, u32)],
+) -> bool {
+    const MIN_VISIBLE_PX: i64 = 32;
+    if monitors.is_empty() {
+        return true;
+    }
+    let (left, top) = (i64::from(position.x), i64::from(position.y));
+    let right = left + i64::from(size.width);
+    let strip_bottom = top + MIN_VISIBLE_PX;
+    monitors.iter().any(|&(mx, my, mw, mh)| {
+        let (mx, my) = (i64::from(mx), i64::from(my));
+        let (mr, mb) = (mx + i64::from(mw), my + i64::from(mh));
+        right.min(mr) - left.max(mx) >= MIN_VISIBLE_PX && strip_bottom.min(mb) > top.max(my)
+    })
 }
 
 fn apply_window_geometry(
@@ -4709,6 +4768,35 @@ mod tests {
         );
         // Nothing captured and not the first show: leave the window alone.
         assert_eq!(geometry_to_apply(false, None, true, Some(saved)), None);
+    }
+
+    /// Regression: a geometry saved while the window was minimized on Windows holds
+    /// (-32000, -32000), and restoring it put the window off every screen, so the tray
+    /// and the taskbar showed it but it never appeared.
+    #[test]
+    fn position_on_screen_rejects_positions_off_every_monitor() {
+        let on = |x, y, w, h, monitors: &[(i32, i32, u32, u32)]| {
+            position_on_screen(
+                slint::PhysicalPosition::new(x, y),
+                slint::PhysicalSize::new(w, h),
+                monitors,
+            )
+        };
+        let one = [(0, 0, 1920, 1080)];
+        let two = [(0, 0, 1920, 1080), (-1280, 100, 1280, 1024)];
+
+        assert!(!on(-32000, -32000, 1228, 795, &one));
+        assert!(on(100, 200, 1228, 795, &one));
+        // Maximized on Windows: slightly above and left of the monitor.
+        assert!(on(-8, -8, 1936, 1096, &one));
+        // Title bar above the top edge, or only a sliver left on the right edge.
+        assert!(!on(100, -40, 600, 500, &one));
+        assert!(!on(1900, 100, 600, 500, &one));
+        // On the second monitor, and gone once that monitor is unplugged.
+        assert!(on(-1000, 300, 600, 500, &two));
+        assert!(!on(-1000, 300, 600, 500, &one));
+        // Unknown monitors: keep whatever was saved.
+        assert!(on(-32000, -32000, 600, 500, &[]));
     }
 
     /// "Auto" is a source-only choice: the target dropdown must not offer it, and

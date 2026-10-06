@@ -252,7 +252,9 @@ fn handle(stream: Stream, pid: u32, on_show: &impl Fn()) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::sync::atomic::{AtomicUsize, Ordering};
+    #[cfg(unix)]
     use std::sync::Arc;
 
     // Unix only: on Windows `/run/user/1000` isn't absolute (no drive letter), and the
@@ -308,6 +310,7 @@ mod tests {
         assert!(parse_reply("ok x").is_err());
     }
 
+    #[cfg(unix)]
     fn temp_socket(dir: &tempfile::TempDir) -> SocketName {
         SocketName::File(dir.path().join("t.sock"))
     }
