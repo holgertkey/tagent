@@ -127,7 +127,8 @@ Both apps let you switch providers on the fly without touching the saved setting
 - **tagent-gui:** the button next to ⚙ in the main window names the translation provider
   in use (`google ▾`). Its menu has a section for each job; a pick holds for this run only
   and is marked `(this session)` in the window header. Settings > Providers still shows,
-  and saves, the defaults.
+  and saves, the defaults. `/p` in the input box does the same as in `tagent-cli`, minus
+  `/save`; see [Commands in the input box](../gui/commands.md).
 
 Both apps reload their configuration file when it changes, so an edit to a provider
 setting applies to the next translation without a restart. In `tagent-cli`, a reload

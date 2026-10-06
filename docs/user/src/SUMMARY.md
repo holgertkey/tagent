@@ -21,6 +21,7 @@
 # tagent-gui
 
 - [The main window](gui/main-window.md)
+  - [Commands in the input box](gui/commands.md)
 - [Hotkeys and the popup](gui/hotkeys-and-popup.md)
 - [Tray and startup](gui/tray-and-startup.md)
 - [Settings](gui/settings.md)

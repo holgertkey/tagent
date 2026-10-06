@@ -422,7 +422,7 @@ export component AppWindow inherits Window {
     callback transcript-restyle-requested();
     changed tts-enabled => { transcript-restyle-requested(); }
 
-    callback translate-requested(string, string, string);
+    callback translate-requested(string, string, string) -> bool;
     callback swap-requested();
     callback settings-requested();
     // The 📋 button: put the clipboard's text into the input box.
@@ -799,6 +799,20 @@ export component AppWindow inherits Window {
                         viewport-width: self.width;
                         viewport-height: input-field.preferred-height + 16px;
 
+                        // A placeholder: `TextInput` has none of its own. Under the
+                        // input, so clicks still reach it.
+                        Text {
+                            visible: input-text == "";
+                            text: "Type to translate, /help for commands";
+                            font-size: input-size * 1px;
+                            color: field-foreground;
+                            opacity: 0.5;
+                            x: 8px;
+                            y: 8px;
+                            width: parent.width - 16px;
+                            overflow: elide;
+                        }
+
                         input-field := TextInput {
                             text <=> input-text;
                             font-size: input-size * 1px;
@@ -816,12 +830,14 @@ export component AppWindow inherits Window {
 
                             key-pressed(event) => {
                                 if (event.text == Key.Return && !event.modifiers.shift) {
-                                    translate-requested(
+                                    // false: a slash command to fix, keep the text.
+                                    if (translate-requested(
                                         input-text,
                                         source-languages[source-language-index],
                                         target-languages[target-language-index],
-                                    );
-                                    input-text = "";
+                                    )) {
+                                        input-text = "";
+                                    }
                                     return accept;
                                 }
                                 return reject;
@@ -838,12 +854,13 @@ export component AppWindow inherits Window {
                 Button {
                     text: "Translate";
                     clicked => {
-                        translate-requested(
+                        if (translate-requested(
                             input-text,
                             source-languages[source-language-index],
                             target-languages[target-language-index],
-                        );
-                        input-text = "";
+                        )) {
+                            input-text = "";
+                        }
                     }
                 }
             }

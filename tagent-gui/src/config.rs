@@ -721,6 +721,19 @@ impl GuiConfigManager {
         }
     }
 
+    /// Test-only constructor pointed at an arbitrary path instead of the
+    /// platform-default one.
+    #[cfg(test)]
+    pub fn new_for_test(path: PathBuf) -> Self {
+        let config = load_from_path(&path);
+        let last_modified = mtime(&path);
+        Self {
+            path,
+            config,
+            last_modified,
+        }
+    }
+
     /// The currently loaded config.
     pub fn config(&self) -> &GuiConfig {
         &self.config
@@ -1767,20 +1780,6 @@ mod tests {
         assert!(!manager.check_and_reload());
         assert_eq!(manager.config().translate_provider, "google");
         assert_eq!(fs::read(&path).unwrap(), b"{ not valid json");
-    }
-
-    impl GuiConfigManager {
-        /// Test-only constructor pointed at an arbitrary path instead of the
-        /// platform-default one.
-        fn new_for_test(path: PathBuf) -> Self {
-            let config = load_from_path(&path);
-            let last_modified = mtime(&path);
-            Self {
-                path,
-                config,
-                last_modified,
-            }
-        }
     }
 
     // --- Provider profiles (`provider_options`) -----------------------------------------

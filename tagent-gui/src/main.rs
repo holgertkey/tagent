@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tagent::providers::ProviderAxis;
 use tagent::{languages, providers};
 
+mod commands;
 mod config;
 #[cfg(target_os = "linux")]
 mod desktop_entry;
@@ -1170,6 +1171,273 @@ fn info_transcript_entry(
     }
 }
 
+/// Builds the `[Speech]: <text>` row the speech hotkey and `/s <text>` push before
+/// speaking `text` in `from_code` (possibly `"auto"`): its phrase side is speakable, so
+/// the row's own 🔊 replays it; there is no translation side.
+fn speech_transcript_entry(window: &AppWindow, text: &str, from_code: &str) -> TranscriptEntry {
+    // Stage 13: "[Speech]" plays the same role a real label does in
+    // `phrase_template`'s `[label]:` prompt, so it gets the same `Role::Prompt`
+    // highlighting -- the produced string is exactly `format!("[Speech]: {text}")`,
+    // matching the plain `phrase` field below.
+    let phrase_colors = styled::RoleColors::new(
+        window.get_phrase_background(),
+        color_to_hex(window.get_prompt_accent()),
+    );
+    let fields = styled::entry_fields(
+        styled::phrase_template(true, "Speech", text, true),
+        String::new(),
+        text.to_string(),
+        String::new(),
+        &phrase_colors,
+        &styled::RoleColors::default(),
+        window.get_tts_enabled(),
+    );
+    TranscriptEntry {
+        phrase: format!("[Speech]: {text}").into(),
+        translation: "".into(),
+        phrase_speech: text.into(),
+        translation_speech: "".into(),
+        from_code: from_code.into(),
+        to_code: "".into(),
+        translation_is_error: true,
+        phrase_template: fields.phrase_template.into(),
+        translation_template: fields.translation_template.into(),
+        phrase_styled: fields.phrase_styled,
+        translation_styled: fields.translation_styled,
+        phrase_copy: fields.phrase_copy.into(),
+        translation_copy: fields.translation_copy.into(),
+        phrase_prompt: "Speech".into(),
+        translation_prompt: "".into(),
+    }
+}
+
+/// Builds the row answering a slash command: `[cmd]: <command>` (the label highlighted
+/// like any prompt), then `reply` -- in the error role when `is_error`. Nothing on it
+/// speaks, and `/s`/`/ss` skip it (no speech text).
+fn command_transcript_entry(
+    window: &AppWindow,
+    command: &str,
+    reply: &str,
+    is_error: bool,
+) -> TranscriptEntry {
+    let prompt_hex = color_to_hex(window.get_prompt_accent());
+    let phrase_colors = styled::RoleColors::new(window.get_phrase_background(), prompt_hex.clone());
+    let translation_colors =
+        styled::RoleColors::new(window.get_translation_background(), prompt_hex);
+    let fields = styled::entry_fields(
+        styled::phrase_template(true, "cmd", command, false),
+        styled::translation_template_from_body(
+            false,
+            "",
+            &styled::escape_markdown(reply),
+            is_error,
+            false,
+        ),
+        command.to_string(),
+        reply.to_string(),
+        &phrase_colors,
+        &translation_colors,
+        window.get_tts_enabled(),
+    );
+    TranscriptEntry {
+        phrase: format!("[cmd]: {command}").into(),
+        translation: reply.into(),
+        phrase_speech: "".into(),
+        translation_speech: "".into(),
+        from_code: "".into(),
+        to_code: "".into(),
+        translation_is_error: true,
+        phrase_template: fields.phrase_template.into(),
+        translation_template: fields.translation_template.into(),
+        phrase_styled: fields.phrase_styled,
+        translation_styled: fields.translation_styled,
+        phrase_copy: fields.phrase_copy.into(),
+        translation_copy: fields.translation_copy.into(),
+        phrase_prompt: "".into(),
+        translation_prompt: "".into(),
+    }
+}
+
+thread_local! {
+    /// The `(axis, name)` list the last `/p` showed, which `/p <number>` picks from;
+    /// `None` until a `/p`, and again after `/clear`. UI-thread-only, like this file's
+    /// other `thread_local!`s.
+    static PROVIDER_SNAPSHOT: RefCell<Option<Vec<(ProviderAxis, String)>>> =
+        const { RefCell::new(None) };
+}
+
+/// What [`run_command`] works on besides the window.
+struct CommandContext<'a> {
+    config_manager: &'a Arc<Mutex<GuiConfigManager>>,
+    speech_stop_flag: &'a Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    popup: &'a slint::Weak<TranslationPopup>,
+}
+
+/// Runs a slash command typed into the input box (`text`, trimmed, is what was typed),
+/// answering in the transcript. The config is expected to be reloaded and the views
+/// refreshed already. Returns whether the input box should be cleared: `false` for a
+/// command that couldn't be carried out as typed (a usage error, an unknown language or
+/// provider), so it can be fixed.
+fn run_command(
+    window: &AppWindow,
+    context: &CommandContext,
+    text: &str,
+    command: commands::Command,
+) -> bool {
+    use commands::{Command, ProviderCommand, SpeechCommand};
+    let reply = |message: &str| {
+        push_transcript_entry(
+            window,
+            command_transcript_entry(window, text, message, false),
+        );
+        true
+    };
+    let fail = |message: &str| {
+        push_transcript_entry(
+            window,
+            command_transcript_entry(window, text, message, true),
+        );
+        false
+    };
+    let config = context.config_manager.lock().unwrap().config().clone();
+    match command {
+        Command::Languages(args) => {
+            let (source, target) = selected_languages(window);
+            let change = commands::resolve_languages(
+                &args,
+                languages::name_to_code(&source),
+                languages::name_to_code(&target),
+            );
+            match change {
+                Ok(change) => {
+                    window.set_source_language_index(language_index(
+                        &source_languages(),
+                        &change.source,
+                    ));
+                    window.set_target_language_index(language_index(
+                        &target_languages(),
+                        &change.target,
+                    ));
+                    let mut lines = change.notices;
+                    lines.push(format!(
+                        "Languages: {} → {} (this session)",
+                        languages::code_to_name(&change.source),
+                        languages::code_to_name(&change.target)
+                    ));
+                    reply(&lines.join("\n"))
+                }
+                Err(message) => fail(&message),
+            }
+        }
+        Command::Provider(command) => {
+            let picked = match command {
+                ProviderCommand::List => {
+                    let sections = provider_menu_sections(&config);
+                    PROVIDER_SNAPSHOT
+                        .with(|cell| *cell.borrow_mut() = Some(commands::provider_list(&sections)));
+                    return reply(&commands::format_provider_list(&sections));
+                }
+                ProviderCommand::Number(number) => {
+                    let list = PROVIDER_SNAPSHOT
+                        .with(|cell| cell.borrow().clone())
+                        .unwrap_or_else(|| {
+                            commands::provider_list(&provider_menu_sections(&config))
+                        });
+                    commands::resolve_provider_number(&list, number)
+                        .and_then(|(axis, name)| pick_provider(&config, axis, &name))
+                }
+                ProviderCommand::Switch { axis, name } => pick_provider(&config, axis, name),
+                ProviderCommand::AxisUsage(axis) => {
+                    return fail(&format!("Usage: /p {} <name>", commands::axis_word(axis)));
+                }
+                ProviderCommand::Usage => return fail(commands::PROVIDER_USAGE),
+            };
+            match picked {
+                Ok(message) => {
+                    refresh_config_views(window, context.config_manager);
+                    reply(&message)
+                }
+                Err(message) => fail(&message),
+            }
+        }
+        Command::Speak(SpeechCommand::Usage) => fail("Usage: /ss (speaks the last translation)"),
+        Command::Speak(command) => {
+            if !config.enable_text_to_speech {
+                return reply("Text-to-speech is off (Settings > General)");
+            }
+            // A second command stops what is speaking, like a second click.
+            if window.get_speaking_entry_index() != -1 {
+                speech::request_stop(context.speech_stop_flag);
+                return true;
+            }
+            let entries = window.get_transcript_entries();
+            let last = |speakable: fn(&TranscriptEntry) -> bool| {
+                (0..entries.row_count())
+                    .rev()
+                    .find(|&i| entries.row_data(i).is_some_and(|entry| speakable(&entry)))
+            };
+            match command {
+                SpeechCommand::Text(speech_text) => {
+                    let (source, _) = selected_languages(window);
+                    let from_code = languages::name_to_code(&source).to_string();
+                    push_transcript_entry(
+                        window,
+                        speech_transcript_entry(window, speech_text, &from_code),
+                    );
+                    start_speaking(
+                        window,
+                        context.config_manager,
+                        context.speech_stop_flag,
+                        window.as_weak(),
+                        SpeakRequest {
+                            index: window.get_transcript_entries().row_count() as i32 - 1,
+                            is_phrase: true,
+                            text: speech_text.to_string(),
+                            code: from_code,
+                        },
+                    );
+                    true
+                }
+                SpeechCommand::LastPhrase | SpeechCommand::LastTranslation => {
+                    let is_phrase = command == SpeechCommand::LastPhrase;
+                    let found = if is_phrase {
+                        last(|entry| !entry.phrase_speech.trim().is_empty())
+                    } else {
+                        last(|entry| !entry.translation_speech.trim().is_empty())
+                    };
+                    match found {
+                        Some(index) => {
+                            window.invoke_speak_requested(index as i32, is_phrase);
+                            true
+                        }
+                        None => reply("Nothing to speak yet: translate something first"),
+                    }
+                }
+                SpeechCommand::Usage => unreachable!("handled above"),
+            }
+        }
+        Command::Clear => {
+            if window.get_speaking_entry_index() != -1 {
+                // The playback thread resets `speaking-entry-index` when it ends.
+                speech::request_stop(context.speech_stop_flag);
+            }
+            window.set_transcript_entries(ModelRc::new(VecModel::<TranscriptEntry>::default()));
+            // The popup's row is gone (see `push_transcript_entry`).
+            if let Some(popup) = context.popup.upgrade() {
+                popup.set_entry_index(-1);
+            }
+            PROVIDER_SNAPSHOT.with(|cell| *cell.borrow_mut() = None);
+            true
+        }
+        Command::Help => reply(commands::help_text()),
+        Command::Version => reply(&commands::version_text(
+            env!("CARGO_PKG_VERSION"),
+            tagent::VERSION,
+        )),
+        Command::Usage(usage) => fail(usage),
+    }
+}
+
 /// Populates one `ColorPickerField`'s dialog-side state from a `"#RRGGBB"` (or
 /// empty, for "theme default") config value. Used five times (the shared
 /// panel background, plus phrase/translation × text/background) — see the
@@ -1808,20 +2076,51 @@ fn select_session_provider(config: &config::GuiConfig, axis: ProviderAxis, picke
 /// The provider in effect on `axis`: the main window's pick for this run while it still
 /// applies, otherwise `config`'s configured one. The second value is `true` for a pick.
 fn effective_provider(config: &config::GuiConfig, axis: ProviderAxis) -> (String, bool) {
-    let kinds = axis.kinds();
-    let offered = config.profiles_of_kinds(kinds);
     let configured = config.provider_name(axis);
     let name = SESSION_PROVIDERS
         .lock()
         .unwrap()
-        .resolve(axis, configured, |name| {
-            kinds.iter().any(|known| known.eq_ignore_ascii_case(name))
-                || offered
-                    .iter()
-                    .any(|profile| profile.eq_ignore_ascii_case(name))
-        });
+        .resolve(axis, configured, |name| is_offered(config, axis, name));
     let session = name != configured;
     (name, session)
+}
+
+/// Whether `axis` can use provider `name` (case-insensitive): one of its kinds, or a
+/// profile of one of them.
+fn is_offered(config: &config::GuiConfig, axis: ProviderAxis, name: &str) -> bool {
+    let kinds = axis.kinds();
+    kinds.iter().any(|known| known.eq_ignore_ascii_case(name))
+        || config
+            .profiles_of_kinds(kinds)
+            .iter()
+            .any(|profile| profile.eq_ignore_ascii_case(name))
+}
+
+/// Makes `name` this run's provider on `axis` (see [`select_session_provider`]), after
+/// checking `axis` can use it; the name is lowercased, as profile names are on load.
+/// Returns the reply `/p` shows, or the error when `axis` has no such provider. Shared by
+/// the provider menu and `/p`; the caller refreshes the views.
+fn pick_provider(
+    config: &config::GuiConfig,
+    axis: ProviderAxis,
+    name: &str,
+) -> Result<String, String> {
+    let name = name.to_lowercase();
+    let axis_title = provider_menu::heading(axis, true);
+    if !is_offered(config, axis, &name) {
+        return Err(format!(
+            "No {} provider named {name} (/p shows the list)",
+            axis.label()
+        ));
+    }
+    select_session_provider(config, axis, &name);
+    let title = provider_menu::display_title(axis, &config.provider_options, &name);
+    let scope = if name.eq_ignore_ascii_case(config.provider_name(axis)) {
+        "the default"
+    } else {
+        "this session"
+    };
+    Ok(format!("{axis_title} provider: {title} ({scope})"))
 }
 
 /// [`config::GuiConfig::provider_choice`] for the provider in effect on `axis` (see
@@ -1841,14 +2140,7 @@ fn refresh_provider_menu(window: &AppWindow, config: &config::GuiConfig) {
     let effective = ProviderAxis::ALL.map(|axis| effective_provider(config, axis).0);
     let enabled = ProviderAxis::ALL.map(|axis| config.axis_enabled(axis));
     let env = |var: &str| std::env::var(var).ok();
-    let sections = provider_menu::sections(
-        &config.provider_options,
-        &config.hidden_providers,
-        &effective,
-        enabled,
-        env,
-    );
-    for section in sections {
+    for section in provider_menu_sections(config) {
         let heading = SharedString::from(section.heading.as_str());
         let model = ModelRc::new(VecModel::from(
             section
@@ -1885,6 +2177,18 @@ fn refresh_provider_menu(window: &AppWindow, config: &config::GuiConfig) {
     window.set_provider_warning(
         provider_menu::warning(&config.provider_options, &effective, enabled, env).into(),
     );
+}
+
+/// The provider menu's sections for `config` and this run's picks (see
+/// [`provider_menu::sections`]); also what `/p` lists.
+fn provider_menu_sections(config: &config::GuiConfig) -> Vec<provider_menu::MenuSection> {
+    provider_menu::sections(
+        &config.provider_options,
+        &config.hidden_providers,
+        &ProviderAxis::ALL.map(|axis| effective_provider(config, axis).0),
+        ProviderAxis::ALL.map(|axis| config.axis_enabled(axis)),
+        |var: &str| std::env::var(var).ok(),
+    )
 }
 
 /// Updates what the main window shows from the config -- its default language pair
@@ -2946,13 +3250,41 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_manager_for_settings = config_manager.clone();
     let config_manager_for_translate = config_manager.clone();
+    let speech_stop_flag_for_commands = speech_stop_flag.clone();
+    let popup_weak_for_commands = popup.as_weak();
     let weak = window.as_weak();
+    // Returns whether the input box is cleared: always, except after a slash command that
+    // couldn't be carried out as typed (see `run_command`).
     window.on_translate_requested(move |text, from_lang, to_lang| {
         let config_manager = &config_manager_for_translate;
-        let text = text.trim().to_string();
+        let text = text.trim();
         if text.is_empty() {
-            return;
+            return true;
         }
+
+        // Slash commands (see `commands`), after the reload and refresh: a pair or
+        // provider they set must not be overwritten by a new default picked up later,
+        // and `/p` lists the current config.
+        if let Some(window) = weak.upgrade() {
+            let config = {
+                let mut manager = config_manager.lock().unwrap();
+                manager.check_and_reload();
+                manager.config().clone()
+            };
+            window.set_tts_enabled(config.enable_text_to_speech);
+            refresh_config_views(&window, config_manager);
+            let is_translation_name =
+                |name: &str| is_offered(&config, ProviderAxis::Translation, name);
+            if let Some(command) = commands::parse(text, is_translation_name) {
+                let context = CommandContext {
+                    config_manager,
+                    speech_stop_flag: &speech_stop_flag_for_commands,
+                    popup: &popup_weak_for_commands,
+                };
+                return run_command(&window, &context, text, command);
+            }
+        }
+        let text = commands::unescape(text).to_string();
 
         let (
             translate_provider,
@@ -3002,6 +3334,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             },
             None,
         );
+        true
     });
 
     let weak = window.as_weak();
@@ -3062,7 +3395,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             manager.check_and_reload();
             manager.config().clone()
         };
-        select_session_provider(&config, axis, &provider);
+        if let Err(message) = pick_provider(&config, axis, &provider) {
+            eprintln!("Warning: {message}");
+        }
         if let Some(window) = window_weak.upgrade() {
             refresh_config_views(&window, &config_manager_for_picker);
         }
@@ -4006,91 +4341,48 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let is_speech_processing2 = is_speech_processing.clone();
                     let config_manager2 = config_manager.clone();
                     let speech_stop_flag2 = speech_stop_flag.clone();
-                    std::thread::spawn(move || {
-                        match ClipboardManager::new().get_selected_text() {
-                            Ok(text) if !text.trim().is_empty() => {
-                                slint::invoke_from_event_loop(move || {
-                                    let Some(window) = weak2.upgrade() else {
-                                        is_speech_processing2.store(false, Ordering::SeqCst);
-                                        return;
-                                    };
-                                    // Stage 13: "[Speech]" plays the same role a real
-                                    // label does in `phrase_template`'s
-                                    // `[label]:` prompt, so it gets the same
-                                    // `Role::Prompt` highlighting -- the produced
-                                    // string is exactly `format!("[Speech]: {text}")`,
-                                    // matching the plain `phrase` field below.
-                                    let phrase_colors = styled::RoleColors::new(
-                                        window.get_phrase_background(),
-                                        color_to_hex(window.get_prompt_accent()),
-                                    );
-                                    let fields = styled::entry_fields(
-                                        styled::phrase_template(true, "Speech", &text, true),
-                                        String::new(),
-                                        text.clone(),
-                                        String::new(),
-                                        &phrase_colors,
-                                        &styled::RoleColors::default(),
-                                        window.get_tts_enabled(),
-                                    );
+                    std::thread::spawn(move || match ClipboardManager::new().get_selected_text() {
+                        Ok(text) if !text.trim().is_empty() => {
+                            slint::invoke_from_event_loop(move || {
+                                let Some(window) = weak2.upgrade() else {
+                                    is_speech_processing2.store(false, Ordering::SeqCst);
+                                    return;
+                                };
+                                push_transcript_entry(
+                                    &window,
+                                    speech_transcript_entry(&window, &text, &from_code),
+                                );
+                                let index = window.get_transcript_entries().row_count() as i32 - 1;
+                                start_speaking(
+                                    &window,
+                                    &config_manager2,
+                                    &speech_stop_flag2,
+                                    weak2.clone(),
+                                    SpeakRequest {
+                                        index,
+                                        is_phrase: true,
+                                        text,
+                                        code: from_code,
+                                    },
+                                );
+                                is_speech_processing2.store(false, Ordering::SeqCst);
+                            })
+                            .ok();
+                        }
+                        Ok(_) => {
+                            is_speech_processing2.store(false, Ordering::SeqCst);
+                        }
+                        Err(err) => {
+                            slint::invoke_from_event_loop(move || {
+                                if let Some(window) = weak2.upgrade() {
                                     push_transcript_entry(
                                         &window,
-                                        TranscriptEntry {
-                                            phrase: format!("[Speech]: {text}").into(),
-                                            translation: "".into(),
-                                            phrase_speech: text.clone().into(),
-                                            translation_speech: "".into(),
-                                            from_code: from_code.clone().into(),
-                                            to_code: "".into(),
-                                            translation_is_error: true,
-                                            phrase_template: fields.phrase_template.into(),
-                                            translation_template: fields
-                                                .translation_template
-                                                .into(),
-                                            phrase_styled: fields.phrase_styled,
-                                            translation_styled: fields.translation_styled,
-                                            phrase_copy: fields.phrase_copy.into(),
-                                            translation_copy: fields.translation_copy.into(),
-                                            phrase_prompt: "Speech".into(),
-                                            translation_prompt: "".into(),
-                                        },
+                                        info_transcript_entry("[Speech]", format!("Error: {err}")),
                                     );
-                                    let index =
-                                        window.get_transcript_entries().row_count() as i32 - 1;
-                                    start_speaking(
-                                        &window,
-                                        &config_manager2,
-                                        &speech_stop_flag2,
-                                        weak2.clone(),
-                                        SpeakRequest {
-                                            index,
-                                            is_phrase: true,
-                                            text,
-                                            code: from_code,
-                                        },
-                                    );
-                                    is_speech_processing2.store(false, Ordering::SeqCst);
-                                })
-                                .ok();
-                            }
-                            Ok(_) => {
+                                }
                                 is_speech_processing2.store(false, Ordering::SeqCst);
-                            }
-                            Err(err) => {
-                                slint::invoke_from_event_loop(move || {
-                                    if let Some(window) = weak2.upgrade() {
-                                        push_transcript_entry(
-                                            &window,
-                                            info_transcript_entry(
-                                                "[Speech]",
-                                                format!("Error: {err}"),
-                                            ),
-                                        );
-                                    }
-                                    is_speech_processing2.store(false, Ordering::SeqCst);
-                                })
-                                .ok();
-                            }
+                            })
+                            .ok();
                         }
                     });
                 })
@@ -4300,6 +4592,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serializes the tests that read or change [`SESSION_PROVIDERS`]: it is process-wide,
+    /// and resolving an axis against another configured value drops a pick for good, so
+    /// a parallel test could end another test's pick mid-way.
+    static SESSION_LOCK: Mutex<()> = Mutex::new(());
+
+    fn session_lock() -> std::sync::MutexGuard<'static, ()> {
+        SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn geometry(x: i32, y: i32) -> config::WindowGeometry {
         config::WindowGeometry {
@@ -5054,6 +5357,7 @@ mod tests {
 
     #[test]
     fn provider_header_lists_every_provider_by_default() {
+        let _session = session_lock();
         assert_eq!(
             providers_header(&config::GuiConfig::default()),
             "  Translation: Google Translate\n  Dictionary: Google Dictionary\n  Speech: Google TTS"
@@ -5084,6 +5388,7 @@ mod tests {
     /// interfere.
     #[test]
     fn provider_header_names_profiles_and_unavailable_providers() {
+        let _session = session_lock();
         let mut profiles = tagent::providers::ProviderProfiles::new();
         profiles.insert("gui-test-header", "type", "google");
         profiles.insert("gui-test-nokey", "type", "deepl");
@@ -5108,6 +5413,7 @@ mod tests {
     /// `TAGENT_<NAME>_<KEY>` in the developer's shell can interfere.
     #[test]
     fn provider_menu_follows_the_config() {
+        let _session = session_lock();
         i_slint_backend_testing::init_no_event_loop();
         let window = AppWindow::new().unwrap();
 
@@ -5163,5 +5469,245 @@ mod tests {
             entries(window.get_translation_menu())[0],
             ("google".to_string(), true)
         );
+    }
+
+    /// A window with its language lists, a config file in a temporary directory holding
+    /// `json`, and the popup, for [`run_command`]'s tests.
+    struct CommandFixture {
+        window: AppWindow,
+        popup: TranslationPopup,
+        config_manager: Arc<Mutex<GuiConfigManager>>,
+        speech_stop_flag: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+        _dir: tempfile::TempDir,
+        _session: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl CommandFixture {
+        fn new(json: &str) -> Self {
+            let session = session_lock();
+            i_slint_backend_testing::init_no_event_loop();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("tagent-gui.json");
+            std::fs::write(&path, json).unwrap();
+            let window = AppWindow::new().unwrap();
+            init_language_models(&window);
+            let config_manager = Arc::new(Mutex::new(GuiConfigManager::new_for_test(path)));
+            refresh_config_views(&window, &config_manager);
+            Self {
+                window,
+                popup: TranslationPopup::new().unwrap(),
+                config_manager,
+                speech_stop_flag: Arc::new(Mutex::new(None)),
+                _dir: dir,
+                _session: session,
+            }
+        }
+
+        /// Runs `text` as a command (it must be one); returns whether the input clears.
+        fn run(&self, text: &str) -> bool {
+            let config = self.config_manager.lock().unwrap().config().clone();
+            let command = commands::parse(text, |name| {
+                is_offered(&config, ProviderAxis::Translation, name)
+            })
+            .expect("a command");
+            let popup = self.popup.as_weak();
+            let context = CommandContext {
+                config_manager: &self.config_manager,
+                speech_stop_flag: &self.speech_stop_flag,
+                popup: &popup,
+            };
+            run_command(&self.window, &context, text, command)
+        }
+
+        /// The last transcript row's `(phrase, translation)`.
+        fn last_row(&self) -> (String, String) {
+            let entries = self.window.get_transcript_entries();
+            let entry = entries.row_data(entries.row_count() - 1).unwrap();
+            (entry.phrase.to_string(), entry.translation.to_string())
+        }
+
+        fn languages(&self) -> (String, String) {
+            let (source, target) = selected_languages(&self.window);
+            (source.to_string(), target.to_string())
+        }
+    }
+
+    const COMMAND_JSON: &str = r#"{"source_language": "en", "target_language": "ru"}"#;
+
+    #[test]
+    fn slash_l_sets_and_swaps_the_window_pair() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+        assert_eq!(fixture.languages(), ("English".into(), "Russian".into()));
+
+        assert!(fixture.run("/l de"));
+        assert_eq!(fixture.languages(), ("Auto".into(), "German".into()));
+        assert_eq!(
+            fixture.last_row(),
+            (
+                "[cmd]: /l de".into(),
+                "Languages: Auto → German (this session)".into()
+            )
+        );
+
+        assert!(fixture.run("/lang english ZH"));
+        assert_eq!(fixture.languages(), ("English".into(), "Chinese".into()));
+
+        assert!(fixture.run("/l"));
+        assert_eq!(fixture.languages(), ("Chinese".into(), "English".into()));
+
+        assert!(fixture.run("/l auto ru"));
+        assert!(fixture.run("/l"));
+        assert_eq!(fixture.languages(), ("Russian".into(), "English".into()));
+        assert_eq!(
+            fixture.last_row().1,
+            "Source was Auto; using English as the new target\n\
+             Languages: Russian → English (this session)"
+        );
+    }
+
+    /// A language the dropdowns don't list is an error row, keeps the input, and leaves
+    /// the pair alone.
+    #[test]
+    fn slash_l_with_an_unknown_language_changes_nothing() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+
+        assert!(!fixture.run("/l klingon"));
+
+        assert_eq!(fixture.languages(), ("English".into(), "Russian".into()));
+        let entries = fixture.window.get_transcript_entries();
+        let entry = entries.row_data(entries.row_count() - 1).unwrap();
+        assert_eq!(
+            entry.translation,
+            "Unknown language: klingon (languages unchanged)"
+        );
+        assert!(
+            entry.translation_template.contains("@error"),
+            "{}",
+            entry.translation_template
+        );
+        assert!(entry.phrase_speech.is_empty() && entry.translation_speech.is_empty());
+    }
+
+    /// `/p` lists, `/p <name>` and `/p <number>` pick for this session (the button and
+    /// header follow), a bad name or number keeps the input. The profile names are
+    /// unusual, so `SESSION_PROVIDERS` (process-wide) can't be confused by other tests.
+    #[test]
+    fn slash_p_picks_a_provider_for_this_session() {
+        let fixture = CommandFixture::new(
+            r#"{
+                "translate_provider": "gui-test-cmd-a",
+                "provider_options": {
+                    "gui-test-cmd-a": {"type": "google"},
+                    "gui-test-cmd-b": {"type": "google"}
+                }
+            }"#,
+        );
+        assert_eq!(
+            fixture.window.get_provider_button_text(),
+            "gui-test-cmd-a ▾"
+        );
+
+        assert!(fixture.run("/p gui-test-cmd-b"));
+        assert_eq!(
+            fixture.window.get_provider_button_text(),
+            "gui-test-cmd-b ▾"
+        );
+        assert!(
+            fixture
+                .window
+                .get_active_providers()
+                .contains("Google Translate (gui-test-cmd-b) (this session)"),
+            "{}",
+            fixture.window.get_active_providers()
+        );
+        assert_eq!(
+            fixture.last_row().1,
+            "Translation provider: Google Translate (gui-test-cmd-b) (this session)"
+        );
+
+        assert!(fixture.run("/p"));
+        let list = fixture.last_row().1;
+        assert!(list.starts_with("Translation\n   1  google "), "{list}");
+        assert!(list.contains("\n*  5  gui-test-cmd-b "), "{list}");
+
+        // Entry 1 is the built-in google translation provider.
+        assert!(fixture.run("/p 1"));
+        assert_eq!(fixture.window.get_provider_button_text(), "google ▾");
+
+        assert!(!fixture.run("/p no-such-provider"));
+        assert_eq!(
+            fixture.last_row().1,
+            "No translation provider named no-such-provider (/p shows the list)"
+        );
+        assert!(!fixture.run("/p 99"));
+        assert!(!fixture.run("/p d"));
+        assert_eq!(fixture.window.get_provider_button_text(), "google ▾");
+
+        // Picking the default ends the session pick.
+        assert!(fixture.run("/p GUI-TEST-CMD-A"));
+        assert_eq!(
+            fixture.window.get_provider_button_text(),
+            "gui-test-cmd-a ▾"
+        );
+        assert_eq!(
+            fixture.last_row().1,
+            "Translation provider: Google Translate (gui-test-cmd-a) (the default)"
+        );
+    }
+
+    #[test]
+    fn slash_clear_empties_the_transcript_and_forgets_the_popup_row() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+        fixture.run("/v");
+        fixture.run("/p");
+        fixture.popup.set_entry_index(0);
+
+        assert!(fixture.run("/clear"));
+
+        assert_eq!(fixture.window.get_transcript_entries().row_count(), 0);
+        assert_eq!(fixture.popup.get_entry_index(), -1);
+        assert!(PROVIDER_SNAPSHOT.with(|cell| cell.borrow().is_none()));
+    }
+
+    #[test]
+    fn slash_v_and_help_answer_in_the_transcript() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+
+        assert!(fixture.run("/v"));
+        assert!(fixture.last_row().1.starts_with("tagent-gui "));
+        assert!(fixture.last_row().1.contains("(tagent "));
+        assert!(fixture.run("/?"));
+        assert_eq!(fixture.last_row().1, commands::help_text());
+        assert!(!fixture.run("/help me"));
+    }
+
+    /// With nothing to speak, or text-to-speech off, `/s` and `/ss` say so.
+    #[test]
+    fn slash_s_without_anything_to_speak_says_so() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+        fixture.run("/v");
+
+        assert!(fixture.run("/s"));
+        assert_eq!(
+            fixture.last_row().1,
+            "Nothing to speak yet: translate something first"
+        );
+        assert!(fixture.run("/ss"));
+        assert_eq!(
+            fixture.last_row().1,
+            "Nothing to speak yet: translate something first"
+        );
+        assert!(!fixture.run("/ss now"));
+    }
+
+    #[test]
+    fn slash_s_with_text_to_speech_off_says_so() {
+        let fixture = CommandFixture::new(r#"{"enable_text_to_speech": false}"#);
+        assert!(fixture.run("/s hello"));
+        assert_eq!(
+            fixture.last_row().1,
+            "Text-to-speech is off (Settings > General)"
+        );
+        assert_eq!(fixture.window.get_transcript_entries().row_count(), 1);
     }
 }

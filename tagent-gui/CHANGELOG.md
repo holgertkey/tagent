@@ -20,6 +20,16 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-06
 
 ### Added
+- (+018) **Commands in the input box.** `/l de` or `/l en ru` sets the languages and `/l`
+  swaps them; `/p` lists the providers of all three jobs, numbered, and `/p 3`,
+  `/p deepl` or `/p d ollama` switches one; `/s` and `/ss` read the last phrase or
+  translation aloud, `/s <text>` reads the text; `/clear` empties the transcript;
+  `/help` lists the commands and `/v` shows the version (with the `tagent` library's).
+  The answer appears in the transcript as a `[cmd]:` entry. Like the window's lists and
+  provider menu, nothing is saved. Only these names are commands: other text starting
+  with `/` is translated, and `//l` translates `/l`. A command with a typo stays in the
+  box to be fixed. The hotkey's selection is never read as a command. The empty input
+  box now says `Type to translate, /help for commands`.
 - (+014) **A font size for the header and the input box.** Settings > View >
   "Header & input" (`input_size` in `tagent-gui.json`, default `13`, as before) sets the
   size of the transcript's header, the input box's `[auto → ru]:` label and the text

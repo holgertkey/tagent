@@ -143,3 +143,13 @@ pub mod article;
 pub mod error;
 pub mod languages;
 pub mod providers;
+
+/// This crate's version, as in its `Cargo.toml` (`"0.19.0"`, with a `+BUILD` suffix
+/// between releases), so an application can name the library it was built with.
+///
+/// # Examples
+///
+/// ```
+/// assert!(!tagent::VERSION.is_empty());
+/// ```
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

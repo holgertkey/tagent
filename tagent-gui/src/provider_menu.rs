@@ -32,7 +32,7 @@ pub struct MenuSection {
 }
 
 /// The header of `axis`'s section; a turned-off axis says so.
-fn heading(axis: ProviderAxis, enabled: bool) -> String {
+pub fn heading(axis: ProviderAxis, enabled: bool) -> String {
     let title = match axis {
         ProviderAxis::Translation => "Translation",
         ProviderAxis::Dictionary => "Dictionary",

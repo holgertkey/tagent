@@ -1702,6 +1702,55 @@ item 8 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 - Not done: `--replace`, passing text to translate, raising an already visible window
   that is behind others (`show()` maps a hidden window; a visible one stays where it is).
 
+### Slash commands in the input box (`tagent-gui` 0.15.0+018)
+
+`tagent-gui/src/commands.rs` (pure, unit-tested) parses; `run_command` in `main.rs` runs.
+A subset of `tagent-cli`'s interactive commands (`/l`, `/p`, `/s`, `/ss`, `/clear`,
+`/help`, `/v`), chosen for a GUI whose session/saved split is already decided: no `/save`
+(saved defaults live in Settings), no `/config`, no `/q` (closing hides to the tray). User
+side: "Commands in the input box" in the user book. Planned and decided in
+[`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+
+- **Known commands only.** The trimmed input is a command when its first word (split on
+  any whitespace, so `/s` + Shift+Enter + text works) is in `COMMAND_NAMES`, lowercase
+  only, like `tagent-cli`; anything else (`/usr/bin`, `/xyz`, `/L`) is translated, the same
+  fallback as `tagent-cli`'s `handle_command`. `unescape` drops one `/` from a leading `//`
+  before translating. `ProviderCommand`/`parse_axis`/`SpeechCommand` are duplicated from
+  `tagent-cli`'s `interactive.rs` with their tests (it has no `[lib]`, and command parsing
+  is app code, not `tagent`'s). An argument-free command given arguments (`/v x`) is a
+  usage error rather than text.
+- **Only the input box.** Parsed in `on_translate_requested`, after `check_and_reload` +
+  `refresh_config_views` (a changed default pair applied later would overwrite a `/l`, and
+  `/p` lists the current config); the translate hotkey's path never parses.
+  `translate-requested` returns a `bool` (clear the box): `false` for a usage error, an
+  unknown language or provider, a bad number, so the text can be fixed. `TextInput` has no
+  placeholder; a dimmed `Text` under it (visible while empty) mentions `/help`.
+- **Replies** are `command_transcript_entry` rows: `[cmd]: <command>` with the label in
+  `Role::Prompt`, the reply plain or in `Role::Error`, nothing speakable (so `/s`/`/ss`,
+  which look back for the last row with `phrase_speech`/`translation_speech`, skip them).
+- **`/l`**: `resolve_languages` on codes (the swap's `auto` → `en` rule differs from ⇄,
+  which is disabled for `Auto`, so not `swapped_language_indices`); only listed languages
+  (`tagent::languages::language_code`), since the dropdowns can't show anything else. Sets
+  the dropdown indices; `languages-changed` updates the input label.
+- **`/p`**: the list is `provider_menu_sections` (also the menu's source), flattened and
+  numbered across axes (`provider_list`, `format_provider_list`), kept in the
+  `PROVIDER_SNAPSHOT` `thread_local!` for `/p <n>`. Switching goes through
+  `pick_provider`, shared with the menu's `provider-picked`: it lowercases (profile names
+  are lowercased on load), checks `is_offered` (the predicate `effective_provider` uses,
+  so a name that `resolve` would silently drop is an error instead), then
+  `select_session_provider`.
+- **Speech**: TTS off → an info reply; something speaking → `speech::request_stop` only
+  (a second command stops, like a second click); `/s`/`/ss` → `invoke_speak_requested` on
+  the found row; `/s <text>` → `speech_transcript_entry` (shared with the speech hotkey)
+  then `start_speaking`.
+- **`/clear`** stops playback but leaves `speaking-entry-index` to the playback thread
+  (resetting it early would let the old thread's final hop clear a new playback's stop
+  flag), sets the popup's `entry-index` to -1 (rows are otherwise only appended, see
+  `push_transcript_entry`) and drops the `/p` snapshot.
+- **`/v`** names `tagent::VERSION` (added for this, `tagent` 0.19.0+007).
+- **No Tab completion** ("simple over clever": Slint has no autocomplete; a custom popup
+  list is a lot of UI for a rarely typed command set). A follow-up if it's missed.
+
 ### Known gaps in `tagent-gui`
 
 - **Wayland, both apps on the same keys** (observed 2026-10-04): with `tagent-gui` and

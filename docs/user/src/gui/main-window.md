@@ -8,7 +8,8 @@ From top to bottom:
 
 - **Source and target language.** The source list starts with `Auto` (detect the
   language). The window opens with the default languages from Settings > General; a
-  change here holds until you quit, or until you change the defaults.
+  change here holds until you quit, or until you change the defaults. `/l` in the input
+  box does the same from the keyboard ([commands](commands.md)).
 - **⇄** swaps the two languages. It is disabled while the source is `Auto`.
 - **The provider button** names the translation provider in use, such as `google ▾`.
   Its menu switches providers for this run; see [below](#switching-providers).
@@ -54,6 +55,9 @@ keyboard focus is in the box, so you can type or paste right away.
 
 **📋** puts the clipboard's content into the box, ready to translate.
 
+A line starting with `/` can be a command: `/l de` sets the languages, `/p deepl` the
+provider, `/help` lists them all. See [Commands in the input box](commands.md).
+
 **Ctrl+V**, **Ctrl+C**, **Ctrl+X**, **Ctrl+A** and **Ctrl+Z** work in any keyboard layout,
 Russian or Greek included: a key counts as the Latin letter at its place on a US keyboard.
 
@@ -66,7 +70,8 @@ a required option, and a job that is turned off in Settings shows `(off)`.
 A pick holds **for this run only**: the header marks it `(this session)`, and Settings
 keeps showing, and saving, your defaults. The pick ends when you quit, pick the default
 again, or change that default in Settings. **Providers…** at the bottom of the menu opens
-Settings > Providers.
+Settings > Providers. `/p` in the input box lists and picks the same entries from the
+keyboard ([commands](commands.md)).
 
 See [How providers work](../providers/how-providers-work.md).
 

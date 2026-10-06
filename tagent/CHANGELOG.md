@@ -22,7 +22,7 @@ have no `+BUILD`.
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-10-05
+## [0.19.0] - 2026-10-06
 
 ### Changed
 - (+003) **The OpenAI-compatible dictionary provider reads an answer made of several JSON
@@ -47,6 +47,8 @@ have no `+BUILD`.
   wildcard arm. From now on, a new variant is a compatible change rather than a breaking one.
 
 ### Added
+- (+007) **`VERSION`**: the crate's version as a constant, so an application can name the
+  library it was built with (`tagent-gui`'s `/version` command shows it).
 - (+006) **`languages::pair_label`**: the compact `source → target` label of a language
   pair (`"auto → ru"`), moved here from `tagent-cli` so both applications show the pair the
   same way.

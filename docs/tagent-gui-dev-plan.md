@@ -181,7 +181,8 @@ Candidates, not yet scheduled; the order is a suggestion.
 11. **Interface scale.** Planned 2026-10-05: one `ui_scale` setting (percent) that
     scales the whole interface through `SLINT_SCALE_FACTOR`, restart-required; see
     [below](#planned-stage--interface-scale).
-12. **Slash commands in the input box.** Planned 2026-10-05: a small subset of
+12. **Slash commands in the input box.** Planned 2026-10-05, implemented 2026-10-06
+    (0.15.0+018, awaiting the maintainer's check): a small subset of
     `tagent-cli`'s interactive commands (`/l`, `/p`, `/s`, `/ss`, `/clear`, `/help`,
     `/v`), answered in the transcript; see [below](#planned-stage--slash-commands).
 
@@ -470,10 +471,12 @@ check on a 100 % and a 150 % display setting.
 
 ### Planned stage — Slash commands
 
-**Status:** planned 2026-10-05 (discussed with the maintainer the same day), not
-started. Target: `tagent-gui` 0.15.0 (unreleased, so `+BUILD` only); no `tagent` or
-`tagent-cli` change. Once shipped and checked, condense this section to a row of the
-"Shipped stages" table.
+**Status:** planned 2026-10-05 (discussed with the maintainer the same day);
+implemented 2026-10-06 in `tagent-gui` 0.15.0+018, unit-tested, waiting for the
+maintainer's check by screenshot (list below). One deviation: `/v` needed the library's
+version, which `tagent` didn't expose, so `tagent::VERSION` was added (`tagent`
+0.19.0+007, decided with the maintainer). Once checked, condense this section to a row
+of the "Shipped stages" table.
 
 **Goal.** Keyboard-first control from the input box, in the spirit of the CLI-style
 prompts: `/l en ru` or `/p deepl` instead of reaching for a dropdown or the provider
