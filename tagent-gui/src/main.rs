@@ -49,14 +49,31 @@ fn target_languages() -> Vec<&'static str> {
         .collect()
 }
 
-/// A language dropdown's model.
+/// What a language dropdown shows for language `name`: the name with its code,
+/// `"Russian (ru)"`; `"Auto"` stays as it is. Display only: the code reads the
+/// selection by index from [`source_languages`]/[`target_languages`]
+/// ([`language_at`]), never by parsing the label.
+fn language_label(name: &str) -> String {
+    match languages::name_to_code(name) {
+        "auto" => name.to_string(),
+        code => format!("{name} ({code})"),
+    }
+}
+
+/// A language dropdown's model: the [`language_label`] of each of `names`.
 fn language_model(names: &[&str]) -> ModelRc<SharedString> {
     ModelRc::new(VecModel::from(
         names
             .iter()
-            .map(|&name| SharedString::from(name))
+            .map(|&name| SharedString::from(language_label(name)))
             .collect::<Vec<_>>(),
     ))
+}
+
+/// The language name at dropdown `index` in a dropdown listing `names`, or `None` when
+/// the index is out of range.
+fn language_at<'a>(names: &[&'a str], index: i32) -> Option<&'a str> {
+    names.get(usize::try_from(index).ok()?).copied()
 }
 
 /// Index of language `code` (e.g. `"ru"`, or `"auto"`) in a dropdown listing `names`, or
@@ -93,17 +110,16 @@ fn refresh_input_prompt(window: &AppWindow) {
     window.set_input_prompt(format!("[{pair}]:").into());
 }
 
-/// The language names the main window's two dropdowns select.
+/// The language names the main window's two dropdowns select (not their labels, see
+/// [`language_label`]).
 fn selected_languages(window: &AppWindow) -> (SharedString, SharedString) {
     (
-        window
-            .get_source_languages()
-            .row_data(window.get_source_language_index() as usize)
-            .unwrap_or_default(),
-        window
-            .get_target_languages()
-            .row_data(window.get_target_language_index() as usize)
-            .unwrap_or_default(),
+        language_at(&source_languages(), window.get_source_language_index())
+            .unwrap_or_default()
+            .into(),
+        language_at(&target_languages(), window.get_target_language_index())
+            .unwrap_or_default()
+            .into(),
     )
 }
 
@@ -4060,18 +4076,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     dialog.get_dictionary_provider_index(),
                     &current_config.dictionary_provider,
                 ),
-                source_language: languages::name_to_code(&combo_selection(
-                    &dialog.get_default_source_languages(),
+                source_language: language_at(
+                    &source_languages(),
                     dialog.get_default_source_index(),
-                    languages::code_to_name(&current_config.source_language),
-                ))
-                .to_string(),
-                target_language: languages::name_to_code(&combo_selection(
-                    &dialog.get_default_target_languages(),
+                )
+                .map_or_else(
+                    || current_config.source_language.clone(),
+                    |name| languages::name_to_code(name).to_string(),
+                ),
+                target_language: language_at(
+                    &target_languages(),
                     dialog.get_default_target_index(),
-                    languages::code_to_name(&current_config.target_language),
-                ))
-                .to_string(),
+                )
+                .map_or_else(
+                    || current_config.target_language.clone(),
+                    |name| languages::name_to_code(name).to_string(),
+                ),
                 speech_provider: combo_selection(
                     &dialog.get_speech_providers(),
                     dialog.get_speech_provider_index(),
@@ -4329,13 +4349,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return;
                     }
 
-                    let from_code = languages::name_to_code(
-                        &window
-                            .get_source_languages()
-                            .row_data(window.get_source_language_index() as usize)
-                            .unwrap_or_default(),
-                    )
-                    .to_string();
+                    let (source, _) = selected_languages(&window);
+                    let from_code = languages::name_to_code(&source).to_string();
 
                     let weak2 = weak.clone();
                     let is_speech_processing2 = is_speech_processing.clone();
@@ -4724,17 +4739,24 @@ mod tests {
             ..config::GuiConfig::default()
         };
         refresh_default_languages(&window, &config);
-        assert_eq!(selected(&window), ("Auto".into(), "German".into()));
+        assert_eq!(selected(&window), ("Auto".into(), "German (de)".into()));
+        assert_eq!(
+            selected_languages(&window),
+            ("Auto".into(), "German".into())
+        );
 
         // A pick in the window holds while the configured pair is unchanged...
         window.set_target_language_index(language_index(&target_languages(), "fr"));
         refresh_default_languages(&window, &config);
-        assert_eq!(selected(&window).1, "French");
+        assert_eq!(selected(&window).1, "French (fr)");
 
         // ...and gives way to a new one.
         config.source_language = "en".to_string();
         refresh_default_languages(&window, &config);
-        assert_eq!(selected(&window), ("English".into(), "German".into()));
+        assert_eq!(
+            selected(&window),
+            ("English (en)".into(), "German (de)".into())
+        );
     }
 
     #[test]
@@ -4765,6 +4787,27 @@ mod tests {
         window.set_target_language_index(target);
         slint::platform::update_timers_and_animations();
         assert_eq!(window.get_input_prompt(), "[ru → en]:");
+    }
+
+    #[test]
+    fn language_labels_show_the_code_except_for_auto() {
+        assert_eq!(language_label("Russian"), "Russian (ru)");
+        assert_eq!(language_label("Auto"), "Auto");
+        for language in languages::LANGUAGES {
+            assert_eq!(
+                language_label(language.name),
+                format!("{} ({})", language.name, language.code)
+            );
+        }
+    }
+
+    #[test]
+    fn language_at_reads_names_by_index() {
+        let names = source_languages();
+        assert_eq!(language_at(&names, 0), Some("Auto"));
+        assert_eq!(language_at(&names, 1), Some("English"));
+        assert_eq!(language_at(&names, -1), None);
+        assert_eq!(language_at(&names, names.len() as i32), None);
     }
 
     #[test]

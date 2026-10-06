@@ -6,8 +6,8 @@ From top to bottom:
 
 ## The toolbar
 
-- **Source and target language.** The source list starts with `Auto` (detect the
-  language). The window opens with the default languages from Settings > General; a
+- **Source and target language.** Each language is listed with its code, such as
+  `Russian (ru)`; the source list starts with `Auto` (detect the language). The window opens with the default languages from Settings > General; a
   change here holds until you quit, or until you change the defaults. `/l` in the input
   box does the same from the keyboard ([commands](commands.md)).
 - **⇄** swaps the two languages. It is disabled while the source is `Auto`.

@@ -247,6 +247,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+019) **The language lists show the codes.** The main window's two language lists and
+  the default languages in Settings > General name each language with its code,
+  `Russian (ru)`, the code the `[auto → ru]:` label shows; `Auto` stays as it is.
 - (+017) **The 🔊 in a prompt moved before the closing bracket:** `[auto → ru 🔊]:`
   instead of `[🔊 auto → ru]:`, in the transcript and the popup, so the prompt starts
   with its label. Without a prompt, a block still starts with 🔊.
