@@ -1,0 +1,7 @@
+/* Section titles (chapters without a page of their own) look like headings, not like
+   mdBook's greyed-out draft chapters, and show that a click folds them. */
+.chapter .chapter-link-wrapper > span {
+    color: var(--sidebar-fg);
+    font-weight: bold;
+    cursor: pointer;
+}

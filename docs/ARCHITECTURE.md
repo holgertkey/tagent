@@ -1845,7 +1845,12 @@ plans and in the `tagent` rustdoc.
 screenshots in `src/images/`; the build output `docs/user/book/` is gitignored. The book
 is organized by the user's tasks: Getting started, `tagent-cli`, `tagent-gui`, Providers
 (shared by both apps, each example shown as `tagent-cli.toml` and as the `tagent-gui`
-Settings path), Reference, Troubleshooting.
+Settings path), Reference, Troubleshooting. These sections are title-only chapters in
+`SUMMARY.md` (`- [Providers]()` with the pages indented under it), not mdBook part
+headings (`# Providers`), because only a chapter with sub-chapters can fold:
+`[output.html.fold]` starts them all folded and opens the current page's. mdBook greys
+out such chapters as drafts; `theme/fold-titles.css` shows them as headings and
+`theme/fold-titles.js` folds them on a click on the title, not only on the chevron.
 
 **Viewing it locally.** `mdbook build docs/user`, or `mdbook serve docs/user` for a live
 preview. `serve` needs mdBook's default features: `cargo install mdbook --vers "^0.5"

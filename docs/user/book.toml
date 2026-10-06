@@ -13,3 +13,11 @@ create-missing = false
 [output.html]
 git-repository-url = "https://github.com/holgertkey/tagent"
 edit-url-template = "https://github.com/holgertkey/tagent/edit/main/docs/user/{path}"
+additional-css = ["theme/fold-titles.css"]
+additional-js = ["theme/fold-titles.js"]
+
+# The sidebar's sections (Getting started, tagent-cli, ...) are title-only chapters in
+# SUMMARY.md so they can fold; all start folded, and the current page's section opens.
+[output.html.fold]
+enable = true
+level = 0
