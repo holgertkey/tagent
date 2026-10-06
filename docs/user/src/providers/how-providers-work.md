@@ -125,7 +125,7 @@ Both apps let you switch providers on the fly without touching the saved setting
   switch lasts until you quit; `/save` writes it to the file. See
   [Interactive commands](../cli/interactive-commands.md).
 - **tagent-gui:** the button next to ⚙ in the main window names the translation provider
-  in use (`google ▾`). Its menu has a section for each job; a pick holds for this run only
+  in use (`google ▼`). Its menu has a section for each job; a pick holds for this run only
   and is marked `(this session)` in the window header. Settings > Providers still shows,
   and saves, the defaults. `/p` in the input box does the same as in `tagent-cli`, minus
   `/save`; see [Commands in the input box](../gui/commands.md).

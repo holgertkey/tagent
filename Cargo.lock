@@ -5834,7 +5834,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.15.0+023"
+version = "0.15.0+024"
 dependencies = [
  "arboard",
  "ashpd",
@@ -5854,6 +5854,7 @@ dependencies = [
  "tagent",
  "tempfile",
  "tokio",
+ "ttf-parser",
  "windows 0.52.0",
  "winresource",
  "x11",

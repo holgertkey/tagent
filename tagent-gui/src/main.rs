@@ -2163,6 +2163,12 @@ fn effective_provider_choice(
 /// one section per axis with the provider in effect checked, the button naming the
 /// translation provider in effect, and the ⚠ when a provider in effect on a turned-on axis
 /// lacks a required option.
+/// The arrow after the provider name on the main window's provider button.
+/// ▼ (U+25BC) is in WGL4, so every common UI font has it; the smaller ▾
+/// (U+25BE) is missing from Segoe UI, and Slint drew nothing for it on Windows
+/// (no font fallback within a run that starts with Latin text).
+const PROVIDER_BUTTON_ARROW: char = '▼';
+
 fn refresh_provider_menu(window: &AppWindow, config: &config::GuiConfig) {
     let effective = ProviderAxis::ALL.map(|axis| effective_provider(config, axis).0);
     let enabled = ProviderAxis::ALL.map(|axis| config.axis_enabled(axis));
@@ -2196,7 +2202,7 @@ fn refresh_provider_menu(window: &AppWindow, config: &config::GuiConfig) {
         }
     }
     let [translation, dictionary, speech] = &effective;
-    window.set_provider_button_text(format!("{translation} ▾").into());
+    window.set_provider_button_text(format!("{translation} {PROVIDER_BUTTON_ARROW}").into());
     window.set_provider_button_label(
         format!("Providers: translation {translation}, dictionary {dictionary}, speech {speech}")
             .into(),
@@ -4700,6 +4706,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
+    /// Windows' UI font must have the provider button's arrow: Slint draws
+    /// nothing for a glyph it lacks there (▾ was invisible after `google`).
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn provider_button_arrow_is_in_segoe_ui() {
+        let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let data = std::fs::read(std::path::Path::new(&windir).join(r"Fonts\segoeui.ttf"))
+            .expect("Segoe UI is installed on every Windows");
+        let face = ttf_parser::Face::parse(&data, 0).unwrap();
+        assert!(face.glyph_index(super::PROVIDER_BUTTON_ARROW).is_some());
+    }
+
     use super::*;
 
     /// Serializes the tests that read or change [`SESSION_PROVIDERS`]: it is process-wide,
@@ -5651,7 +5669,7 @@ mod tests {
             [("google".to_string(), true)]
         );
         assert_eq!(window.get_speech_menu_heading(), "Speech (off)");
-        assert_eq!(window.get_provider_button_text(), "gui-test-menu ▾");
+        assert_eq!(window.get_provider_button_text(), "gui-test-menu ▼");
         assert_eq!(
             window.get_provider_warning(),
             "gui-test-menu: api_key required"
@@ -5665,7 +5683,7 @@ mod tests {
 
         config.translate_provider = "google".to_string();
         refresh_provider_menu(&window, &config);
-        assert_eq!(window.get_provider_button_text(), "google ▾");
+        assert_eq!(window.get_provider_button_text(), "google ▼");
         assert_eq!(
             entries(window.get_translation_menu())[0],
             ("google".to_string(), true)
@@ -5808,13 +5826,13 @@ mod tests {
         );
         assert_eq!(
             fixture.window.get_provider_button_text(),
-            "gui-test-cmd-a ▾"
+            "gui-test-cmd-a ▼"
         );
 
         assert!(fixture.run("/p gui-test-cmd-b"));
         assert_eq!(
             fixture.window.get_provider_button_text(),
-            "gui-test-cmd-b ▾"
+            "gui-test-cmd-b ▼"
         );
         assert!(
             fixture
@@ -5836,7 +5854,7 @@ mod tests {
 
         // Entry 1 is the built-in google translation provider.
         assert!(fixture.run("/p 1"));
-        assert_eq!(fixture.window.get_provider_button_text(), "google ▾");
+        assert_eq!(fixture.window.get_provider_button_text(), "google ▼");
 
         assert!(!fixture.run("/p no-such-provider"));
         assert_eq!(
@@ -5845,13 +5863,13 @@ mod tests {
         );
         assert!(!fixture.run("/p 99"));
         assert!(!fixture.run("/p d"));
-        assert_eq!(fixture.window.get_provider_button_text(), "google ▾");
+        assert_eq!(fixture.window.get_provider_button_text(), "google ▼");
 
         // Picking the default ends the session pick.
         assert!(fixture.run("/p GUI-TEST-CMD-A"));
         assert_eq!(
             fixture.window.get_provider_button_text(),
-            "gui-test-cmd-a ▾"
+            "gui-test-cmd-a ▼"
         );
         assert_eq!(
             fixture.last_row().1,

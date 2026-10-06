@@ -1,6 +1,6 @@
 [package]
 name = "tagent-gui"
-version = "0.15.0+023"
+version = "0.15.0+024"
 edition = "2021"
 description = "Tagent GUI — cross-platform desktop text translator built with Slint: global hotkey, tray icon, dictionary and text-to-speech"
 authors = ["Holgert K"]
@@ -57,6 +57,8 @@ interprocess = "2"
 
 [dev-dependencies]
 tempfile = "3"
+# Reads Segoe UI's character map in a Windows-only glyph test (already in the tree via Slint).
+ttf-parser = "0.25"
 # Headless Slint backend for the transcript auto-scroll test; keep in step with `slint`.
 i-slint-backend-testing = "1.17"
 

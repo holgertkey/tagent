@@ -421,6 +421,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+024) **The provider button's arrow shows on Windows.** The arrow after the provider name
+  (`google ▼`, next to ⚙) was blank: the small ▾ is not in Segoe UI, Windows' UI font. The
+  button now uses ▼, which every common UI font has.
 - (+023) **The main window stayed off-screen on Windows.** Quitting from the tray, or
   closing the window from the taskbar, while it was minimized saved Windows' parking
   spot for minimized windows (-32000, -32000) as its position, and every later start

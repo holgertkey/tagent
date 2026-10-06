@@ -11,7 +11,7 @@ From top to bottom:
   change here holds until you quit, or until you change the defaults. `/l` in the input
   box does the same from the keyboard ([commands](commands.md)).
 - **⇄** swaps the two languages. It is disabled while the source is `Auto`.
-- **The provider button** names the translation provider in use, such as `google ▾`.
+- **The provider button** names the translation provider in use, such as `google ▼`.
   Its menu switches providers for this run; see [below](#switching-providers).
 - **⚠** appears when a provider in use lacks a required option (an API key, a server
   address). Click it to open Settings on the Providers tab.
