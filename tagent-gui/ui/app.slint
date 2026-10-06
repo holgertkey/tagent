@@ -239,6 +239,13 @@ export component AppWindow inherits Window {
     preferred-height: 480px;
     forward-focus: input-field;
 
+    // Puts the keyboard focus in the input box. `forward-focus` alone only
+    // covers the window's first focus: after a click on a button the focus
+    // stays there, also across hide-to-tray and show, so every show calls this.
+    public function focus-input() {
+        input-field.focus();
+    }
+
     // Applies a theme string ("auto"/"light"/"dark") to this window's own
     // Palette instance (globals aren't shared between windows, so both
     // AppWindow and SettingsDialog need their own copy of this function).

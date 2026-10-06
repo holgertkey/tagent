@@ -17,7 +17,7 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 
 ## [Unreleased]
 
-## [0.15.0] - 2026-10-05
+## [0.15.0] - 2026-10-06
 
 ### Added
 - (+014) **A font size for the header and the input box.** Settings > View >
@@ -397,6 +397,12 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+016) **The input box didn't have the keyboard focus when the window opened.** After
+  a click on a button (⇄, 📋, Translate, ...) the focus stayed on that button, also after
+  hiding the window to the tray and showing it again, so typing went nowhere until the
+  input box was clicked. Every show of the window (at startup, from the tray, from a
+  second start) now puts the focus in the input box and asks the window manager to
+  activate the window.
 - (+015) **Ctrl+V, Ctrl+C, Ctrl+X, Ctrl+A and Ctrl+Z did nothing in a non-Latin
   keyboard layout.** With a Russian (Greek, Hebrew, ...) layout active, the input box and
   the Settings fields ignored these shortcuts: Slint recognizes them by the character the

@@ -49,6 +49,8 @@ copy with right-click.
 
 Type or paste text and press **Enter**, or click **Translate**. **Shift+Enter** starts a
 new line. The label before the box shows the selected language pair, `[auto → ru]:`. Drag the bar above the box to make it taller.
+Whenever the window opens (at startup, from the tray or from a second start), the
+keyboard focus is in the box, so you can type or paste right away.
 
 **📋** puts the clipboard's content into the box, ready to translate.
 

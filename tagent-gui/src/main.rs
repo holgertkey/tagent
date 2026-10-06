@@ -2547,6 +2547,15 @@ fn show_window_restoring_geometry(
     session_geometry: &Cell<Option<config::WindowGeometry>>,
 ) {
     window.show().ok();
+    focus_input(window);
+    // Again once the window manager has mapped and activated the window, for the
+    // same settle-and-retry reason as the geometry re-apply below.
+    let weak_window = window.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+        if let Some(window) = weak_window.upgrade() {
+            focus_input(&window);
+        }
+    });
 
     let first_show = !geometry_restored.replace(true);
     if first_show {
@@ -2587,6 +2596,17 @@ fn show_window_restoring_geometry(
             apply_window_geometry(&window, target_size, target_position);
         }
     });
+}
+
+/// Asks the window manager to activate `window` (it may refuse, e.g. GNOME's focus
+/// stealing prevention) and puts the keyboard focus in its input box, so typing or
+/// pasting works right after the window opens.
+fn focus_input(window: &AppWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    window
+        .window()
+        .with_winit_window(|winit_window| winit_window.focus_window());
+    window.invoke_focus_input();
 }
 
 fn apply_window_geometry(
@@ -4832,6 +4852,39 @@ mod tests {
             styled::RoleColors::new(bg, "#111111".to_string()),
         );
         assert!(role_colors_changed(&Some(a), &b));
+    }
+
+    /// Regression: typing right after the window is shown must land in the input box.
+    /// `forward-focus` only covered the window's first focus, so after a click on a
+    /// button (which keeps the focus across hide-to-tray and show) keys went nowhere
+    /// until the input box was clicked.
+    #[test]
+    fn focus_input_sends_typing_to_the_input_box() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = AppWindow::new().unwrap();
+        window.window().set_size(slint::PhysicalSize::new(480, 480));
+        window.show().unwrap();
+        let type_key = |text: &str| {
+            for event in [
+                slint::platform::WindowEvent::KeyPressed { text: text.into() },
+                slint::platform::WindowEvent::KeyReleased { text: text.into() },
+            ] {
+                window.window().dispatch_event(event);
+            }
+        };
+
+        // Move the focus off the input box, as a click on a button does.
+        type_key(&slint::SharedString::from(slint::platform::Key::Tab));
+        type_key("x");
+        assert_eq!(
+            window.get_input_text(),
+            "",
+            "the focus never left the input box"
+        );
+
+        focus_input(&window);
+        type_key("x");
+        assert_eq!(window.get_input_text(), "x");
     }
 
     /// Regression: appending an entry must leave the transcript scrolled to its very
