@@ -421,6 +421,10 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+026) **`/help`'s descriptions line up.** The list was padded with spaces, which line
+  up only in a monospace font, and the transcript's `monospace` font is proportional on
+  Windows. The list is now always drawn in a monospace font, whatever the transcript's
+  fonts are set to.
 - (+025) **The provider menu follows the theme on Windows.** The menu of the provider
   button (next to ⚙) is a native Windows menu, and it stayed light under the `Dark` theme
   when Windows itself is in light mode. It is now dark under `Dark`, light under `Light`,

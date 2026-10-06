@@ -124,6 +124,25 @@ pub fn escape_markdown(text: &str) -> String {
         .join("\n")
 }
 
+/// Builds a template that shows `text` line by line in a monospace font, for column-
+/// aligned replies such as `/help`'s: each line becomes a Markdown code span, which
+/// Slint draws in the generic monospace family (Consolas on Windows) whatever the
+/// block's own font is. Unlike [`escape_markdown`] it never escapes, since a code
+/// span shows backslashes literally, so `text` must be trusted: no backticks, and no
+/// blank lines or lines with surrounding spaces (which a code span would trim).
+pub fn code_lines(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            debug_assert!(
+                !line.contains('`') && !line.trim().is_empty() && line.trim() == line,
+                "not code-span safe: {line:?}"
+            );
+            format!("`{line}`")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn escape_line(line: &str) -> String {
     if line.trim().is_empty() {
         return BLANK_LINE.to_string();
@@ -495,6 +514,25 @@ pub fn translation_template_from_body(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- code_lines --------------------------------------------------------
+
+    #[test]
+    fn code_lines_wraps_each_line_in_a_code_span() {
+        assert_eq!(code_lines("/l    swap\n/p    list"), "`/l    swap`\n`/p    list`");
+    }
+
+    /// The column padding survives Slint's Markdown parser: runs of spaces inside a
+    /// code span are kept, and each line stays a line of its own.
+    #[test]
+    fn code_lines_keep_their_spacing_once_rendered() {
+        let styled =
+            StyledText::from_markdown(&code_lines("/l, /lang    swap\n/p <n>       use")).unwrap();
+        let debug = format!("{styled:?}");
+        assert!(debug.contains(r#"text: "/l, /lang    swap""#), "{debug}");
+        assert!(debug.contains(r#"text: "/p <n>       use""#), "{debug}");
+        assert_eq!(debug.matches("style: Code").count(), 2, "{debug}");
+    }
 
     // --- escape_markdown ---------------------------------------------------
 

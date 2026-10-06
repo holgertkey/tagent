@@ -1232,12 +1232,14 @@ fn speech_transcript_entry(window: &AppWindow, text: &str, from_code: &str) -> T
 }
 
 /// Builds the row answering a slash command: `[cmd]: <command>` (the label highlighted
-/// like any prompt), then `reply` -- in the error role when `is_error`. Nothing on it
-/// speaks, and `/s`/`/ss` skip it (no speech text).
+/// like any prompt), then `reply` -- in the error role when `is_error`. `reply_template`
+/// is how `reply` is drawn (usually its [`styled::escape_markdown`]-ed text). Nothing on
+/// it speaks, and `/s`/`/ss` skip it (no speech text).
 fn command_transcript_entry(
     window: &AppWindow,
     command: &str,
     reply: &str,
+    reply_template: &str,
     is_error: bool,
 ) -> TranscriptEntry {
     let prompt_hex = color_to_hex(window.get_prompt_accent());
@@ -1249,7 +1251,7 @@ fn command_transcript_entry(
         styled::translation_template_from_body(
             false,
             "",
-            &styled::escape_markdown(reply),
+            reply_template,
             is_error,
             false,
         ),
@@ -1310,14 +1312,40 @@ fn run_command(
     let reply = |message: &str| {
         push_transcript_entry(
             window,
-            command_transcript_entry(window, text, message, false),
+            command_transcript_entry(
+                window,
+                text,
+                message,
+                &styled::escape_markdown(message),
+                false,
+            ),
+        );
+        true
+    };
+    // A reply laid out in columns, drawn in a monospace font so they line up.
+    let reply_columns = |message: &str| {
+        push_transcript_entry(
+            window,
+            command_transcript_entry(
+                window,
+                text,
+                message,
+                &styled::code_lines(message),
+                false,
+            ),
         );
         true
     };
     let fail = |message: &str| {
         push_transcript_entry(
             window,
-            command_transcript_entry(window, text, message, true),
+            command_transcript_entry(
+                window,
+                text,
+                message,
+                &styled::escape_markdown(message),
+                true,
+            ),
         );
         false
     };
@@ -1451,7 +1479,7 @@ fn run_command(
             PROVIDER_SNAPSHOT.with(|cell| *cell.borrow_mut() = None);
             true
         }
-        Command::Help => reply(commands::help_text()),
+        Command::Help => reply_columns(commands::help_text()),
         Command::Version => reply(&commands::version_text(
             env!("CARGO_PKG_VERSION"),
             tagent::VERSION,
@@ -5929,6 +5957,16 @@ mod tests {
         assert!(fixture.last_row().1.contains("(tagent "));
         assert!(fixture.run("/?"));
         assert_eq!(fixture.last_row().1, commands::help_text());
+        // Drawn in a monospace font (code spans), so its columns line up even when the
+        // transcript's own font is proportional.
+        let entries = fixture.window.get_transcript_entries();
+        let entry = entries.row_data(entries.row_count() - 1).unwrap();
+        assert_eq!(
+            entry.translation_template.as_str(),
+            styled::code_lines(commands::help_text())
+        );
+        // Copy still gives the plain text.
+        assert_eq!(entry.translation_copy.as_str(), commands::help_text());
         assert!(!fixture.run("/help me"));
     }
 
