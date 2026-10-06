@@ -1,8 +1,9 @@
 //! The Settings dialog's "About" tab: its links, built from `Cargo.toml`'s `homepage`
 //! (the user book) and `repository`, so the URLs have one source.
 //!
-//! The links render in a `StyledText`, whose `link-clicked` hands the URL to Slint's
-//! `Platform.open-url` (the system browser).
+//! The links render in a `StyledText`, whose `link-clicked` opens the URL in the
+//! default browser: through `open-link` (on Linux `session::open_url`, which needs to
+//! give the browser back `WAYLAND_DISPLAY`), else Slint's `Platform.open-url`.
 
 use slint::StyledText;
 

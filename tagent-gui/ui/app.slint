@@ -1608,6 +1608,9 @@ export component SettingsDialog inherits Dialog {
     // About tab: the `tagent` library's version and the links (`about.rs`).
     in-out property <string> library-version: "";
     in-out property <styled-text> about-links;
+    // Opens a link itself and returns true, or false to leave it to
+    // `Platform.open-url` (see `session::open_url`).
+    callback open-link(string /* url */) -> bool;
 
     // One-shot preset picker: selecting an entry (main.rs looks it up by
     // name) immediately fills in the background/phrase/translation color
@@ -2279,12 +2282,14 @@ export component SettingsDialog inherits Dialog {
                         wrap: word-wrap;
                     }
 
-                    // Links open in the system browser.
+                    // Links open in the default browser.
                     StyledText {
                         text: about-links;
                         link-color: Palette.accent-background;
                         link-clicked(url) => {
-                            Platform.open-url(url);
+                            if !root.open-link(url) {
+                                Platform.open-url(url);
+                            }
                         }
                     }
 

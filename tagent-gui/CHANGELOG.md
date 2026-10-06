@@ -416,6 +416,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+021) **The About tab's links did nothing on Wayland.** The browser was started without
+  the Wayland display the app hides from itself to run on XWayland, and a browser that
+  can't use X11 (Snap's Firefox) quietly failed to start. It now gets the display back.
 - (+016) **The input box didn't have the keyboard focus when the window opened.** After
   a click on a button (⇄, 📋, Translate, ...) the focus stayed on that button, also after
   hiding the window to the tray and showing it again, so typing went nowhere until the

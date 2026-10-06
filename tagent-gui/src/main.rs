@@ -3440,6 +3440,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
         dialog.set_library_version(tagent::VERSION.into());
         dialog.set_about_links(about::links());
+        #[cfg(target_os = "linux")]
+        dialog.on_open_link(|url| platform::linux::session::open_url(&url));
 
         let recording_started_at_for_recording = recording_started_at_for_settings.clone();
         dialog.on_recording_changed(move |active| {
@@ -5004,6 +5006,41 @@ mod tests {
         entry.translation_is_error = false;
         entry.translation_speech = "".into();
         assert!(!PopupSpeakers::for_entry(&entry, 4, true).translation);
+    }
+
+    /// A click on an About tab link reaches `open-link` (where Linux restores
+    /// `WAYLAND_DISPLAY` for the browser, see `session::open_url`).
+    #[test]
+    fn about_tab_link_click_asks_rust_to_open_it() {
+        use slint::platform::{PointerEventButton, WindowEvent};
+
+        i_slint_backend_testing::init_no_event_loop();
+        let dialog = SettingsDialog::new().unwrap();
+        dialog.set_about_links(about::links());
+        dialog.set_current_tab(5);
+        dialog.show().unwrap();
+        let requested = Rc::new(RefCell::new(Vec::<String>::new()));
+        let requested_in = requested.clone();
+        dialog.on_open_link(move |url| {
+            requested_in.borrow_mut().push(url.into());
+            true
+        });
+
+        // Down a column through the links (with the test backend's font they start
+        // near x = 90), until the first one, the user guide, is hit; from below the
+        // tab bar, whose clicks would switch tabs.
+        let button = PointerEventButton::Left;
+        for y in (60..400).step_by(2) {
+            let position = slint::LogicalPosition::new(120.0, y as f32);
+            let window = dialog.window();
+            window.dispatch_event(WindowEvent::PointerMoved { position });
+            window.dispatch_event(WindowEvent::PointerPressed { position, button });
+            window.dispatch_event(WindowEvent::PointerReleased { position, button });
+            if !requested.borrow().is_empty() {
+                break;
+            }
+        }
+        assert_eq!(*requested.borrow(), vec![about::BOOK_URL.to_string()]);
     }
 
     /// The popup's prompt is a speak button for its own row, right-click still copies

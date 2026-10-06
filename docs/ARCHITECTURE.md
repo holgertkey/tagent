@@ -1608,7 +1608,13 @@ at a remembered position. Follow-ups: Roadmap item 7 in
   `WAYLAND_DISPLAY` from the environment: winit picks Wayland whenever it's set, and
   without it Slint opens its windows on XWayland. That keeps `set_position`, always-on-top,
   the popup drag (the pointer is over our own X11 window then) and the geometry restore.
-  Code that used to look at `WAYLAND_DISPLAY` must ask `session()` instead.
+  Code that used to look at `WAYLAND_DISPLAY` must ask `session()` instead. Programs the
+  app starts inherit the removal: a browser that can't use X11 (Snap's Firefox: "cannot
+  open display") then fails without a trace, since Slint's `Platform.open-url` doesn't
+  wait for it. So `init()` keeps the removed value, and `session::open_url` runs
+  `xdg-open` with it set back; the About tab's links go through it (`open-link` returns
+  `false` everywhere else, and the `.slint` side falls back to `Platform.open-url`).
+  Anything else that starts a GUI program needs the same.
   (`BackendSelector::with_winit_event_loop_builder` would do the same without touching
   the environment, but is behind Slint's `unstable-winit-030`.)
 - **Hotkeys** (`platform/linux/portal.rs`): `KeyboardHook::spawn` runs `portal::run` on its
