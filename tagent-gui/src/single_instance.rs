@@ -255,6 +255,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    // Unix only: on Windows `/run/user/1000` isn't absolute (no drive letter), and the
+    // Unix branch never runs there anyway.
+    #[cfg(unix)]
     #[test]
     fn unix_uses_the_runtime_dir_then_the_data_dir() {
         assert_eq!(
