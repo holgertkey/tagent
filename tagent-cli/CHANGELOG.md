@@ -12,7 +12,7 @@ before 2026-10-02 have one header per build.
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-10-05
+## [0.17.0] - 2026-10-06
 
 ### Added
 - (+020) **Global hotkeys on Wayland** (GNOME 50 and other desktops with the Global Shortcuts
@@ -359,6 +359,10 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+025) **A failed translation in CLI mode was printed twice** (`tagent-cli "text"`):
+  `Translation failed: network error: …` and then `Error: Network("…")`. Now it is the
+  first line only. A failed `-s` no longer shows its error in quotes (`Error: "Speech
+  error: …"` is now `Speech error: …`).
 - (+023) **The menu showed a gear instead of the icon** after `--install-desktop` (GNOME): the
   shell read the new menu entry before it noticed the new icon, and kept the gear until
   the next session. The icon theme folder and the entry are now touched after writing, so

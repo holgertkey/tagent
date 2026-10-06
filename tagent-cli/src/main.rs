@@ -51,7 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         };
 
-        return cli_handler.process_args(args).await;
+        // Printed with `Display` and exited here, like the error above: returned from
+        // `main`, it would be printed with `Debug` (`Error: Network("...")`). The handler
+        // doesn't print an error it returns.
+        if let Err(e) = cli_handler.process_args(args).await {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+        return Ok(());
     }
 
     // No arguments - start unified GUI+Interactive mode

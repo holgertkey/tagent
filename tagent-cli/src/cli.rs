@@ -315,10 +315,7 @@ impl CliHandler {
                     );
                 }
             }
-            Err(e) => {
-                eprintln!("Translation failed: {}", e);
-                return Err(e);
-            }
+            Err(e) => return Err(translation_failed(e)),
         }
 
         Ok(())
@@ -338,6 +335,11 @@ impl CliHandler {
             .map(|_| ())
             .map_err(|e| e.into())
     }
+}
+
+/// The error a failed translation returns to `main`, which prints it (once, with `Display`).
+fn translation_failed(error: impl std::fmt::Display) -> Box<dyn Error + Send + Sync> {
+    format!("Translation failed: {error}").into()
 }
 
 #[cfg(test)]
@@ -367,6 +369,15 @@ mod tests {
         assert_eq!(
             ConfigFileCommand::from_args(&args(&["tagent-cli", "say", "--print-default-config"])),
             None
+        );
+    }
+
+    #[test]
+    fn a_failed_translation_reads_as_one_line_without_the_debug_form() {
+        let error = translation_failed(tagent::error::Error::Network("connection refused".into()));
+        assert_eq!(
+            error.to_string(),
+            "Translation failed: network error: connection refused"
         );
     }
 }

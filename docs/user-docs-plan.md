@@ -340,7 +340,7 @@ Each step is one commit, unless noted otherwise:
     configuration errors, and a `tagent-gui` section.
   - Seen while doing it: in CLI mode a failed translation prints twice, as
     `Translation failed: …` and again as `Error: Network("…")` (the `Debug` form `main`
-    returns). Left for a code change.
+    returns). Fixed in `tagent-cli` 0.17.0+025.
 
 ### D6 — Shorten the READMEs
 
@@ -453,7 +453,10 @@ in the same commit.
 **Code issues found while writing the book** (each its own fix, with a test):
 - **`tagent-cli`: a failed translation in CLI mode prints twice**, as
   `Translation failed: …` and then `Error: Network("…")` (the `Debug` form of the error
-  `main` returns). Print it once. Found in D5.
+  `main` returns). Print it once. Found in D5. **Done** (2026-10-06, `tagent-cli`
+  0.17.0+025): `main` prints a CLI-mode error itself, with `Display`, and exits 1; the
+  translation error carries the `Translation failed:` prefix instead of being printed
+  first; `-s` errors lost their quotes too. Test: `tagent-cli/tests/cli_errors.rs`.
 - **`tagent-gui`: first start without a tray is a trap** (stock GNOME has none): the app
   starts minimized (`start_minimized: true`), the hotkeys don't show the window, and only
   `pkill` quits it. The book documents the workaround ("Tray and startup: Without a
