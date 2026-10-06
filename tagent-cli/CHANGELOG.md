@@ -203,6 +203,9 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+026) Auto-detection is shown as just `Auto`, without a `(auto)` code after it: the
+  banner's and `/l`'s language pair reads `Auto -> Russian (ru)`, and `--help`'s language
+  list starts with `Auto`.
 - (+024) The language-pair label of the prompt (`auto → ru`) now comes from `tagent`
   (`tagent::languages::pair_label`, `tagent` 0.19.0+006), shared with `tagent-gui`; it looks
   the same as before.

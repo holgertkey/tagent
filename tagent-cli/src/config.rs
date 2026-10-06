@@ -1495,12 +1495,12 @@ impl LanguagePair {
 }
 
 /// `Russian (ru) -> English (en)` for a pair of language codes (`/l`, `-l`, the banner).
-/// A code `tagent`'s table doesn't list is shown once: `Auto (auto) -> uk`.
+/// `auto` and a code `tagent`'s table doesn't list are shown once: `Auto -> uk`.
 pub fn language_pair_description(source: &str, target: &str) -> String {
     let describe = |code: &str| {
         let name = tagent::languages::code_to_name(code);
-        if name == code {
-            code.to_string()
+        if name == code || is_auto(code) {
+            name.to_string()
         } else {
             format!("{name} ({code})")
         }
@@ -1914,7 +1914,7 @@ impl ConfigManager {
         println!();
 
         println!("SUPPORTED LANGUAGES (name or code, e.g. -l German or -l de):");
-        println!("  Auto (auto)        English (en)       Russian (ru)");
+        println!("  Auto               English (en)       Russian (ru)");
         println!("  Spanish (es)       French (fr)        German (de)");
         println!("  Chinese (zh)       Japanese (ja)      Korean (ko)");
         println!("  Italian (it)       Portuguese (pt)    Dutch (nl)");
@@ -2527,8 +2527,9 @@ mod tests {
     fn language_pair_description_shows_names_and_codes() {
         assert_eq!(
             language_pair_description("auto", "ru"),
-            "Auto (auto) -> Russian (ru)"
+            "Auto -> Russian (ru)"
         );
+        assert_eq!(language_pair_description("AUTO", "auto"), "Auto -> Auto");
         assert_eq!(language_pair_description("en", "uk"), "English (en) -> uk");
     }
 
