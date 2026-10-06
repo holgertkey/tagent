@@ -758,7 +758,7 @@ enable_text_to_speech = false
                 "[dictionary] (section, 3 settings)",
                 "[interface] show_terminal_on_translate",
                 "[interface] auto_hide_terminal_seconds",
-                "[colors] (section, 7 settings)",
+                "[colors] (section, 8 settings)",
                 "[history] (section, 2 settings)",
                 "[speech] speech_hotkey",
                 "[speech] enable_speech_hotkey",

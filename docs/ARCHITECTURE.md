@@ -2005,7 +2005,7 @@ than the old app once it is published (not done yet).
 
 ## Other known gaps worth knowing about
 
-- **`[colors]` and `[speech]` config tables** (`source_prompt_color`, `target_prompt_color`,
+- **`[colors]` and `[speech]` config tables** (`use_colors`, `source_prompt_color`, `target_prompt_color`,
   `dictionary_prompt_color`, `part_of_speech_color`, `synonym_color`, `notice_color`,
   `error_color`, `enable_text_to_speech`, `speech_hotkey`, `enable_speech_hotkey`)
   exist in `config.rs` and are used by CLI/interactive/keyboard-hook code, but have no

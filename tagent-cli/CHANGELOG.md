@@ -15,6 +15,13 @@ before 2026-10-02 have one header per build.
 ## [0.17.0] - 2026-10-06
 
 ### Added
+- (+027) **`use_colors` in `[colors]`**: `auto` (default), `always` or `never` turns colored
+  output on or off as a whole, and takes effect without a restart. `auto` now also leaves
+  colors off on a `TERM=dumb` terminal and on a Windows console that can't show them (an old
+  console host), where the escape codes appeared as text like `←[93m`; on the classic
+  Windows console host it turns on escape sequence processing, so one-off command-line
+  translations are colored there too. The terminal title is no longer set on a `TERM=dumb`
+  terminal. A value other than the three is warned about and acts as `auto`.
 - (+020) **Global hotkeys on Wayland** (GNOME 50 and other desktops with the Global Shortcuts
   portal): `translate_hotkey` and `speech_hotkey` are registered through `xdg-desktop-portal`
   instead of X11 key grabs, which on a Wayland session only saw keys while an XWayland window

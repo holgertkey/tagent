@@ -51,7 +51,7 @@ pub use self::windows::keycodes;
 #[cfg(target_os = "windows")]
 pub use self::windows::signals;
 #[cfg(target_os = "windows")]
-pub use self::windows::terminal::TerminalTitle;
+pub use self::windows::terminal::{ansi_supported, TerminalTitle};
 #[cfg(target_os = "windows")]
 pub use self::windows::window::{WindowHandle, WindowManager};
 
@@ -64,7 +64,7 @@ pub use self::linux::keycodes;
 #[cfg(target_os = "linux")]
 pub use self::linux::signals;
 #[cfg(target_os = "linux")]
-pub use self::linux::terminal::TerminalTitle;
+pub use self::linux::terminal::{ansi_supported, TerminalTitle};
 #[cfg(target_os = "linux")]
 pub use self::linux::window::{WindowHandle, WindowManager};
 
@@ -77,6 +77,6 @@ pub use self::macos::keycodes;
 #[cfg(target_os = "macos")]
 pub use self::macos::signals;
 #[cfg(target_os = "macos")]
-pub use self::macos::terminal::TerminalTitle;
+pub use self::macos::terminal::{ansi_supported, TerminalTitle};
 #[cfg(target_os = "macos")]
 pub use self::macos::window::{WindowHandle, WindowManager};

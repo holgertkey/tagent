@@ -52,6 +52,9 @@ pub struct Config {
     pub save_translation_history: bool,
     /// Path to the history log file.
     pub history_file: String,
+    /// Whether terminal output is colored at all: `"auto"`, `"always"` or `"never"`, see
+    /// [`UseColors`]. Kept as written; an unknown value acts as `"auto"`.
+    pub use_colors: String,
     /// Terminal color for the target-language prompt (e.g. `"BrightYellow"`). `"None"` disables.
     pub target_prompt_color: String,
     /// Terminal color for the dictionary prompt. `"None"` disables.
@@ -443,6 +446,7 @@ struct InterfaceSection {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 struct ColorsSection {
+    use_colors: String,
     source_prompt_color: String,
     target_prompt_color: String,
     dictionary_prompt_color: String,
@@ -523,6 +527,7 @@ impl From<&Config> for ConfigFile {
                 copy_to_clipboard: config.copy_to_clipboard,
             },
             colors: ColorsSection {
+                use_colors: config.use_colors,
                 source_prompt_color: config.source_prompt_color,
                 target_prompt_color: config.target_prompt_color,
                 dictionary_prompt_color: config.dictionary_prompt_color,
@@ -562,6 +567,7 @@ impl From<ConfigFile> for Config {
             copy_to_clipboard: file.interface.copy_to_clipboard,
             save_translation_history: file.history.save_translation_history,
             history_file: file.history.history_file,
+            use_colors: file.colors.use_colors,
             target_prompt_color: file.colors.target_prompt_color,
             dictionary_prompt_color: file.colors.dictionary_prompt_color,
             source_prompt_color: file.colors.source_prompt_color,
@@ -597,7 +603,13 @@ fn parse_config_with_warnings(
 ) -> Result<(Config, Vec<String>), toml_edit::de::Error> {
     let file: ConfigFile = toml_edit::de::from_str(content)?;
     let mut config = Config::from(file);
-    let warnings = normalize_languages(&mut config);
+    let mut warnings = normalize_languages(&mut config);
+    if UseColors::parse(&config.use_colors).is_none() {
+        warnings.push(format!(
+            "use_colors = {:?} is not one of auto, always, never; auto is used",
+            config.use_colors
+        ));
+    }
     Ok((config, warnings))
 }
 
@@ -845,6 +857,14 @@ copy_to_clipboard = false
 # Supported values: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
 # BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta,
 # BrightCyan, BrightWhite. Use "None" to disable a color.
+
+# Whether the output is colored at all
+# auto: only on a terminal that shows colors (not a pipe or a file, not TERM=dumb,
+#       not an old Windows console; NO_COLOR or CLICOLOR=0 also turn colors off)
+# always: always, even into a pipe or a file
+# never: never, as if every color below were "None"
+# Default: auto
+use_colors = "auto"
 
 # Language pair prompt (e.g., "[auto → ru]: "). Default: None (no color)
 source_prompt_color = "None"
@@ -1392,6 +1412,7 @@ impl Default for Config {
             copy_to_clipboard: false,
             save_translation_history: false,
             history_file: default_history,
+            use_colors: "auto".to_string(),
             target_prompt_color: "BrightYellow".to_string(), // Default bright yellow for target
             dictionary_prompt_color: "BrightYellow".to_string(), // Default bright yellow for dictionary
             source_prompt_color: "None".to_string(),             // Default no color for source
@@ -1722,6 +1743,7 @@ impl ConfigManager {
     /// Create default configuration file
     fn create_default_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         write_config_file(&self.config_path, &render_config(&Config::default()))?;
+        apply_use_colors(&Config::default());
         println!("Created default configuration file: {}", self.config_path);
 
         // Update last modified time
@@ -1737,6 +1759,7 @@ impl ConfigManager {
         let (new_config, language_warnings) = parse_config_with_warnings(&content)
             .map_err(|e| invalid_file_message(&self.config_path, &e))?;
 
+        apply_use_colors(&new_config);
         if let Ok(mut config) = self.config.lock() {
             *config = new_config;
         }
@@ -2214,6 +2237,57 @@ fn article_role_color(role: tagent::article::Role, config: &Config) -> &str {
         Role::Synonym => &config.synonym_color,
         // Header and Plain text use the terminal's own foreground color.
         _ => "None",
+    }
+}
+
+/// `[colors]` `use_colors`: whether terminal output is colored at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UseColors {
+    /// Colored only on a terminal that shows colors, see [`color_override`].
+    Auto,
+    /// Always colored, even into a pipe or a file.
+    Always,
+    /// Never colored.
+    Never,
+}
+
+impl UseColors {
+    /// Parses a setting value, in any case; `None` for an unknown one.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "always" => Some(Self::Always),
+            "never" => Some(Self::Never),
+            _ => None,
+        }
+    }
+}
+
+/// Whether to color the output, or `None` to leave it to `colored`, which colors only a
+/// terminal stdout and honors `NO_COLOR`, `CLICOLOR` and `CLICOLOR_FORCE`.
+///
+/// `term` is the `TERM` variable; `ansi_supported` is
+/// [`crate::platform::ansi_supported`]. `Auto` turns colors off for a
+/// `TERM=dumb` terminal and a console that can't show escape sequences, which `colored`
+/// doesn't check.
+fn color_override(mode: UseColors, term: Option<&str>, ansi_supported: bool) -> Option<bool> {
+    match mode {
+        UseColors::Always => Some(true),
+        UseColors::Never => Some(false),
+        UseColors::Auto if term == Some("dumb") || !ansi_supported => Some(false),
+        UseColors::Auto => None,
+    }
+}
+
+/// Applies `config`'s `use_colors` to every colored output of the process, see
+/// [`color_override`]. Called on each (re)load of the config file, so a change takes
+/// effect without a restart.
+fn apply_use_colors(config: &Config) {
+    let mode = UseColors::parse(&config.use_colors).unwrap_or(UseColors::Auto);
+    let term = std::env::var("TERM").ok();
+    match color_override(mode, term.as_deref(), crate::platform::ansi_supported()) {
+        Some(enabled) => colored::control::set_override(enabled),
+        None => colored::control::unset_override(),
     }
 }
 
@@ -2971,6 +3045,7 @@ mod tests {
             copy_to_clipboard: !defaults.copy_to_clipboard,
             save_translation_history: !defaults.save_translation_history,
             history_file: "history-sentinel.txt".to_string(),
+            use_colors: "use-colors-sentinel".to_string(),
             target_prompt_color: "target-color-sentinel".to_string(),
             dictionary_prompt_color: "dict-color-sentinel".to_string(),
             source_prompt_color: "source-color-sentinel".to_string(),
@@ -3019,6 +3094,7 @@ mod tests {
         assert_eq!(loaded.spell_check, config.spell_check);
         assert_eq!(loaded.dictionary_provider, config.dictionary_provider);
         assert_eq!(loaded.copy_to_clipboard, config.copy_to_clipboard);
+        assert_eq!(loaded.use_colors, config.use_colors);
         assert_eq!(
             loaded.save_translation_history,
             config.save_translation_history
@@ -3116,6 +3192,53 @@ mod tests {
             )],
         );
         tagent::article::article_lines(&entry, "ru", Some("насильственный"))
+    }
+
+    #[test]
+    fn use_colors_parses_in_any_case() {
+        assert_eq!(UseColors::parse("auto"), Some(UseColors::Auto));
+        assert_eq!(UseColors::parse(" Always "), Some(UseColors::Always));
+        assert_eq!(UseColors::parse("NEVER"), Some(UseColors::Never));
+        assert_eq!(UseColors::parse("yes"), None);
+        assert_eq!(UseColors::parse(""), None);
+    }
+
+    /// `always`/`never` decide alone; `auto` turns colors off for `TERM=dumb` and a
+    /// console without escape sequences, and otherwise leaves the decision to `colored`.
+    #[test]
+    fn color_override_follows_use_colors_term_and_console() {
+        use UseColors::*;
+        for (term, ansi) in [(None, true), (Some("dumb"), true), (Some("xterm"), false)] {
+            assert_eq!(color_override(Always, term, ansi), Some(true));
+            assert_eq!(color_override(Never, term, ansi), Some(false));
+        }
+        assert_eq!(color_override(Auto, None, true), None);
+        assert_eq!(color_override(Auto, Some("xterm-256color"), true), None);
+        assert_eq!(color_override(Auto, Some("dumb"), true), Some(false));
+        assert_eq!(color_override(Auto, Some("xterm"), false), Some(false));
+        assert_eq!(color_override(Auto, None, false), Some(false));
+    }
+
+    /// `use_colors` defaults to `auto`; an unknown value is kept as written (it acts as
+    /// `auto`) and warned about.
+    #[test]
+    fn use_colors_default_and_unknown_value() {
+        let (config, warnings) = parse_config_with_warnings("").unwrap();
+        assert_eq!(config.use_colors, "auto");
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        let (config, warnings) =
+            parse_config_with_warnings("[colors]\nuse_colors = \"Never\"\n").unwrap();
+        assert_eq!(UseColors::parse(&config.use_colors), Some(UseColors::Never));
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        let (config, warnings) =
+            parse_config_with_warnings("[colors]\nuse_colors = \"yes\"\n").unwrap();
+        assert_eq!(config.use_colors, "yes");
+        assert_eq!(
+            warnings,
+            vec!["use_colors = \"yes\" is not one of auto, always, never; auto is used"]
+        );
     }
 
     /// Only part-of-speech labels and synonyms are colored; header and definition text
@@ -3326,7 +3449,7 @@ api_key = "deepl-key"
             "{text}"
         );
         assert!(
-            text.contains("\n[colors]\nsource_prompt_color = \"None\"\n"),
+            text.contains("\n[colors]\nuse_colors = \"auto\"\nsource_prompt_color = \"None\"\n"),
             "{text}"
         );
 

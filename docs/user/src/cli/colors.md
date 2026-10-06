@@ -1,6 +1,22 @@
 # Colors
 
-The `[colors]` section sets the color of each part of the output:
+The `[colors]` section turns colored output on or off and sets the color of each part of
+the output.
+
+`use_colors` decides whether there are colors at all:
+
+| Value | Colors |
+|-------|--------|
+| `auto` (default) | Only on a terminal that can show them |
+| `always` | Always, even when the output goes to a file or a pipe |
+| `never` | Never, as if every color below were `None` |
+
+With `auto`, output to a file or a pipe is plain text, and so is everything when the
+environment has `NO_COLOR` set or `CLICOLOR=0`, the terminal is `TERM=dumb`, or an old
+Windows console can't show colors (`CLICOLOR_FORCE=1` turns them back on, except in the
+last two cases). A change takes effect without a restart.
+
+The other settings pick the color of each part:
 
 | Setting | Colors | Default |
 |---------|--------|---------|
@@ -21,6 +37,4 @@ target_prompt_color = "BrightCyan"
 synonym_color = "None"
 ```
 
-Colors are used only when the output goes to a terminal. Output to a file or a pipe is
-plain text, and so is everything when the environment has `NO_COLOR` set or
-`CLICOLOR=0`. The clipboard and the history file always get plain text.
+The clipboard and the history file always get plain text.

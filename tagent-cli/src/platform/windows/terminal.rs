@@ -1,5 +1,30 @@
+use std::sync::OnceLock;
 use windows::core::HSTRING;
-use windows::Win32::System::Console::{GetConsoleTitleW, SetConsoleTitleW};
+use windows::Win32::System::Console::{
+    GetConsoleMode, GetConsoleTitleW, GetStdHandle, SetConsoleMode, SetConsoleTitleW, CONSOLE_MODE,
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+};
+
+/// Whether the console shows ANSI escape sequences (colors), turning on its virtual
+/// terminal processing on the first call if needed. Windows Terminal has it on; the
+/// classic console host has it off by default, and one older than Windows 10 can't turn
+/// it on, so this returns `false` there. Stdout that isn't a console (a pipe or a file)
+/// returns `true`: escape sequences don't need a console there, and `colored` only
+/// colors a terminal anyway unless `use_colors = "always"`.
+pub fn ansi_supported() -> bool {
+    static SUPPORTED: OnceLock<bool> = OnceLock::new();
+    *SUPPORTED.get_or_init(|| unsafe {
+        let Ok(handle) = GetStdHandle(STD_OUTPUT_HANDLE) else {
+            return true;
+        };
+        let mut mode = CONSOLE_MODE(0);
+        if GetConsoleMode(handle, &mut mode).is_err() {
+            return true;
+        }
+        (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING).0 != 0
+            || SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING).is_ok()
+    })
+}
 
 /// Sets the console window's title for as long as it lives, and restores the
 /// previous one when dropped.

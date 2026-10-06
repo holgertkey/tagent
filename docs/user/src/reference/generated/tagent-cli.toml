@@ -73,6 +73,14 @@ copy_to_clipboard = false
 # BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta,
 # BrightCyan, BrightWhite. Use "None" to disable a color.
 
+# Whether the output is colored at all
+# auto: only on a terminal that shows colors (not a pipe or a file, not TERM=dumb,
+#       not an old Windows console; NO_COLOR or CLICOLOR=0 also turn colors off)
+# always: always, even into a pipe or a file
+# never: never, as if every color below were "None"
+# Default: auto
+use_colors = "auto"
+
 # Language pair prompt (e.g., "[auto → ru]: "). Default: None (no color)
 source_prompt_color = "None"
 

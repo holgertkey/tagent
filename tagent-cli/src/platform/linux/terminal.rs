@@ -7,7 +7,7 @@ use std::io::{self, IsTerminal, Write};
 /// The previous title is saved/restored through xterm's title stack (`CSI 22 t` /
 /// `CSI 23 t`); a terminal without one just ignores those, leaving the title for
 /// the shell to reset. Does nothing when stdout isn't a terminal, so no escape
-/// sequences end up in redirected output.
+/// sequences end up in redirected output, or when it is a `TERM=dumb` one.
 pub struct TerminalTitle {
     enabled: bool,
     current: Option<String>,
@@ -16,7 +16,7 @@ pub struct TerminalTitle {
 impl TerminalTitle {
     /// Saves the current title (if stdout is a terminal).
     pub fn new() -> Self {
-        let enabled = io::stdout().is_terminal();
+        let enabled = io::stdout().is_terminal() && std::env::var("TERM").as_deref() != Ok("dumb");
         if enabled {
             write_sequence("\x1b[22;0t");
         }
@@ -42,6 +42,12 @@ impl Drop for TerminalTitle {
             write_sequence("\x1b[23;0t");
         }
     }
+}
+
+/// Whether the terminal shows ANSI escape sequences (colors). Terminal emulators here
+/// all do; `TERM=dumb` is checked by the caller.
+pub fn ansi_supported() -> bool {
+    true
 }
 
 /// Drops control characters, which would end or corrupt the OSC sequence.
