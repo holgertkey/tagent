@@ -1708,8 +1708,9 @@ item 8 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 A subset of `tagent-cli`'s interactive commands (`/l`, `/p`, `/s`, `/ss`, `/clear`,
 `/help`, `/v`), chosen for a GUI whose session/saved split is already decided: no `/save`
 (saved defaults live in Settings), no `/config`, no `/q` (closing hides to the tray). User
-side: "Commands in the input box" in the user book. Planned and decided in
-[`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
+side: "Commands in the input box" in the user book. Its plan was condensed to a row of
+the "Shipped stages" table in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md); the
+decisions live here.
 
 - **Known commands only.** The trimmed input is a command when its first word (split on
   any whitespace, so `/s` + Shift+Enter + text works) is in `COMMAND_NAMES`, lowercase

@@ -129,6 +129,7 @@ Feature summary; full mechanics are in `docs/ARCHITECTURE.md`.
 | — | Single instance | 2026-10-04 | a second start shows the running copy over a per-user local socket (`interprocess`), stale socket reclaimed, a silent holder reported (0.15.0+009) |
 | — | Speak from the popup | 2026-10-05 | the popup's `[🔊 Lang]:` prompts speak its transcript row through `speak-requested`, speaking state mirrored, the popup stays while its row speaks; `PromptSpeakButton::right-clicked` keeps right-click copy (0.15.0+012) |
 | — | CLI-style prompts | 2026-10-05 | phrase prompt = the language pair (`[auto → ru]:`, `tagent::languages::pair_label`, shared with `tagent-cli`), translation prompt = the provider that answered (`[deepl]:`, the dictionary provider for a dictionary hit), input box label = the pair (0.15.0+013) |
+| — | Slash commands | 2026-10-06 | `/l`, `/p`, `/s`, `/ss`, `/clear`, `/help`, `/v` in the input box (`commands.rs`, `run_command`); known names only, `//` escapes, session-only, `[cmd]:` reply rows, a command with a typo stays in the box, no completion; `tagent::VERSION` for `/v` (0.15.0+018) |
 
 Later iterations `0.14.0+003`–`+019` (2026-09-22…25) built on Stage 13: prompt colors,
 optional right-click menu, popup copy and drag, popup highlighting, terminal detach, a
@@ -181,10 +182,9 @@ Candidates, not yet scheduled; the order is a suggestion.
 11. **Interface scale.** Planned 2026-10-05: one `ui_scale` setting (percent) that
     scales the whole interface through `SLINT_SCALE_FACTOR`, restart-required; see
     [below](#planned-stage--interface-scale).
-12. **Slash commands in the input box.** Planned 2026-10-05, implemented 2026-10-06
-    (0.15.0+018, awaiting the maintainer's check): a small subset of
-    `tagent-cli`'s interactive commands (`/l`, `/p`, `/s`, `/ss`, `/clear`, `/help`,
-    `/v`), answered in the transcript; see [below](#planned-stage--slash-commands).
+12. ~~**Slash commands in the input box.**~~ Done in 0.15.0+018 (2026-10-06): see "Slash
+    commands in the input box" in `docs/ARCHITECTURE.md`. Follow-up, not scheduled: Tab
+    completion.
 
 ### Planned stage — Provider profiles tab
 
@@ -468,99 +468,6 @@ and 200 on the main window, the Settings dialog and the popup (nothing clipped, 
 opens big enough; a size saved at 100 % reopens 1.5× larger at 150 %, at the same
 position); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
 check on a 100 % and a 150 % display setting.
-
-### Planned stage — Slash commands
-
-**Status:** planned 2026-10-05 (discussed with the maintainer the same day);
-implemented 2026-10-06 in `tagent-gui` 0.15.0+018, unit-tested, waiting for the
-maintainer's check by screenshot (list below). One deviation: `/v` needed the library's
-version, which `tagent` didn't expose, so `tagent::VERSION` was added (`tagent`
-0.19.0+007, decided with the maintainer). Once checked, condense this section to a row
-of the "Shipped stages" table.
-
-**Goal.** Keyboard-first control from the input box, in the spirit of the CLI-style
-prompts: `/l en ru` or `/p deepl` instead of reaching for a dropdown or the provider
-menu. Not feature parity with `tagent-cli` (per the Concept): only the commands that
-fit a GUI whose session/saved split is already decided.
-
-**Commands (decided).**
-
-| Command | Effect | Same as |
-|---------|--------|---------|
-| `/l`, `/lang` | swap the window's pair (an `auto` source becomes `en` as the target, with a notice: same rule as `tagent-cli`'s `LanguagePair::swapped`) | the language dropdowns |
-| `/l <to>`, `/l <from> <to>` | set the window's pair; names or codes, any case (`tagent::languages::language_code`); an `auto` target → `en` with a notice; an unknown language → an error row, nothing changes (the dropdowns only hold listed languages) | the language dropdowns |
-| `/p`, `/provider` | list the three axes with their entries (`provider_form::picker_entries`, so hidden entries stay hidden), numbered continuously, the one in effect marked | the provider menu |
-| `/p <n>` | pick entry `<n>` of the list last printed | a menu pick |
-| `/p <name>`, `/p t\|d\|s <name>` | session pick for translation / the named axis, through `SessionChoices` | a menu pick |
-| `/s`, `/speech` | speak the last row's phrase | its phrase prompt |
-| `/s <text>` | speak `<text>` in the window's source language (`auto` resolved as in `start_speaking`); pushes a `[Speech]` row, like the speech hotkey | the speech hotkey |
-| `/ss` | speak the last row's translation (primary line for a dictionary hit) | its translation prompt |
-| `/clear`, `/cls` | empty the transcript | — |
-| `/help`, `/h`, `/?` | the command list as an info row | — |
-| `/version`, `/v` | `tagent-gui X.Y.Z+NNN` and the `tagent` version | — |
-
-- **Session only, like the window's pickers.** Nothing is written to `tagent-gui.json`;
-  the header's `(this session)` marks and the menu follow a `/p` pick exactly as they
-  follow a menu pick (a pick of the default ends the override).
-- **Not taken over** (decided): `/config` (Settings exist; maybe later as "open
-  Settings"), `/save` (would blur the session/saved split: saved defaults live in
-  Settings), `/q` (closing hides to the tray by design; quitting from the input box would
-  need its own decision), `/config update` (no counterpart).
-
-**Behavior.**
-- **Only known commands are commands.** The trimmed input is a command when its first
-  word is one of the names above; anything else — `/usr/bin/env`, `/xyz`, `1/2` — is
-  translated as text (the same fallback as `tagent-cli`'s `handle_command`, `_ =>
-  Ok(false)`). A leading `//` escapes: `//l` translates `/l`.
-- **Only the input box.** The translate hotkey's selection and the 📋 button's paste are
-  never parsed: a selected `/l en` is translated.
-- **Replies are info rows** (`info_transcript_entry`, like `[Hotkey]`): the command
-  itself as the phrase under a `[cmd]` label, the reply below, errors in the error role.
-  No speak buttons, no popup, nothing stored as "the last translation" for `/s`/`/ss`
-  (they look back for the last row that has a phrase/translation to speak).
-- `/s`/`/ss` share the transcript's playback: one at a time, a second command or click
-  stops, Esc/the speech hotkey stop. Nothing to speak → an info row saying so (the
-  wording of `tagent-cli`).
-- `/clear` stops a playing row first, resets the popup's `entry-index` to -1 (see
-  `push_transcript_entry`'s comment) and drops `/p`'s numbered snapshot.
-- The input box clears after a command, as after a translation; a command that failed to
-  parse keeps the text, so it can be fixed.
-- **No Tab completion in this stage** ("simple over clever": Slint has no autocomplete,
-  a custom popup list is a lot of UI for a rarely typed command set). The input's
-  placeholder mentions `/help`. Completion is a follow-up if it's missed.
-
-**Implementation steps.**
-1. **`tagent-gui/src/commands.rs`** (pure, unit-tested): `parse(text) -> Option<Command>`
-   (`None` = translate; `//` unescaped by the caller) with `Command::{Languages(args),
-   Provider(ProviderCommand), Speak(SpeechCommand), Clear, Help, Version}`;
-   `ProviderCommand`/`parse_axis` and `SpeechCommand` duplicated from `tagent-cli`'s
-   `interactive.rs` with their tests (Q3: `tagent-cli` has no `[lib]`, and command
-   parsing is app code, not `tagent`'s); `resolve_languages(args, current)` → the new
-   pair or an error; `provider_list(config, session) -> Vec<ListEntry>` +
-   `format_provider_list`; `help_text()`. Use `provider_menu`'s entry builder rather than
-   a second one.
-2. **`main.rs`**: in `on_translate_requested`, before the translation path, `commands::parse`
-   → `run_command(window, command)`. Languages: set the dropdown indices through the
-   existing `languages-changed` path, so `input-prompt` and the session pair follow.
-   Provider: the same function the menu's pick callback calls (`SESSION_PROVIDERS`, then
-   `refresh_provider_menu` and the header). Speak: through `start_speaking` with the row
-   index or the text; `/s <text>` pushes its `[Speech]` row first. A `ProviderSnapshot`
-   for `/p <n>` next to the window state.
-3. **`app.slint`**: the placeholder hint; a `clear-transcript` path if clearing needs
-   one (grep callback names first).
-4. **Docs**: user book (a "Commands" page under the main window; `/l` and `/p` cross-linked
-   from the language/provider pages), changelog "Added", "tagent-gui: Slint desktop GUI"
-   in `docs/ARCHITECTURE.md` (the "known commands only" rule, why no completion), the
-   CLAUDE.md `tagent-gui` bullet, this document.
-
-**Tests.** `parse` (each command and alias; bare vs. with arguments; `/usr/bin`, `/xyz`,
-`/ l`, `/LANG` → not commands: names are lowercase only, like `tagent-cli`; `//l` → the
-text `/l`), the duplicated `ProviderCommand`/`SpeechCommand`
-cases, `resolve_languages` (one arg = target, two = pair, unknown name, `auto` target
-→ `en`, swap with `auto`), `provider_list` (hidden entries skipped, the one in effect
-marked, numbering across axes), `/p <n>` out of range. By screenshot (typing left to the
-maintainer): `/help`, `/l de`, `/p` and a `/p` pick reflected in the header and menu,
-`/clear` with a popup row open, a selected `/l en` through the hotkey translated as text.
 
 ## Deliberately not done (revisit only with a new reason)
 
