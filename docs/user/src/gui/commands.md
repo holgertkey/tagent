@@ -19,6 +19,8 @@ appear in the transcript as a `[cmd]:` entry; an error is shown in the error col
 | `/clear`, `/cls` | Empty the transcript | |
 | `/help`, `/h`, `/?` | List the commands | |
 | `/version`, `/v` | Show the version of `tagent-gui` and of the `tagent` library | |
+| `/quit`, `/q` | Hide the window to the tray; the hotkeys keep working | the window's close button |
+| `/exit`, `/e` | Quit `tagent-gui` | **Quit** in the tray menu |
 
 ## How commands behave
 
@@ -38,6 +40,9 @@ appear in the transcript as a `[cmd]:` entry; an error is shown in the error col
 - **Only these commands are commands.** Anything else starting with `/`, such as
   `/usr/bin` or `/xyz`, is translated like any text. Command names are lowercase: `/L`
   is translated too.
+- **`/q` doesn't quit**, unlike in `tagent-cli`: it hides the window, as closing it does,
+  so the hotkeys keep working. Bring the window back with the tray icon or by starting
+  `tagent-gui` again. `/exit` (`/e`) quits.
 - **To translate a command's name itself**, start with `//`: `//l` translates `/l`.
 - Only the input box reads commands. A selection translated with the hotkey is always
   translated: a selected `/l en` is translated, not run.

@@ -1712,12 +1712,17 @@ item 8 in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md).
 
 `tagent-gui/src/commands.rs` (pure, unit-tested) parses; `run_command` in `main.rs` runs.
 A subset of `tagent-cli`'s interactive commands (`/l`, `/p`, `/s`, `/ss`, `/clear`,
-`/help`, `/v`), chosen for a GUI whose session/saved split is already decided: no `/save`
-(saved defaults live in Settings), no `/config`, no `/q` (closing hides to the tray). User
+`/help`, `/v`, and since 0.15.0+022 `/q`, `/exit`), chosen for a GUI whose session/saved
+split is already decided: no `/save` (saved defaults live in Settings), no `/config`. User
 side: "Commands in the input box" in the user book. Its plan was condensed to a row of
 the "Shipped stages" table in [`tagent-gui-dev-plan.md`](tagent-gui-dev-plan.md); the
 decisions live here.
 
+- **`/q` hides, `/exit` quits** (0.15.0+022; `tagent-cli` quits on both). A hidden window
+  and a quit app look alike, and a quit takes the hotkeys with it unnoticed, so the short
+  command does the reversible thing, the close button's. `hide_to_tray`/`quit_app` in
+  `main.rs` are the close button's and the tray "Quit"'s paths (`quit_app` saves the
+  geometry only from a visible window); neither writes a reply row.
 - **Known commands only.** The trimmed input is a command when its first word (split on
   any whitespace, so `/s` + Shift+Enter + text works) is in `COMMAND_NAMES`, lowercase
   only, like `tagent-cli`; anything else (`/usr/bin`, `/xyz`, `/L`) is translated, the same

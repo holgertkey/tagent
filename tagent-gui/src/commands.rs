@@ -33,6 +33,10 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/?",
     "/version",
     "/v",
+    "/quit",
+    "/q",
+    "/exit",
+    "/e",
 ];
 
 /// The target `/l` uses where the pair would otherwise get an `auto` target, as
@@ -54,6 +58,10 @@ pub enum Command<'a> {
     Help,
     /// `/version` or `/v`.
     Version,
+    /// `/quit` or `/q`: hide the window to the tray, as its close button does.
+    Hide,
+    /// `/exit` or `/e`: quit the app, as the tray's "Quit" does.
+    Exit,
     /// A command that takes no arguments was given some: the usage line to show.
     Usage(&'static str),
 }
@@ -129,6 +137,8 @@ pub fn parse(text: &str, is_translation_name: impl Fn(&str) -> bool) -> Option<C
         "/ss" => Command::Speak(SpeechCommand::Usage),
         "/clear" | "/cls" => no_args(Command::Clear, "Usage: /clear (takes no arguments)"),
         "/help" | "/h" | "/?" => no_args(Command::Help, "Usage: /help (takes no arguments)"),
+        "/quit" | "/q" => no_args(Command::Hide, "Usage: /quit (takes no arguments)"),
+        "/exit" | "/e" => no_args(Command::Exit, "Usage: /exit (takes no arguments)"),
         _ => no_args(Command::Version, "Usage: /version (takes no arguments)"),
     })
 }
@@ -329,6 +339,8 @@ pub fn help_text() -> &'static str {
      /clear, /cls             empty the transcript\n\
      /help, /h, /?            this list\n\
      /version, /v             the version\n\
+     /quit, /q                hide the window to the tray\n\
+     /exit, /e                quit tagent-gui\n\
      //text                   translate text that starts with /"
 }
 
@@ -385,6 +397,12 @@ mod tests {
         }
         for name in ["/version", "/v"] {
             assert_eq!(parse_plain(name), Some(Command::Version));
+        }
+        for name in ["/quit", "/q"] {
+            assert_eq!(parse_plain(name), Some(Command::Hide));
+        }
+        for name in ["/exit", "/e"] {
+            assert_eq!(parse_plain(name), Some(Command::Exit));
         }
     }
 
@@ -649,6 +667,21 @@ mod tests {
             resolve_provider_number(&[], 1),
             Err("No providers to choose from".to_string())
         );
+    }
+
+    #[test]
+    fn quit_and_exit_take_no_arguments() {
+        assert_eq!(
+            parse_plain("/q now"),
+            Some(Command::Usage("Usage: /quit (takes no arguments)"))
+        );
+        assert_eq!(
+            parse_plain("/exit 1"),
+            Some(Command::Usage("Usage: /exit (takes no arguments)"))
+        );
+        // Like every command name, only lowercase.
+        assert_eq!(parse_plain("/Q"), None);
+        assert_eq!(parse_plain("/EXIT"), None);
     }
 
     #[test]

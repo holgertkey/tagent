@@ -20,6 +20,11 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 ## [0.15.0] - 2026-10-06
 
 ### Added
+- (+022) **`/q` and `/exit` in the input box.** `/q` (`/quit`) hides the window to the
+  tray, like its close button; `/e` (`/exit`) quits `tagent-gui`, like "Quit" in the
+  tray menu, which on a desktop without a visible tray was the only way out.
+  Unlike in `tagent-cli`, where `/q` quits too: a hidden window and a closed program
+  look the same, so the short command keeps the hotkeys working.
 - (+018) **Commands in the input box.** `/l de` or `/l en ru` sets the languages and `/l`
   swaps them; `/p` lists the providers of all three jobs, numbered, and `/p 3`,
   `/p deepl` or `/p d ollama` switches one; `/s` and `/ss` read the last phrase or

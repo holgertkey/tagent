@@ -1288,6 +1288,8 @@ struct CommandContext<'a> {
     config_manager: &'a Arc<Mutex<GuiConfigManager>>,
     speech_stop_flag: &'a Arc<Mutex<Option<Arc<AtomicBool>>>>,
     popup: &'a slint::Weak<TranslationPopup>,
+    /// Where `/quit` records the window's place, as the close button does.
+    session_geometry: &'a Cell<Option<config::WindowGeometry>>,
 }
 
 /// Runs a slash command typed into the input box (`text`, trimmed, is what was typed),
@@ -1451,6 +1453,14 @@ fn run_command(
             env!("CARGO_PKG_VERSION"),
             tagent::VERSION,
         )),
+        Command::Hide => {
+            hide_to_tray(window, context.config_manager, context.session_geometry);
+            true
+        }
+        Command::Exit => {
+            quit_app(window, context.config_manager, context.session_geometry);
+            true
+        }
         Command::Usage(usage) => fail(usage),
     }
 }
@@ -2762,8 +2772,8 @@ fn current_window_geometry(window: &AppWindow) -> config::WindowGeometry {
 /// [`config::GuiConfig::remember_window_geometry`] is enabled, persists it to
 /// `config_manager` too -- otherwise the file is left alone, so a geometry saved from
 /// before the setting was turned off stays on disk rather than being overwritten.
-/// Called right before the window is hidden (`on_close_requested`) or the app quits
-/// (`tray.on_quit_requested`) -- the two points in `main()` that actually call this. A
+/// Called right before the window is hidden ([`hide_to_tray`], `on_close_requested`) or
+/// the app quits ([`quit_app`]). A
 /// plain minimize calls neither: the window stays mapped, and the desktop keeps its
 /// place by itself.
 fn save_window_geometry(
@@ -2780,6 +2790,32 @@ fn save_window_geometry(
     let mut new_config = manager.config().clone();
     new_config.window_geometry = Some(geometry);
     let _ = manager.update(new_config);
+}
+
+/// Hides `window` to the tray as its close button does (`on_close_requested`): the
+/// geometry is saved first (see [`save_window_geometry`]). Used by `/quit`.
+fn hide_to_tray(
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+    session_geometry: &Cell<Option<config::WindowGeometry>>,
+) {
+    save_window_geometry(window, config_manager, session_geometry);
+    window.hide().ok();
+}
+
+/// Quits the app: the tray's "Quit" and `/exit`. The geometry is saved only if the
+/// window is visible right now -- a hidden (or, with `start_minimized`, never-shown)
+/// window's position/size would just be stale or default values, which would otherwise
+/// overwrite a good saved geometry with nothing meaningful.
+fn quit_app(
+    window: &AppWindow,
+    config_manager: &Arc<Mutex<GuiConfigManager>>,
+    session_geometry: &Cell<Option<config::WindowGeometry>>,
+) {
+    if window.window().is_visible() {
+        save_window_geometry(window, config_manager, session_geometry);
+    }
+    slint::quit_event_loop().ok();
 }
 
 /// What [`show_window_restoring_geometry`] applies to the window it shows: a size and,
@@ -3246,29 +3282,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let weak_for_quit = window.as_weak();
     let config_manager_for_quit = config_manager.clone();
     let session_geometry_for_quit = session_geometry.clone();
-    tray.on_quit_requested(move || {
-        // Only save if the window is actually visible right now -- an
-        // already-hidden (or never-shown, if start_minimized and the window
-        // was never opened this run) window's position()/size() would just
-        // return stale/default values, which would otherwise silently
-        // overwrite a perfectly good previously-saved geometry with nothing
-        // meaningful.
-        if let Some(window) = weak_for_quit.upgrade() {
-            if window.window().is_visible() {
-                save_window_geometry(
-                    &window,
-                    &config_manager_for_quit,
-                    &session_geometry_for_quit,
-                );
-            }
+    tray.on_quit_requested(move || match weak_for_quit.upgrade() {
+        Some(window) => quit_app(
+            &window,
+            &config_manager_for_quit,
+            &session_geometry_for_quit,
+        ),
+        None => {
+            slint::quit_event_loop().ok();
         }
-        slint::quit_event_loop().ok();
     });
 
     let config_manager_for_settings = config_manager.clone();
     let config_manager_for_translate = config_manager.clone();
     let speech_stop_flag_for_commands = speech_stop_flag.clone();
     let popup_weak_for_commands = popup.as_weak();
+    let session_geometry_for_commands = session_geometry.clone();
     let weak = window.as_weak();
     // Returns whether the input box is cleared: always, except after a slash command that
     // couldn't be carried out as typed (see `run_command`).
@@ -3297,6 +3326,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     config_manager,
                     speech_stop_flag: &speech_stop_flag_for_commands,
                     popup: &popup_weak_for_commands,
+                    session_geometry: &session_geometry_for_commands,
                 };
                 return run_command(&window, &context, text, command);
             }
@@ -5561,6 +5591,7 @@ mod tests {
         popup: TranslationPopup,
         config_manager: Arc<Mutex<GuiConfigManager>>,
         speech_stop_flag: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+        session_geometry: Cell<Option<config::WindowGeometry>>,
         _dir: tempfile::TempDir,
         _session: std::sync::MutexGuard<'static, ()>,
     }
@@ -5581,6 +5612,7 @@ mod tests {
                 popup: TranslationPopup::new().unwrap(),
                 config_manager,
                 speech_stop_flag: Arc::new(Mutex::new(None)),
+                session_geometry: Cell::new(None),
                 _dir: dir,
                 _session: session,
             }
@@ -5598,6 +5630,7 @@ mod tests {
                 config_manager: &self.config_manager,
                 speech_stop_flag: &self.speech_stop_flag,
                 popup: &popup,
+                session_geometry: &self.session_geometry,
             };
             run_command(&self.window, &context, text, command)
         }
@@ -5750,6 +5783,32 @@ mod tests {
         assert_eq!(fixture.window.get_transcript_entries().row_count(), 0);
         assert_eq!(fixture.popup.get_entry_index(), -1);
         assert!(PROVIDER_SNAPSHOT.with(|cell| cell.borrow().is_none()));
+    }
+
+    #[test]
+    fn slash_q_hides_the_window_and_records_its_place() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+        fixture.window.show().unwrap();
+        assert!(fixture.window.window().is_visible());
+
+        assert!(fixture.run("/q"));
+
+        assert!(!fixture.window.window().is_visible());
+        assert!(fixture.session_geometry.get().is_some());
+        // No reply row: it would only show up the next time the window opens.
+        assert_eq!(fixture.window.get_transcript_entries().row_count(), 0);
+        assert!(!fixture.run("/quit now"));
+    }
+
+    #[test]
+    fn slash_exit_from_a_hidden_window_keeps_the_saved_geometry() {
+        let fixture = CommandFixture::new(COMMAND_JSON);
+
+        assert!(fixture.run("/e"));
+
+        // A hidden window's position/size would be stale: nothing is recorded.
+        assert!(fixture.session_geometry.get().is_none());
+        assert_eq!(fixture.window.get_transcript_entries().row_count(), 0);
     }
 
     #[test]

@@ -6,13 +6,14 @@
 
 - **Show Tagent**: shows the main window (a left click on the icon does the same);
 - **Settings…**: opens Settings;
-- **Quit**: exits Tagent. This is the only way to quit: the window's close button only
-  hides the window.
+- **Quit**: exits Tagent. The window's close button only hides the window; the other way
+  to quit is typing `/exit` in the input box (see [Commands](commands.md)).
 
 ## Without a tray
 
 On a Linux desktop without a tray (GNOME without an AppIndicator extension, for example)
-the icon doesn't appear, and nothing else shows the window or quits Tagent. The global
+the icon doesn't appear: only `/exit` in the input box quits Tagent while the window is
+open. The global
 hotkeys still work, but they don't show the main window. Then:
 
 1. Quit Tagent: `pkill tagent-gui`.
@@ -20,8 +21,8 @@ hotkeys still work, but they don't show the main window. Then:
    [File locations](../reference/file-locations.md)).
 3. Start it again: the window opens at start.
 
-Closing the window still hides it, with no tray to bring it back, so quit with
-`pkill tagent-gui` and start again. Installing a tray extension (on GNOME,
+Closing the window (or `/q`) still hides it, with no tray to bring it back, so quit with
+`/exit` instead, or with `pkill tagent-gui` once it's hidden. Installing a tray extension (on GNOME,
 "AppIndicator and KStatusNotifierItem Support") is the lasting fix.
 
 ## At start
