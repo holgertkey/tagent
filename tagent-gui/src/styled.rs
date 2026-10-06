@@ -519,7 +519,10 @@ mod tests {
 
     #[test]
     fn code_lines_wraps_each_line_in_a_code_span() {
-        assert_eq!(code_lines("/l    swap\n/p    list"), "`/l    swap`\n`/p    list`");
+        assert_eq!(
+            code_lines("/l    swap\n/p    list"),
+            "`/l    swap`\n`/p    list`"
+        );
     }
 
     /// The column padding survives Slint's Markdown parser: runs of spaces inside a

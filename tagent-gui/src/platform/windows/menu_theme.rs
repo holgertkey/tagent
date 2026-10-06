@@ -59,7 +59,10 @@ static CURRENT_MODE: AtomicI32 = AtomicI32::new(0);
 
 /// Makes native popup menus opened from now on dark or light, per `theme`.
 pub fn apply(theme: &str) {
-    let mode = mode_for_theme(theme, theme != "dark" && theme != "light" && system_prefers_dark());
+    let mode = mode_for_theme(
+        theme,
+        theme != "dark" && theme != "light" && system_prefers_dark(),
+    );
     if CURRENT_MODE.swap(mode as i32, Ordering::Relaxed) == mode as i32 {
         return;
     }

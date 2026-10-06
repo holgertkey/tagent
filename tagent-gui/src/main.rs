@@ -1248,13 +1248,7 @@ fn command_transcript_entry(
         styled::RoleColors::new(window.get_translation_background(), prompt_hex);
     let fields = styled::entry_fields(
         styled::phrase_template(true, "cmd", command, false),
-        styled::translation_template_from_body(
-            false,
-            "",
-            reply_template,
-            is_error,
-            false,
-        ),
+        styled::translation_template_from_body(false, "", reply_template, is_error, false),
         command.to_string(),
         reply.to_string(),
         &phrase_colors,
@@ -1326,13 +1320,7 @@ fn run_command(
     let reply_columns = |message: &str| {
         push_transcript_entry(
             window,
-            command_transcript_entry(
-                window,
-                text,
-                message,
-                &styled::code_lines(message),
-                false,
-            ),
+            command_transcript_entry(window, text, message, &styled::code_lines(message), false),
         );
         true
     };
