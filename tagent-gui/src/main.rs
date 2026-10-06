@@ -554,6 +554,9 @@ fn slint_key_text_to_hotkey_token(text: &str) -> String {
 /// periodically for as long as `config.theme == "auto"`.
 fn apply_style(window: &AppWindow, config: &config::GuiConfig) {
     window.invoke_apply_theme(config.theme.clone().into());
+    // Native popup menus (the provider menu) don't follow the Slint palette.
+    #[cfg(target_os = "windows")]
+    platform::windows::menu_theme::apply(&config.theme);
 
     let panel_background_theme_default = window.get_panel_background_theme_default().color();
     window.set_panel_background(resolve_color(

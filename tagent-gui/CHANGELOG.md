@@ -421,6 +421,10 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+025) **The provider menu follows the theme on Windows.** The menu of the provider
+  button (next to ⚙) is a native Windows menu, and it stayed light under the `Dark` theme
+  when Windows itself is in light mode. It is now dark under `Dark`, light under `Light`,
+  and follows Windows' app mode under `Auto`.
 - (+024) **The provider button's arrow shows on Windows.** The arrow after the provider name
   (`google ▼`, next to ⚙) was blank: the small ▾ is not in Segoe UI, Windows' UI font. The
   button now uses ▼, which every common UI font has.

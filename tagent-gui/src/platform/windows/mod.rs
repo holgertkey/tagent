@@ -7,5 +7,7 @@ pub mod console;
 pub mod keyboard;
 /// Abstract virtual-key code constants and name/code conversion helpers.
 pub mod keycodes;
+/// Dark or light native popup menus (the provider menu), following the app's theme.
+pub mod menu_theme;
 /// Cursor position and foreground-window focus save/restore, for the Stage 6 popup.
 pub mod window;
