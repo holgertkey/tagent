@@ -200,7 +200,7 @@ component ColorPickerField {
     }
 }
 
-// A transcript block's speak button: laid over the block's `[🔊 label]:`
+// A transcript block's speak button: laid over the block's `[label 🔊]:`
 // prompt (just `🔊` with the prompt off), which is part of the block's own
 // StyledText, so the text wraps under it as usual. Tinted while hovered and,
 // more strongly, while this block is speaking; a click while speaking stops
@@ -577,7 +577,7 @@ export component AppWindow inherits Window {
                         // translation's first line is entirely controlled by
                         // phrases-spacing-px, down to 0.
                         Rectangle {
-                            // The prompt is the block's speak button: `[🔊 label]:`
+                            // The prompt is the block's speak button: `[label 🔊]:`
                             // (just `🔊` with the prompt off) at the start of the text,
                             // with a PromptSpeakButton laid over it. A std Button next
                             // to the block was used before, but it can't be shorter
@@ -636,10 +636,10 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            // The prompt as rendered (styled::SPEAKER_PREFIX): the
+                            // The prompt as rendered (styled::SPEAKER_SUFFIX): the
                             // speak button's size.
                             phrase-probe := Text {
-                                text: entry.phrase-prompt != "" ? "[🔊\u{a0}" + entry.phrase-prompt + "]:" : "🔊";
+                                text: entry.phrase-prompt != "" ? "[" + entry.phrase-prompt + "\u{a0}🔊]:" : "🔊";
                                 font-family: phrase-font;
                                 font-size: phrase-size * 1px;
                                 visible: false;
@@ -706,10 +706,10 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            // The prompt as rendered (styled::SPEAKER_PREFIX): the
+                            // The prompt as rendered (styled::SPEAKER_SUFFIX): the
                             // speak button's size.
                             translation-probe := Text {
-                                text: entry.translation-prompt != "" ? "[🔊\u{a0}" + entry.translation-prompt + "]:" : "🔊";
+                                text: entry.translation-prompt != "" ? "[" + entry.translation-prompt + "\u{a0}🔊]:" : "🔊";
                                 font-family: translation-font;
                                 font-size: translation-size * 1px;
                                 visible: false;
@@ -1256,7 +1256,7 @@ export component TranslationPopup inherits Window {
                         // The prompt as rendered (main.rs's `format_popup_line`):
                         // the speak button's size. Same shape as the transcript's.
                         phrase-probe := Text {
-                            text: phrase-prompt != "" ? "[🔊\u{a0}" + phrase-prompt + "]:" : "🔊";
+                            text: phrase-prompt != "" ? "[" + phrase-prompt + "\u{a0}🔊]:" : "🔊";
                             font-family: popup-font;
                             font-size: popup-size * 1px;
                             visible: false;
@@ -1335,7 +1335,7 @@ export component TranslationPopup inherits Window {
 
                         // See the phrase block's own probe and button above.
                         translation-probe := Text {
-                            text: translation-prompt != "" ? "[🔊\u{a0}" + translation-prompt + "]:" : "🔊";
+                            text: translation-prompt != "" ? "[" + translation-prompt + "\u{a0}🔊]:" : "🔊";
                             font-family: popup-font;
                             font-size: popup-size * 1px;
                             visible: false;

@@ -1370,9 +1370,9 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   row gets two 🔊 speaker buttons — one for the phrase, one for the translation
   (hidden when `entry.translation-is-error` or the entry has no
   `translation-speech`, e.g. a failed translation). Since 0.14.0+041 the button is the block's
-  own `[label]:` prompt, rendered as `[🔊 label]:` (`🔊` alone with the prompt
+  own `[label]:` prompt, rendered as `[label 🔊]:` (`[🔊 label]:` before 0.15.0+017; `🔊` alone with the prompt
   off): the templates carry `styled::SPEAKER_MARKER`, which
-  `render_template_with_speaker` turns into `SPEAKER_PREFIX` or drops,
+  `render_template_with_speaker` turns into `SPEAKER_SUFFIX` (`SPEAKER_LEAD_MARKER`, the prompt-less form, into `SPEAKER_PREFIX`) or drops,
   following `tts-enabled` (`changed tts-enabled` → `restyle_transcript`). A
   `PromptSpeakButton` is laid over the prompt, sized by a hidden `Text` holding
   the same prompt string (`TranscriptEntry::*-prompt`), which is reliable since

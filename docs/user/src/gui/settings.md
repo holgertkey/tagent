@@ -16,7 +16,7 @@ The settings are stored in `tagent-gui.json`; see
 - **Spell check suggestions**: a misspelled word is looked up under its correct spelling,
   with a notice. No effect while the dictionary is off.
 - **Enable text-to-speech**: makes the prompts of the transcript and the popup speak
-  buttons (`[🔊 auto → ru]:`) and allows the speech hotkey.
+  buttons (`[auto → ru 🔊]:`) and allows the speech hotkey.
 - **Show menu on right-click**: right-click opens a **Copy** menu instead of copying at
   once.
 - **Reset to Defaults**: sets every setting on every tab back to its default, except

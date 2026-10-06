@@ -28,7 +28,7 @@ restart** (Quit in the tray menu, then start again).
 - It **hides itself** after a few seconds (3 by default), but stays while the mouse
   rests on it.
 - **The prompt is the speak button**, as in the [transcript](main-window.md): click
-  `[🔊 auto → ru]:` to hear the phrase, `[🔊 deepl]:` (the provider that answered) to
+  `[auto → ru 🔊]:` to hear the phrase, `[deepl 🔊]:` (the provider that answered) to
   hear the translation (for a dictionary entry, only the main translation), or just 🔊 with the prompt turned off.
   Click it again to stop. The popup stays open while it reads and hides a few seconds
   after it's done. The same entry in the main window shows it playing too, and only one
@@ -52,7 +52,7 @@ stays.
 ## The speech hotkey
 
 Select text and press Alt+S: the text is read aloud in the window's source language
-(detected if `Auto`), with no translation. A `[🔊 Speech]:` entry appears in the
+(detected if `Auto`), with no translation. A `[Speech 🔊]:` entry appears in the
 transcript; click its prompt to replay it.
 
 Pressing the speech hotkey **again** while something is playing stops it. **Esc** does

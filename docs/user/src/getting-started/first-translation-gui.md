@@ -36,7 +36,7 @@ the `.deb`, otherwise run `tagent-gui --install-desktop` once); see
 
 Pick the languages at the top of the window, type text in the box at the bottom, and
 press **Enter** (Shift+Enter starts a new line). A single word gets a dictionary entry
-instead of a plain translation. Click the `[🔊 …]:` prompt before a phrase or a translation to hear it.
+instead of a plain translation. Click the `[… 🔊]:` prompt before a phrase or a translation to hear it.
 
 ![The main window at first start](../images/gui-main-window.png)
 

@@ -1084,14 +1084,14 @@ fn format_line(show_prompt: bool, label: &str, text: &str) -> String {
     }
 }
 
-/// [`format_line`] for the popup, with [`styled::SPEAKER_PREFIX`] where its rendered
-/// template has the speaker glyph (`speaker`): `[🔊 label]: text`, or `🔊 text` with
-/// the prompt off. The popup measures its width on this plain line, so it must match
+/// [`format_line`] for the popup, with the speaker glyph where its rendered template
+/// has it (`speaker`): `[label 🔊]: text` ([`styled::SPEAKER_SUFFIX`]), or `🔊 text`
+/// ([`styled::SPEAKER_PREFIX`]) with the prompt off. The popup measures its width on this plain line, so it must match
 /// what is rendered, glyph included.
 fn format_popup_line(show_prompt: bool, label: &str, text: &str, speaker: bool) -> String {
     match (speaker, show_prompt) {
         (false, _) => format_line(show_prompt, label, text),
-        (true, true) => format!("[{}{label}]: {text}", styled::SPEAKER_PREFIX),
+        (true, true) => format!("[{label}{}]: {text}", styled::SPEAKER_SUFFIX),
         (true, false) => format!("{}{text}", styled::SPEAKER_PREFIX),
     }
 }
@@ -4555,7 +4555,7 @@ mod tests {
             ..both
         };
         let (phrase, translation) = popup_templates(&outcome, false, phrase_only);
-        assert!(phrase.starts_with(styled::SPEAKER_MARKER), "{phrase}");
+        assert!(phrase.starts_with(styled::SPEAKER_LEAD_MARKER), "{phrase}");
         assert!(
             !translation.contains(styled::SPEAKER_MARKER),
             "{translation}"
@@ -4605,7 +4605,7 @@ mod tests {
         assert_eq!(format_popup_line(false, "English", "hello", false), "hello");
         assert_eq!(
             format_popup_line(true, "English", "hello", true),
-            "[🔊\u{a0}English]: hello"
+            "[English\u{a0}🔊]: hello"
         );
         assert_eq!(
             format_popup_line(false, "English", "hello", true),
@@ -4616,9 +4616,7 @@ mod tests {
         let colors = styled::RoleColors::default();
         for show_prompt in [true, false] {
             let template = styled::phrase_template(show_prompt, "English", "hello", true);
-            let rendered = styled::strip_template(
-                &template.replace(styled::SPEAKER_MARKER, styled::SPEAKER_PREFIX),
-            );
+            let rendered = styled::strip_template(&styled::substitute_speaker(&template, true));
             assert_eq!(
                 rendered,
                 format_popup_line(show_prompt, "English", "hello", true)
@@ -4667,8 +4665,8 @@ mod tests {
 
         i_slint_backend_testing::init_no_event_loop();
         let popup = TranslationPopup::new().unwrap();
-        popup.set_phrase_text("[🔊\u{a0}English]: hello".into());
-        popup.set_translation_text("[🔊\u{a0}Russian]: привет".into());
+        popup.set_phrase_text("[English\u{a0}🔊]: hello".into());
+        popup.set_translation_text("[Russian\u{a0}🔊]: привет".into());
         let colors = styled::RoleColors::default();
         popup.set_phrase_styled(styled::render_template_with_speaker(
             &styled::phrase_template(true, "English", "hello", true),
@@ -4693,7 +4691,7 @@ mod tests {
         let hidden_in = hidden.clone();
         popup.on_hide_requested(move || hidden_in.set(hidden_in.get() + 1));
 
-        // Over the phrase's `[🔊 English]:` (content padding 8px, then the block).
+        // Over the phrase's `[English 🔊]:` (content padding 8px, then the block).
         let position = slint::LogicalPosition::new(16.0, 14.0);
         let click = |button| {
             popup

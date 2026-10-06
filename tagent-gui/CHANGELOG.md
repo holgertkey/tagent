@@ -237,6 +237,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+017) **The 🔊 in a prompt moved before the closing bracket:** `[auto → ru 🔊]:`
+  instead of `[🔊 auto → ru]:`, in the transcript and the popup, so the prompt starts
+  with its label. Without a prompt, a block still starts with 🔊.
 - (+013) **The prompts look like `tagent-cli`'s**: the phrase's names the language pair
   (`[auto → ru]:`, was `[Auto]:`), the translation's the provider that made it
   (`[deepl]:`, was `[Russian]:`), the dictionary provider for a dictionary entry. With

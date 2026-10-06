@@ -28,8 +28,8 @@ notice and errors each get their own color.
 
 The transcript's header names the providers in use for each job.
 
-- **The prompt is the speak button.** Click `[🔊 auto → ru]:` before a phrase to hear
-  it, in its source language (detected if `auto`); click `[🔊 deepl]:` before the
+- **The prompt is the speak button.** Click `[auto → ru 🔊]:` before a phrase to hear
+  it, in its source language (detected if `auto`); click `[deepl 🔊]:` before the
   translation to hear the translation, in the target language. For a dictionary entry, only the main translation is read.
   With the prompt turned off (Settings > View), a block starts with just 🔊. The prompt
   is tinted while it plays; click it again to stop, or press the speech hotkey again,

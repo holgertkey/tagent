@@ -146,17 +146,24 @@ fn escape_line(line: &str) -> String {
     result
 }
 
-/// Placeholder for the transcript's speaker glyph inside a `[label]:` prompt (or, with
-/// the prompt off, at the start of the block) -- see [`render_template_with_speaker`],
-/// which turns it into [`SPEAKER_PREFIX`] or removes it. Templates keep the marker
-/// rather than the glyph so the glyph follows the live `enable_text_to_speech` setting
-/// on a re-render. User text can never contain it: [`escape_markdown`] backslash-escapes
-/// both `@`s.
+/// Placeholder for the transcript's speaker glyph inside a `[label]:` prompt, before
+/// its `]` -- see [`render_template_with_speaker`], which turns it into
+/// [`SPEAKER_SUFFIX`] or removes it. Templates keep the marker rather than the glyph so
+/// the glyph follows the live `enable_text_to_speech` setting on a re-render. User text
+/// can never contain it: [`escape_markdown`] backslash-escapes both `@`s.
 pub const SPEAKER_MARKER: &str = "@speaker@";
 
-/// What [`SPEAKER_MARKER`] renders to while text-to-speech is on: the glyph and a
-/// non-breaking space, so a narrow window never wraps `[🔊 English]:` apart. `app.slint`
+/// [`SPEAKER_MARKER`]'s counterpart for a block without a prompt: it starts the block
+/// and turns into [`SPEAKER_PREFIX`].
+pub const SPEAKER_LEAD_MARKER: &str = "@speaker-lead@";
+
+/// What [`SPEAKER_MARKER`] renders to while text-to-speech is on: a non-breaking space
+/// and the glyph, so a narrow window never wraps `[English 🔊]:` apart. `app.slint`
 /// builds the same string to measure the prompt's clickable width -- keep both in step.
+pub const SPEAKER_SUFFIX: &str = "\u{a0}🔊";
+
+/// What [`SPEAKER_LEAD_MARKER`] renders to while text-to-speech is on: the glyph and a
+/// non-breaking space (`🔊 text`).
 pub const SPEAKER_PREFIX: &str = "🔊\u{a0}";
 
 /// Best-effort plain-text fallback for a template that failed to render (see
@@ -347,9 +354,17 @@ fn render_checked(
     ))
 }
 
-/// Replaces [`SPEAKER_MARKER`] with [`SPEAKER_PREFIX`] (`speaker`) or nothing.
-fn substitute_speaker(template: &str, speaker: bool) -> String {
-    template.replace(SPEAKER_MARKER, if speaker { SPEAKER_PREFIX } else { "" })
+/// Replaces [`SPEAKER_MARKER`] with [`SPEAKER_SUFFIX`] and [`SPEAKER_LEAD_MARKER`]
+/// with [`SPEAKER_PREFIX`] (`speaker`), or both with nothing.
+pub fn substitute_speaker(template: &str, speaker: bool) -> String {
+    let (suffix, prefix) = if speaker {
+        (SPEAKER_SUFFIX, SPEAKER_PREFIX)
+    } else {
+        ("", "")
+    };
+    template
+        .replace(SPEAKER_MARKER, suffix)
+        .replace(SPEAKER_LEAD_MARKER, prefix)
 }
 
 /// Renders `template` against `colors` into a `styled-text` value ready to bind to a
@@ -378,18 +393,19 @@ pub fn render_template_with_speaker(
 /// or just `body` when `show_prompt` is off -- mirrors `format_line`'s plain-text
 /// shape exactly (`"[{label}]: {text}"`). The label is the language pair before a
 /// phrase (`auto → ru`) and the provider before a translation (`deepl`). With `speaker` (a transcript block that can
-/// be spoken), the prompt gets a [`SPEAKER_MARKER`] after its `[` (`[🔊 label]:`), or,
-/// with the prompt off, the block starts with one (`🔊 text`).
+/// be spoken), the prompt gets a [`SPEAKER_MARKER`] before its `]` (`[label 🔊]:`), or,
+/// with the prompt off, the block starts with a [`SPEAKER_LEAD_MARKER`] (`🔊 text`).
 fn prefixed(show_prompt: bool, label: &str, body: &str, speaker: bool) -> String {
-    let marker = if speaker { SPEAKER_MARKER } else { "" };
     if show_prompt {
+        let marker = if speaker { SPEAKER_MARKER } else { "" };
         let prefix = format!(
             "{}{marker}{}",
-            escape_markdown("["),
-            escape_markdown(&format!("{label}]:"))
+            escape_markdown(&format!("[{label}")),
+            escape_markdown("]:")
         );
         format!("{} {body}", span(Role::Prompt, &prefix))
     } else {
+        let marker = if speaker { SPEAKER_LEAD_MARKER } else { "" };
         format!("{marker}{body}")
     }
 }
@@ -730,7 +746,7 @@ mod tests {
         assert!(render_checked(&template, &colors, true).is_ok());
         assert_eq!(
             strip_template(&substitute_speaker(&template, true)),
-            "[🔊\u{a0}English]: hello"
+            "[English\u{a0}🔊]: hello"
         );
         assert_eq!(
             strip_template(&substitute_speaker(&template, false)),
@@ -762,15 +778,17 @@ mod tests {
             true,
         );
         assert!(!error.contains(SPEAKER_MARKER));
+        assert!(!error.contains(SPEAKER_LEAD_MARKER));
     }
 
     #[test]
     fn speaker_marker_in_user_text_is_never_substituted() {
-        let template = phrase_template(false, "English", "a @speaker@ b", false);
+        let template = phrase_template(false, "English", "a @speaker@ @speaker-lead@ b", false);
         assert!(!template.contains(SPEAKER_MARKER), "{template}");
+        assert!(!template.contains(SPEAKER_LEAD_MARKER), "{template}");
         assert_eq!(
             strip_template(&substitute_speaker(&template, true)),
-            "a @speaker@ b"
+            "a @speaker@ @speaker-lead@ b"
         );
     }
 
