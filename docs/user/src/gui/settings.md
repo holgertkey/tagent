@@ -86,4 +86,6 @@ Everything applies at once.
 
 ## About
 
-The version of `tagent-gui`.
+The version of `tagent-gui` and of the `tagent` library it is built on, plus links to
+this guide, the source code and the issue tracker, for reporting a problem. A click on a
+link opens it in the browser.

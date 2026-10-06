@@ -247,6 +247,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+020) **A fuller About tab** in Settings: besides the version, the `tagent` library's
+  version, what the app does, the license, and links to the user guide, the source code
+  and the issue tracker, which open in the browser.
 - (+019) **The language lists show the codes.** The main window's two language lists and
   the default languages in Settings > General name each language with its code,
   `Russian (ru)`, the code the `[auto → ru]:` label shows; `Auto` stays as it is.

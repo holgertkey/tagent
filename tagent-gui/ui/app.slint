@@ -1605,6 +1605,9 @@ export component SettingsDialog inherits Dialog {
     in-out property <[string]> themes: ["Auto", "Light", "Dark"];
     in-out property <int> theme-index: 0;
     in-out property <string> app-version: "";
+    // About tab: the `tagent` library's version and the links (`about.rs`).
+    in-out property <string> library-version: "";
+    in-out property <styled-text> about-links;
 
     // One-shot preset picker: selecting an entry (main.rs looks it up by
     // name) immediately fills in the background/phrase/translation color
@@ -2258,9 +2261,38 @@ export component SettingsDialog inherits Dialog {
 
                 VerticalBox {
                     alignment: start;
+                    spacing: 12px;
 
-                    Text { text: "Tagent"; font-weight: 700; }
-                    Text { text: "Version " + app-version; }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Tagent GUI"; font-size: 20px; font-weight: 700; }
+                        Text { text: "Version " + app-version; }
+                        Text {
+                            text: "tagent library " + library-version;
+                            font-size: 11px;
+                            opacity: 0.75;
+                        }
+                    }
+
+                    Text {
+                        text: "A desktop translator: translate the selected text with a global hotkey, look up single words in a dictionary, and listen to the pronunciation.";
+                        wrap: word-wrap;
+                    }
+
+                    // Links open in the system browser.
+                    StyledText {
+                        text: about-links;
+                        link-color: Palette.accent-background;
+                        link-clicked(url) => {
+                            Platform.open-url(url);
+                        }
+                    }
+
+                    Text {
+                        text: "Free software under the MIT License.";
+                        font-size: 11px;
+                        opacity: 0.75;
+                    }
                 }
             }
         }

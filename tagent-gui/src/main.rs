@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tagent::providers::ProviderAxis;
 use tagent::{languages, providers};
 
+mod about;
 mod commands;
 mod config;
 #[cfg(target_os = "linux")]
@@ -3437,6 +3438,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dialog = SettingsDialog::new().unwrap();
         latin_shortcuts::install(dialog.window());
         dialog.set_app_version(env!("CARGO_PKG_VERSION").into());
+        dialog.set_library_version(tagent::VERSION.into());
+        dialog.set_about_links(about::links());
 
         let recording_started_at_for_recording = recording_started_at_for_settings.clone();
         dialog.on_recording_changed(move |active| {
