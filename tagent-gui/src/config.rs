@@ -430,7 +430,7 @@ where
 
 /// A provider profile selected for one axis: its name and effective options (config
 /// entry plus environment overrides), ready for `tagent`'s `*_with` factories.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderChoice {
     /// The profile name, as configured.
     pub name: String,

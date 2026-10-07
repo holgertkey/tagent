@@ -252,6 +252,13 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+027) **Translations show up sooner.** A single word no longer waits for its dictionary
+  article: the plain translation appears in the transcript and the popup as soon as it
+  arrives, and the article replaces it in place when it follows (Google's spell-checking
+  lookup takes 0.3-0.6 s longer than the translation). And translations less than about
+  a minute apart reuse one connection to the provider instead of opening a new one each
+  time, which saves about 0.1 s per request with Google (an idle connection is closed
+  after about 90 s, so the first translation after a pause still opens one).
 - (+020) **A fuller About tab** in Settings: besides the version, the `tagent` library's
   version, what the app does, the license, and links to the user guide, the source code
   and the issue tracker, which open in the browser.

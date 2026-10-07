@@ -22,6 +22,7 @@ mod dictionary;
 mod latin_shortcuts;
 mod platform;
 mod popup_position;
+mod provider_cache;
 mod provider_form;
 mod provider_menu;
 mod session_provider;
@@ -769,64 +770,8 @@ fn show_popup(
 
     POPUP_RESTORE_TARGET.with(|cell| cell.set(platform::window::foreground_window()));
 
-    // The plain lines are only measured (the popup's width), so they carry the
-    // speaker glyph exactly where the rendered prompt has it.
-    popup.set_phrase_text(
-        format_popup_line(
-            show_prompt,
-            &outcome.phrase_label,
-            &outcome.phrase_raw,
-            speakers.phrase,
-        )
-        .into(),
-    );
-    popup.set_translation_text(if outcome.is_error {
-        outcome.translation_raw.clone().into()
-    } else {
-        format_popup_line(
-            show_prompt,
-            &outcome.translation_label,
-            &outcome.translation_raw,
-            speakers.translation,
-        )
-        .into()
-    });
+    set_popup_content(&popup, outcome, show_prompt, speakers);
     popup.set_show_phrase(show_phrase);
-
-    // Speaking from the popup (0.15.0+012): the row this popup shows, and which
-    // sides get a speak button. The speaking state itself is mirrored onto the popup
-    // on every change (`speaking-state-changed`, wired in main()), so it needs
-    // nothing here.
-    popup.set_entry_index(speakers.entry_index);
-    popup.set_phrase_speaker(speakers.phrase);
-    popup.set_translation_speaker(speakers.translation);
-    let prompt = |lang: &str| {
-        if show_prompt {
-            lang.to_string().into()
-        } else {
-            slint::SharedString::new()
-        }
-    };
-    popup.set_phrase_prompt(prompt(&outcome.phrase_label));
-    popup.set_translation_prompt(if outcome.is_error {
-        slint::SharedString::new()
-    } else {
-        prompt(&outcome.translation_label)
-    });
-
-    // Right-click copy (2026-09-22): plain, unprompted text -- exactly what
-    // `TranslationOutcome` already carries, no extra derivation needed (unlike
-    // the transcript, which builds its `*-copy` fields alongside its templates).
-    popup.set_phrase_copy(outcome.phrase_raw.clone().into());
-    popup.set_translation_copy(outcome.translation_raw.clone().into());
-
-    // Highlighting: the same role-tagged templates the transcript uses (prompt
-    // prefix, and for a dictionary hit its part-of-speech/synonym/notice spans),
-    // kept on the popup so `apply_popup_style` can re-render them on a restyle.
-    let (phrase_template, translation_template) = popup_templates(outcome, show_prompt, speakers);
-    popup.set_phrase_template(phrase_template.into());
-    popup.set_translation_template(translation_template.into());
-    restyle_popup(&popup);
 
     popup.show().ok();
 
@@ -876,6 +821,120 @@ fn show_popup(
 
     popup.set_auto_hide_seconds(auto_hide_seconds.min(i32::MAX as u64) as i32);
     popup.invoke_start_hide_timer();
+}
+
+/// Puts `outcome` into the popup -- text, prompts, copy text, speak buttons and the
+/// highlighted templates -- without showing, moving or re-timing it. Used by
+/// [`show_popup`], and by [`upgrade_popup`] when a dictionary article replaces the
+/// plain translation the popup is showing.
+fn set_popup_content(
+    popup: &TranslationPopup,
+    outcome: &TranslationOutcome,
+    show_prompt: bool,
+    speakers: PopupSpeakers,
+) {
+    // The plain lines are only measured (the popup's width), so they carry the
+    // speaker glyph exactly where the rendered prompt has it.
+    popup.set_phrase_text(
+        format_popup_line(
+            show_prompt,
+            &outcome.phrase_label,
+            &outcome.phrase_raw,
+            speakers.phrase,
+        )
+        .into(),
+    );
+    popup.set_translation_text(if outcome.is_error {
+        outcome.translation_raw.clone().into()
+    } else {
+        format_popup_line(
+            show_prompt,
+            &outcome.translation_label,
+            &outcome.translation_raw,
+            speakers.translation,
+        )
+        .into()
+    });
+
+    // Speaking from the popup (0.15.0+012): the row this popup shows, and which
+    // sides get a speak button. The speaking state itself is mirrored onto the popup
+    // on every change (`speaking-state-changed`, wired in main()), so it needs
+    // nothing here.
+    popup.set_entry_index(speakers.entry_index);
+    popup.set_phrase_speaker(speakers.phrase);
+    popup.set_translation_speaker(speakers.translation);
+    let prompt = |lang: &str| {
+        if show_prompt {
+            lang.to_string().into()
+        } else {
+            slint::SharedString::new()
+        }
+    };
+    popup.set_phrase_prompt(prompt(&outcome.phrase_label));
+    popup.set_translation_prompt(if outcome.is_error {
+        slint::SharedString::new()
+    } else {
+        prompt(&outcome.translation_label)
+    });
+
+    // Right-click copy (2026-09-22): plain, unprompted text -- exactly what
+    // `TranslationOutcome` already carries, no extra derivation needed (unlike
+    // the transcript, which builds its `*-copy` fields alongside its templates).
+    popup.set_phrase_copy(outcome.phrase_raw.clone().into());
+    popup.set_translation_copy(outcome.translation_raw.clone().into());
+
+    // Highlighting: the same role-tagged templates the transcript uses (prompt
+    // prefix, and for a dictionary hit its part-of-speech/synonym/notice spans),
+    // kept on the popup so `apply_popup_style` can re-render them on a restyle.
+    let (phrase_template, translation_template) = popup_templates(outcome, show_prompt, speakers);
+    popup.set_phrase_template(phrase_template.into());
+    popup.set_translation_template(translation_template.into());
+    restyle_popup(popup);
+}
+
+/// Replaces the plain translation a still-visible popup shows with its dictionary
+/// article (`outcome`), if the popup still shows that row (`speakers.entry_index`) --
+/// a later hotkey translation may already have taken it over. Unlike [`show_popup`], it neither moves the popup
+/// nor touches `POPUP_RESTORE_TARGET` (the foreground window may be the popup by now);
+/// the popup grows to fit, so it is put back on the desktop if that pushed it over an
+/// edge, and its auto-hide countdown starts again so the article gets the full time.
+fn upgrade_popup(
+    popup: &TranslationPopup,
+    outcome: &TranslationOutcome,
+    show_prompt: bool,
+    speakers: PopupSpeakers,
+) {
+    if !popup.window().is_visible() || popup.get_entry_index() != speakers.entry_index {
+        return;
+    }
+    set_popup_content(popup, outcome, show_prompt, speakers);
+    popup.invoke_start_hide_timer();
+
+    // The window takes its new size on the next layout pass, so the check waits a bit.
+    let popup_weak = popup.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+        let Some(popup) = popup_weak.upgrade() else {
+            return;
+        };
+        if !popup.window().is_visible() {
+            return;
+        }
+        let Some(bounds) = platform::window::virtual_screen_bounds() else {
+            return;
+        };
+        let position = popup.window().position();
+        let size = popup.window().size();
+        let (x, y) = popup_position::clamp_to_bounds(
+            (position.x, position.y),
+            (size.width as i32, size.height as i32),
+            bounds,
+        );
+        if (x, y) != (position.x, position.y) {
+            popup
+                .window()
+                .set_position(slint::PhysicalPosition::new(x, y));
+        }
+    });
 }
 
 /// What the popup can speak (0.15.0+012): the transcript row it shows and which of
@@ -1460,6 +1519,9 @@ fn run_command(
                 speech::request_stop(context.speech_stop_flag);
             }
             window.set_transcript_entries(ModelRc::new(VecModel::<TranscriptEntry>::default()));
+            // A dictionary article still on its way must not land in a new row that
+            // took its provisional row's index (see `post_translation_upgrade`).
+            TRANSCRIPT_EPOCH.with(|epoch| epoch.set(epoch.get() + 1));
             // The popup's row is gone (see `push_transcript_entry`).
             if let Some(popup) = context.popup.upgrade() {
                 popup.set_entry_index(-1);
@@ -2514,21 +2576,341 @@ fn start_speaking(
     });
 }
 
-/// Translates `request.text` in a background thread and pushes the result (or an error)
-/// into the transcript. Shared by the Translate button/Enter key
-/// (`on_translate_requested`) and the global translate hotkey (Stage 5) — the only two
-/// callers, extracted here specifically to avoid duplicating the provider-call/
-/// transcript-push logic between them.
+/// A translation's displayable result: `(display_body, speech_text, body_template,
+/// dictionary_hit)`. `speech_text` is the raw *primary* translation only (Stage 10): for
+/// a plain translation it equals `display_body`, but for a Stage 9 dictionary hit
+/// `display_body` is the full formatted block while `speech_text` is just its header
+/// line (`dictionary::primary_line`), so the per-entry speaker button never reads out
+/// part-of-speech/synonym lists.
+type TranslationBody = (String, String, String, bool);
+
+/// What [`spawn_translation`] hands to the UI thread: a body, or the error to show.
+type TranslationResult = Result<TranslationBody, tagent::error::Error>;
+
+/// How long a single-word translation waits for its dictionary lookup before showing
+/// the plain translation on its own. Long enough that a lookup landing together with
+/// the translation goes straight to the article (no plain-then-article flash), short
+/// enough not to be noticed when the lookup is slow -- Google's spell-checking lookup
+/// lands 0.3-0.6 s after the translation.
+const DICTIONARY_GRACE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// [`TranslationBody`] for a plain translation.
+fn plain_body(translation: String) -> TranslationBody {
+    let template = styled::escape_markdown(&translation);
+    (translation.clone(), translation, template, false)
+}
+
+/// [`TranslationBody`] for a dictionary hit: the article, with `spell_check`'s
+/// correction notice in front when the provider looked up a different word.
+/// `primary` is the plain translation, if it succeeded.
+fn article_body(
+    entry: &tagent::providers::DictionaryEntry,
+    primary: Option<&str>,
+    spell_check: bool,
+    request_text: &str,
+    to_code: &str,
+) -> TranslationBody {
+    // Stage 13: `article_template` and `body` (the plain-text equivalent used
+    // unchanged since before this stage) are both derived from `entry`
+    // independently -- see `dictionary::article_lines`'s own doc comment for why
+    // that can never let the two drift apart.
+    let article_template =
+        dictionary::to_template(&dictionary::article_lines(entry, to_code, primary));
+    let mut body = String::new();
+    let mut template = article_template;
+    if spell_check {
+        if let Some(corrected) = &entry.corrected_word {
+            if corrected.to_lowercase() != request_text.to_lowercase() {
+                body.push_str(&dictionary::correction_notice(corrected, to_code));
+                body.push('\n');
+                let notice_template = dictionary::correction_notice_template(corrected, to_code);
+                template = format!("{notice_template}\n{template}");
+            }
+        }
+    }
+    body.push_str(&dictionary::format_dictionary_entry(
+        entry, to_code, primary,
+    ));
+    let speech_text = dictionary::primary_line(entry, primary).unwrap_or_default();
+    (body, speech_text, template, true)
+}
+
+/// The final result once both requests of a single-word translation are in: the
+/// article on a dictionary hit, otherwise the plain translation already fetched -- a
+/// dictionary miss or lookup error never makes a second network call.
+fn dictionary_or_plain(
+    dict_result: Result<Option<tagent::providers::DictionaryEntry>, tagent::error::Error>,
+    translate_result: Result<String, tagent::error::Error>,
+    spell_check: bool,
+    request_text: &str,
+    to_code: &str,
+) -> TranslationResult {
+    match dict_result {
+        Ok(Some(entry)) => Ok(article_body(
+            &entry,
+            translate_result.as_deref().ok(),
+            spell_check,
+            request_text,
+            to_code,
+        )),
+        _ => translate_result.map(plain_body),
+    }
+}
+
+/// The per-request values [`build_translation_entry`] needs, besides the result itself.
+#[derive(Clone)]
+struct EntryContext {
+    show_prompt: bool,
+    phrase_label: String,
+    text: String,
+    from_code: String,
+    to_code: String,
+    translate_name: String,
+    dictionary_name: String,
+}
+
+/// Builds the transcript row and the popup's [`TranslationOutcome`] for `result`, on
+/// the UI thread. `window` (when still alive) supplies the current colors.
+fn build_translation_entry(
+    window: Option<&AppWindow>,
+    context: &EntryContext,
+    result: &TranslationResult,
+) -> (TranscriptEntry, TranslationOutcome) {
+    let EntryContext {
+        show_prompt,
+        phrase_label,
+        text,
+        from_code,
+        to_code,
+        translate_name,
+        dictionary_name,
+    } = context;
+    let show_prompt = *show_prompt;
+
+    // `translation_body_template` is the un-prefixed body (a dictionary article's
+    // role-tagged template, or the escaped plain translation/error message) -- kept
+    // separately for the popup, which adds its own `[label]:` prefix under its own
+    // `popup_show_prompt` setting.
+    let (translation_raw, translation_speech, is_error, translation_body_template) = match result {
+        Ok((body, speech_text, body_template, _)) => (
+            body.clone(),
+            speech_text.clone(),
+            false,
+            body_template.clone(),
+        ),
+        Err(err) => {
+            let message = format!("Error: {err}");
+            let body_template = styled::escape_markdown(&message);
+            (message.clone(), message, true, body_template)
+        }
+    };
+    let dictionary_hit = matches!(result, Ok((_, _, _, true)));
+    let translation_label = translation_label(dictionary_hit, translate_name, dictionary_name);
+    // The prompt is the block's speak button (app.slint), so it carries the speaker
+    // glyph's marker wherever there's something to speak.
+    let translation_full_template = styled::translation_template_from_body(
+        show_prompt,
+        &translation_label,
+        &translation_body_template,
+        is_error,
+        !translation_speech.is_empty(),
+    );
+    let phrase_full_template =
+        styled::phrase_template(show_prompt, phrase_label, text, !text.is_empty());
+
+    // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived from *that
+    // block's own* resolved background (decision 5); `prompt` is instead the one
+    // shared, user-configurable `prompt-accent` (2026-09-22) -- read from the window
+    // when it's still alive; the fallback only matters in the rare case the window was
+    // closed in the moment between the translation finishing and this running, since
+    // the entry built here is then never actually pushed.
+    let prompt_hex = window
+        .map(|w| color_to_hex(w.get_prompt_accent()))
+        .unwrap_or_else(|| styled::LIGHT_THEME_DEFAULT_PROMPT.to_string());
+    let phrase_colors = styled::RoleColors::new(
+        window
+            .map(|w| w.get_phrase_background())
+            .unwrap_or_default(),
+        prompt_hex.clone(),
+    );
+    let translation_colors = styled::RoleColors::new(
+        window
+            .map(|w| w.get_translation_background())
+            .unwrap_or_default(),
+        prompt_hex,
+    );
+    let fields = styled::entry_fields(
+        phrase_full_template,
+        translation_full_template,
+        text.clone(),
+        translation_raw.clone(),
+        &phrase_colors,
+        &translation_colors,
+        window.is_some_and(|w| w.get_tts_enabled()),
+    );
+
+    let entry = TranscriptEntry {
+        phrase: format_line(show_prompt, phrase_label, text).into(),
+        translation: if is_error {
+            translation_raw.clone().into()
+        } else {
+            format_line(show_prompt, &translation_label, &translation_raw).into()
+        },
+        phrase_speech: text.clone().into(),
+        translation_speech: if is_error {
+            String::new().into()
+        } else {
+            translation_speech.clone().into()
+        },
+        from_code: from_code.clone().into(),
+        to_code: to_code.clone().into(),
+        translation_is_error: is_error,
+        phrase_template: fields.phrase_template.into(),
+        translation_template: fields.translation_template.into(),
+        phrase_styled: fields.phrase_styled,
+        translation_styled: fields.translation_styled,
+        phrase_copy: fields.phrase_copy.into(),
+        translation_copy: fields.translation_copy.into(),
+        phrase_prompt: if show_prompt {
+            phrase_label.clone().into()
+        } else {
+            "".into()
+        },
+        translation_prompt: if show_prompt && !is_error {
+            translation_label.clone().into()
+        } else {
+            "".into()
+        },
+    };
+    let outcome = TranslationOutcome {
+        phrase_label: phrase_label.clone(),
+        translation_label,
+        phrase_raw: text.clone(),
+        translation_raw,
+        translation_body_template,
+        is_error,
+    };
+    (entry, outcome)
+}
+
+/// Where a provisional entry (a plain translation still waiting for its dictionary
+/// article) went: its row index and the `TRANSCRIPT_EPOCH` it was pushed in. Set on
+/// the UI thread when the row is pushed, read there again when the article arrives --
+/// both hops go through `slint::invoke_from_event_loop` from the same task, which runs
+/// them in order, so the upgrade always finds it set.
+type ProvisionalRow = Arc<Mutex<Option<(usize, u64)>>>;
+
+thread_local! {
+    /// Bumped whenever the transcript is cleared (`/clear`), so an article arriving
+    /// afterwards doesn't overwrite whatever row now has its provisional entry's index
+    /// (rows are otherwise only ever appended, see [`push_transcript_entry`]).
+    /// UI-thread-only, like this file's other `thread_local!`s.
+    static TRANSCRIPT_EPOCH: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The row a provisional entry may still be upgraded in: its index, if the transcript
+/// hasn't been cleared since it was pushed (`epoch` unchanged) and the row still exists.
+fn provisional_row_index(
+    pushed: Option<(usize, u64)>,
+    current_epoch: u64,
+    row_count: usize,
+) -> Option<usize> {
+    let (index, epoch) = pushed?;
+    (epoch == current_epoch && index < row_count).then_some(index)
+}
+
+/// Callback type for [`spawn_translation`]'s `on_upgrade` parameter: runs on the UI
+/// thread after a provisional row was replaced by its dictionary article, with the new
+/// row, its outcome and the row's index.
+type TranslationUpgradeCallback =
+    Box<dyn FnOnce(&TranscriptEntry, &TranslationOutcome, usize) + Send>;
+
+/// Pushes a new transcript row for `result` on the UI thread, running `on_done` first.
+/// With `provisional`, records where the row went, for [`post_translation_upgrade`].
+fn post_translation_entry(
+    weak: slint::Weak<AppWindow>,
+    context: EntryContext,
+    result: TranslationResult,
+    on_done: Option<TranslationDoneCallback>,
+    provisional: Option<ProvisionalRow>,
+) {
+    slint::invoke_from_event_loop(move || {
+        let window = weak.upgrade();
+        let (entry, outcome) = build_translation_entry(window.as_ref(), &context, &result);
+        if let Some(on_done) = on_done {
+            on_done(&entry, &outcome);
+        }
+        if let Some(window) = window {
+            let index = window.get_transcript_entries().row_count();
+            push_transcript_entry(&window, entry);
+            if let Some(provisional) = provisional {
+                let epoch = TRANSCRIPT_EPOCH.with(Cell::get);
+                *provisional.lock().unwrap() = Some((index, epoch));
+            }
+        }
+    })
+    .ok();
+}
+
+/// Replaces a provisional row with `result` (its dictionary article) on the UI thread,
+/// then runs `on_upgrade`. Does nothing if the row is gone (see
+/// [`provisional_row_index`]).
+fn post_translation_upgrade(
+    weak: slint::Weak<AppWindow>,
+    context: EntryContext,
+    result: TranslationResult,
+    provisional: ProvisionalRow,
+    on_upgrade: Option<TranslationUpgradeCallback>,
+) {
+    slint::invoke_from_event_loop(move || {
+        let Some(window) = weak.upgrade() else {
+            return;
+        };
+        let entries = window.get_transcript_entries();
+        let Some(index) = provisional_row_index(
+            *provisional.lock().unwrap(),
+            TRANSCRIPT_EPOCH.with(Cell::get),
+            entries.row_count(),
+        ) else {
+            return;
+        };
+        let (entry, outcome) = build_translation_entry(Some(&window), &context, &result);
+        // In place: the row grows, and app.slint's `changed transcript-viewport-height`
+        // keeps the transcript scrolled to its end.
+        entries.set_row_data(index, entry.clone());
+        if let Some(on_upgrade) = on_upgrade {
+            on_upgrade(&entry, &outcome, index);
+        }
+    })
+    .ok();
+}
+
+/// Translates `request.text` on the shared translation runtime
+/// ([`provider_cache::runtime`]) and pushes the result (or an error) into the
+/// transcript. Shared by the Translate button/Enter key (`on_translate_requested`) and
+/// the global translate hotkey (Stage 5) — the only two callers, extracted here
+/// specifically to avoid duplicating the provider-call/transcript-push logic between
+/// them. The providers come from [`provider_cache`], so consecutive translations reuse
+/// one HTTP connection.
 ///
 /// `on_done`, if given, runs on the UI thread with the resolved [`TranscriptEntry`] and
 /// the raw [`TranslationOutcome`] it was built from, before either is pushed into the
 /// transcript. The hotkey path (Stage 5/6) uses this to clear its "already processing"
 /// guard and to populate+show the Stage 6 popup; the button path has no such guard and
 /// no popup, and passes `None`.
+///
+/// A single word with the dictionary on doesn't wait for its dictionary lookup, which
+/// takes much longer than the translation (Google's spell-checking lookup: 0.3-0.6 s
+/// more): once the translation is in, it is pushed (and `on_done` runs) as a plain
+/// translation, and when the lookup finds an article, that row is replaced by it in
+/// place and `on_upgrade` runs, which the hotkey path uses to upgrade its popup. A
+/// lookup that lands within [`DICTIONARY_GRACE`] of the translation, a miss, a lookup
+/// error, or a failed translation give one entry only, as before.
 fn spawn_translation(
     weak: slint::Weak<AppWindow>,
     request: TranslationRequest,
     on_done: Option<TranslationDoneCallback>,
+    on_upgrade: Option<TranslationUpgradeCallback>,
 ) {
     let TranslationRequest {
         translate_provider,
@@ -2540,7 +2922,6 @@ fn spawn_translation(
         to_code,
         text,
     } = request;
-    let phrase_label = languages::pair_label(&from_code, &to_code);
 
     // Trimmed here (not left to each caller) so both the button/Enter path and the
     // hotkey path -- which passes the clipboard text untrimmed, see the hotkey
@@ -2553,230 +2934,105 @@ fn spawn_translation(
     // original) and treat them as different.
     let text = text.trim().to_string();
 
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to start Tokio runtime");
-        let request_text = text.clone();
-        // Cloned before from_code/to_code are moved into the async block below --
-        // needed again afterward, in invoke_from_event_loop, for TranscriptEntry
-        // (Stage 10).
-        let from_code_for_entry = from_code.clone();
-        let to_code_for_entry = to_code.clone();
-        // The translation's prompt names the provider that answered; the choices
-        // themselves move into the async block.
-        let translate_name = translate_provider.name.clone();
-        let dictionary_name = dictionary_provider.name.clone();
-        // (display_body, speech_text, body_template, dictionary_hit) -- speech_text is
-        // the raw *primary* translation
-        // only (Stage 10): for a plain translation the two are identical, but for a
-        // Stage 9 dictionary hit display_body is the full formatted block while
-        // speech_text is just its header line (dictionary::primary_line), so the
-        // per-entry speaker button never reads out part-of-speech/synonym lists.
-        let result = runtime.block_on(async move {
-            let provider = providers::create_provider_with(
-                &translate_provider.name,
-                &translate_provider.options,
-            )?;
+    let context = EntryContext {
+        show_prompt,
+        phrase_label: languages::pair_label(&from_code, &to_code),
+        text: text.clone(),
+        from_code: from_code.clone(),
+        to_code: to_code.clone(),
+        // The translation's prompt names the provider that answered.
+        translate_name: translate_provider.name.clone(),
+        dictionary_name: dictionary_provider.name.clone(),
+    };
 
-            // Built only when a dictionary lookup is actually about to happen, and never
-            // fatally: a bad `dictionary_provider` value must not break translation, so
-            // it warns and takes the plain-translation path below instead.
-            let dictionary_provider =
-                if show_dictionary && dictionary::is_single_word(&request_text) {
-                    match providers::create_dictionary_provider_with(
-                        &dictionary_provider.name,
-                        &dictionary_provider.options,
-                    ) {
-                        Ok(dictionary) => Some(dictionary),
-                        Err(e) => {
-                            eprintln!(
-                                "Dictionary provider unavailable ({e}); dictionary lookups disabled"
-                            );
-                            None
-                        }
-                    }
-                } else {
+    provider_cache::runtime().spawn(async move {
+        let provider = match provider_cache::translate_provider(&translate_provider) {
+            Ok(provider) => provider,
+            Err(err) => {
+                post_translation_entry(weak, context, Err(err), on_done, None);
+                return;
+            }
+        };
+
+        // Built only when a dictionary lookup is actually about to happen, and never
+        // fatally: a bad `dictionary_provider` value must not break translation, so
+        // it warns and takes the plain-translation path below instead.
+        let dictionary = if show_dictionary && dictionary::is_single_word(&text) {
+            match provider_cache::dictionary_provider(&dictionary_provider) {
+                Ok(dictionary) => Some(dictionary),
+                Err(e) => {
+                    eprintln!("Dictionary provider unavailable ({e}); dictionary lookups disabled");
                     None
-                };
-
-            if let Some(dictionary_provider) = dictionary_provider {
-                let (translate_result, dict_result) = tokio::join!(
-                    provider.translate_text(&request_text, &from_code, &to_code),
-                    dictionary_provider.lookup(&request_text, &from_code, &to_code),
-                );
-
-                match dict_result {
-                    Ok(Some(entry)) => {
-                        let primary = translate_result.as_deref().ok();
-                        // Stage 13: `article_template` and `body` (the plain-text
-                        // equivalent used unchanged since before this stage) are both
-                        // derived from `entry` independently -- see
-                        // `dictionary::article_lines`'s own doc comment for why that
-                        // can never let the two drift apart.
-                        let article_template = dictionary::to_template(&dictionary::article_lines(
-                            &entry, &to_code, primary,
-                        ));
-                        let mut body = String::new();
-                        let mut template = article_template;
-                        if spell_check {
-                            if let Some(corrected) = &entry.corrected_word {
-                                if corrected.to_lowercase() != request_text.to_lowercase() {
-                                    body.push_str(&dictionary::correction_notice(
-                                        corrected, &to_code,
-                                    ));
-                                    body.push('\n');
-                                    let notice_template =
-                                        dictionary::correction_notice_template(corrected, &to_code);
-                                    template = format!("{notice_template}\n{template}");
-                                }
-                            }
-                        }
-                        body.push_str(&dictionary::format_dictionary_entry(
-                            &entry, &to_code, primary,
-                        ));
-                        let speech_text =
-                            dictionary::primary_line(&entry, primary).unwrap_or_default();
-                        Ok((body, speech_text, template, true))
-                    }
-                    // No dictionary entry (word not found / provider returned None) or a
-                    // dictionary-lookup error: fall back to the plain translation already
-                    // fetched above rather than a second network call -- `translate_result`
-                    // is already the exact `Result<String, tagent::error::Error>` this
-                    // function needs to return.
-                    _ => translate_result.map(|t| {
-                        let template = styled::escape_markdown(&t);
-                        (t.clone(), t, template, false)
-                    }),
                 }
-            } else {
-                provider
-                    .translate_text(&request_text, &from_code, &to_code)
-                    .await
-                    .map(|t| {
-                        let template = styled::escape_markdown(&t);
-                        (t.clone(), t, template, false)
-                    })
             }
-        });
+        } else {
+            None
+        };
 
-        slint::invoke_from_event_loop(move || {
-            // `translation_body_template` is the un-prefixed body (a dictionary
-            // article's role-tagged template, or the escaped plain translation/error
-            // message) -- kept separately for the popup, which adds its own `[label]:`
-            // prefix under its own `popup_show_prompt` setting.
-            let (translation_raw, translation_speech, is_error, translation_body_template) =
-                match &result {
-                    Ok((body, speech_text, body_template, _)) => (
-                        body.clone(),
-                        speech_text.clone(),
-                        false,
-                        body_template.clone(),
-                    ),
-                    Err(err) => {
-                        let message = format!("Error: {err}");
-                        let body_template = styled::escape_markdown(&message);
-                        (message.clone(), message, true, body_template)
-                    }
-                };
-            let dictionary_hit = matches!(&result, Ok((_, _, _, true)));
-            let translation_label =
-                translation_label(dictionary_hit, &translate_name, &dictionary_name);
-            // The prompt is the block's speak button (app.slint), so it carries the
-            // speaker glyph's marker wherever there's something to speak.
-            let translation_full_template = styled::translation_template_from_body(
-                show_prompt,
-                &translation_label,
-                &translation_body_template,
-                is_error,
-                !translation_speech.is_empty(),
-            );
-            let phrase_full_template =
-                styled::phrase_template(show_prompt, &phrase_label, &text, !text.is_empty());
+        let Some(dictionary) = dictionary else {
+            let result = provider
+                .translate_text(&text, &from_code, &to_code)
+                .await
+                .map(plain_body);
+            post_translation_entry(weak, context, result, on_done, None);
+            return;
+        };
 
-            // Stage 13: each block's `pos`/`synonym`/`notice`/`error` are derived
-            // from *that block's own* resolved background (decision 5); `prompt` is
-            // instead the one shared, user-configurable `prompt-accent` (2026-09-22)
-            // -- read from the window when it's still alive; the fallback only
-            // matters in the rare case the window was closed in the moment between
-            // the translation finishing and this callback running, since the entry
-            // built below is then never actually pushed.
-            let window = weak.upgrade();
-            let prompt_hex = window
-                .as_ref()
-                .map(|w| color_to_hex(w.get_prompt_accent()))
-                .unwrap_or_else(|| styled::LIGHT_THEME_DEFAULT_PROMPT.to_string());
-            let phrase_colors = styled::RoleColors::new(
-                window
-                    .as_ref()
-                    .map(|w| w.get_phrase_background())
-                    .unwrap_or_default(),
-                prompt_hex.clone(),
-            );
-            let translation_colors = styled::RoleColors::new(
-                window
-                    .as_ref()
-                    .map(|w| w.get_translation_background())
-                    .unwrap_or_default(),
-                prompt_hex,
-            );
-            let fields = styled::entry_fields(
-                phrase_full_template,
-                translation_full_template,
-                text.clone(),
-                translation_raw.clone(),
-                &phrase_colors,
-                &translation_colors,
-                window.as_ref().is_some_and(|w| w.get_tts_enabled()),
-            );
+        let translate = provider.translate_text(&text, &from_code, &to_code);
+        let lookup = dictionary.lookup(&text, &from_code, &to_code);
+        tokio::pin!(translate, lookup);
+        let (translate_result, early_lookup) = tokio::select! {
+            translated = &mut translate => (translated, None),
+            looked_up = &mut lookup => ((&mut translate).await, Some(looked_up)),
+        };
+        let early_lookup = match early_lookup {
+            Some(looked_up) => Some(looked_up),
+            None if translate_result.is_ok() => tokio::time::timeout(DICTIONARY_GRACE, &mut lookup)
+                .await
+                .ok(),
+            None => None,
+        };
 
-            let entry = TranscriptEntry {
-                phrase: format_line(show_prompt, &phrase_label, &text).into(),
-                translation: if is_error {
-                    translation_raw.clone().into()
-                } else {
-                    format_line(show_prompt, &translation_label, &translation_raw).into()
-                },
-                phrase_speech: text.clone().into(),
-                translation_speech: if is_error {
-                    String::new().into()
-                } else {
-                    translation_speech.clone().into()
-                },
-                from_code: from_code_for_entry.into(),
-                to_code: to_code_for_entry.into(),
-                translation_is_error: is_error,
-                phrase_template: fields.phrase_template.into(),
-                translation_template: fields.translation_template.into(),
-                phrase_styled: fields.phrase_styled,
-                translation_styled: fields.translation_styled,
-                phrase_copy: fields.phrase_copy.into(),
-                translation_copy: fields.translation_copy.into(),
-                phrase_prompt: if show_prompt {
-                    phrase_label.clone().into()
-                } else {
-                    "".into()
-                },
-                translation_prompt: if show_prompt && !is_error {
-                    translation_label.clone().into()
-                } else {
-                    "".into()
-                },
-            };
-            let outcome = TranslationOutcome {
-                phrase_label: phrase_label.clone(),
-                translation_label,
-                phrase_raw: text.clone(),
-                translation_raw,
-                translation_body_template,
-                is_error,
-            };
-            if let Some(on_done) = on_done {
-                on_done(&entry, &outcome);
+        match (early_lookup, translate_result) {
+            (Some(dict_result), translate_result) => {
+                let result = dictionary_or_plain(
+                    dict_result,
+                    translate_result,
+                    spell_check,
+                    &text,
+                    &to_code,
+                );
+                post_translation_entry(weak, context, result, on_done, None);
             }
-            if let Some(window) = window {
-                push_transcript_entry(&window, entry);
+            (None, Ok(translation)) => {
+                let provisional = ProvisionalRow::default();
+                post_translation_entry(
+                    weak.clone(),
+                    context.clone(),
+                    Ok(plain_body(translation.clone())),
+                    on_done,
+                    Some(provisional.clone()),
+                );
+                // A miss or a lookup error leaves the plain translation as it is.
+                if let Ok(Some(entry)) = lookup.await {
+                    let result = Ok(article_body(
+                        &entry,
+                        Some(&translation),
+                        spell_check,
+                        &text,
+                        &to_code,
+                    ));
+                    post_translation_upgrade(weak, context, result, provisional, on_upgrade);
+                }
             }
-        })
-        .ok();
+            // The translation failed: the article (if any) is all there is to show,
+            // so wait for it.
+            (None, Err(err)) => {
+                let result =
+                    dictionary_or_plain(lookup.await, Err(err), spell_check, &text, &to_code);
+                post_translation_entry(weak, context, result, on_done, None);
+            }
+        }
     });
 }
 
@@ -3463,6 +3719,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 to_code,
                 text,
             },
+            None,
             None,
         );
         true
@@ -4622,8 +4879,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     let weak2 = weak.clone();
                     let weak_for_popup = weak.clone();
+                    let weak_for_upgrade = weak.clone();
                     let is_processing2 = is_processing.clone();
                     let popup_weak2 = popup_weak.clone();
+                    let popup_weak_for_upgrade = popup_weak.clone();
                     std::thread::spawn(move || {
                         match ClipboardManager::new().get_selected_text() {
                             Ok(text) if !text.trim().is_empty() => {
@@ -4664,6 +4923,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             remembered_popup_position,
                                             speakers,
                                         );
+                                    })),
+                                    // The dictionary article that replaced the plain
+                                    // translation in `index`: into the popup too, if it
+                                    // still shows that row.
+                                    Some(Box::new(move |entry: &TranscriptEntry, outcome: &TranslationOutcome, index: usize| {
+                                        let (Some(window), Some(popup)) =
+                                            (weak_for_upgrade.upgrade(), popup_weak_for_upgrade.upgrade())
+                                        else {
+                                            return;
+                                        };
+                                        let speakers = PopupSpeakers::for_entry(
+                                            entry,
+                                            index as i32,
+                                            window.get_tts_enabled(),
+                                        );
+                                        upgrade_popup(&popup, outcome, popup_show_prompt, speakers);
                                     })),
                                 );
                             }
@@ -5986,5 +6261,97 @@ mod tests {
             "Text-to-speech is off (Settings > General)"
         );
         assert_eq!(fixture.window.get_transcript_entries().row_count(), 1);
+    }
+
+    /// A provisional row is upgraded only while the transcript it was pushed into is
+    /// still there: not after `/clear` (a new epoch), and never past the end.
+    #[test]
+    fn provisional_row_index_rejects_a_cleared_or_missing_row() {
+        assert_eq!(provisional_row_index(Some((2, 5)), 5, 3), Some(2));
+        // `/clear` since: a new row with the same index isn't ours.
+        assert_eq!(provisional_row_index(Some((2, 5)), 6, 3), None);
+        assert_eq!(provisional_row_index(Some((2, 5)), 5, 2), None);
+        // Not pushed (the window was gone).
+        assert_eq!(provisional_row_index(None, 5, 3), None);
+    }
+
+    fn house_entry() -> tagent::providers::DictionaryEntry {
+        use tagent::providers::{Definition, DictionaryEntry, PartOfSpeechEntry};
+        DictionaryEntry::new(
+            "house",
+            vec![PartOfSpeechEntry::new(
+                "noun",
+                vec![Definition::new("дом", vec!["home".to_string()])],
+            )],
+        )
+    }
+
+    /// Once both requests of a single word are in: the article on a hit, otherwise
+    /// the translation already fetched -- also when the lookup failed, and the
+    /// article alone when the translation did.
+    #[test]
+    fn dictionary_or_plain_prefers_the_article_and_falls_back_to_the_translation() {
+        let network = || tagent::error::Error::Network("offline".to_string());
+
+        let hit = dictionary_or_plain(
+            Ok(Some(house_entry())),
+            Ok("дом".into()),
+            true,
+            "house",
+            "ru",
+        )
+        .unwrap();
+        assert!(hit.3, "a hit is a dictionary body");
+        assert_eq!(hit.1, "дом", "speech is the primary translation only");
+
+        for dict_result in [Ok(None), Err(network())] {
+            let plain =
+                dictionary_or_plain(dict_result, Ok("дом".into()), true, "house", "ru").unwrap();
+            assert_eq!(plain, plain_body("дом".to_string()));
+        }
+
+        let article_only =
+            dictionary_or_plain(Ok(Some(house_entry())), Err(network()), true, "house", "ru")
+                .unwrap();
+        assert!(article_only.3);
+        assert!(dictionary_or_plain(Ok(None), Err(network()), true, "house", "ru").is_err());
+    }
+
+    /// The article replaces the plain translation in a visible popup that still shows
+    /// its row, and nowhere else.
+    #[test]
+    fn upgrade_popup_replaces_only_its_own_rows_content() {
+        i_slint_backend_testing::init_no_event_loop();
+        let popup = TranslationPopup::new().unwrap();
+        let outcome = |translation: &str, label: &str| TranslationOutcome {
+            phrase_label: "en → ru".to_string(),
+            translation_label: label.to_string(),
+            phrase_raw: "house".to_string(),
+            translation_raw: translation.to_string(),
+            translation_body_template: styled::escape_markdown(translation),
+            is_error: false,
+        };
+        let speakers = |entry_index| PopupSpeakers {
+            entry_index,
+            phrase: true,
+            translation: true,
+        };
+        let article = "дом
+noun: дом";
+
+        set_popup_content(&popup, &outcome("дом", "google"), true, speakers(2));
+        // Hidden: nothing to upgrade.
+        upgrade_popup(&popup, &outcome(article, "google"), true, speakers(2));
+        assert_eq!(popup.get_translation_copy(), "дом");
+
+        popup.show().unwrap();
+        // A later translation's row took the popup over.
+        upgrade_popup(&popup, &outcome(article, "google"), true, speakers(1));
+        assert_eq!(popup.get_translation_copy(), "дом");
+
+        upgrade_popup(&popup, &outcome(article, "dict"), true, speakers(2));
+        assert_eq!(popup.get_translation_copy(), article);
+        assert_eq!(popup.get_translation_prompt(), "dict");
+        assert_eq!(popup.get_entry_index(), 2);
     }
 }

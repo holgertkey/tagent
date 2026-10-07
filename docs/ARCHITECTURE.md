@@ -151,8 +151,8 @@ the old single-crate `tagent`).
     untouched) then returns `Err` before any network call, and the callers' existing
     fallback to plain translation runs. `tagent-gui`'s `spawn_translation` builds it only
     inside the `show_dictionary && is_single_word` branch and, on `Err`, warns to stderr
-    and takes the plain-`translate_text` path (no `join!`). An `Err` or `Ok(None)` from a
-    lookup that did run still reuses the translation fetched by the same `join!`, never a
+    and takes the plain-`translate_text` path (no lookup). An `Err` or `Ok(None)` from a
+    lookup that did run still reuses the translation fetched alongside it, never a
     second request.
   - **Deliberately left out**: a second backend or any enrichment of Google's parse (its
     `ex`/`md`/`ss`/`rw`/`rm`/`ld` blocks stay unparsed); credentials/options plumbing
@@ -564,11 +564,15 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   Settings dialog bullet below). The `translate-requested` Slint callback calls
   `check_and_reload()` and clones the current `translate_provider` synchronously (on
   the UI thread, before spawning any work) — so a hand-edited config file is picked up
-  on the *next* translation, no restart needed — then spawns a plain OS thread with its
-  own fresh `tokio::runtime::Runtime`, calls
-  `tagent::providers::create_provider(&translate_provider)`, calls
-  `provider.translate_text(...)`, then marshals the result back onto the Slint UI thread
-  via `slint::invoke_from_event_loop`. The two language `ComboBox`es have separate
+  on the *next* translation, no restart needed — then spawns a task on the process-wide
+  Tokio runtime (`provider_cache::runtime()`), takes the translate provider from
+  `provider_cache::translate_provider` (built once and reused while the profile name and
+  options stay the same, so translations less than about a minute apart share one HTTP
+  connection; reqwest closes an idle pooled connection after 90 s — before `0.15.0+027`
+  every translation built a new provider on a fresh runtime and paid a new TLS
+  handshake, about 0.1 s per Google request), calls `provider.translate_text(...)`,
+  then marshals the result back onto the Slint UI thread via
+  `slint::invoke_from_event_loop`. The two language `ComboBox`es have separate
   models (`SOURCE_LANGUAGES`/`TARGET_LANGUAGES` in `main.rs`, set by
   `init_language_models`): "Auto" is only in the source list, so a `to == "auto"`
   request can't be produced (since 0.14.0+018; it used to be rejected with an
@@ -1321,18 +1325,29 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   translation.
   - Inside `spawn_translation`'s async block: when `show_dictionary` is on and
     `dictionary::is_single_word` accepts the (trimmed) text, `provider.translate_text`
-    and `dictionary_provider.lookup` run concurrently via `tokio::join!`
-    (mirroring `tagent-cli`'s `Translator::get_dictionary_entry`). On
+    and `dictionary_provider.lookup` run concurrently (like `tagent-cli`'s
+    `Translator::get_dictionary_entry`), but since `0.15.0+027` the UI doesn't wait for
+    both: Google's lookup asks for spell checking (`dt=qca`), which alone makes it
+    0.3-0.6 s slower than the translation. Once the translation is in and the lookup
+    hasn't landed within `DICTIONARY_GRACE` (50 ms), the plain translation is pushed as
+    a *provisional* row (and the hotkey's `on_done` shows it in the popup); when the
+    lookup then hits, `post_translation_upgrade` replaces that row in place
+    (`set_row_data`) and `on_upgrade` puts the article into the popup
+    (`upgrade_popup`, which neither moves the popup nor touches
+    `POPUP_RESTORE_TARGET`, and only acts while the popup still shows that row). The
+    row is found again by the index and `TRANSCRIPT_EPOCH` recorded when it was pushed;
+    `/clear` bumps the epoch, so a late article never lands in a newer row. A miss or a
+    lookup error leaves the provisional row as final; a failed translation waits for
+    the lookup and shows the article (or the error) as one entry. On
     `Ok(Some(entry))`, the block's text is `format_dictionary_entry`'s output,
     with `spell_check`'s correction notice (`dictionary::correction_notice`)
     prepended when the provider silently corrected a misspelling. On a
     dictionary miss or lookup error, the fallback is the `translate_result`
-    already sitting in hand from the same `join!` — **not** a second network
-    call, unlike `tagent-cli`'s own fallback (which re-fetches because its
-    dictionary lookup and its regular-translation path are two separate
-    functions with no shared result to reuse — `spawn_translation` has both
-    results as the identical `Result<String, tagent::error::Error>` type from
-    one `join!`, so the miss case is just `_ => translate_result`).
+    fetched alongside the lookup — **not** a second network call, unlike
+    `tagent-cli`'s own fallback (which re-fetches because its dictionary lookup and
+    its regular-translation path are two separate functions with no shared result to
+    reuse — `spawn_translation`'s `dictionary_or_plain` has both results in hand, so
+    the miss case is just `_ => translate_result`).
   - `format_dictionary_entry` deliberately omits the looked-up word as its own
     line (unlike `tagent-cli`'s `cli_mode: false` branch, which is otherwise
     unused dead code in that crate) — `tagent-gui`'s two-pane phrase/translation
