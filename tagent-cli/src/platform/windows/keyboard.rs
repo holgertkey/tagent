@@ -438,8 +438,16 @@ impl KeyboardHook {
                 return Err("Failed to set keyboard hook".into());
             }
 
-            loop {
-                // Check if we should exit
+            // Windows calls a WH_KEYBOARD_LL hook only while the installing thread waits
+            // for messages, so the loop waits in MsgWaitForMultipleObjectsEx (woken by
+            // any message, a hook call included) and drains the queue with PeekMessageW,
+            // which is where the hook runs; the timeout only bounds how long a set
+            // `should_exit` goes unnoticed. This used to sleep 10 ms whenever the queue
+            // was empty, which held up every keystroke in the system by up to 10 ms while
+            // tagent-cli ran, and made each key the clipboard copy simulates cost about
+            // that much (measured in tagent-gui, which had the same loop: ~50 ms for its
+            // five modifier releases, ~40 ms for Ctrl+C).
+            'message_loop: loop {
                 if let Some(should_exit) = SHOULD_EXIT.get() {
                     if should_exit.load(Ordering::Relaxed) {
                         break;
@@ -447,31 +455,18 @@ impl KeyboardHook {
                 }
 
                 let mut msg = MSG::default();
-
-                // Use PeekMessage instead of GetMessage to avoid blocking
-                let has_message = PeekMessageW(
-                    &mut msg,
-                    HWND::default(),
-                    0,
-                    0,
-                    PEEK_MESSAGE_REMOVE_TYPE(1u32),
-                );
-
-                if has_message.as_bool() {
-                    match msg.message {
-                        WM_QUIT => {
-                            println!("WM_QUIT received, exiting");
-                            break;
-                        }
-                        _ => {
-                            TranslateMessage(&msg);
-                            DispatchMessageW(&msg);
-                        }
+                while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                    if msg.message == WM_QUIT {
+                        println!("WM_QUIT received, exiting");
+                        break 'message_loop;
                     }
-                } else {
-                    // No message available, sleep briefly to avoid busy waiting
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
                 }
+
+                // MWMO_INPUTAVAILABLE: also return for input already in the queue, not
+                // only for input that arrived after the last PeekMessageW.
+                MsgWaitForMultipleObjectsEx(None, 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             }
 
             UnhookWindowsHookEx(hook)?;

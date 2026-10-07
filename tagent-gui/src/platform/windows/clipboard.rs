@@ -1,6 +1,8 @@
 use super::keycodes::is_key_pressed;
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
+use std::num::NonZeroU32;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -35,8 +37,12 @@ impl ClipboardManager {
         }
     }
 
-    /// Automatically copy selected text (simulate Ctrl+C)
-    pub fn copy_selected_text(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    /// Automatically copy selected text (simulate Ctrl+C), then wait up to
+    /// [`CLIPBOARD_CHANGE_TIMEOUT`] for the app to write the clipboard. Returns whether it
+    /// did.
+    pub fn copy_selected_text(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        // Taken before anything is sent: `WM_COPY` alone may already write the clipboard.
+        let sequence_before = clipboard_win::seq_num();
         unsafe {
             // Capture the foreground window as the very first thing, before any sleep or
             // simulated input -- by the time those run, focus may already have moved.
@@ -152,12 +158,13 @@ impl ClipboardManager {
             ];
 
             SendInput(&ctrl_c_inputs, std::mem::size_of::<INPUT>() as i32);
-
-            // Wait for clipboard to update
-            std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
-        Ok(())
+        Ok(wait_for_clipboard_change(
+            clipboard_win::seq_num,
+            sequence_before,
+            CLIPBOARD_CHANGE_TIMEOUT,
+        ))
     }
 
     /// Helper function to create keyboard input structure for SendInput
@@ -203,33 +210,110 @@ impl ClipboardManager {
     ///
     /// Some apps don't reliably pick up the simulated Ctrl+C/WM_COPY on the first attempt --
     /// the clipboard is left untouched, so this would otherwise silently return whatever was
-    /// already there before this was called. Detects that by snapshotting the clipboard
-    /// beforehand and retrying `copy_selected_text` a bounded number of times until its
-    /// content actually changes. Re-copying the exact same text the clipboard already held
-    /// (e.g. clicking "Copy" twice on an unchanged selection) looks identical to a failed
-    /// copy here and pays the same retries, but that's a rare, harmless case -- a few
-    /// hundred ms of extra latency, not a wrong result.
+    /// already there. `copy_selected_text` reports whether the clipboard changed (its
+    /// sequence number, which any write bumps), and the copy is retried a bounded number of
+    /// times until it does. Copying the same text the clipboard already held still counts
+    /// as a change, so it costs no retries. If nothing was ever copied, the clipboard's
+    /// current text is returned, as before.
     pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         const MAX_ATTEMPTS: u32 = 3;
 
-        let before = self.get_text().unwrap_or_default();
-
-        let mut last_result = String::new();
-        for attempt in 1..=MAX_ATTEMPTS {
-            self.copy_selected_text()?;
-            last_result = self.get_text()?;
-
-            if last_result != before || attempt == MAX_ATTEMPTS {
-                break;
+        for _ in 0..MAX_ATTEMPTS {
+            if self.copy_selected_text()? {
+                return self.read_text_after_change();
             }
         }
 
-        Ok(last_result)
+        self.get_text()
+    }
+
+    /// Reads the clipboard's text right after another app wrote it. That app may still
+    /// hold the clipboard open for a moment (the sequence number changes when it empties
+    /// the clipboard, before it sets the text and closes it), so a failed read is retried
+    /// briefly.
+    fn read_text_after_change(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let deadline = Instant::now() + Duration::from_millis(100);
+        loop {
+            match self.get_text() {
+                Ok(text) => return Ok(text),
+                Err(err) if Instant::now() >= deadline => return Err(err),
+                Err(_) => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
     }
 
     /// The text currently selected in whatever app has it, for the global hotkeys: the
     /// same as [`Self::get_text_with_copy`] here (Linux reads PRIMARY on Wayland).
     pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
         self.get_text_with_copy()
+    }
+}
+
+/// How long [`ClipboardManager::copy_selected_text`] waits for the app to put the copied
+/// text on the clipboard before counting the attempt as failed. The apps measured
+/// (Sublime Text, Obsidian, Chrome) had done it by the time the simulated Ctrl+C's
+/// `SendInput` returned; this leaves room for slow ones. It used to be a fixed 100 ms
+/// wait, after which the clipboard was read whether the app had written it or not.
+const CLIPBOARD_CHANGE_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// Polls `sequence_number` (the clipboard's, in practice: `clipboard_win::seq_num`) until
+/// it differs from `before` or `timeout` passes; returns whether it changed.
+fn wait_for_clipboard_change(
+    mut sequence_number: impl FnMut() -> Option<NonZeroU32>,
+    before: Option<NonZeroU32>,
+    timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if sequence_number() != before {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(test)]
+mod clipboard_change_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn seq(n: u32) -> Option<NonZeroU32> {
+        NonZeroU32::new(n)
+    }
+
+    #[test]
+    fn wait_for_clipboard_change_returns_once_the_sequence_number_moves() {
+        let polls = Cell::new(0);
+        let changed = wait_for_clipboard_change(
+            || {
+                polls.set(polls.get() + 1);
+                if polls.get() < 3 {
+                    seq(7)
+                } else {
+                    seq(8)
+                }
+            },
+            seq(7),
+            Duration::from_secs(5),
+        );
+        assert!(changed);
+        assert_eq!(polls.get(), 3);
+    }
+
+    #[test]
+    fn wait_for_clipboard_change_gives_up_after_the_timeout() {
+        let started = Instant::now();
+        let changed = wait_for_clipboard_change(|| seq(7), seq(7), Duration::from_millis(30));
+        assert!(!changed);
+        assert!(started.elapsed() >= Duration::from_millis(30));
+    }
+
+    #[test]
+    fn wait_for_clipboard_change_counts_a_first_write_as_a_change() {
+        // No sequence number before (never written), one now.
+        assert!(wait_for_clipboard_change(|| seq(1), None, Duration::ZERO));
     }
 }

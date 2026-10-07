@@ -210,6 +210,13 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+028) **The hotkeys copy the selection faster on Windows**, about 0.2 s sooner. The
+  keyboard hook's thread used to check for messages every 10 ms, and Windows runs the
+  hook only when that thread looks, so every keystroke in the system waited up to 10 ms
+  while `tagent-cli` ran -- including each key of the simulated Ctrl+C. And after the
+  Ctrl+C, `tagent-cli` now waits until the app has put the text on the clipboard
+  (usually at once) instead of a fixed 100 ms. Copying the same text again no longer
+  takes three attempts (about 1.5 s).
 - (+026) Auto-detection is shown as just `Auto`, without a `(auto)` code after it: the
   banner's and `/l`'s language pair reads `Auto -> Russian (ru)`, and `--help`'s language
   list starts with `Auto`.

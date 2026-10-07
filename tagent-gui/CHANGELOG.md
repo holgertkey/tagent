@@ -252,6 +252,13 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+028) **The hotkeys copy the selection faster on Windows**, in about 0.31 s instead of
+  0.51 s. The keyboard hook's thread used to check for messages every 10 ms, and Windows
+  runs the hook only when that thread looks, so every keystroke in the system waited up
+  to 10 ms while Tagent ran -- including each key of the simulated Ctrl+C. And after
+  the Ctrl+C, Tagent now waits until the app has put the text on the clipboard (usually
+  at once) instead of a fixed 100 ms. Copying the same text again no longer takes three
+  attempts (about 1.5 s).
 - (+027) **Translations show up sooner.** A single word no longer waits for its dictionary
   article: the plain translation appears in the transcript and the popup as soon as it
   arrives, and the article replaces it in place when it follows (Google's spell-checking

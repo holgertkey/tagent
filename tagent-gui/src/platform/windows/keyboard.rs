@@ -400,27 +400,20 @@ impl KeyboardHook {
             return Err("Failed to set keyboard hook".into());
         }
 
+        // Blocks in GetMessageW, which is also where Windows calls the low-level hook: it
+        // calls a WH_KEYBOARD_LL hook only while the installing thread waits for messages.
+        // This used to poll with PeekMessageW and sleep 10 ms when the queue was empty,
+        // which held up every keystroke in the system by up to 10 ms while tagent-gui ran,
+        // and made each key the clipboard copy simulates cost about that much (measured:
+        // ~50 ms for its five modifier releases, ~40 ms for Ctrl+C).
+        let mut msg = MSG::default();
         loop {
-            let mut msg = MSG::default();
-
-            // Use PeekMessage instead of GetMessage to avoid blocking indefinitely.
-            let has_message = PeekMessageW(
-                &mut msg,
-                HWND::default(),
-                0,
-                0,
-                PEEK_MESSAGE_REMOVE_TYPE(1u32),
-            );
-
-            if has_message.as_bool() {
-                if msg.message == WM_QUIT {
-                    break;
-                }
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            } else {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+            // 0 is WM_QUIT, -1 an error; neither leaves anything to wait for.
+            if GetMessageW(&mut msg, HWND::default(), 0, 0).0 <= 0 {
+                break;
             }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
 
         UnhookWindowsHookEx(hook)?;
