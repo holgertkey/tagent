@@ -185,6 +185,11 @@ Candidates, not yet scheduled; the order is a suggestion.
 12. ~~**Slash commands in the input box.**~~ Done in 0.15.0+018 (2026-10-06): see "Slash
     commands in the input box" in `docs/ARCHITECTURE.md`. Follow-up, not scheduled: Tab
     completion.
+13. **Hotkey latency.** Planned 2026-10-07: make the hotkey translation as fast as the
+    provider allows. Steps 0 and 1 are done (0.15.0+027, +028: reused providers, plain
+    translation before the dictionary article, the hook's message loop, the clipboard
+    wait). Next: no fixed sleeps for hotkeys without Alt, then the Alt path, then Linux;
+    see [below](#planned-stage--hotkey-latency-selection-copy).
 
 ### Planned stage — Provider profiles tab
 
@@ -468,6 +473,195 @@ and 200 on the main window, the Settings dialog and the popup (nothing clipped, 
 opens big enough; a size saved at 100 % reopens 1.5× larger at 150 %, at the same
 position); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
 check on a 100 % and a 150 % display setting.
+
+### Planned stage — Hotkey latency (selection copy)
+
+**Status:** planned 2026-10-07 (decided with the maintainer the same day). Steps 0 and 1
+are done; steps 2–5 are open. Windows first; Linux follows as its own step. Once all steps
+have shipped and been checked, condense this section to a row of the "Shipped stages"
+table.
+
+**Goal.** Make the global translate (and speech) hotkey feel immediate: the time from
+the key press to the popup should be the provider's round trip, not our own waits. The
+fixed sleeps around the simulated Ctrl+C are the target. Alt-based hotkeys are treated
+separately from all other hotkeys: only Alt has the menu-mode problem behind the
+swallow-and-replay mechanism, and that path took five attempts to get right
+(`tagent-cli/CHANGELOG.md`, 0.16.0+004 to +007).
+
+**Measured (Windows, Google, Alt+A; Sublime Text, Obsidian, Chrome; 2026-10-07).**
+Before this stage, a hotkey translation took 0.65–1.0 s for a phrase and 1.0–1.4 s for
+a single word:
+
+| Phase | Before | Now | Notes |
+|---|---|---|---|
+| Hotkey → config → UI | ~4 ms | ~4 ms | negligible |
+| Selection copy | ~510 ms | ~308 ms | see the breakdown below |
+| Translation request | 150–210 ms | ~60 ms in a row | new TLS connection on every request before |
+| Dictionary lookup (single word) | +370–600 ms after the translation | shown after the translation | Google's `dt=qca` (spell check) alone costs 0.4–0.8 s |
+| Popup and transcript | 20–90 ms (debug build) | same | |
+
+Selection copy, step by step (`copy_selected_text`, before step 1):
+
+| Step | Time | Finding |
+|---|---|---|
+| Initial sleep | 100 ms | Alt was already released when the copy started, in every run |
+| Wait for Alt release | ~4 ms | nothing to wait for (the hook swallowed Alt) |
+| Settle sleep after Alt | 100 ms | |
+| `WM_CANCELMODE` | ~4 ms | |
+| Shift/Win key-ups via `SendInput` | ~50 ms | 10 ms per injected key: the hook thread's poll loop (fixed in step 1) |
+| Sleep after the key-ups | 100 ms | |
+| `WM_COPY` | ~3 ms | none of the three apps acts on it |
+| Ctrl+C via `SendInput` | ~40 ms | same 10 ms per key |
+| Fixed wait for the clipboard | 100 ms | the clipboard had already changed when the wait began |
+
+**Ground rules for every step.**
+- Measure first, with temporary `eprintln!("[clip] ...")` timing on the steps involved;
+  never commit the instrumentation. The maintainer runs
+  `.\target\debug\tagent-gui.exe | Out-Host` and presses the hotkey in real apps.
+- `tagent-gui` and `tagent-cli` have separate copies of the clipboard and hook code
+  (Q3). Every step changes both, with both build numbers and both changelogs.
+- Don't touch the swallow-and-replay invariants listed in the `KeyboardHook` doc comment
+  (no `RegisterHotKey`, the `LLKHF_INJECTED` check first, every swallowed Alt resolved),
+  except in step 3, which is about the Alt path, with its own checks.
+- A pure decision is a function with unit tests (`wait_for_clipboard_change`,
+  `provisional_row_index`, ...). The real keypress flows are verified by the maintainer;
+  see "Testing boundary".
+
+**Step 0 — the GUI's own delays. Done in `tagent-gui` 0.15.0+027.**
+- One process-wide Tokio runtime, and a translation and a dictionary provider reused
+  while their `ProviderChoice` is unchanged (`provider_cache.rs`). Translations less than
+  about a minute apart share one HTTP connection (reqwest drops idle ones after 90 s).
+- A single word shows its plain translation first; the dictionary article replaces that
+  row in place, and upgrades the popup if it still shows that row (`upgrade_popup`,
+  `TRANSCRIPT_EPOCH` against `/clear`).
+- Result: a single-word popup in ~0.65 s instead of 1.0–1.4 s.
+
+**Step 1 — hook loop and clipboard wait, every hotkey. Done in `tagent-gui` 0.15.0+028
+and `tagent-cli` 0.17.0+028.**
+- The hook thread waits for messages (`GetMessageW` in `tagent-gui`;
+  `MsgWaitForMultipleObjectsEx` with a 50 ms timeout in `tagent-cli`, so `should_exit` is
+  still seen) instead of `PeekMessageW` + `sleep(10 ms)`. Windows runs a `WH_KEYBOARD_LL`
+  hook only while its thread waits for messages, so the old loop delayed every keystroke
+  in the system by up to 10 ms, including each simulated key.
+- After Ctrl+C, the copy waits for the clipboard's sequence number
+  (`clipboard_win::seq_num`) to change, up to 200 ms (`CLIPBOARD_CHANGE_TIMEOUT`), instead
+  of a fixed 100 ms. A changed sequence number is the success signal, so copying the
+  same text again no longer costs three attempts (~1.5 s).
+- Result: the copy takes ~308 ms instead of ~510 ms. What is left is the three 100 ms
+  sleeps.
+
+**Step 2 — hotkeys without Alt: no fixed sleeps.**
+- *Why safe:* Ctrl, Shift and Win put no window into menu mode. The settle sleep after
+  Alt, `WM_CANCELMODE` and the wait for Alt's release exist only for Alt.
+- *The real issue is held keys, not time.* A modifier still held when Ctrl+C is sent
+  changes the shortcut. Shift turns it into Ctrl+Shift+C (Chrome's element inspector).
+  Win turns it into Win+C.
+- *Decision input:* `copy_selected_text` learns whether the hotkey that fired involves
+  Alt. Add a pure, tested `uses_alt(&HotkeyType) -> bool`: a `ModifierCombo` with Alt
+  among its modifiers, or a `DoublePress` of Alt. Each hotkey closure in `main.rs` (and
+  in `tagent-cli`'s `trigger_translation`/`trigger_speech`) passes it to
+  `get_selected_text`, for example as a `CopyMode { Alt, Plain }` argument; Linux and
+  macOS accept and ignore it. The translate and speech hotkeys may differ, so the flag
+  belongs to the hotkey that fired, not to the config as a whole.
+- *Plain path:*
+  1. No initial sleep, no Alt wait, no `WM_CANCELMODE`, no settle sleep.
+  2. Release only the modifiers that are physically held (`is_key_pressed` for Shift,
+     Win and their left/right variants), not all five blindly. Ctrl is left alone: the
+     Ctrl+C sequence presses and releases it anyway.
+  3. No sleep after the key-ups. `SendInput` events are queued in order, so the key-ups
+     reach the app before the Ctrl+C. Verify this. If an app still sees the held
+     modifier, the fallback is a short wait (≤ 20 ms) after the key-ups, never a return
+     to 100 ms.
+  4. `WM_COPY`, then Ctrl+C, then the step 1 wait for the clipboard, unchanged.
+  - Expected: tens of milliseconds instead of ~300 ms.
+- *Check before relying on it:* whether the hook blocks the trigger key (`handle`
+  returns `true` for `SingleKey` and `ModifierCombo`) and whether a `DoublePress`'s
+  second press reaches the app (it isn't blocked today). A trigger key still held during
+  the Ctrl+C must not change what the app does.
+- *Test matrix (maintainer, debug build with `[clip]` timing):*
+  - Hotkeys:
+    - `Ctrl+Q` (Ctrl held: the same modifier as in our Ctrl+C);
+    - `Ctrl+Shift+T` (Shift held: the inspector case);
+    - `F9` (no modifier);
+    - `Ctrl+Ctrl` and `Shift+Shift` (double press).
+    - `Ctrl+A` also works as a test hotkey, but while it is set, Select All is
+      swallowed in every app.
+  - Apps: Sublime Text, Obsidian, Chrome, plus Notepad, Word and Firefox (the apps of
+    the Alt history), and a terminal.
+  - Each case:
+    - the right text is copied on the first attempt;
+    - no inspector, devtools or Start menu opens;
+    - the keys keep working in the app afterwards (no stuck Ctrl or Shift);
+    - the speech hotkey works too;
+    - a Russian keyboard layout is checked once.
+  - Alt+A is checked again: it must be unchanged.
+- *Tests:*
+  - `uses_alt` for every `HotkeyType` shape;
+  - the held-modifier selection as a pure function of the pressed-key states
+    (`keys_to_release(pressed) -> Vec<u16>`);
+  - `CopyMode` reaching the copy from both hotkeys.
+
+**Step 3 — the Alt path: shorter, still safe.**
+- *Evidence:* in every measured run Alt was already released when the copy started (the
+  hook had swallowed it), and the three apps copied on the first attempt.
+- *Try, one change at a time, each measured and checked:*
+  1. Drop the initial 100 ms sleep: it waits for a keystroke that the hook has already
+     handled.
+  2. Shorten the settle sleep after the Alt release from 100 ms to 20 ms, then 0 ms.
+     Keep the bounded Alt-release loop and `WM_CANCELMODE` (cheap).
+  3. Treat the modifier key-ups as in step 2 (only held keys, no sleep after them).
+  - Expected: well under 100 ms.
+- *Must hold* (the regressions the Alt history fixed):
+  - the copy works in Word, Notepad, Chrome and Firefox;
+  - after the translation, the next letter typed into the app is not taken as a menu
+    accelerator;
+  - a bare Alt tap still opens the app's menu;
+  - Alt+Tab, Alt+F4 and Alt+Space work;
+  - Alt+A in a terminal and in an Electron app (Obsidian) copies.
+- *Rollback rule:* if a change breaks any of these in any app, it goes back (all of it,
+  not a guessed in-between value). Its finding is written down here and in the
+  `KeyboardHook` doc comment.
+
+**Step 4 — Linux (X11/XWayland).**
+- *The same measurement first* (the maintainer develops on Linux). Today's waits in
+  `platform/linux/clipboard.rs`:
+  - 100 ms initial;
+  - the wait for the hotkey's trigger key release (bounded);
+  - 50 ms after the modifier releases;
+  - 100 ms after Ctrl+C.
+- *Candidates:*
+  - Replace the final 100 ms with waiting for the CLIPBOARD owner change (XFixes
+    `SelectionNotify`, or polling the selection owner/timestamp) or for `arboard` to
+    return new text, bounded like Windows.
+  - Drop the initial sleep where the trigger key wait already covers it.
+  - Check whether `rdev`'s listener thread or the `XGrabKey` thread has a poll interval
+    like Windows had.
+- *Out of scope:* Wayland reads PRIMARY and simulates no keys.
+- Both apps, as in step 2.
+
+**Step 5 — dictionary latency in `tagent` (optional, decide before starting).**
+- Google's `dt=qca` is what makes a lookup 0.4–0.8 s slower. Without it, neither
+  correction works (silent `violnt`, suggested `vialent`), so it can't simply go.
+- *Option:* the dictionary lookup asks for `qca` only when the app's `spell_check` is on
+  (a `ProviderOptions` key or a lookup parameter). That is a `tagent` API change, a
+  minor bump while pre-1.0.
+- With `spell_check` on (the default and the maintainer's setting), it changes nothing.
+  Step 0 already hides most of this cost. Do it only if users with `spell_check` off
+  ask.
+
+**Not in this stage.**
+- Reading the selection without copying through UI Automation
+  (`TextPattern.GetSelection`). Windows has no PRIMARY selection, UIA works in some apps
+  only, and a failed probe would add to the Ctrl+C fallback. Decided 2026-10-07: not
+  pursued.
+- Changing the hotkey defaults: Alt+A and Alt+S stay.
+
+**Docs.**
+- Each step gets a changelog entry in both apps.
+- `docs/ARCHITECTURE.md`: the hook loop and the copy sequence (plain vs Alt path), once
+  steps 2–3 ship.
+- The `KeyboardHook` and `ClipboardManager` doc comments: the reason for every remaining
+  wait.
 
 ## Deliberately not done (revisit only with a new reason)
 
