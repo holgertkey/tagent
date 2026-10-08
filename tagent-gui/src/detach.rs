@@ -1,7 +1,7 @@
 //! Detaching from the launching terminal (Linux/macOS).
 //!
 //! Started from a terminal, `tagent-gui` would otherwise hold it for as long as the app
-//! runs (which, with the tray, is "until Quit"). [`detach_from_terminal`] re-launches the
+//! runs (which, with the tray, is "until Exit"). [`detach_from_terminal`] re-launches the
 //! executable as a new session leader with no controlling terminal, sends its
 //! stdout/stderr to a log file, and lets the original process exit so the shell prompt
 //! comes back at once. Windows needs none of this: `main.rs` builds a GUI-subsystem

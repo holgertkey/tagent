@@ -252,6 +252,7 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+033) **The tray menu says "Exit" instead of "Quit"**, the usual word on Windows.
 - (+032) **Hotkeys with Alt copy the selection at once on Windows too**, such as the
   default `Alt+A` and `Alt+S`: the copy takes a few milliseconds (measured 3-42 ms; the
   longer ones wait for Alt to be let go) instead of about 0.31 s. The three 100 ms waits

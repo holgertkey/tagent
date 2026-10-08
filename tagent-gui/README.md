@@ -20,7 +20,7 @@ version: its own interface, settings and versions. They share only the `tagent` 
 - **Dictionary** for single words, with synonyms and spelling correction.
 - **Providers**: Google by default (no setup), DeepL, or a local or cloud language model (Ollama, LM Studio, OpenAI, ...), separately for translation, the dictionary and speech; switch them from the window for a session.
 - **Settings dialog**: themes and color schemes, fonts, the popup's look, hotkeys, provider profiles with a Test button.
-- **System tray**: starts minimized; closing the window hides it; Quit is in the tray menu.
+- **System tray**: starts minimized; closing the window hides it; Exit is in the tray menu.
 
 Windows and Linux. On Linux the hotkeys, the popup and the clipboard features need X11 or
 XWayland; on a pure Wayland session and on macOS, the window, dictionary, speech and tray

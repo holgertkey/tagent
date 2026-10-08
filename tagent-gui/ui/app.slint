@@ -2447,7 +2447,7 @@ export component SettingsDialog inherits Dialog {
 // disappears when the instance is dropped, so no `.show()`/`.hide()` call is
 // needed (or wanted -- see below). Left-click and the "Show Tagent" menu item
 // both just ask main.rs to reveal the main window; "Settings…" reuses the
-// existing Settings dialog; "Quit" is now the only way to actually exit the
+// existing Settings dialog; "Exit" is now the only way to actually exit the
 // app, since AppWindow's own close button (main.rs) is redirected to hide
 // instead of quit.
 export component TrayIcon inherits SystemTrayIcon {
@@ -2464,6 +2464,6 @@ export component TrayIcon inherits SystemTrayIcon {
         MenuItem { title: "Show Tagent"; activated => { show-requested(); } }
         MenuItem { title: "Settings…"; activated => { settings-requested(); } }
         MenuSeparator {}
-        MenuItem { title: "Quit"; activated => { quit-requested(); } }
+        MenuItem { title: "Exit"; activated => { quit-requested(); } }
     }
 }

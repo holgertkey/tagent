@@ -60,7 +60,7 @@ pub enum Command<'a> {
     Version,
     /// `/quit` or `/q`: hide the window to the tray, as its close button does.
     Hide,
-    /// `/exit` or `/e`: quit the app, as the tray's "Quit" does.
+    /// `/exit` or `/e`: quit the app, as the tray's "Exit" does.
     Exit,
     /// A command that takes no arguments was given some: the usage line to show.
     Usage(&'static str),

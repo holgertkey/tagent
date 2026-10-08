@@ -1223,7 +1223,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     method for an ordinary `callback` (not the `public function` mechanism
     `invoke_apply_theme`/`invoke_start_hide_timer` elsewhere in this file use);
     confirmed only by the call compiling in this session, not by seeing it fire
-    at runtime (no live launch — see below). "Quit" calls
+    at runtime (no live launch — see below). "Exit" calls
     `slint::quit_event_loop()` and is now the **only** way to fully exit.
   - `AppWindow`'s own close button is redirected via
     `window.window().on_close_requested(|| slint::CloseRequestResponse::HideWindow)`
@@ -1261,12 +1261,12 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
     ([[feedback_gui_automation_risk]]) — build/test/clippy/fmt (Linux) plus
     `cargo check`/`cargo test --no-run --target x86_64-pc-windows-gnu` all
     passed, but the tray icon's actual appearance, the close-to-tray/restore
-    round trip, and Quit actually exiting were not observed running in this
+    round trip, and Exit actually exiting were not observed running in this
     session.
 - **Remember window size/position** (`GuiConfig.remember_window_geometry`/
   `window_geometry`, `main.rs`'s `show_window_restoring_geometry`/
   `save_window_geometry`, Stage 7 follow-up, shipped 2026-09-15): captured on
-  hide-to-tray (`on_close_requested`) and on Quit (only if the window is
+  hide-to-tray (`on_close_requested`) and on Exit (only if the window is
   actually visible at that moment, so a never-shown or already-hidden window
   doesn't overwrite a good saved value with nothing meaningful), restored once
   per run the first time the window is shown — later re-opens from the tray
@@ -1555,7 +1555,7 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   both apps know the same 15 languages; "Auto" is prepended to the source list only.
 - **Detaching from the terminal** (`tagent-gui/src/detach.rs`, `#[cfg(unix)]`,
   0.14.0+013): a Linux/macOS launch from a terminal would otherwise hold it until
-  Quit. First thing in `main` (before any thread exists, since it may `exit`),
+  Exit. First thing in `main` (before any thread exists, since it may `exit`),
   `detach_from_terminal()` re-spawns `current_exe()` with the same arguments plus
   `--foreground`, in a new session (`libc::setsid` in `pre_exec`, so no controlling
   terminal: no SIGHUP on terminal close, no Ctrl+C), with stdin from `/dev/null`
@@ -1762,7 +1762,7 @@ decisions live here.
 - **`/q` hides, `/exit` quits** (0.15.0+022; `tagent-cli` quits on both). A hidden window
   and a quit app look alike, and a quit takes the hotkeys with it unnoticed, so the short
   command does the reversible thing, the close button's. `hide_to_tray`/`quit_app` in
-  `main.rs` are the close button's and the tray "Quit"'s paths (`quit_app` saves the
+  `main.rs` are the close button's and the tray "Exit"'s paths (`quit_app` saves the
   geometry only from a visible window); neither writes a reply row.
 - **Known commands only.** The trimmed input is a command when its first word (split on
   any whitespace, so `/s` + Shift+Enter + text works) is in `COMMAND_NAMES`, lowercase

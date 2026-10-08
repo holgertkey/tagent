@@ -3059,7 +3059,7 @@ fn current_window_geometry(window: &AppWindow) -> config::WindowGeometry {
 /// place by itself.
 ///
 /// Nothing is captured while the window is minimized: Windows parks a minimized window
-/// at (-32000, -32000), and saving that (Quit from the tray, or the taskbar's "Close
+/// at (-32000, -32000), and saving that (Exit from the tray, or the taskbar's "Close
 /// window", while minimized) restored the window off-screen on every later start.
 fn save_window_geometry(
     window: &AppWindow,
@@ -3091,7 +3091,7 @@ fn hide_to_tray(
     window.hide().ok();
 }
 
-/// Quits the app: the tray's "Quit" and `/exit`. The geometry is saved only if the
+/// Quits the app: the tray's "Exit" and `/exit`. The geometry is saved only if the
 /// window is visible right now -- a hidden (or, with `start_minimized`, never-shown)
 /// window's position/size would just be stale or default values, which would otherwise
 /// overwrite a good saved geometry with nothing meaningful.
@@ -3338,7 +3338,7 @@ fn exit_if_already_running(socket: Option<&single_instance::SocketName>) {
 fn exit_unresponsive(socket: &single_instance::SocketName, why: &str) -> ! {
     eprintln!(
         "tagent-gui seems to be running but doesn't answer ({why}, on {socket}). \
-         Quit or kill it, then start again."
+         Exit it from the tray or kill it, then start again."
     );
     std::process::exit(1);
 }
@@ -3454,10 +3454,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let session_geometry: Rc<Cell<Option<config::WindowGeometry>>> = Rc::new(Cell::new(None));
 
     // Stage 7: redirect the OS-level close button (and Alt+F4/Cmd+Q-equivalent)
-    // to hide the window instead of quitting the app -- the tray's "Quit" item
+    // to hide the window instead of quitting the app -- the tray's "Exit" item
     // (wired below) becomes the only way to actually exit from here on. Also
     // captures the window's current position/size first, so closing it is one
-    // of the two points (the other: Quit, below) "remember window geometry"
+    // of the two points (the other: Exit, below) "remember window geometry"
     // actually saves from.
     let weak_for_close = window.as_weak();
     let config_manager_for_close = config_manager.clone();
@@ -4994,7 +4994,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // was hidden) -- the loop must now keep running even with `window` hidden,
     // whether that's from `start_minimized` at launch or from the user closing
     // it later, since `tray` (and the hotkey, if enabled) are still live. Only
-    // `tray`'s "Quit" item (`slint::quit_event_loop()`, wired above) ends it.
+    // `tray`'s "Exit" item (`slint::quit_event_loop()`, wired above) ends it.
     let start_minimized = config_manager.lock().unwrap().config().start_minimized;
     if !start_minimized {
         show_window_restoring_geometry(
