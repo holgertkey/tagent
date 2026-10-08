@@ -142,7 +142,10 @@ mod tests {
             let iconic = IsIconic(hwnd).as_bool();
             let _ = DestroyWindow(hwnd);
 
-            assert!(visible, "a minimized window must stay visible (on the taskbar)");
+            assert!(
+                visible,
+                "a minimized window must stay visible (on the taskbar)"
+            );
             assert!(iconic, "the window must be minimized");
         }
     }
