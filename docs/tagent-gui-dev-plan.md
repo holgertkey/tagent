@@ -674,6 +674,22 @@ The plan as written before it was built:
     like Windows had.
 - *Out of scope:* Wayland reads PRIMARY and simulates no keys.
 - Both apps, as in step 2.
+- *Simpler than Windows (decided with the maintainer 2026-10-08):* X11 has no Win32 menu
+  mode, so Alt needs no special path: `CopyMode` stays ignored on Linux, and the Alt
+  checks of step 3 (menu accelerator, bare Alt tap, Alt+Tab/F4/Space) don't apply. What
+  does matter here is different:
+  - *The trigger-key wait stays.* It is a correctness wait, not a timing one: while the
+    `XGrabKey` hotkey's key is down, the active grab sends every key event, the fake
+    Ctrl+C included, to `tagent` instead of the app.
+  - *The final wait needs a success signal,* like the clipboard sequence number on
+    Windows; polling `arboard` for new text fails when the same text is copied again.
+    XFixes (`XFixesSelectSelectionInput` on CLIPBOARD) reports every new ownership,
+    even by the same app, and needs the `xfixes` feature of the `x11` crate.
+- *Checks per change:* the right text on the first attempt, and the keys typed afterwards
+  behave normally (no stuck Ctrl, Shift or Alt), with one Alt hotkey (`Alt+A`) and one
+  without (`Ctrl+Shift+T` or `F9`), in a GTK app (GNOME Text Editor), Firefox or Chrome, an
+  Electron app (Obsidian) and Sublime Text; a Russian layout once. Terminals copy with
+  Ctrl+Shift+C, which the copy doesn't send today; that stays out of this step.
 
 **Step 5 — dictionary latency in `tagent` (optional, decide before starting).**
 - Google's `dt=qca` is what makes a lookup 0.4–0.8 s slower. Without it, neither
