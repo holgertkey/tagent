@@ -210,6 +210,11 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+030) **Hotkeys with Win (Super) are refused**, in any form (`Win+T`, `Ctrl+Win+T`,
+  `Win+Win`), not only `Win+L`. The system reserves most Win combinations, and Windows can
+  open the Start menu when Win is released after a combination whose other key Tagent
+  took. A configured hotkey with Win is now turned off at start with a warning that says
+  why; use Ctrl or Alt instead (`Ctrl+Shift+T`, `Alt+Q`).
 - (+029) **Hotkeys without Alt copy the selection at once on Windows** (for example
   `Ctrl+Shift+T`, `F9` or `Ctrl+Ctrl`): the three 100 ms waits before the simulated
   Ctrl+C are gone for them, so the copy takes under 10 ms (measured: 2-9 ms) instead

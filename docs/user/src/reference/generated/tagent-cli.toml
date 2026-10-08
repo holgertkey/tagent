@@ -118,7 +118,7 @@ history_file = "<data folder>/tagent-cli/translation_history.txt"
 # Hotkey for translation
 # Supported formats:
 #   - Single keys: F1-F12 ONLY (other keys must use modifiers)
-#   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, Win+T, etc.
+#   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, etc. (Win is not allowed)
 #     NOTE: Shift+Key is NOT allowed (interferes with text input)
 #     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
 #   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.

@@ -848,6 +848,19 @@ impl HotkeyType {
             HotkeyType::DoublePress { vk_code, .. } => is_alt(*vk_code),
         }
     }
+
+    /// Whether this hotkey involves Win (Super; Cmd on macOS), in any position. Such
+    /// hotkeys are refused by [`HotkeyParser::validate_hotkey`].
+    pub fn uses_win(&self) -> bool {
+        let is_win = |vk: u32| matches!(vk, keycodes::KEY_LWIN | keycodes::KEY_RWIN);
+        match self {
+            HotkeyType::SingleKey { vk_code } => is_win(*vk_code),
+            HotkeyType::ModifierCombo { modifiers, key } => {
+                modifiers.iter().any(|&m| is_win(m)) || is_win(*key)
+            }
+            HotkeyType::DoublePress { vk_code, .. } => is_win(*vk_code),
+        }
+    }
 }
 
 /// How the global hotkey that fired copies the selection (Windows; Linux and macOS
@@ -936,6 +949,10 @@ impl HotkeyParser {
 
     /// Validate that the hotkey doesn't conflict with critical system shortcuts
     pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
+        if hotkey.uses_win() {
+            return Err("Win (Super) is not allowed in hotkeys: the system reserves most Win combinations, and releasing Win can open the Start menu. Use Ctrl or Alt instead (e.g., Ctrl+Shift+T, Alt+Q).".to_string());
+        }
+
         match hotkey {
             // Only allow F1-F12 as single keys
             HotkeyType::SingleKey { vk_code }
@@ -966,17 +983,9 @@ impl HotkeyParser {
                 let has_alt = modifiers.iter().any(|&m| {
                     m == keycodes::KEY_ALT || m == keycodes::KEY_LALT || m == keycodes::KEY_RALT
                 });
-                let has_win = modifiers
-                    .iter()
-                    .any(|&m| m == keycodes::KEY_LWIN || m == keycodes::KEY_RWIN);
-
                 // Block dangerous combinations
                 if has_ctrl && has_alt && *key == keycodes::KEY_DELETE {
                     return Err("Ctrl+Alt+Delete is reserved by the system".to_string());
-                }
-
-                if has_win && *key == 'L' as u32 {
-                    return Err("Win+L (lock screen) is reserved by the system".to_string());
                 }
 
                 // Warnings for common shortcuts (don't block, just warn in logs)
@@ -991,14 +1000,10 @@ impl HotkeyParser {
                 if !(*vk_code >= keycodes::KEY_F1 && *vk_code <= keycodes::KEY_F12)
                     && !matches!(
                         *vk_code,
-                        keycodes::KEY_CONTROL
-                            | keycodes::KEY_ALT
-                            | keycodes::KEY_SHIFT
-                            | keycodes::KEY_LWIN
-                            | keycodes::KEY_RWIN
+                        keycodes::KEY_CONTROL | keycodes::KEY_ALT | keycodes::KEY_SHIFT
                     ) =>
             {
-                return Err("Double-press is only allowed for F1-F12 or modifier keys (Ctrl, Alt, Shift, Win). For other keys, use a modifier combination instead (e.g., Ctrl+Q).".to_string());
+                return Err("Double-press is only allowed for F1-F12 or modifier keys (Ctrl, Alt, Shift). For other keys, use a modifier combination instead (e.g., Ctrl+Q).".to_string());
             }
             HotkeyType::DoublePress { .. } => {}
         }
@@ -1016,14 +1021,7 @@ mod hotkey_tests {
         for hotkey in ["Alt+A", "LAlt+Q", "RAlt+Q", "Ctrl+Alt+T", "Alt+Alt"] {
             assert!(HotkeyParser::parse(hotkey).unwrap().uses_alt(), "{hotkey}");
         }
-        for hotkey in [
-            "Ctrl+Q",
-            "Ctrl+Shift+T",
-            "Win+T",
-            "F9",
-            "Ctrl+Ctrl",
-            "Shift+Shift",
-        ] {
+        for hotkey in ["Ctrl+Q", "Ctrl+Shift+T", "F9", "Ctrl+Ctrl", "Shift+Shift"] {
             assert!(!HotkeyParser::parse(hotkey).unwrap().uses_alt(), "{hotkey}");
         }
     }
@@ -1143,6 +1141,29 @@ mod hotkey_tests {
 
         let hotkey = HotkeyParser::parse("Win+L").unwrap();
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+
+    #[test]
+    fn validate_refuses_every_hotkey_with_win() {
+        for hotkey in [
+            "Win+T",
+            "LWin+T",
+            "RWin+T",
+            "Ctrl+Win+T",
+            "Win+Alt+Q",
+            "Win+Win",
+        ] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(parsed.uses_win(), "{hotkey}");
+            let err = HotkeyParser::validate_hotkey(&parsed).unwrap_err();
+            assert!(
+                err.contains("Win (Super) is not allowed"),
+                "{hotkey}: {err}"
+            );
+        }
+        for hotkey in ["Alt+A", "Ctrl+Shift+T", "F9", "Ctrl+Ctrl", "Shift+Shift"] {
+            assert!(!HotkeyParser::parse(hotkey).unwrap().uses_win(), "{hotkey}");
+        }
     }
 
     #[test]

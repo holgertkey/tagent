@@ -66,7 +66,7 @@ it.
 | Format | Examples | Notes |
 |--------|----------|-------|
 | A function key | `F9` | Only `F1`–`F12` work alone |
-| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T`, `Win+T` | `Shift+<key>` alone isn't allowed |
+| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T` | `Shift+<key>` alone and any `Win` (Super) combination aren't allowed |
 | A double press | `Ctrl+Ctrl`, `Shift+Shift`, `F8+F8` | The same key twice in quick succession |
 
 In Settings, type the hotkey, or click **Record** and press it. A hotkey that can't be
