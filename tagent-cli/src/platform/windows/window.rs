@@ -37,11 +37,9 @@ impl WindowManager {
         Ok(())
     }
 
-    /// Hide the terminal window
+    /// Minimize the terminal window to the taskbar without activating it
     pub fn hide_terminal(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        unsafe {
-            ShowWindow(self.console_window, SW_HIDE);
-        }
+        minimize_without_activating(self.console_window);
         Ok(())
     }
 
@@ -104,9 +102,50 @@ impl WindowManager {
     }
 }
 
+/// Minimize `hwnd` and leave the foreground window as it is.
+///
+/// `SW_HIDE` would take the window off the taskbar as well, leaving no way back to it
+/// except the hotkey; `SW_MINIMIZE` would activate another window and undo
+/// `set_foreground_window`'s restore of the previously active one.
+fn minimize_without_activating(hwnd: HWND) {
+    unsafe {
+        ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::core::w;
+
+    #[test]
+    fn minimize_keeps_window_visible_on_taskbar() {
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!("tagent-cli minimize test"),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                200,
+                100,
+                None,
+                None,
+                None,
+                None,
+            );
+            assert_ne!(hwnd.0, 0, "CreateWindowExW failed");
+
+            minimize_without_activating(hwnd);
+            let visible = IsWindowVisible(hwnd).as_bool();
+            let iconic = IsIconic(hwnd).as_bool();
+            let _ = DestroyWindow(hwnd);
+
+            assert!(visible, "a minimized window must stay visible (on the taskbar)");
+            assert!(iconic, "the window must be minimized");
+        }
+    }
 
     #[test]
     fn test_window_manager_creation() {

@@ -605,7 +605,7 @@ impl Translator {
         self.translate_text_internal(text, from, to).await
     }
 
-    /// Hide terminal window and restore previously active window
+    /// Minimize terminal window and restore previously active window
     /// Delays hiding if mouse cursor is over the terminal
     async fn hide_terminal_and_restore(&self, delay_seconds: u64) {
         let Some(wm) = &self.window_manager else {
@@ -632,7 +632,7 @@ impl Translator {
             }
         }
 
-        // Hide the terminal
+        // Minimize the terminal (it stays on the taskbar)
         if let Err(e) = wm.hide_terminal() {
             self.emit_line(format!("Failed to hide terminal: {}", e));
         }

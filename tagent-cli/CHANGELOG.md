@@ -410,6 +410,10 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+034) **On Windows the terminal vanished after a hotkey translation**: when
+  `auto_hide_terminal_seconds` ran out, the console window was hidden instead of
+  minimized, so it was neither on the desktop nor on the taskbar. It is now minimized to
+  the taskbar, without taking focus from the window that was active before.
 - (+031) A hotkey with an ordinary key where a modifier belongs (`A+Q`) was accepted and
   fired while typing `a` and `q` with overlapping key presses; one ending in a modifier
   (`Ctrl+Shift`) was accepted and never fired. Both are now refused with an explanation.
