@@ -947,68 +947,109 @@ impl HotkeyParser {
         keycodes::key_name_to_vk(key_name)
     }
 
-    /// Validate that the hotkey doesn't conflict with critical system shortcuts
+    /// Validate that the hotkey doesn't conflict with critical system shortcuts, with
+    /// typing, or with what every app uses the same keys for. The hook takes a hotkey
+    /// away from every application, so only keys nobody else needs are accepted:
+    /// - a single key: `F1`-`F12`;
+    /// - a combination: Ctrl, Alt and/or Shift (not Shift alone), then a letter, a digit
+    ///   or `F1`-`F12` (not Tab, Space, Enter, Esc, Backspace, Delete, Insert, arrows,
+    ///   Home/End/PageUp/PageDown: system and editing shortcuts live there), and not
+    ///   `Ctrl+A/C/V/X/Y/Z` (select all, copy, paste, cut, redo, undo);
+    /// - a double press: `F1`-`F12`, Ctrl or Shift (not Alt: its first press reaches the
+    ///   app, which opens the menu bar);
+    /// - nothing with Win (Super).
     pub fn validate_hotkey(hotkey: &HotkeyType) -> Result<(), String> {
         if hotkey.uses_win() {
             return Err("Win (Super) is not allowed in hotkeys: the system reserves most Win combinations, and releasing Win can open the Start menu. Use Ctrl or Alt instead (e.g., Ctrl+Shift+T, Alt+Q).".to_string());
         }
 
+        let is_function_key = |vk: u32| (keycodes::KEY_F1..=keycodes::KEY_F12).contains(&vk);
+
         match hotkey {
-            // Only allow F1-F12 as single keys
-            HotkeyType::SingleKey { vk_code }
-                if *vk_code < keycodes::KEY_F1 || *vk_code > keycodes::KEY_F12 =>
-            {
-                return Err("Single keys are only allowed for F1-F12. For other keys like Space, Tab, etc., use modifier combinations (e.g., Alt+Space, Ctrl+T)".to_string());
+            HotkeyType::SingleKey { vk_code } if !is_function_key(*vk_code) => {
+                return Err("Single keys are only allowed for F1-F12. For other keys, use a modifier combination (e.g., Alt+Q, Ctrl+Shift+T)".to_string());
             }
             HotkeyType::SingleKey { .. } => {}
             HotkeyType::ModifierCombo { modifiers, key } => {
-                // Forbid Shift-only combinations (Shift+Key interferes with text input)
-                // Allow multi-modifier combinations (Ctrl+Shift+Key, Alt+Shift+Key, etc.)
-                let only_shift = modifiers.iter().all(|&m| {
-                    m == keycodes::KEY_SHIFT
-                        || m == keycodes::KEY_LSHIFT
-                        || m == keycodes::KEY_RSHIFT
-                });
-
-                if only_shift {
-                    return Err("Shift+Key combinations are not allowed (interferes with text input). Use multi-modifier combinations like Ctrl+Shift+T or Alt+Shift+Space instead.".to_string());
+                // Modifiers are normalized by `parse`, so the generic codes are enough.
+                if let Some(&not_modifier) = modifiers.iter().find(|&&m| {
+                    !matches!(
+                        keycodes::normalize_vk_code(m),
+                        keycodes::KEY_CONTROL | keycodes::KEY_ALT | keycodes::KEY_SHIFT
+                    )
+                }) {
+                    return Err(format!(
+                        "Only Ctrl, Alt and Shift can be held for a hotkey, followed by one key; {} is not a modifier (e.g., Alt+Q, Ctrl+Shift+T)",
+                        key_display_name(not_modifier)
+                    ));
                 }
 
-                // Warn about common system shortcuts
-                let has_ctrl = modifiers.iter().any(|&m| {
-                    m == keycodes::KEY_CONTROL
-                        || m == keycodes::KEY_LCONTROL
-                        || m == keycodes::KEY_RCONTROL
-                });
-                let has_alt = modifiers.iter().any(|&m| {
-                    m == keycodes::KEY_ALT || m == keycodes::KEY_LALT || m == keycodes::KEY_RALT
-                });
-                // Block dangerous combinations
-                if has_ctrl && has_alt && *key == keycodes::KEY_DELETE {
-                    return Err("Ctrl+Alt+Delete is reserved by the system".to_string());
+                let is_letter = (('A' as u32)..=('Z' as u32)).contains(key);
+                let is_digit = (('0' as u32)..=('9' as u32)).contains(key);
+                if !(is_letter || is_digit || is_function_key(*key)) {
+                    return Err("A hotkey must end with a letter, a digit or F1-F12: Tab, Space, Enter, Esc, Backspace, Delete, Insert, the arrows, Home, End, PageUp and PageDown belong to system and editing shortcuts, and a modifier can't be the last key (e.g., Alt+Q, Ctrl+Shift+T)".to_string());
+                }
+
+                let has = |modifier: u32| {
+                    modifiers
+                        .iter()
+                        .any(|&m| keycodes::normalize_vk_code(m) == modifier)
+                };
+                let has_ctrl = has(keycodes::KEY_CONTROL);
+                let has_alt = has(keycodes::KEY_ALT);
+                let has_shift = has(keycodes::KEY_SHIFT);
+
+                // Shift+Key is how capitals and symbols are typed.
+                if has_shift && !has_ctrl && !has_alt {
+                    return Err("Shift+Key combinations are not allowed (interferes with text input). Use multi-modifier combinations like Ctrl+Shift+T or Alt+Shift+Q instead.".to_string());
+                }
+
+                if has_ctrl && !has_alt && !has_shift && "ACVXYZ".chars().any(|c| *key == c as u32)
+                {
+                    return Err("Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Y and Ctrl+Z are select all, copy, paste, cut, redo and undo in every app. Use another key (e.g., Ctrl+Q, Ctrl+Shift+C).".to_string());
                 }
 
                 // Warnings for common shortcuts (don't block, just warn in logs)
                 if has_alt && *key == keycodes::KEY_F4 {
                     eprintln!("Warning: Alt+F4 may close windows");
                 }
+                if has_ctrl && has_alt && (is_letter || is_digit) {
+                    eprintln!(
+                        "Warning: Ctrl+Alt+{} is AltGr+{} on many keyboard layouts, which types a character there",
+                        key_display_name(*key),
+                        key_display_name(*key)
+                    );
+                }
             }
-            // Only allow F1-F12 or a modifier key to be double-pressed -- doubling an
-            // ordinary letter/digit/etc. key (e.g. "Q+Q") is indistinguishable from just
-            // typing that letter twice while using the app normally.
+            // Doubling an ordinary letter/digit/etc. key (e.g. "Q+Q") is indistinguishable
+            // from just typing it twice. Alt is not swallowed for a double press, so its
+            // first press reaches the app and opens the menu bar, which eats the copy.
             HotkeyType::DoublePress { vk_code, .. }
-                if !(*vk_code >= keycodes::KEY_F1 && *vk_code <= keycodes::KEY_F12)
-                    && !matches!(
-                        *vk_code,
-                        keycodes::KEY_CONTROL | keycodes::KEY_ALT | keycodes::KEY_SHIFT
-                    ) =>
+                if !is_function_key(*vk_code)
+                    && !matches!(*vk_code, keycodes::KEY_CONTROL | keycodes::KEY_SHIFT) =>
             {
-                return Err("Double-press is only allowed for F1-F12 or modifier keys (Ctrl, Alt, Shift). For other keys, use a modifier combination instead (e.g., Ctrl+Q).".to_string());
+                return Err("Double-press is only allowed for F1-F12, Ctrl or Shift (e.g., Ctrl+Ctrl, F8+F8). For other keys, use a modifier combination instead (e.g., Alt+Q).".to_string());
             }
             HotkeyType::DoublePress { .. } => {}
         }
 
         Ok(())
+    }
+}
+
+/// A key code as a user would write it, for error messages: a letter or digit as
+/// itself, `F1`-`F12` by name, anything else by its code.
+fn key_display_name(vk: u32) -> String {
+    match vk {
+        _ if (('A' as u32)..=('Z' as u32)).contains(&vk)
+            || (('0' as u32)..=('9' as u32)).contains(&vk) =>
+        {
+            char::from_u32(vk).map(String::from).unwrap_or_default()
+        }
+        _ if (keycodes::KEY_F1..=keycodes::KEY_F12).contains(&vk) => {
+            format!("F{}", vk - keycodes::KEY_F1 + 1)
+        }
+        _ => format!("key code {vk}"),
     }
 }
 
@@ -1085,7 +1126,7 @@ mod hotkey_tests {
         let hotkey = HotkeyParser::parse("Ctrl+Shift+T").unwrap();
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
 
-        let hotkey = HotkeyParser::parse("Alt+Shift+Space").unwrap();
+        let hotkey = HotkeyParser::parse("Alt+Shift+Q").unwrap();
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
     }
 
@@ -1144,6 +1185,80 @@ mod hotkey_tests {
     }
 
     #[test]
+    fn validate_refuses_non_modifiers_held_and_modifiers_last() {
+        for hotkey in [
+            "A+Q",
+            "Ctrl+A+Q",
+            "F5+Q",
+            "Ctrl+Shift",
+            "Alt+Ctrl",
+            "Ctrl+LShift",
+        ] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(HotkeyParser::validate_hotkey(&parsed).is_err(), "{hotkey}");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_only_letters_digits_and_function_keys_last() {
+        for hotkey in [
+            "Alt+Tab",
+            "Ctrl+Tab",
+            "Ctrl+Esc",
+            "Alt+Space",
+            "Ctrl+Space",
+            "Ctrl+Enter",
+            "Alt+Enter",
+            "Ctrl+Backspace",
+            "Ctrl+Delete",
+            "Ctrl+Alt+Delete",
+            "Ctrl+Insert",
+            "Ctrl+Left",
+            "Alt+Right",
+            "Ctrl+Shift+Up",
+            "Ctrl+Home",
+            "Ctrl+End",
+            "Ctrl+PageUp",
+            "Ctrl+PageDown",
+        ] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(HotkeyParser::validate_hotkey(&parsed).is_err(), "{hotkey}");
+        }
+        for hotkey in [
+            "Alt+A",
+            "Alt+S",
+            "Ctrl+Q",
+            "Ctrl+Shift+T",
+            "Alt+Shift+7",
+            "Ctrl+F9",
+        ] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(HotkeyParser::validate_hotkey(&parsed).is_ok(), "{hotkey}");
+        }
+    }
+
+    #[test]
+    fn validate_refuses_ctrl_clipboard_and_undo_keys_alone() {
+        for hotkey in [
+            "Ctrl+A", "Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Y", "Ctrl+Z", "RCtrl+C",
+        ] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(HotkeyParser::validate_hotkey(&parsed).is_err(), "{hotkey}");
+        }
+        // With another modifier they are other shortcuts and stay allowed.
+        for hotkey in ["Ctrl+Shift+C", "Ctrl+Alt+V"] {
+            let parsed = HotkeyParser::parse(hotkey).unwrap();
+            assert!(HotkeyParser::validate_hotkey(&parsed).is_ok(), "{hotkey}");
+        }
+    }
+
+    #[test]
+    fn validate_refuses_double_alt() {
+        let hotkey = HotkeyParser::parse("Alt+Alt").unwrap();
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
+    }
+
+    #[test]
     fn validate_refuses_every_hotkey_with_win() {
         for hotkey in [
             "Win+T",
@@ -1178,7 +1293,7 @@ mod hotkey_tests {
         assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
 
         let hotkey = HotkeyParser::parse("Alt+Alt").unwrap();
-        assert!(HotkeyParser::validate_hotkey(&hotkey).is_ok());
+        assert!(HotkeyParser::validate_hotkey(&hotkey).is_err());
 
         // Doubling an ordinary letter/digit/space/etc. is indistinguishable from
         // just typing that key twice while using the app normally -- must be rejected.

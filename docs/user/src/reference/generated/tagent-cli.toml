@@ -118,15 +118,16 @@ history_file = "<data folder>/tagent-cli/translation_history.txt"
 # Hotkey for translation
 # Supported formats:
 #   - Single keys: F1-F12 ONLY (other keys must use modifiers)
-#   - Modifier combinations: Alt+Q, Alt+Space, Ctrl+Shift+T, etc. (Win is not allowed)
-#     NOTE: Shift+Key is NOT allowed (interferes with text input)
-#     Use multi-modifier combos instead: Ctrl+Shift+T, Alt+Shift+Space
-#   - Double-press: Ctrl+Ctrl, F8+F8, Shift+Shift, Alt+Alt, etc.
+#   - Modifier combinations: Ctrl, Alt and/or Shift, then a letter, a digit or F1-F12:
+#     Alt+Q, Ctrl+Shift+T, Alt+Shift+7, Ctrl+F9, etc.
+#     NOT allowed: Shift+Key alone (interferes with text input), Win (Super),
+#     Tab, Space, Enter, Esc, Backspace, Delete, Insert, arrows, Home/End/PageUp/PageDown
+#     as the last key, and Ctrl+A/C/V/X/Y/Z
+#   - Double-press: Ctrl+Ctrl, Shift+Shift, F8+F8 (not Alt+Alt)
 # Examples:
 #   translate_hotkey = "Alt+A" (default)
 #   translate_hotkey = "Ctrl+Ctrl"
 #   translate_hotkey = "F9"
-#   translate_hotkey = "Alt+Space"
 #   translate_hotkey = "Ctrl+Shift+C"
 #   translate_hotkey = "F8+F8"
 # Note: Hotkey changes require application restart to take effect
@@ -142,7 +143,7 @@ enable_text_to_speech = true
 # Supported formats (same as translate_hotkey):
 #   - Single keys: F1-F12 ONLY
 #   - Modifier combinations: Alt+S, Ctrl+Shift+S, etc.
-#   - Double-press: Alt+Alt, Shift+Shift, etc.
+#   - Double-press: Ctrl+Ctrl, Shift+Shift, F8+F8
 # Examples:
 #   speech_hotkey = "Alt+S"
 #   speech_hotkey = "F10"

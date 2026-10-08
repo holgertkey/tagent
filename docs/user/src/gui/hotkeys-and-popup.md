@@ -66,8 +66,8 @@ it.
 | Format | Examples | Notes |
 |--------|----------|-------|
 | A function key | `F9` | Only `F1`–`F12` work alone |
-| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T` | `Shift+<key>` alone and any `Win` (Super) combination aren't allowed |
-| A double press | `Ctrl+Ctrl`, `Shift+Shift`, `F8+F8` | The same key twice in quick succession |
+| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T`, `Ctrl+F9` | Ctrl, Alt and/or Shift, then a letter, a digit or `F1`–`F12`. Not allowed: `Shift+<key>` alone, `Win` (Super), `Ctrl+A/C/V/X/Y/Z` |
+| A double press | `Ctrl+Ctrl`, `Shift+Shift`, `F8+F8` | The same key twice in quick succession. Not `Alt+Alt`: the first Alt opens the app's menu bar |
 
 In Settings, type the hotkey, or click **Record** and press it. A hotkey that can't be
 used is shown as an error there. In the file, an unusable speech hotkey turns off only

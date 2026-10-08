@@ -53,8 +53,8 @@ Both hotkeys take the same formats:
 | Format | Examples | Notes |
 |--------|----------|-------|
 | A function key | `F9` | Only `F1`–`F12` work alone, so normal typing isn't caught |
-| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T`, `Alt+Space` | `Shift+<key>` alone isn't allowed: it is how you type capitals |
-| A double press | `Ctrl+Ctrl`, `Shift+Shift`, `Alt+Alt`, `F8+F8` | The same key twice, 50–500 ms apart |
+| Modifiers + key | `Alt+Q`, `Ctrl+Shift+T`, `Ctrl+F9` | Ctrl, Alt and/or Shift, then a letter, a digit or `F1`–`F12`. `Shift+<key>` alone isn't allowed: it is how you type capitals |
+| A double press | `Ctrl+Ctrl`, `Shift+Shift`, `F8+F8` | The same key twice, 50–500 ms apart. Not `Alt+Alt`: the first Alt opens the app's menu bar |
 
 ```toml
 [hotkeys]
@@ -67,9 +67,15 @@ speech_hotkey = "F10"
 - **A hotkey change needs a restart** of `tagent-cli`. Everything else in the file
   applies without one.
 - Use two different combinations for the two hotkeys.
-- `Ctrl+Alt+Delete` and any hotkey with `Win` (Super) are refused: the system reserves
-  most `Win` combinations, and releasing `Win` can open the Start menu. `Alt+F4` draws a
-  warning.
+- Refused, because the hotkey would take them away from every application:
+  - any hotkey with `Win` (Super): the system reserves most `Win` combinations, and
+    releasing `Win` can open the Start menu;
+  - a combination ending in `Tab`, `Space`, `Enter`, `Esc`, `Backspace`, `Delete`,
+    `Insert`, an arrow, `Home`, `End`, `PageUp` or `PageDown` (`Alt+Tab`, `Ctrl+Space`,
+    `Ctrl+Backspace`, `Ctrl+Shift+Left`...);
+  - `Ctrl+A`, `Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Ctrl+Y` and `Ctrl+Z`.
+- `Alt+F4` draws a warning, and so does `Ctrl+Alt+<letter or digit>`: on many keyboard
+  layouts that is AltGr, which types a character.
 - A hotkey Tagent can't read or won't accept is turned off with a warning, and the rest
   of the app keeps working.
 - The operating system or another application may take a combination first. On Linux

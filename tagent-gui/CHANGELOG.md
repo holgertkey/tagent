@@ -252,6 +252,19 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+031) **Hotkeys are limited to keys no other program needs**, since a hotkey takes its
+  keys away from every application:
+  - a combination holds only Ctrl, Alt and/or Shift and ends with a letter, a digit or
+    `F1`-`F12`. Refused: a combination ending in Tab, Space, Enter, Esc, Backspace,
+    Delete, Insert, an arrow, Home, End, PageUp or PageDown (`Alt+Tab`, `Alt+Space`,
+    `Ctrl+Backspace`, `Ctrl+Shift+Left`...), and `Ctrl+A`, `Ctrl+C`, `Ctrl+V`, `Ctrl+X`,
+    `Ctrl+Y` and `Ctrl+Z`;
+  - `Alt+Alt` is refused: Alt isn't held back for a double press, so its first press
+    opened the app's menu bar;
+  - `Ctrl+Alt+<letter or digit>` draws a warning: on many keyboard layouts that is AltGr,
+    which types a character.
+  A hotkey that breaks these rules is turned off at start with a warning that says
+  why, and Settings shows the error.
 - (+030) **Hotkeys with Win (Super) are refused**, in any form (`Win+T`, `Ctrl+Win+T`,
   `Win+Win`), not only `Win+L`. The system reserves most Win combinations, and Windows can
   open the Start menu when Win is released after a combination whose other key Tagent
@@ -448,6 +461,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   keyboard hook sees Esc in Tagent's own windows too, so it was redundant.
 
 ### Fixed
+- (+031) A hotkey with an ordinary key where a modifier belongs (`A+Q`) was accepted and
+  fired while typing `a` and `q` with overlapping key presses; one ending in a modifier
+  (`Ctrl+Shift`) was accepted and never fired. Both are now refused with an explanation.
 - (+026) **`/help`'s descriptions line up.** The list was padded with spaces, which line
   up only in a monospace font, and the transcript's `monospace` font is proportional on
   Windows. The list is now always drawn in a monospace font, whatever the transcript's

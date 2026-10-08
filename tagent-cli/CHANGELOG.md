@@ -210,6 +210,19 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+031) **Hotkeys are limited to keys no other program needs**, since a hotkey takes its
+  keys away from every application:
+  - a combination holds only Ctrl, Alt and/or Shift and ends with a letter, a digit or
+    `F1`-`F12`. Refused: a combination ending in Tab, Space, Enter, Esc, Backspace,
+    Delete, Insert, an arrow, Home, End, PageUp or PageDown (`Alt+Tab`, `Alt+Space`,
+    `Ctrl+Backspace`, `Ctrl+Shift+Left`...), and `Ctrl+A`, `Ctrl+C`, `Ctrl+V`, `Ctrl+X`,
+    `Ctrl+Y` and `Ctrl+Z`;
+  - `Alt+Alt` is refused: Alt isn't held back for a double press, so its first press
+    opened the app's menu bar;
+  - `Ctrl+Alt+<letter or digit>` draws a warning: on many keyboard layouts that is AltGr,
+    which types a character.
+  A hotkey that breaks these rules is turned off at start with a warning that says
+  why.
 - (+030) **Hotkeys with Win (Super) are refused**, in any form (`Win+T`, `Ctrl+Win+T`,
   `Win+Win`), not only `Win+L`. The system reserves most Win combinations, and Windows can
   open the Start menu when Win is released after a combination whose other key Tagent
@@ -389,6 +402,9 @@ before 2026-10-02 have one header per build.
 - (0.16.0+002) **`xdotool` is no longer needed** at run time on Linux.
 
 ### Fixed
+- (+031) A hotkey with an ordinary key where a modifier belongs (`A+Q`) was accepted and
+  fired while typing `a` and `q` with overlapping key presses; one ending in a modifier
+  (`Ctrl+Shift`) was accepted and never fired. Both are now refused with an explanation.
 - (+025) **A failed translation in CLI mode was printed twice** (`tagent-cli "text"`):
   `Translation failed: network error: …` and then `Error: Network("…")`. Now it is the
   first line only. A failed `-s` no longer shows its error in quotes (`Error: "Speech
