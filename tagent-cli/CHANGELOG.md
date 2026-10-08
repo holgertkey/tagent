@@ -210,6 +210,8 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+033) **The startup banner lists `/e (exit)` instead of `/q (quit)`.** Both still
+  quit; `/e` matches the tray's "Exit" in `tagent-gui`.
 - (+032) **Hotkeys with Alt copy the selection at once on Windows too**, such as the
   default `Alt+A` and `Alt+S`: the copy takes a few milliseconds (measured 3-42 ms; the
   longer ones wait for Alt to be let go) instead of about 0.31 s. The three 100 ms waits

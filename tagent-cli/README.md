@@ -1,4 +1,4 @@
-# Tagent Text Translator v0.17.0+032
+# Tagent Text Translator v0.17.0+033
 
 A fast, lightweight text translator for the terminal. Select text in any application and
 press **Alt+A** to see its translation, type at an interactive prompt, or translate from
@@ -48,7 +48,7 @@ providers, `/save` keeps your choices. See
 - `tagent-gui`, the desktop window version: [tagent-gui](../tagent-gui/README.md).
 - Issues and suggestions: [GitHub issues](https://github.com/holgertkey/tagent/issues).
 
-**Current Version**: v0.17.0+032
+**Current Version**: v0.17.0+033
 
 ## License
 
@@ -56,4 +56,4 @@ MIT, see [LICENSE](../LICENSE).
 
 ---
 
-**Tagent Text Translator v0.17.0+032** - Fast, reliable, and feature-rich translation tool for Windows and Linux.
+**Tagent Text Translator v0.17.0+033** - Fast, reliable, and feature-rich translation tool for Windows and Linux.

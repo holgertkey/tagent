@@ -1899,7 +1899,7 @@ impl ConfigManager {
         println!(
             r#"Commands:
   /h (help), /c (config), /s (speech), /ss (speak translation)
-  /l (lang), /p (provider), /save, /clear, /q (quit)"#
+  /l (lang), /p (provider), /save, /clear, /e (exit)"#
         );
         println!();
     }
