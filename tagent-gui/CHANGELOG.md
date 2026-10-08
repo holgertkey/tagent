@@ -252,6 +252,12 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+032) **Hotkeys with Alt copy the selection at once on Windows too**, such as the
+  default `Alt+A` and `Alt+S`: the copy takes a few milliseconds (measured 3-42 ms; the
+  longer ones wait for Alt to be let go) instead of about 0.31 s. The three 100 ms waits
+  around the simulated Ctrl+C turned out to be unneeded: what keeps apps out of Alt's menu
+  mode is that Tagent holds back Alt's own key press. Checked in Sublime Text, Notepad,
+  Firefox, Chrome, Word and Obsidian.
 - (+031) **Hotkeys are limited to keys no other program needs**, since a hotkey takes its
   keys away from every application:
   - a combination holds only Ctrl, Alt and/or Shift and ends with a letter, a digit or

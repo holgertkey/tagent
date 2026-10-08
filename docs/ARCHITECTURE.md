@@ -485,6 +485,32 @@ menu because GNOME Settings > Apps, where the keys are changed, lists only visib
   press doesn't stop the next one. At the prompt the same Ctrl+C still only reprints the
   line (rustyline's `Interrupted`).
 
+### Windows specifics: the hook loop and the selection copy
+
+Both apps have their own copy of this code (`platform/windows/keyboard.rs` and
+`clipboard.rs`); they behave the same.
+
+- **The hook thread waits for messages** (`GetMessageW` in `tagent-gui`,
+  `MsgWaitForMultipleObjectsEx` with a 50 ms timeout in `tagent-cli`, so `should_exit` is
+  still seen). Windows calls a `WH_KEYBOARD_LL` hook only while its thread waits for
+  messages; the old `PeekMessageW` + 10 ms sleep loop delayed every keystroke in the system
+  by up to 10 ms, each simulated key of the copy included (0.17.0+028 / 0.15.0+028).
+- **The copy** (`ClipboardManager::copy_selected_text(CopyMode)`). Each hotkey gets its own
+  `CopyMode` from `CopyMode::for_hotkey` (`config.rs`): `Alt` when it involves Alt
+  (`HotkeyType::uses_alt`), otherwise `Plain`.
+  - `Plain`: `WM_COPY` to the focused control, then **one** `SendInput` with the key-ups of
+    the Shift/Win keys still held (`keys_to_release`) followed by Ctrl+C. One `SendInput`'s
+    events reach the app in order with no other input in between, so nothing waits.
+  - `Alt`: wait (bounded, 600 ms) for Alt to be physically released, `WM_CANCELMODE` to the
+    foreground window, then the same as `Plain`. Alt's menu mode is kept away by the hook's
+    swallow-and-replay, not by time: the three 100 ms sleeps this path had were removed one
+    at a time in 0.17.0+032 / 0.15.0+032 with no effect on any app checked.
+  - Then both wait for the clipboard's sequence number to change (up to 200 ms,
+    `CLIPBOARD_CHANGE_TIMEOUT`); a change is the success signal, and `get_text_with_copy`
+    retries up to three times without one.
+  - Measured (2026-10-08): 2-9 ms for `Plain`, 3-42 ms for `Alt` (the longer ones wait for
+    the user to let go of Alt), down from ~510 ms before 0.17.0+028.
+
 ### Linux specifics: `xgrab.rs`
 
 `rdev::listen` only *observes* raw key events — it does not stop them from reaching the

@@ -188,8 +188,8 @@ Candidates, not yet scheduled; the order is a suggestion.
 13. **Hotkey latency.** Planned 2026-10-07: make the hotkey translation as fast as the
     provider allows. Steps 0 and 1 are done (0.15.0+027, +028: reused providers, plain
     translation before the dictionary article, the hook's message loop, the clipboard
-    wait); step 2 (0.15.0+029) copies without fixed sleeps for hotkeys without Alt.
-    Next: the Alt path, then Linux; see [below](#planned-stage--hotkey-latency-selection-copy).
+    wait); steps 2 and 3 (0.15.0+029, +032) removed every fixed sleep from the copy, for
+    hotkeys with and without Alt. Next: Linux; see [below](#planned-stage--hotkey-latency-selection-copy).
 
 ### Planned stage — Provider profiles tab
 
@@ -476,8 +476,8 @@ check on a 100 % and a 150 % display setting.
 
 ### Planned stage — Hotkey latency (selection copy)
 
-**Status:** planned 2026-10-07 (decided with the maintainer the same day). Steps 0–2
-are done; steps 3–5 are open. Windows first; Linux follows as its own step. Once all steps
+**Status:** planned 2026-10-07 (decided with the maintainer the same day). Steps 0–3
+are done; steps 4–5 are open. Windows first; Linux follows as its own step. Once all steps
 have shipped and been checked, condense this section to a row of the "Shipped stages"
 table.
 
@@ -615,7 +615,29 @@ The plan as written before it was built:
     (`keys_to_release(pressed) -> Vec<u16>`);
   - `CopyMode` reaching the copy from both hotkeys.
 
-**Step 3 — the Alt path: shorter, still safe.**
+**Step 3 — the Alt path: shorter, still safe. Done in `tagent-gui` 0.15.0+032 and
+`tagent-cli` 0.17.0+032.**
+- *Result (maintainer, 2026-10-08, `tagent-gui` debug build with temporary knobs from an
+  environment variable, one change at a time; Alt+A and Alt+S):*
+
+  | Change | Copy |
+  |---|---|
+  | none (+031) | ~310 ms |
+  | 1. no initial sleep | 204–211 ms |
+  | 2. settle sleep 20 ms | 130–143 ms |
+  | 3. settle sleep 0 | 106–114 ms |
+  | 4. step 2's key-ups (only held keys, one `SendInput` with Ctrl+C, no sleep) | 3–42 ms |
+
+  Every change kept the copy right on the first attempt and the app's behavior after it
+  (checked in Sublime Text, Notepad, Firefox; change 4 also in Chrome, Word and
+  Obsidian). The longer change-4 times are the bounded Alt-release loop waiting for the
+  user to let go of Alt.
+- *As built:* `copy_alt` is the Alt-release loop, `WM_CANCELMODE`, then `send_copy`, the
+  same sequence `copy_plain` uses. The finding is recorded in the `KeyboardHook` doc
+  comment: swallow-and-replay, not time, keeps apps out of menu mode.
+- `tagent-cli` has the same code and was not checked separately.
+
+The plan as written before it was built:
 - *Evidence:* in every measured run Alt was already released when the copy started (the
   hook had swallowed it), and the three apps copied on the first attempt.
 - *Try, one change at a time, each measured and checked:*

@@ -281,6 +281,14 @@ impl HotkeyState {
 /// Alt at the source avoids that class of problem entirely, at the cost of needing to
 /// replay it convincingly when it wasn't ours.
 ///
+/// **No time-based waits in the copy (0.17.0+032 / `tagent-gui` 0.15.0+032).** The copy
+/// after an Alt hotkey used to sleep 100 ms three times around the simulated Ctrl+C. They
+/// were removed one at a time and checked in Sublime Text, Notepad, Firefox, Chrome, Word
+/// and Obsidian: the copy, the next letter typed (not taken as a menu accelerator), a bare
+/// Alt tap and Alt+Tab all stayed right. This mechanism is what keeps apps out of Alt's
+/// menu mode; if a menu-mode bug comes back, fix it here, not with a sleep in
+/// `ClipboardManager`.
+///
 /// **Confirmed working end-to-end (v0.16.0+007)**: Word/Chrome/Notepad copy correctly via
 /// `Alt+Q`, and Alt-Tab/Alt+F4/the system menu are unaffected. Getting here took five
 /// prior attempts across several versions (`RegisterHotKey`+`WM_HOTKEY`, `WM_CANCELMODE`,
