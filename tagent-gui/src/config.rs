@@ -836,6 +836,43 @@ pub enum HotkeyType {
     },
 }
 
+impl HotkeyType {
+    /// Whether this hotkey involves Alt: a `ModifierCombo` with Alt among its modifiers,
+    /// or a `DoublePress` of Alt. Only Alt puts a Windows app into menu mode, which is
+    /// what the slow, careful selection copy ([`CopyMode::Alt`]) exists for.
+    pub fn uses_alt(&self) -> bool {
+        let is_alt = |vk: u32| keycodes::normalize_vk_code(vk) == keycodes::KEY_ALT;
+        match self {
+            HotkeyType::SingleKey { .. } => false,
+            HotkeyType::ModifierCombo { modifiers, .. } => modifiers.iter().any(|&m| is_alt(m)),
+            HotkeyType::DoublePress { vk_code, .. } => is_alt(*vk_code),
+        }
+    }
+}
+
+/// How the global hotkey that fired copies the selection (Windows; Linux and macOS
+/// accept it and ignore it). Each hotkey has its own: the translate and speech hotkeys
+/// may differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyMode {
+    /// The hotkey involves Alt: wait for Alt to be released and cancel any menu mode
+    /// before the simulated Ctrl+C (see the Windows `ClipboardManager`).
+    Alt,
+    /// Any other hotkey: release the held Shift/Win keys and copy at once.
+    Plain,
+}
+
+impl CopyMode {
+    /// The copy mode for `hotkey`; [`CopyMode::Alt`], the careful one, when there is
+    /// none.
+    pub fn for_hotkey(hotkey: Option<&HotkeyType>) -> Self {
+        match hotkey {
+            Some(hotkey) if !hotkey.uses_alt() => CopyMode::Plain,
+            _ => CopyMode::Alt,
+        }
+    }
+}
+
 /// Stateless parser that converts hotkey configuration strings (e.g. `"Alt+Q"`)
 /// into [`HotkeyType`] values, and validates them against dangerous system shortcuts.
 pub struct HotkeyParser;
@@ -973,6 +1010,32 @@ impl HotkeyParser {
 #[cfg(test)]
 mod hotkey_tests {
     use super::*;
+
+    #[test]
+    fn uses_alt_is_true_only_for_hotkeys_with_alt() {
+        for hotkey in ["Alt+A", "LAlt+Q", "RAlt+Q", "Ctrl+Alt+T", "Alt+Alt"] {
+            assert!(HotkeyParser::parse(hotkey).unwrap().uses_alt(), "{hotkey}");
+        }
+        for hotkey in [
+            "Ctrl+Q",
+            "Ctrl+Shift+T",
+            "Win+T",
+            "F9",
+            "Ctrl+Ctrl",
+            "Shift+Shift",
+        ] {
+            assert!(!HotkeyParser::parse(hotkey).unwrap().uses_alt(), "{hotkey}");
+        }
+    }
+
+    #[test]
+    fn copy_mode_follows_the_hotkey_and_defaults_to_alt() {
+        let alt = HotkeyParser::parse("Alt+S").unwrap();
+        let plain = HotkeyParser::parse("Ctrl+Shift+T").unwrap();
+        assert_eq!(CopyMode::for_hotkey(Some(&alt)), CopyMode::Alt);
+        assert_eq!(CopyMode::for_hotkey(Some(&plain)), CopyMode::Plain);
+        assert_eq!(CopyMode::for_hotkey(None), CopyMode::Alt);
+    }
 
     #[test]
     fn parse_single_key() {

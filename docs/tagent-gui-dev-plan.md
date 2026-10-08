@@ -188,8 +188,8 @@ Candidates, not yet scheduled; the order is a suggestion.
 13. **Hotkey latency.** Planned 2026-10-07: make the hotkey translation as fast as the
     provider allows. Steps 0 and 1 are done (0.15.0+027, +028: reused providers, plain
     translation before the dictionary article, the hook's message loop, the clipboard
-    wait). Next: no fixed sleeps for hotkeys without Alt, then the Alt path, then Linux;
-    see [below](#planned-stage--hotkey-latency-selection-copy).
+    wait); step 2 (0.15.0+029) copies without fixed sleeps for hotkeys without Alt.
+    Next: the Alt path, then Linux; see [below](#planned-stage--hotkey-latency-selection-copy).
 
 ### Planned stage — Provider profiles tab
 
@@ -476,8 +476,8 @@ check on a 100 % and a 150 % display setting.
 
 ### Planned stage — Hotkey latency (selection copy)
 
-**Status:** planned 2026-10-07 (decided with the maintainer the same day). Steps 0 and 1
-are done; steps 2–5 are open. Windows first; Linux follows as its own step. Once all steps
+**Status:** planned 2026-10-07 (decided with the maintainer the same day). Steps 0–2
+are done; steps 3–5 are open. Windows first; Linux follows as its own step. Once all steps
 have shipped and been checked, condense this section to a row of the "Shipped stages"
 table.
 
@@ -550,7 +550,21 @@ and `tagent-cli` 0.17.0+028.**
 - Result: the copy takes ~308 ms instead of ~510 ms. What is left is the three 100 ms
   sleeps.
 
-**Step 2 — hotkeys without Alt: no fixed sleeps.**
+**Step 2 — hotkeys without Alt: no fixed sleeps. Done in `tagent-gui` 0.15.0+029 and
+`tagent-cli` 0.17.0+029.**
+- *As built:* `HotkeyType::uses_alt()` and `CopyMode::for_hotkey()` in each app's
+  `config.rs`; the GUI computes each hotkey's mode before `KeyboardHook::spawn`,
+  `tagent-cli` reads it from the fired `HotkeyState` (`copy_mode()`). The Windows copy is
+  `copy_plain` (`WM_COPY`, then **one** `SendInput` with the held Shift/Win releases from
+  `keys_to_release` followed by Ctrl+C; no sleeps) or `copy_alt` (unchanged).
+- *Result (maintainer, 2026-10-08):* F8/F9, Ctrl+Shift+T/Y, Ctrl+Q/E copy in 2–9 ms,
+  every attempt on the first try; Alt+A/Alt+S unchanged at ~310 ms. The ≤ 20 ms
+  fallback was not needed.
+- *Correction:* the hook blocks every hotkey's trigger key in both apps, a
+  `DoublePress`'s second press included (`handle` returns `true` when it fires), so a
+  double-pressed Shift is never seen as held by the copy.
+
+The plan as written before it was built:
 - *Why safe:* Ctrl, Shift and Win put no window into menu mode. The settle sleep after
   Alt, `WM_CANCELMODE` and the wait for Alt's release exist only for Alt.
 - *The real issue is held keys, not time.* A modifier still held when Ctrl+C is sent
@@ -575,8 +589,8 @@ and `tagent-cli` 0.17.0+028.**
   4. `WM_COPY`, then Ctrl+C, then the step 1 wait for the clipboard, unchanged.
   - Expected: tens of milliseconds instead of ~300 ms.
 - *Check before relying on it:* whether the hook blocks the trigger key (`handle`
-  returns `true` for `SingleKey` and `ModifierCombo`) and whether a `DoublePress`'s
-  second press reaches the app (it isn't blocked today). A trigger key still held during
+  returns `true` for every hotkey type, a `DoublePress`'s second press included; see the
+  correction above). A trigger key still held during
   the Ctrl+C must not change what the app does.
 - *Test matrix (maintainer, debug build with `[clip]` timing):*
   - Hotkeys:

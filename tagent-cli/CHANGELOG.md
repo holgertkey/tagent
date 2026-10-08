@@ -210,6 +210,14 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+029) **Hotkeys without Alt copy the selection at once on Windows** (for example
+  `Ctrl+Shift+T`, `F9` or `Ctrl+Ctrl`): the three 100 ms waits before the simulated
+  Ctrl+C are gone for them, so the copy takes under 10 ms (measured: 2-9 ms) instead
+  of about 0.3 s. Only Alt puts an app into menu mode, which is what those waits were for; a
+  Shift or Win key still held is released in the same input as the Ctrl+C, so Ctrl+C
+  doesn't turn into Ctrl+Shift+C (Chrome's inspector). Hotkeys with Alt, such as the
+  default `Alt+A` and `Alt+S`, copy as before. The translate and speech hotkeys each
+  copy the way their own keys need.
 - (+028) **The hotkeys copy the selection faster on Windows**, about 0.2 s sooner. The
   keyboard hook's thread used to check for messages every 10 ms, and Windows runs the
   hook only when that thread looks, so every keystroke in the system waited up to 10 ms

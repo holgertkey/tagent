@@ -4666,6 +4666,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 window.set_active_speech_hotkey(speech_hotkey_str.clone().into());
             }
 
+            // Each hotkey copies the selection the way its own keys need (Alt or not).
+            let translate_copy_mode = config::CopyMode::for_hotkey(Some(&hotkey));
+            let speech_copy_mode = config::CopyMode::for_hotkey(speech_hotkey.as_ref());
+
             let is_processing = Arc::new(AtomicBool::new(false));
             let is_speech_processing = Arc::new(AtomicBool::new(false));
             let weak = window.as_weak();
@@ -4732,48 +4736,54 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let is_speech_processing2 = is_speech_processing.clone();
                     let config_manager2 = config_manager.clone();
                     let speech_stop_flag2 = speech_stop_flag.clone();
-                    std::thread::spawn(move || match ClipboardManager::new().get_selected_text() {
-                        Ok(text) if !text.trim().is_empty() => {
-                            slint::invoke_from_event_loop(move || {
-                                let Some(window) = weak2.upgrade() else {
-                                    is_speech_processing2.store(false, Ordering::SeqCst);
-                                    return;
-                                };
-                                push_transcript_entry(
-                                    &window,
-                                    speech_transcript_entry(&window, &text, &from_code),
-                                );
-                                let index = window.get_transcript_entries().row_count() as i32 - 1;
-                                start_speaking(
-                                    &window,
-                                    &config_manager2,
-                                    &speech_stop_flag2,
-                                    weak2.clone(),
-                                    SpeakRequest {
-                                        index,
-                                        is_phrase: true,
-                                        text,
-                                        code: from_code,
-                                    },
-                                );
-                                is_speech_processing2.store(false, Ordering::SeqCst);
-                            })
-                            .ok();
-                        }
-                        Ok(_) => {
-                            is_speech_processing2.store(false, Ordering::SeqCst);
-                        }
-                        Err(err) => {
-                            slint::invoke_from_event_loop(move || {
-                                if let Some(window) = weak2.upgrade() {
+                    std::thread::spawn(move || {
+                        match ClipboardManager::new().get_selected_text(speech_copy_mode) {
+                            Ok(text) if !text.trim().is_empty() => {
+                                slint::invoke_from_event_loop(move || {
+                                    let Some(window) = weak2.upgrade() else {
+                                        is_speech_processing2.store(false, Ordering::SeqCst);
+                                        return;
+                                    };
                                     push_transcript_entry(
                                         &window,
-                                        info_transcript_entry("[Speech]", format!("Error: {err}")),
+                                        speech_transcript_entry(&window, &text, &from_code),
                                     );
-                                }
+                                    let index =
+                                        window.get_transcript_entries().row_count() as i32 - 1;
+                                    start_speaking(
+                                        &window,
+                                        &config_manager2,
+                                        &speech_stop_flag2,
+                                        weak2.clone(),
+                                        SpeakRequest {
+                                            index,
+                                            is_phrase: true,
+                                            text,
+                                            code: from_code,
+                                        },
+                                    );
+                                    is_speech_processing2.store(false, Ordering::SeqCst);
+                                })
+                                .ok();
+                            }
+                            Ok(_) => {
                                 is_speech_processing2.store(false, Ordering::SeqCst);
-                            })
-                            .ok();
+                            }
+                            Err(err) => {
+                                slint::invoke_from_event_loop(move || {
+                                    if let Some(window) = weak2.upgrade() {
+                                        push_transcript_entry(
+                                            &window,
+                                            info_transcript_entry(
+                                                "[Speech]",
+                                                format!("Error: {err}"),
+                                            ),
+                                        );
+                                    }
+                                    is_speech_processing2.store(false, Ordering::SeqCst);
+                                })
+                                .ok();
+                            }
                         }
                     });
                 })
@@ -4884,7 +4894,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let popup_weak2 = popup_weak.clone();
                     let popup_weak_for_upgrade = popup_weak.clone();
                     std::thread::spawn(move || {
-                        match ClipboardManager::new().get_selected_text() {
+                        match ClipboardManager::new().get_selected_text(translate_copy_mode) {
                             Ok(text) if !text.trim().is_empty() => {
                                 spawn_translation(
                                     weak2,

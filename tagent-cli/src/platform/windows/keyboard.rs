@@ -1,5 +1,5 @@
 use super::keycodes::normalize_vk_code;
-use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
+use crate::config::{self, ConfigManager, CopyMode, HotkeyParser, HotkeyType};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
 use std::collections::{HashMap, HashSet};
@@ -221,6 +221,12 @@ impl HotkeyState {
             Some(HotkeyType::ModifierCombo { modifiers, .. }) => Some(modifiers),
             _ => None,
         }
+    }
+
+    /// How this hotkey copies the selection when it fires (see [`CopyMode`]).
+    fn copy_mode(&self) -> CopyMode {
+        let hotkey = self.config.lock().ok().and_then(|config| config.clone());
+        CopyMode::for_hotkey(hotkey.as_ref())
     }
 
     /// Mark double-press sequence as interrupted if another key was pressed
@@ -729,11 +735,14 @@ unsafe fn trigger_translation() {
     if let Some(translator) = TRANSLATOR.get() {
         let translator_clone = translator.clone();
         let processing_clone = IS_PROCESSING.get().unwrap().clone();
+        let copy_mode = TRANSLATE_HOTKEY
+            .get()
+            .map_or(CopyMode::Alt, HotkeyState::copy_mode);
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) = translator_clone.translate_clipboard().await {
+                if let Err(e) = translator_clone.translate_clipboard(copy_mode).await {
                     eprintln!("Translation error: {}", e);
                 }
                 if let Ok(mut proc) = processing_clone.lock() {
@@ -777,11 +786,15 @@ unsafe fn trigger_speech() {
         let translator_clone = translator.clone();
         let speaking_clone = IS_SPEAKING.get().unwrap().clone();
         let stop_flag_clone = SHOULD_STOP_SPEECH.get().unwrap().clone();
+        let copy_mode = SPEECH_HOTKEY
+            .get()
+            .map_or(CopyMode::Alt, HotkeyState::copy_mode);
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) = speak_clipboard(&translator_clone, stop_flag_clone).await {
+                if let Err(e) = speak_clipboard(&translator_clone, stop_flag_clone, copy_mode).await
+                {
                     eprintln!("Speech error: {}", e);
                 }
                 if let Ok(mut speaking) = speaking_clone.lock() {
@@ -796,13 +809,14 @@ unsafe fn trigger_speech() {
 async fn speak_clipboard(
     _translator: &Translator,
     stop_flag: Arc<AtomicBool>,
+    copy_mode: CopyMode,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     use crate::platform::ClipboardManager;
     use crate::platform::WindowManager;
     use std::io::{self, Write};
 
     let clipboard = ClipboardManager::new();
-    clipboard.copy_selected_text()?;
+    clipboard.copy_selected_text(copy_mode)?;
     let text = clipboard.get_text()?;
 
     // Get config from shared ConfigManager
@@ -1053,6 +1067,17 @@ mod tests {
         let triggered = state.handle('Q' as u32, true, test_trigger_fn);
         assert!(triggered);
         assert!(TEST_TRIGGERED.load(AtomicOrdering::SeqCst));
+    }
+
+    #[test]
+    fn test_hotkey_state_copy_mode_follows_its_own_hotkey() {
+        let alt = HotkeyState::new(Some(HotkeyParser::parse("Alt+A").unwrap()));
+        let plain = HotkeyState::new(Some(HotkeyParser::parse("Ctrl+Shift+T").unwrap()));
+        let disabled = HotkeyState::new(None);
+
+        assert_eq!(alt.copy_mode(), CopyMode::Alt);
+        assert_eq!(plain.copy_mode(), CopyMode::Plain);
+        assert_eq!(disabled.copy_mode(), CopyMode::Alt);
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use crate::config::CopyMode;
 use arboard::{Clipboard, GetExtLinux, LinuxClipboardKind};
 use std::error::Error;
 use std::os::raw::{c_char, c_uint, c_ulong};
@@ -217,7 +218,12 @@ impl ClipboardManager {
     /// selected with the mouse) instead, through XWayland: GNOME mirrors a Wayland app's
     /// PRIMARY there, readable without focus. No key simulation, and the clipboard is left
     /// alone.
-    pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+    ///
+    /// `_mode` is for Windows, which copies differently after an Alt hotkey.
+    pub fn get_selected_text(
+        &self,
+        _mode: CopyMode,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         if super::session::session() != super::session::Session::Wayland {
             return self.get_text_with_copy();
         }

@@ -1,9 +1,10 @@
 use super::keycodes::is_key_pressed;
+use crate::config::CopyMode;
 use clipboard_win::{formats, get_clipboard, set_clipboard};
 use std::error::Error;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetGUIThreadInfo, GetMessageExtraInfo, GetWindowThreadProcessId,
@@ -40,124 +41,20 @@ impl ClipboardManager {
     /// Automatically copy selected text (simulate Ctrl+C), then wait up to
     /// [`CLIPBOARD_CHANGE_TIMEOUT`] for the app to write the clipboard. Returns whether it
     /// did.
-    pub fn copy_selected_text(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    ///
+    /// `mode` comes from the hotkey that fired. [`CopyMode::Plain`] (no Alt in the
+    /// hotkey) copies at once: Ctrl, Shift and Win put no window into menu mode, so the
+    /// only thing to take care of is a Shift or Win still held, which would turn Ctrl+C
+    /// into another shortcut (Ctrl+Shift+C opens Chrome's inspector). Those keys are
+    /// released in the same `SendInput` call as the Ctrl+C, whose events Windows delivers
+    /// in order with no other input in between, so nothing has to wait for them.
+    /// [`CopyMode::Alt`] keeps the waits the Alt hotkeys need (see [`Self::copy_alt`]).
+    pub fn copy_selected_text(&self, mode: CopyMode) -> Result<bool, Box<dyn Error + Send + Sync>> {
         // Taken before anything is sent: `WM_COPY` alone may already write the clipboard.
         let sequence_before = clipboard_win::seq_num();
-        unsafe {
-            // Capture the foreground window as the very first thing, before any sleep or
-            // simulated input -- by the time those run, focus may already have moved.
-            let foreground = GetForegroundWindow();
-
-            // Wait a bit before touching anything, to let the triggering click/keystroke
-            // settle.
-            std::thread::sleep(std::time::Duration::from_millis(100));
-
-            // Wait for a physically-held Alt to actually be released, instead of injecting
-            // a synthetic Alt-up below. When this call is triggered by the "📋" button
-            // (a click, not a keystroke), a held Alt shouldn't normally happen; when
-            // triggered by the Alt+Q-style global hotkey (see `keyboard.rs`), that hook's
-            // own swallow-and-replay mechanism already prevents the real Alt keydown from
-            // reaching the foreground app in the first place, so this loop is a defensive
-            // fallback either way, not the primary protection. Physical release is
-            // necessary but not sufficient -- the foreground window's own message queue
-            // may not have finished processing the matching keyup yet, which is what the
-            // WM_CANCELMODE step below is for.
-            let alt_release_deadline =
-                std::time::Instant::now() + std::time::Duration::from_millis(600);
-            while is_key_pressed(VK_MENU.0 as i32)
-                && std::time::Instant::now() < alt_release_deadline
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-
-            // Settle delay so the foreground window's message queue has a chance to catch
-            // up on the Alt keyup before we touch it again.
-            std::thread::sleep(std::time::Duration::from_millis(100));
-
-            // Explicitly cancel any menu-tracking/modal loop a real Alt keydown may have
-            // put the foreground window into. WM_CANCELMODE is the documented API for
-            // exactly this ("cancel modal (system) modes, such as ... tracking the
-            // menu"). SendMessageTimeoutW instead of bare SendMessageW so a busy/hung
-            // target window can't block this thread.
-            if foreground.0 != 0 {
-                let mut result: usize = 0;
-                SendMessageTimeoutW(
-                    foreground,
-                    WM_CANCELMODE,
-                    WPARAM(0),
-                    LPARAM(0),
-                    SMTO_ABORTIFHUNG,
-                    150,
-                    Some(&mut result),
-                );
-            }
-
-            // Release Shift/Win if still held (unlike Alt, these don't put the foreground
-            // window into a menu-mode gesture on their own, so a synthetic up is safe here)
-            // -- this ensures Ctrl+C is recognized correctly if triggered while a
-            // Shift-based or Win-based key combo is still held down.
-            let inputs: Vec<INPUT> = vec![
-                // Release Shift (both left and right)
-                Self::create_key_input(VK_SHIFT.0, true),
-                Self::create_key_input(VK_LSHIFT.0, true),
-                Self::create_key_input(VK_RSHIFT.0, true),
-                // Release Win (both left and right)
-                Self::create_key_input(VK_LWIN.0, true),
-                Self::create_key_input(VK_RWIN.0, true),
-            ];
-
-            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-
-            // Delay to ensure modifiers are processed
-            std::thread::sleep(std::time::Duration::from_millis(100));
-
-            // Some apps (observed with Firefox, in tagent-cli) don't act on the simulated
-            // Ctrl+C below even though SendInput reports it delivered. As a second
-            // mechanism -- in addition to, not instead of, the SendInput below, since
-            // it's harmless where unsupported -- send WM_COPY directly to the actually-
-            // focused control, not the top-level foreground window, which for a
-            // multi-control app usually isn't the thing that owns the text selection.
-            // GetFocus() only works within your own thread, so the focused control has
-            // to be read via GetGUIThreadInfo on the foreground window's thread instead.
-            // (Doesn't help every app -- some apps' editing surface isn't backed by any
-            // HWND a message can target at all, or otherwise doesn't act on either
-            // mechanism.)
-            let target_thread_id = GetWindowThreadProcessId(foreground, None);
-            let mut gui_thread_info = GUITHREADINFO {
-                cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-                ..Default::default()
-            };
-            let focus_target = if GetGUIThreadInfo(target_thread_id, &mut gui_thread_info).is_ok()
-                && gui_thread_info.hwndFocus.0 != 0
-            {
-                gui_thread_info.hwndFocus
-            } else {
-                foreground
-            };
-            let mut wm_copy_result: usize = 0;
-            SendMessageTimeoutW(
-                focus_target,
-                WM_COPY,
-                WPARAM(0),
-                LPARAM(0),
-                SMTO_ABORTIFHUNG,
-                150,
-                Some(&mut wm_copy_result),
-            );
-
-            // Simulate Ctrl+C using SendInput
-            let ctrl_c_inputs: Vec<INPUT> = vec![
-                // Ctrl down
-                Self::create_key_input(VK_CONTROL.0, false),
-                // C down
-                Self::create_key_input(b'C' as u16, false),
-                // C up
-                Self::create_key_input(b'C' as u16, true),
-                // Ctrl up
-                Self::create_key_input(VK_CONTROL.0, true),
-            ];
-
-            SendInput(&ctrl_c_inputs, std::mem::size_of::<INPUT>() as i32);
+        match mode {
+            CopyMode::Alt => unsafe { Self::copy_alt() },
+            CopyMode::Plain => unsafe { Self::copy_plain() },
         }
 
         Ok(wait_for_clipboard_change(
@@ -165,6 +62,140 @@ impl ClipboardManager {
             sequence_before,
             CLIPBOARD_CHANGE_TIMEOUT,
         ))
+    }
+
+    /// The copy for hotkeys without Alt: `WM_COPY`, then a single `SendInput` with the
+    /// releases of the held Shift/Win keys followed by Ctrl+C. No sleeps.
+    unsafe fn copy_plain() {
+        Self::send_wm_copy(GetForegroundWindow());
+
+        let mut inputs: Vec<INPUT> = keys_to_release(|vk| is_key_pressed(vk as i32))
+            .into_iter()
+            .map(|vk| Self::create_key_input(vk, true))
+            .collect();
+        inputs.extend(Self::ctrl_c_inputs());
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+
+    /// The copy for hotkeys with Alt. Every wait in it is there for Alt's menu mode
+    /// (`tagent-cli` 0.16.0+004 to +007).
+    unsafe fn copy_alt() {
+        // Capture the foreground window as the very first thing, before any sleep or
+        // simulated input -- by the time those run, focus may already have moved.
+        let foreground = GetForegroundWindow();
+
+        // Wait a bit before touching anything, to let the triggering click/keystroke
+        // settle.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Wait for a physically-held Alt to actually be released, instead of injecting
+        // a synthetic Alt-up below. When this call is triggered by the "📋" button
+        // (a click, not a keystroke), a held Alt shouldn't normally happen; when
+        // triggered by the Alt+Q-style global hotkey (see `keyboard.rs`), that hook's
+        // own swallow-and-replay mechanism already prevents the real Alt keydown from
+        // reaching the foreground app in the first place, so this loop is a defensive
+        // fallback either way, not the primary protection. Physical release is
+        // necessary but not sufficient -- the foreground window's own message queue
+        // may not have finished processing the matching keyup yet, which is what the
+        // WM_CANCELMODE step below is for.
+        let alt_release_deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(600);
+        while is_key_pressed(VK_MENU.0 as i32) && std::time::Instant::now() < alt_release_deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Settle delay so the foreground window's message queue has a chance to catch
+        // up on the Alt keyup before we touch it again.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Explicitly cancel any menu-tracking/modal loop a real Alt keydown may have
+        // put the foreground window into. WM_CANCELMODE is the documented API for
+        // exactly this ("cancel modal (system) modes, such as ... tracking the
+        // menu"). SendMessageTimeoutW instead of bare SendMessageW so a busy/hung
+        // target window can't block this thread.
+        if foreground.0 != 0 {
+            let mut result: usize = 0;
+            SendMessageTimeoutW(
+                foreground,
+                WM_CANCELMODE,
+                WPARAM(0),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                150,
+                Some(&mut result),
+            );
+        }
+
+        // Release Shift/Win if still held (unlike Alt, these don't put the foreground
+        // window into a menu-mode gesture on their own, so a synthetic up is safe here)
+        // -- this ensures Ctrl+C is recognized correctly if triggered while a
+        // Shift-based or Win-based key combo is still held down.
+        let inputs: Vec<INPUT> = vec![
+            // Release Shift (both left and right)
+            Self::create_key_input(VK_SHIFT.0, true),
+            Self::create_key_input(VK_LSHIFT.0, true),
+            Self::create_key_input(VK_RSHIFT.0, true),
+            // Release Win (both left and right)
+            Self::create_key_input(VK_LWIN.0, true),
+            Self::create_key_input(VK_RWIN.0, true),
+        ];
+
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+
+        // Delay to ensure modifiers are processed
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Some apps (observed with Firefox, in tagent-cli) don't act on the simulated
+        // Ctrl+C below even though SendInput reports it delivered. As a second
+        // mechanism -- in addition to, not instead of, the SendInput below, since
+        // it's harmless where unsupported -- send WM_COPY directly to the actually-
+        // focused control, not the top-level foreground window, which for a
+        // multi-control app usually isn't the thing that owns the text selection.
+        // GetFocus() only works within your own thread, so the focused control has
+        // to be read via GetGUIThreadInfo on the foreground window's thread instead.
+        // (Doesn't help every app -- some apps' editing surface isn't backed by any
+        // HWND a message can target at all, or otherwise doesn't act on either
+        // mechanism.)
+        Self::send_wm_copy(foreground);
+
+        SendInput(&Self::ctrl_c_inputs(), std::mem::size_of::<INPUT>() as i32);
+    }
+
+    /// Sends `WM_COPY` to the control that has the keyboard focus in `foreground`'s
+    /// thread (see the comment at the call in [`Self::copy_alt`]).
+    unsafe fn send_wm_copy(foreground: HWND) {
+        let target_thread_id = GetWindowThreadProcessId(foreground, None);
+        let mut gui_thread_info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        let focus_target = if GetGUIThreadInfo(target_thread_id, &mut gui_thread_info).is_ok()
+            && gui_thread_info.hwndFocus.0 != 0
+        {
+            gui_thread_info.hwndFocus
+        } else {
+            foreground
+        };
+        let mut wm_copy_result: usize = 0;
+        SendMessageTimeoutW(
+            focus_target,
+            WM_COPY,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            150,
+            Some(&mut wm_copy_result),
+        );
+    }
+
+    /// Ctrl down, C down, C up, Ctrl up.
+    unsafe fn ctrl_c_inputs() -> [INPUT; 4] {
+        [
+            Self::create_key_input(VK_CONTROL.0, false),
+            Self::create_key_input(b'C' as u16, false),
+            Self::create_key_input(b'C' as u16, true),
+            Self::create_key_input(VK_CONTROL.0, true),
+        ]
     }
 
     /// Helper function to create keyboard input structure for SendInput
@@ -215,11 +246,14 @@ impl ClipboardManager {
     /// times until it does. Copying the same text the clipboard already held still counts
     /// as a change, so it costs no retries. If nothing was ever copied, the clipboard's
     /// current text is returned, as before.
-    pub fn get_text_with_copy(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+    pub fn get_text_with_copy(
+        &self,
+        mode: CopyMode,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         const MAX_ATTEMPTS: u32 = 3;
 
         for _ in 0..MAX_ATTEMPTS {
-            if self.copy_selected_text()? {
+            if self.copy_selected_text(mode)? {
                 return self.read_text_after_change();
             }
         }
@@ -244,8 +278,11 @@ impl ClipboardManager {
 
     /// The text currently selected in whatever app has it, for the global hotkeys: the
     /// same as [`Self::get_text_with_copy`] here (Linux reads PRIMARY on Wayland).
-    pub fn get_selected_text(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
-        self.get_text_with_copy()
+    pub fn get_selected_text(
+        &self,
+        mode: CopyMode,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+        self.get_text_with_copy(mode)
     }
 }
 
@@ -272,6 +309,42 @@ fn wait_for_clipboard_change(
             return false;
         }
         std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// The modifiers [`CopyMode::Plain`] releases before its Ctrl+C: those of left/right Shift
+/// and Win that `is_pressed` reports held. Ctrl is left alone, since the Ctrl+C presses
+/// and releases it anyway; a held Alt never reaches this path.
+fn keys_to_release(is_pressed: impl Fn(u16) -> bool) -> Vec<u16> {
+    [VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN]
+        .into_iter()
+        .map(|key| key.0)
+        .filter(|&vk| is_pressed(vk))
+        .collect()
+}
+
+#[cfg(test)]
+mod keys_to_release_tests {
+    use super::*;
+
+    #[test]
+    fn keys_to_release_is_empty_when_nothing_is_held() {
+        assert!(keys_to_release(|_| false).is_empty());
+    }
+
+    #[test]
+    fn keys_to_release_lists_only_the_held_shift_and_win_keys() {
+        let held = [VK_RSHIFT.0, VK_LWIN.0];
+        assert_eq!(
+            keys_to_release(|vk| held.contains(&vk)),
+            vec![VK_RSHIFT.0, VK_LWIN.0]
+        );
+    }
+
+    #[test]
+    fn keys_to_release_leaves_ctrl_and_alt_alone() {
+        let held = [VK_CONTROL.0, VK_LCONTROL.0, VK_MENU.0, VK_LMENU.0];
+        assert!(keys_to_release(|vk| held.contains(&vk)).is_empty());
     }
 }
 

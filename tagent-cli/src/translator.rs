@@ -1,4 +1,4 @@
-use crate::config::{self, ConfigManager};
+use crate::config::{self, ConfigManager, CopyMode};
 use crate::platform::{ClipboardManager, WindowHandle, WindowManager};
 use rustyline::ExternalPrinter;
 use std::error::Error;
@@ -281,8 +281,12 @@ impl Translator {
         io::stdout().flush().ok();
     }
 
-    /// Main function for translating text from clipboard
-    pub async fn translate_clipboard(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    /// Main function for translating text from clipboard. `copy_mode` belongs to the
+    /// hotkey that fired (see [`CopyMode`]).
+    pub async fn translate_clipboard(
+        &self,
+        copy_mode: CopyMode,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check if config file was modified and reload if necessary
         if let Err(e) = self.config_manager.check_and_reload() {
             self.emit_line(format!("Config reload error: {}", e));
@@ -301,7 +305,7 @@ impl Translator {
             }
         }
 
-        let original_text = match self.clipboard.get_selected_text() {
+        let original_text = match self.clipboard.get_selected_text(copy_mode) {
             Ok(text) => {
                 if text.trim().is_empty() {
                     self.emit_line("No selected text or clipboard is empty");

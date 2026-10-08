@@ -1,7 +1,7 @@
 use super::keycodes::normalize_vk_code;
 use super::portal;
 use super::session::{session, Session};
-use crate::config::{self, ConfigManager, HotkeyParser, HotkeyType};
+use crate::config::{self, ConfigManager, CopyMode, HotkeyParser, HotkeyType};
 use crate::platform::{DesktopHotkeys, HotkeyBanner};
 use crate::speech::SpeechManager;
 use crate::translator::Translator;
@@ -365,6 +365,8 @@ impl KeyboardHook {
     /// pressed again, or Ctrl+C in the terminal, stops speech.
     async fn start_wayland(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let (translate_hotkey, speech_hotkey) = self.configured_hotkeys();
+        let translate_copy_mode = CopyMode::for_hotkey(translate_hotkey.as_ref());
+        let speech_copy_mode = CopyMode::for_hotkey(speech_hotkey.as_ref());
         if translate_hotkey.is_none() && speech_hotkey.is_none() {
             // Nothing to bind, so no answer to wait for; the banner shows the config.
             set_banner_state(HotkeyBanner::Configured);
@@ -377,13 +379,14 @@ impl KeyboardHook {
         let result = portal::listen(
             translate_hotkey.as_ref(),
             speech_hotkey.as_ref(),
-            || Self::trigger_translation(&translator, &is_processing),
+            || Self::trigger_translation(&translator, &is_processing, translate_copy_mode),
             || {
                 Self::trigger_speech(
                     &translator,
                     &config_manager,
                     &is_speaking,
                     &should_stop_speech,
+                    speech_copy_mode,
                 )
             },
             |status| Self::report_desktop_hotkeys(&translator, &status),
@@ -420,6 +423,8 @@ impl KeyboardHook {
     async fn start_x11(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let config = self.config_manager.get_config();
         let (translate_hotkey, speech_hotkey) = self.configured_hotkeys();
+        let translate_copy_mode = CopyMode::for_hotkey(translate_hotkey.as_ref());
+        let speech_copy_mode = CopyMode::for_hotkey(speech_hotkey.as_ref());
 
         // Grab hotkeys via X11 to prevent them from reaching other applications.
         // _xgrab lives until the end of the event loop; Drop releases all grabs.
@@ -530,6 +535,7 @@ impl KeyboardHook {
                             Self::trigger_translation(
                                 &translator,
                                 &is_processing,
+                                translate_copy_mode,
                             );
                             continue;
                         }
@@ -551,6 +557,7 @@ impl KeyboardHook {
                                 &config_manager,
                                 &is_speaking,
                                 &should_stop_speech,
+                                speech_copy_mode,
                             );
                             continue;
                         }
@@ -583,7 +590,11 @@ impl KeyboardHook {
     }
 
     /// Trigger translation in a separate thread
-    fn trigger_translation(translator: &Translator, is_processing: &Arc<Mutex<bool>>) {
+    fn trigger_translation(
+        translator: &Translator,
+        is_processing: &Arc<Mutex<bool>>,
+        copy_mode: CopyMode,
+    ) {
         if let Ok(mut processing) = is_processing.lock() {
             if *processing {
                 return;
@@ -597,7 +608,7 @@ impl KeyboardHook {
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) = translator_clone.translate_clipboard().await {
+                if let Err(e) = translator_clone.translate_clipboard(copy_mode).await {
                     eprintln!("Translation error: {}", e);
                 }
                 if let Ok(mut proc) = processing_clone.lock() {
@@ -613,6 +624,7 @@ impl KeyboardHook {
         config_manager: &Arc<ConfigManager>,
         is_speaking: &Arc<Mutex<bool>>,
         should_stop_speech: &Arc<AtomicBool>,
+        copy_mode: CopyMode,
     ) {
         if let Ok(mut speaking) = is_speaking.lock() {
             if *speaking {
@@ -635,7 +647,9 @@ impl KeyboardHook {
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                if let Err(e) = speak_clipboard(&config_manager_clone, stop_flag_clone).await {
+                if let Err(e) =
+                    speak_clipboard(&config_manager_clone, stop_flag_clone, copy_mode).await
+                {
                     eprintln!("Speech error: {}", e);
                 }
                 if let Ok(mut speaking) = speaking_clone.lock() {
@@ -675,11 +689,12 @@ struct KeyboardEventState {
 async fn speak_clipboard(
     config_manager: &ConfigManager,
     stop_flag: Arc<AtomicBool>,
+    copy_mode: CopyMode,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     use crate::platform::ClipboardManager;
     use std::io::{self, Write};
 
-    let text = ClipboardManager::new().get_selected_text()?;
+    let text = ClipboardManager::new().get_selected_text(copy_mode)?;
 
     if let Err(e) = config_manager.check_and_reload() {
         eprintln!("Config reload error: {}", e);
