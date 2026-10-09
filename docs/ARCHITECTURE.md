@@ -2052,11 +2052,10 @@ already under way, started the counter at `+001`), and stripped at release like 
 **one section per cycle version**, `## [0.19.0]`, never `## [0.19.0+NNN]` headers; an
 entry names its build in parentheses (`(+007)`). Semver ignores build metadata when
 matching requirements, so the apps' `version = "0.19.0"` dependency on `tagent` matches
-`0.19.0+NNN`. Nothing syncs it (`tagent` has no `build.rs`). As a safety net for cycles where
-the version did move more than once,
-`.github/scripts/release-notes.sh` collects every `tagent` changelog section above the
-previous release's `tagent` version (not just the current version's, as for the apps), so an
-unpublished intermediate version's entries still reach the GitHub Release notes.
+`0.19.0+NNN`. Nothing syncs it (`tagent` has no `build.rs`). The GitHub Release notes
+(`.github/scripts/release-notes.sh`) list only each crate's version and a link to its
+changelog at the release tag (since 2026-10-09; they used to copy every entry of the cycle,
+over 1200 lines for the 0.19.0 cycle), so the changelogs are where a release's details live.
 `1.0.0` waits until the API settles and the crate is published. `0.17.0` still sorts
 above `0.12.0`, the last version the old single-crate `tagent` application published to
 crates.io (checked 2026-09-19), so `cargo add tagent` will resolve to the library rather

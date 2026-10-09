@@ -5,7 +5,7 @@ name: Release
 #     of tagent-gui),
 #   - publishes tagent, tagent-cli and tagent-gui to crates.io (each one only if its
 #     version isn't already there), and
-#   - creates the GitHub Release with the binaries and notes from the crates' CHANGELOGs.
+#   - creates the GitHub Release with the binaries and short notes (versions, changelog links).
 #
 # The crates are versioned independently, so the versions come from each crate's
 # Cargo.toml, not from the tag name. Release versions carry no `+BUILD` suffix.
@@ -26,7 +26,7 @@ jobs:
     name: Verify release
     runs-on: ubuntu-latest
     steps:
-      # Full history with tags: release-notes.sh finds the previous release by its tag.
+      # Full history with tags: release-notes.sh links the changelogs at the tag at HEAD.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -169,7 +169,7 @@ jobs:
       contents: write
 
     steps:
-      # Full history with tags: release-notes.sh finds the previous release by its tag.
+      # Full history with tags: release-notes.sh links the changelogs at the tag at HEAD.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

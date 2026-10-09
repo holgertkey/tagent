@@ -22,7 +22,7 @@ have no `+BUILD`.
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-10-06
+## [0.19.0] - 2026-10-09
 
 ### Changed
 - (+003) **The OpenAI-compatible dictionary provider reads an answer made of several JSON
