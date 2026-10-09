@@ -14,6 +14,23 @@ Where the rest lives:
   "Book" edits next to its changelog entry and makes them in the same commit. See "User
   documentation" in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Stage C — Config file upgrades (done, 2026-09-29: `0.17.0+005`–`+008`)
 
 Landed as planned, C1 → C4, one changelog section each (`+007` was never built on its
@@ -186,6 +203,21 @@ bump with a `tagent-cli/CHANGELOG.md` entry.
   its own stage in its own plan.
 - Converting the pre-0.17.0 INI file `tagent-cli.conf`: it is no longer read, with no
   migration (decided with Stage F3).
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Stage S — Switching the translation provider in a session (done, 2026-09-29: `0.17.0+009`)
 
@@ -382,6 +414,22 @@ documentation only, no bump).
 - A one-shot CLI flag (`tagent-cli --provider deepl "text"`): a separate small feature
   if wanted; S1's rebuild-on-change makes it trivial.
 - Showing in `/config` that the active provider differs from the file.
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Stage L — Language codes in the config, target language from the locale (done, 2026-09-29: `0.17.0+010`–`+011`)
 
@@ -640,6 +688,23 @@ interactive and hotkey outputs of the same translation look different.
   the header; an independent decision there.
 - Labels in CLI mode.
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Stage W — Global hotkey on Wayland (done, 2026-10-04: `0.17.0+020`)
 
 Landed W1–W5 together as `0.17.0+020` (one `+BUILD`, not one per step). Verified live by
@@ -834,3 +899,8 @@ show/hide off on Wayland, stopping speech), with the icon decided as below.
 - wlroots compositors (no GlobalShortcuts backend: X11 fallback only), KDE untested.
 - `ConfigureShortcuts` (portal version 2) for changing keys from `tagent-cli`.
 - A `.deb` for `tagent-cli`.
+
+---
+
+
+

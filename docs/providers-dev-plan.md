@@ -9,6 +9,17 @@ Started 2026-09-26.
 
 ---
 
+
+
+
+
+
+
+
+
+
+
+
 ## Part I — Concept
 
 ### Goal
@@ -104,6 +115,17 @@ universality is built at the level of **capabilities**, and "any text server" is
   breaking change.
 
 ---
+
+
+
+
+
+
+
+
+
+
+
 
 ## Part II — Development plan
 
@@ -767,6 +789,21 @@ option fields from `ProviderDescriptor::options` (F2), which is Slint UI work of
 
 ---
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### Stage F3 — `tagent-cli` config in TOML
 
 **Status:** done (2026-09-27, tagent-cli 0.17.0)
@@ -942,6 +979,19 @@ masked profile secrets; a release build syncs the `0.17.0` version into the docs
   profiles as `[provider_options.<name>]` tables; a test parses the settings part back.
 
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### Stage U — One provider list for all three axes (apps)
 
@@ -1396,6 +1446,17 @@ documentation only and gets no bump.
 
 ---
 
+
+
+
+
+
+
+
+
+
+
+
 ## Provider stages
 
 Each provider stage follows the template at the end. Planned order (it can be changed):
@@ -1625,6 +1686,19 @@ works, in its own commit.
   (and checks the missing-key message), a `tagent-gui` test checks the Settings rows
   (`api_key` required + password). `tagent-cli/README.md` gained a DeepL example;
   `tagent-gui/README.md` waits for its next semver bump.
+
+---
+
+
+
+
+
+
+
+
+
+
+
 
 ### Stage P2 — OpenAI-compatible chat (translation)
 
@@ -1926,6 +2000,23 @@ translation pass against a local Ollama.
   "Multi-line provider options" stage of `tagent-gui-dev-plan.md` (`tagent-gui`
   0.14.0+036).
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### Stage P3 — OpenAI-compatible chat (dictionary)
 
 **Status:** done (2026-10-02, tagent 0.19.0+002; tagent-cli 0.17.0+015, tagent-gui 0.15.0+001) — live tests pass against a local Ollama `qwen2.5:3b` (GTX 1050, 2 GB)
@@ -2196,6 +2287,19 @@ Desirable, not blocking: live tests and a manual "Test" pass against a real serv
   - Manual pass (2026-10-02): the user confirmed lookups through the `ollama` profile
     work in both applications.
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
 ### Stage P4 — Declarative HTTP (translation)
 
 **Status:** planned
@@ -2234,6 +2338,18 @@ LibreTranslate reference config against the mock server.
   format, e.g. as a value reference `api_key = keyring:` resolved by the app.
 
 ---
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Open questions
 
@@ -2312,3 +2428,6 @@ Copy this for every new stage (foundation or provider):
 **Done when:** concrete, checkable criteria.
 **Notes after landing:** what actually shipped, deviations, follow-ups.
 ```
+---
+
+

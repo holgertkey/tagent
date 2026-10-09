@@ -191,6 +191,21 @@ Candidates, not yet scheduled; the order is a suggestion.
     wait); steps 2 and 3 (0.15.0+029, +032) removed every fixed sleep from the copy, for
     hotkeys with and without Alt. Next: Linux; see [below](#planned-stage--hotkey-latency-selection-copy).
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### Planned stage — Provider profiles tab
 
 **Status:** implemented in 0.14.0+037 (2026-10-01), both iterations at once (the tab with
@@ -311,6 +326,20 @@ user; the `OptionSpec` descriptions already give examples).
   `google` shows three OK lines. User: Add an `openai` profile, fill `endpoint`/`model`
   in the panel, Test against a real server, OK, pick it in the main window and translate.
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### Planned stage — Pickers on the Providers tab, "Show in lists"
 
 **Status:** implemented in 0.14.0+038 (2026-10-01), on top of the Providers tab above;
@@ -363,6 +392,20 @@ options it is about.
 **Tests.** `picker_entries` (hidden dropped, selection kept, first built-in kept, profiles
 of other axes absent), `can_hide`, the new `ProfileRow` fields, `hidden_providers`
 round-trip and lowercasing, saving drops deleted names.
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### Planned stage — Interface scale
 
@@ -473,6 +516,19 @@ and 200 on the main window, the Settings dialog and the popup (nothing clipped, 
 opens big enough; a size saved at 100 % reopens 1.5× larger at 150 %, at the same
 position); `SLINT_SCALE_FACTOR=1` set by hand overrides `150`. Windows: user
 check on a 100 % and a 150 % display setting.
+
+---
+
+
+
+
+
+
+
+
+
+
+
 
 ### Planned stage — Hotkey latency (selection copy)
 
@@ -715,6 +771,21 @@ The plan as written before it was built:
 - The `KeyboardHook` and `ClipboardManager` doc comments: the reason for every remaining
   wait.
 
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Deliberately not done (revisit only with a new reason)
 
 - **Partial text selection in the transcript** (e.g. a Shift-mode swap to a plain
@@ -773,3 +844,6 @@ The plan as written before it was built:
   `gsettings set org.gnome.desktop.interface color-scheme ...`.
 - The Windows code is checked with `cargo check --target x86_64-pc-windows-gnu -p tagent-gui`
   and CI (Windows runner); live Windows behavior is verified manually.
+
+---
+

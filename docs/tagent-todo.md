@@ -34,6 +34,16 @@ So an app-forced theme that differs from the system theme is still unsupported u
       issue saying #10034 did not cover app theme != system theme for `ContextMenuArea`, with a
       minimal repro.
 
+---
+
+
+
+
+
+
+
+
+
 ## Hotkeys and selection copy: Linux checks and Step 4
 
 Added 2026-10-08. Everything from `tagent-cli` 0.17.0+029 to +032 and `tagent-gui` 0.15.0+029
@@ -85,3 +95,5 @@ Hotkey latency (selection copy)", Step 4; X11/XWayland only, both apps):
   `docs/ARCHITECTURE.md` (or a Linux counterpart).
 - Out of scope: Wayland (reads PRIMARY, simulates no keys); terminals, which copy with
   Ctrl+Shift+C, not the Ctrl+C the copy sends.
+
+  ---
