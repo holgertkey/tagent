@@ -714,7 +714,9 @@ The plan as written before it was built:
   not a guessed in-between value). Its finding is written down here and in the
   `KeyboardHook` doc comment.
 
-**Step 4 — Linux (X11/XWayland).**
+**Step 4 — Linux (X11/XWayland).** *Postponed (2026-10-09)*: the development machine runs
+GNOME 50 on Wayland, where the hotkeys read PRIMARY and this copy path never runs; it waits
+for an X11 session (tracked in `docs/tagent-todo.md`).
 - *The same measurement first* (the maintainer develops on Linux). Today's waits in
   `platform/linux/clipboard.rs`:
   - 100 ms initial;

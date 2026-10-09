@@ -1,30 +1,21 @@
 # TODO
 
-## Hotkeys and selection copy: Linux checks and Step 4
+## Hotkeys and selection copy: X11 checks and Step 4
 
 Added 2026-10-08. Everything from `tagent-cli` 0.17.0+029 to +032 and `tagent-gui` 0.15.0+029
-to +032 was built and tested on Windows only; Linux was never compiled for it, and CI runs
-only on `main`.
+to +032 was built and tested on Windows first. Checked on Linux 2026-10-09 (GNOME 50.1,
+Wayland): clippy and the workspace tests pass, and the hotkeys showed no problem. What is
+left needs an X11 session (Xorg, not Wayland; the development machine has none): on Wayland
+the hotkeys go through the portal and read PRIMARY, so the X11 copy path never runs there.
 
-**1. Build and tests (before anything else, and before pushing to `main`):**
-- [ ] `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- [ ] `cargo test --workspace`
-- What could break: `get_selected_text(_mode: CopyMode)` in `platform/linux/clipboard.rs`
-  (both apps); `CopyMode` passed through `trigger_translation`/`trigger_speech`/`speak_clipboard`
-  in `tagent-cli/src/platform/linux/keyboard.rs` (X11 and portal paths); the new hotkey tests in
-  both `config.rs` (`uses_alt`, `uses_win`, `validate_*`), which run with the Linux key codes.
+**1. AltGr on X11:**
+- [ ] On Windows, AltGr+letter also fires an `Alt+letter` hotkey (modifiers are normalized,
+      so right Alt counts as Alt; e.g. Polish AltGr+A = `ą` fires `Alt+A`). Check whether the
+      X11 path does the same (`Key::AltGr` maps to `KEY_RALT`, normalized to Alt), then decide
+      whether to fix it in both apps. Needs a layout where right Alt is AltGr (`pl`, `de`);
+      with `us`/`ru` right Alt is plain Alt, and firing the hotkey is correct.
 
-**2. Hotkey rules on Linux (+030, +031):**
-- [ ] A refused hotkey (`Win+T`, `Alt+Tab`, `Ctrl+C`, `Alt+Alt`, `A+Q`) in `tagent-cli.toml`
-      is turned off at start with the reason, and the other hotkey keeps working.
-- [ ] `tagent-gui` Settings shows the error for a refused hotkey, typed and recorded.
-- [ ] The defaults `Alt+A`/`Alt+S` still work on X11 and through the Wayland portal.
-- [ ] AltGr: on Windows, AltGr+letter also fires an `Alt+letter` hotkey (modifiers are
-      normalized, so right Alt counts as Alt; e.g. Polish AltGr+A = `ą` fires `Alt+A`).
-      Check whether Linux does the same (`Key::AltGr` maps to `KEY_RALT`, normalized to Alt),
-      then decide whether to fix it in both apps.
-
-**3. Step 4 of the hotkey latency stage** (`docs/tagent-gui-dev-plan.md`, "Planned stage —
+**2. Step 4 of the hotkey latency stage** (`docs/tagent-gui-dev-plan.md`, "Planned stage —
 Hotkey latency (selection copy)", Step 4; X11/XWayland only, both apps):
 - [ ] Measure first: temporary `eprintln!("[clip] ...")` timing on each wait in
       `copy_selected_text`/`send_copy_keystroke` (`platform/linux/clipboard.rs`), never
