@@ -12,7 +12,7 @@ before 2026-10-02 have one header per build.
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-10-06
+## [0.17.0] - 2026-10-09
 
 ### Added
 - (+027) **`use_colors` in `[colors]`**: `auto` (default), `always` or `never` turns colored
@@ -210,6 +210,9 @@ before 2026-10-02 have one header per build.
   support xterm's title stack; others leave it to the shell).
 
 ### Changed
+- (+035) **Smaller release binaries**: built with `opt-level = "s"` (size) instead of
+  `3`, about 16-17% smaller (Linux: `tagent-cli` 8.4 → 7.1 MB, `tagent-gui` 29.1 →
+  24.2 MB) and quicker to build, with no noticeable slowdown.
 - (+033) **The startup banner lists `/e (exit)` instead of `/q (quit)`.** Both still
   quit; `/e` matches the tray's "Exit" in `tagent-gui`.
 - (+032) **Hotkeys with Alt copy the selection at once on Windows too**, such as the

@@ -5807,7 +5807,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-cli"
-version = "0.17.0+034"
+version = "0.17.0+035"
 dependencies = [
  "arboard",
  "ashpd",
@@ -5834,7 +5834,7 @@ dependencies = [
 
 [[package]]
 name = "tagent-gui"
-version = "0.15.0+033"
+version = "0.15.0+034"
 dependencies = [
  "arboard",
  "ashpd",

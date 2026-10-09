@@ -17,7 +17,7 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
 
 ## [Unreleased]
 
-## [0.15.0] - 2026-10-06
+## [0.15.0] - 2026-10-09
 
 ### Added
 - (+022) **`/q` and `/exit` in the input box.** `/q` (`/quit`) hides the window to the
@@ -252,6 +252,9 @@ parentheses (`(+003)`, or the full version for an earlier version's build, e.g.
   by a golden test.
 
 ### Changed
+- (+034) **Smaller release binaries**: built with `opt-level = "s"` (size) instead of
+  `3`, about 16-17% smaller (Linux: `tagent-cli` 8.4 → 7.1 MB, `tagent-gui` 29.1 →
+  24.2 MB) and quicker to build, with no noticeable slowdown.
 - (+033) **The tray menu says "Exit" instead of "Quit"**, the usual word on Windows.
 - (+032) **Hotkeys with Alt copy the selection at once on Windows too**, such as the
   default `Alt+A` and `Alt+S`: the copy takes a few milliseconds (measured 3-42 ms; the
