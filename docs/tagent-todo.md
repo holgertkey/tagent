@@ -1,49 +1,5 @@
 # TODO
 
-## tagent-gui: native menus ignore the app theme (Slint upstream)
-
-Added 2026-10-08. Come back to this when working on Linux.
-
-**Problem.** On Windows, Slint 1.17 (winit backend) shows `ContextMenuArea` (the provider
-`google` button menu) as a native Win32 popup through `muda`. Such a menu ignores
-`Palette.color-scheme` and follows the system light/dark setting, so it stayed light under the
-app's Dark theme while Windows itself was in light mode.
-
-**Our workaround** (tagent-gui 0.15.0+025): `tagent-gui/src/platform/windows/menu_theme.rs` calls the
-undocumented uxtheme ordinals 135 (`SetPreferredAppMode`) and 136 (`FlushMenuThemes`) from
-`apply_style`. Still needed with Slint 1.17.1 / muda 0.19.3.
-
-**Upstream status:**
-- [slint#9646](https://github.com/slint-ui/slint/issues/9646): ContextMenuArea stays light on Windows 11
-  (exactly our case). Closed as a duplicate of #8092. Maintainer: native popup menus "should follow
-  the platform style and not the slint style".
-- [slint#8092](https://github.com/slint-ui/slint/issues/8092): MenuBar ignores color-scheme. Closed as
-  fixed by PR #10034.
-- [slint PR #10034](https://github.com/slint-ui/slint/pull/10034): only the menubar, and only follows
-  the *system* theme, not `Palette.color-scheme`. Popup menus are untouched.
-- [slint#9771](https://github.com/slint-ui/slint/issues/9771) (open, related): menu icons are not
-  colorized by theme.
-
-So an app-forced theme that differs from the system theme is still unsupported upstream.
-
-**To do on Linux:**
-- [ ] Check how `ContextMenuArea` behaves on Linux: is it drawn by Slint (follows the palette) or
-      native? Does the provider menu match the Dark/Light theme of the app when the desktop theme differs?
-- [ ] Check the tray menu theme on Linux.
-- [ ] Decide whether to report upstream: a comment in #9646 with our uxtheme workaround, or a new
-      issue saying #10034 did not cover app theme != system theme for `ContextMenuArea`, with a
-      minimal repro.
-
----
-
-
-
-
-
-
-
-
-
 ## Hotkeys and selection copy: Linux checks and Step 4
 
 Added 2026-10-08. Everything from `tagent-cli` 0.17.0+029 to +032 and `tagent-gui` 0.15.0+029

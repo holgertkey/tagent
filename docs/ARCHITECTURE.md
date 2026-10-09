@@ -961,6 +961,24 @@ rule already in place below (`tagent-gui` depends on `tagent` only, never on
   has actually changed. Verified live the same way: toggled
   `org.gnome.desktop.interface color-scheme` via `gsettings set` while the
   app was running and screenshotted the window before/after.
+
+  **Native menus** (`tagent-gui` 0.15.0+025): on Windows, Slint 1.17's winit backend
+  shows a `ContextMenuArea` (the main window's provider menu) as a native Win32 popup
+  through `muda`. That popup ignores `Palette.color-scheme` and follows the system
+  light/dark setting, so it stayed light under the app's `Dark` theme while Windows was
+  in light mode. `tagent-gui/src/platform/windows/menu_theme.rs`, called from
+  `apply_style`, sets the process-wide preferred app mode through the undocumented
+  uxtheme ordinals 135 (`SetPreferredAppMode`) and 136 (`FlushMenuThemes`); still needed
+  with Slint 1.17.1 / muda 0.19.3. Upstream doesn't support an app theme that differs
+  from the system theme: [`slint#9646`](https://github.com/slint-ui/slint/issues/9646)
+  (this exact case) was closed as a duplicate of
+  [`#8092`](https://github.com/slint-ui/slint/issues/8092), whose fix
+  ([PR #10034](https://github.com/slint-ui/slint/pull/10034)) covers only the menubar,
+  and only the *system* theme. A maintainer said there that native popup menus "should follow
+  the platform style and not the slint style", so it wasn't reported (decided
+  2026-10-09). On Linux, the provider menu and the tray menu were checked under both
+  themes with the desktop theme differing (2026-10-09) and showed no problem; nothing
+  there needs a workaround. Re-check `menu_theme.rs` when bumping `slint`.
 - **Clipboard** (`tagent-gui/src/platform/`, Stage 4, shipped 2026-09-13): a
   `ClipboardManager` per OS (`platform/{linux,windows,macos}/clipboard.rs`), behind
   `#[cfg(target_os = "...")]` re-exports in `platform/mod.rs` — the same
