@@ -30,8 +30,9 @@ concern.
   `translation_providers()`, `dictionary_providers()` and `speech_providers()` describe
   each provider (display name, the options it accepts and which are secret, timeout and
   retry defaults), for building settings forms.
-- **`languages`** — human-readable language name ↔ BCP-47 code mapping
-  (`name_to_code` / `code_to_name`).
+- **`languages`** — the supported languages (`LANGUAGES`) and name ↔ BCP-47 code mapping
+  (`name_to_code` / `code_to_name`, `language_code` for user input), the language for the
+  system locale (`language_for_locales`) and a pair label like `auto → ru` (`pair_label`).
 - **`article`** — the display layout of a dictionary entry, shared by both apps:
   `article_lines` turns a `DictionaryEntry` into role-tagged lines (header, part of speech,
   plain text, synonyms), `to_plain` gives the plain-text form, `render_with` lets a caller

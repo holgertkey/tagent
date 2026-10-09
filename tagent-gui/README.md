@@ -15,16 +15,17 @@ version: its own interface, settings and versions. They share only the `tagent` 
 
 ## Features
 
-- **Selection hotkeys**: translate the selection into a popup next to the cursor and the transcript (Alt+A), or read it aloud (Alt+S); Esc stops speech from any application.
-- **Main window** with language pickers, a transcript highlighted by role (parts of speech, synonyms, notices, errors), a click on a result's `[🔊 English]:` prompt to hear it, and copy by right-click.
+- **Selection hotkeys**: translate the selection into a popup next to the cursor and the transcript (Alt+A), or read it aloud (Alt+S); the speech hotkey again, or Esc, stops speech.
+- **Main window** with language pickers, a transcript highlighted by role (parts of speech, synonyms, notices, errors), a click on a result's `[🔊 English]:` prompt to hear it, copy by right-click, and commands in the input box (`/l en de`, `/p`, `/s`, ...).
 - **Dictionary** for single words, with synonyms and spelling correction.
 - **Providers**: Google by default (no setup), DeepL, or a local or cloud language model (Ollama, LM Studio, OpenAI, ...), separately for translation, the dictionary and speech; switch them from the window for a session.
 - **Settings dialog**: themes and color schemes, fonts, the popup's look, hotkeys, provider profiles with a Test button.
 - **System tray**: starts minimized; closing the window hides it; Exit is in the tray menu.
 
-Windows and Linux. On Linux the hotkeys, the popup and the clipboard features need X11 or
-XWayland; on a pure Wayland session and on macOS, the window, dictionary, speech and tray
-work, but those don't yet. There is no translation history (`tagent-cli` has one).
+Windows and Linux (X11, and Wayland desktops such as GNOME through the Global Shortcuts
+portal, where the popup opens where you last dropped it rather than at the cursor). On
+macOS the window, dictionary, speech and tray work, but the hotkeys and the popup don't
+yet. There is no translation history (`tagent-cli` has one).
 
 ## Install
 
@@ -33,7 +34,8 @@ work, but those don't yet. There is no translation history (`tagent-cli` has one
   (`sudo apt install ./tagent-gui_<version>-1_amd64.deb`).
 - **Or with Cargo**: `cargo install tagent-gui` (on Linux, first
   `sudo apt-get install libx11-dev libxtst-dev libasound2-dev libfontconfig1-dev` or your
-  system's equivalent), then `tagent-gui --install-desktop` for a menu entry.
+  system's equivalent), then `tagent-gui --install-desktop` for a menu entry (on Wayland
+  the hotkeys need it too).
 
 More in [Install](https://holgertkey.github.io/tagent/getting-started/install.html).
 

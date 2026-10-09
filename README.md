@@ -4,7 +4,7 @@ Cross-platform text translation, split across three Cargo workspace crates:
 
 | Crate | What it is | README |
 |---|---|---|
-| **`tagent`** | Translation/dictionary/TTS library (Google Translate provider, no app code) | [tagent/README.md](tagent/README.md) |
+| **`tagent`** | Translation/dictionary/TTS library (Google, DeepL and OpenAI-compatible providers; no app code) | [tagent/README.md](tagent/README.md) |
 | **`tagent-cli`** | Terminal translator — global hotkeys, interactive prompt, CLI mode | [tagent-cli/README.md](tagent-cli/README.md) |
 | **`tagent-gui`** | Slint desktop translator — transcript window, selection hotkeys with a popup, tray, dictionary, text-to-speech; a fully independent app | [tagent-gui/README.md](tagent-gui/README.md) |
 
@@ -44,6 +44,7 @@ Prebuilt `tagent-cli` and `tagent-gui` binaries for Windows and Linux, plus a `.
 
 Plans and design notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 [`docs/providers-dev-plan.md`](docs/providers-dev-plan.md) (provider roadmap),
+[`docs/tagent-cli-dev-plan.md`](docs/tagent-cli-dev-plan.md),
 [`docs/tagent-gui-dev-plan.md`](docs/tagent-gui-dev-plan.md) and
 [`docs/user-docs-plan.md`](docs/user-docs-plan.md) (the user book's plan).
 
